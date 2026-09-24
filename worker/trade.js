@@ -17,7 +17,7 @@
 
 import { patchDoc, listDocs, tryGet, batchGetDocs, READ_FAILED, readFailedError, deleteDoc } from './firestore.js';
 import { requestRun, runAlive, riskPctOf, RESEARCH_PATH, LENSES } from './desk-run.js';
-import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN, planFor, positionKey } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN, planFor, positionKey, scalePosition } from '../public/js/trade-math.js';
 import {
   TRADE_TZ, DESK_NAME, SAY, SETTINGS_PATH, STATE_PATH, PLAYS, BALANCES, POSITIONS, DEFAULT_WATCHLIST, WATCHLIST_MAX, KEY_RE,
   QUOTE_MAX, mtParts, keyTail, resolveKey, watchlistOf, startOf, realDate,
@@ -99,6 +99,9 @@ const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0
   amountCents: Number(m.amountCents), riskCents: Number(m.riskCents),
   stop: m.stop ?? null, targets: Array.isArray(m.targets) ? m.targets : [],
   qty: m.qty ?? null, costCents: m.costCents ?? null, at: m.at ? new Date(m.at).toISOString() : null,
+  // After an add or a trim: his average entry, and each add and trim in order (2026-09-24).
+  entry: Number.isFinite(Number(m.entry)) && Number(m.entry) > 0 ? Number(m.entry) : null,
+  legs: Array.isArray(m.legs) ? m.legs.slice(-20).map((l) => ({ kind: l.kind === 'trim' ? 'trim' : 'add', qty: Number(l.qty) || 0, price: Number(l.price) || 0, at: l.at ? new Date(l.at).toISOString() : null })) : [],
 } : null);
 
 /** Where the run is, in the words the RUN TRADING DESK line needs. */
@@ -264,11 +267,16 @@ export async function tradeAdjust(env, body, now = Date.now()) {
   const doc = await readRec(env, id);
   const d = doc.data || {};
   if (d.status !== 'open' && d.status !== 'took') throw new TradeError(409, SAY.notAdjustable);
+  // A position he added to or trimmed keeps its average and its history through a resize, and the
+  // desk's plan no longer describes it, so there is no going back to that.
+  const legs = Array.isArray(d.mine?.legs) ? d.mine.legs : [];
+  if (legs.length && body?.reset === true) throw new TradeError(409, SAY.scaledNoReset);
   let mine = null;
   if (body?.reset !== true) {
-    const p = planFor({ rec: d, amountCents: body?.amountCents, riskCents: body?.riskCents });
+    const p = planFor({ rec: d, amountCents: body?.amountCents, riskCents: body?.riskCents, entry: legs.length ? d.mine.entry : null });
     if (!p.ok) throw new TradeError(400, p.why);
     mine = { amountCents: p.amountCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, at: new Date(now) };
+    if (legs.length) Object.assign(mine, { entry: d.mine.entry, legs });
   }
   const won = await patchDoc(env, `${PLAYS}/${id}`, { mine }, { mask: ['mine'], ifUpdateTime: doc.updateTime }).catch(() => false);
   if (won === false) throw new TradeError(409, SAY.busy);
@@ -307,6 +315,33 @@ export async function tradeDecline(env, body, now = Date.now()) {
     if (won !== false) return { ok: true, rec: recRow(id, { ...d, status: 'declined', declinedAt: new Date(now) }), key, agreement };
   }
   throw new TradeError(409, SAY.busy);
+}
+
+/**
+ * ADD OR TRIM (Eric, 2026-09-24: "Button between profit and loss that says
+ * add/trim and this opens the card to add/subtract a new contract or stock
+ * amount (in dollars) manually. It gives me a new suggested stop loss."). On a
+ * trade he took: scalePosition, the same function the sheet previews with,
+ * gives the new quantity, his average and the stop; they are saved as his size
+ * with the add or trim appended to its history, under the trade's own time.
+ */
+export async function tradeScale(env, body, now = Date.now()) {
+  const id = String(body?.id || '');
+  const doc = await readRec(env, id);
+  const d = doc.data || {};
+  if (d.status !== 'took') throw new TradeError(409, SAY.notScalable);
+  const settings = (await readSettings(env))?.data || {};
+  const balance = await balanceOf(env, settings).catch(() => null);
+  const p = scalePosition({
+    rec: d, kind: body?.kind, amountCents: body?.amountCents, contracts: body?.contracts, price: body?.price,
+    riskCents: body?.riskCents, accountCents: balance?.typed ? balance.cents : 0, rules: { riskPct: riskPctOf(settings) },
+  });
+  if (!p.ok) throw new TradeError(400, p.why);
+  const legs = [...(Array.isArray(d.mine?.legs) ? d.mine.legs : []), { kind: p.kind, qty: p.changeQty, price: p.price, at: new Date(now) }].slice(-20);
+  const mine = { amountCents: p.costCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, entry: p.entry, legs, at: new Date(now) };
+  const won = await patchDoc(env, `${PLAYS}/${id}`, { mine }, { mask: ['mine'], ifUpdateTime: doc.updateTime }).catch(() => false);
+  if (won === false) throw new TradeError(409, SAY.busy);
+  return { ok: true, rec: recRow(id, { ...d, mine }) };
 }
 
 // ---- history ----------------------------------------------------------------------
@@ -567,6 +602,7 @@ export async function tradeRoute(env, { sub, method, body, query = {}, now = Dat
   if (sub === 'result') return tradeResult(env, body, now);
   if (sub === 'adjust') return tradeAdjust(env, body, now);
   if (sub === 'decline') return tradeDecline(env, body, now);
+  if (sub === 'scale') return tradeScale(env, body, now);
   if (sub === 'balance') return tradeBalance(env, body, now);
   if (sub === 'settings') return tradeSettings(env, body);
   if (sub === 'open') return tradeOpen(env, { now: new Date(now) });

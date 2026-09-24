@@ -10,7 +10,7 @@
 // The name is load-bearing: admin-desk.js matches the Worker's asset gate, so
 // this file is a 404 to anyone but him.
 
-import { recSizing, planFor, positionKey, HORIZON_WORDS } from './trade-math.js';
+import { recSizing, planFor, planAt, positionKey, HORIZON_WORDS } from './trade-math.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = (cents, signed = false) => {
@@ -151,12 +151,17 @@ const qtyText = (sz) => {
  * order he reads a trade: what and which way, where it is now, where to get
  * in, how much, where he is wrong, where he gets paid, what that costs and
  * pays, how long, why, and what kills it. A taken trade is the same card lit
- * electric yellow, with PROFIT and LOSS in place of the one button.
+ * electric yellow, with PROFIT and LOSS in place of the one button, and ADD/TRIM
+ * between them (2026-09-24).
  */
 export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quotes = null, holding = null } = {}) {
   // HIS SIZE (2026-09-23): when he set the amount and the risk himself, the card is sized from his
   // numbers, and the stop and targets are the ones they give; the desk's own are named under the grid.
-  const his = r.mine ? planFor({ rec: r, amountCents: r.mine.amountCents, riskCents: r.mine.riskCents, accountCents: balanceTyped ? accountCents : 0, rules }) : null;
+  // Once he has added or trimmed (2026-09-24), the size is what he holds at his average, not a fresh amount.
+  const legs = Array.isArray(r.mine?.legs) ? r.mine.legs : [];
+  const his = !r.mine ? null : legs.length && Number(r.mine.qty) > 0 && Number(r.mine.entry) > 0
+    ? planAt({ rec: r, entry: Number(r.mine.entry), qty: Number(r.mine.qty), riskCents: r.mine.riskCents, accountCents: balanceTyped ? accountCents : 0, rules })
+    : planFor({ rec: r, amountCents: r.mine.amountCents, riskCents: r.mine.riskCents, accountCents: balanceTyped ? accountCents : 0, rules });
   const mine = his?.ok ? his : null;
   const sz = mine || recSizing({ rec: r, accountCents, rules });
   const sized = !!mine || balanceTyped;
@@ -192,6 +197,10 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const tap = (k, v, cls, edit) => `<button type="button" class="cell tap${cls ? ` ${cls}` : ''}" data-edit="${edit}" aria-label="Change the ${edit}"><span class="k">${esc(k)}<span class="pen" aria-hidden="true"></span></span><span class="v">${v || 'Set it'}</span></button>`;
   const deskPlan = mine ? `The desk had the stop at ${price(r.stop)}${(r.targets || []).length ? `, targets ${(r.targets || []).map(price).join(' then ')}` : ''}.` : '';
   const ruleNote = mine?.overRule ? ` That is over your ${money(mine.budgetCents)} rule.` : '';
+  const adds = legs.filter((l) => l?.kind === 'add').length; const trims = legs.filter((l) => l?.kind === 'trim').length;
+  const scaled = mine && legs.length
+    ? `${qtyText(mine)} at an average of ${price(mine.entry)} after ${[adds && `${adds} add${adds === 1 ? '' : 's'}`, trims && `${trims} trim${trims === 1 ? '' : 's'}`].filter(Boolean).join(' and ')}. `
+    : '';
   return `<article class="outlined rec${active ? ' active' : ''}" data-kind="${esc(r.horizon || 'intraday')}" data-rec="${esc(r.id)}">
     <div class="head">
       <span class="tk">${esc(r.ticker)}</span>
@@ -212,7 +221,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
       ${cell('Reward', sized && sz.rewardCents != null ? esc(money(sz.rewardCents)) : '', 'green')}
       ${cell('R:R', sized && sz.rr != null ? esc(`1 : ${sz.rr}`) : '')}
     </div>
-    ${mine ? `<p class="mine-note"><b>Your size.</b> ${esc(deskPlan)}${esc(ruleNote)}</p>` : ''}
+    ${mine ? `<p class="mine-note"><b>Your size.</b> ${esc(scaled)}${esc(deskPlan)}${esc(ruleNote)}</p>` : ''}
     ${r.adds && !active ? `<p class="deal-note add"><b>You already hold ${esc(r.ticker)}.</b>${esc(addWhy)} Taking this adds to your position.</p>` : ''}
     ${r.reoffered && !active ? `<p class="deal-note back"><b>Back again.</b> You passed on this when ${esc(r.reoffered.was)} of 5 agreed. Now ${esc(r.reoffered.now)} of 5 do.</p>` : ''}
     ${vehicleText(r) ? `<p class="vehicle">${esc(vehicleText(r))}</p>` : ''}
@@ -224,7 +233,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
     </dl>
     <div class="acts">
       ${active
-        ? '<button type="button" class="btn big profit" data-act="profit">PROFIT</button><button type="button" class="btn big loss" data-act="loss">LOSS</button>'
+        ? '<button type="button" class="btn big profit" data-act="profit">PROFIT</button><button type="button" class="btn big quiet scale" data-act="scale" aria-label="Add to or trim this trade">ADD/TRIM</button><button type="button" class="btn big loss" data-act="loss">LOSS</button>'
         : '<button type="button" class="btn big primary take fl" data-act="take">YES, I TOOK IT</button><button type="button" class="btn big quiet pass" data-act="decline" aria-label="No, pass on this trade">NO</button>'}
     </div>
     <p class="said" data-rec-said></p>
@@ -257,6 +266,7 @@ export function historyRowHtml(r) {
   const m = r.mine;
   const his = m ? [
     `put in ${money(m.costCents ?? m.amountCents)}`,
+    Array.isArray(m.legs) && m.legs.length && m.entry != null && `average ${price(m.entry)}`,
     `risked ${money(m.riskCents)}`,
     m.stop != null && `stop ${price(m.stop)}`,
     (m.targets || []).length && `targets ${m.targets.map(price).join(' then ')}`,

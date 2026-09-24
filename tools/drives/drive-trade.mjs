@@ -5,7 +5,7 @@
 // Eric, 2026-09-23: "Simplify the trading app substantially. The app should
 // now have only two primary purposes: 1. Suggested Trades 2. Market News."
 //
-// Twelve sections, A to L: the shelf card opens the desk; the shell is three
+// Twelve sections, A to L (M, N and O came after: his size, accept or pass, and ADD/TRIM): the shelf card opens the desk; the shell is three
 // tabs and a cog with no chat anywhere; the board reads every field of a trade
 // grouped by kind with the taken one lit yellow; RUN TRADING DESK walks its
 // stages and lands fresh trades; YES lights a card and gives it PROFIT and
@@ -102,7 +102,8 @@ const put = board.find((c) => c.tk === 'TSLA');
 ok('a contract says Stock for the price and counts whole contracts', !!put && !!put.cells.Stock && /1 contract/.test(put.cells.Amount), JSON.stringify(put?.cells));
 // RE-PINNED 2026-09-24 (v7.6, Eric: "I should be able to accept/deny"): YES and NO on every new suggestion.
 ok('every trade on the board offers YES and NO and nothing else', board.every((c) => c.acts.join() === 'take,decline'));
-ok('the one he took is lit, electric yellow, with PROFIT and LOSS', active.length === 1 && active[0].tk === 'PLTR' && active[0].active && active[0].acts.join() === 'profit,loss' && active[0].border === 'rgb(244, 255, 31)', JSON.stringify(active.map((c) => [c.tk, c.border])));
+// RE-PINNED 2026-09-24 (v7.8): ADD/TRIM sits between PROFIT and LOSS.
+ok('the one he took is lit, electric yellow, with PROFIT, ADD/TRIM and LOSS', active.length === 1 && active[0].tk === 'PLTR' && active[0].active && active[0].acts.join() === 'profit,scale,loss' && active[0].border === 'rgb(244, 255, 31)', JSON.stringify(active.map((c) => [c.tk, c.border])));
 ok('the tab carries the count of taken trades', (await page.evaluate(() => document.getElementById('bar-badge').textContent)) === '1');
 ok('the line under the button says when the last run was', /^Last run .+ · 4 trades$/.test(await page.evaluate(() => document.getElementById('run-line').textContent.trim())));
 ok('the sub line shows the balance and the 3% rule', /Balance \$2,380\.00 · risk 3% a trade/.test(await page.evaluate(() => document.getElementById('trades-sub').textContent)));
@@ -134,7 +135,8 @@ await page.evaluate(() => document.querySelector('#board .rec[data-rec$="-1"] [d
 const lit = await until(() => document.querySelectorAll('#active .rec').length === 2 && [...document.querySelectorAll('#active .rec')].map((c) => c.querySelector('.tk').textContent).join(), 6000);
 ok('YES moves QQQ into the active trades, first', lit === 'QQQ,PLTR', lit || '');
 const qqq = (await cards('#active .rec'))[0];
-ok('it is lit electric yellow with PROFIT and LOSS and no YES', !!qqq && qqq.active && qqq.border === 'rgb(244, 255, 31)' && qqq.acts.join() === 'profit,loss', JSON.stringify(qqq));
+// RE-PINNED 2026-09-24 (v7.8): ADD/TRIM sits between PROFIT and LOSS.
+ok('it is lit electric yellow with PROFIT, ADD/TRIM and LOSS and no YES', !!qqq && qqq.active && qqq.border === 'rgb(244, 255, 31)' && qqq.acts.join() === 'profit,scale,loss', JSON.stringify(qqq));
 ok('it is off the board, and the tab count is two', !(await cards('#board .rec')).some((c) => c.tk === 'QQQ') && (await page.evaluate(() => document.getElementById('bar-badge').textContent)) === '2');
 await shot('E-yes');
 
@@ -293,6 +295,70 @@ ok('with QQQ taken, the next run offers QQQ only as an add to it, and says how m
 ok('every card on the board shows how many of the desk agree', await page.evaluate(() => [...document.querySelectorAll('#board .rec')].every((c) => /^\d of 5 agree$/.test([...c.querySelectorAll('.why dt')].find((d) => d.textContent.trim() === 'Desk')?.nextElementSibling?.textContent.trim() || ''))));
 ok('and the AMD scalp he passed on is still off', !(await boardTks()).includes('AMD'), await boardTks());
 await shot('N-add');
+
+console.log('\n--- O. ADD/TRIM: more or less of a taken trade, with a new suggested stop ---');
+// Eric, 2026-09-24: "Button between profit and loss that says add/trim and this opens the card to
+// add/subtract a new contract or stock amount (in dollars) manually. It gives me a new suggested stop loss."
+const qqqCard = () => page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ') || null);
+const openScaleOn = async () => {
+  await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="scale"]')?.click());
+  return until(() => document.getElementById('sc-n') && { px: document.getElementById('sc-px').value, risk: document.getElementById('sc-risk').value, focus: document.activeElement?.id, on: document.querySelector('#sc-seg .on')?.dataset.k, sum: document.querySelector('.sheet .sum')?.textContent.trim() }, 3000);
+};
+const scalePrev = () => page.evaluate(() => ({
+  rows: Object.fromEntries([...document.querySelectorAll('#sc-prev .row')].map((r) => [r.querySelector('.k').textContent.trim(), r.querySelector('.v').textContent.trim()])),
+  why: [...document.querySelectorAll('#sc-prev .why')].map((x) => x.textContent.trim()).join(' '),
+  off: document.getElementById('sc-go').disabled, go: document.getElementById('sc-go').textContent.trim(),
+}));
+const q0 = await cardOf('QQQ', '#active .rec');
+ok('a taken trade has PROFIT, then ADD/TRIM, then LOSS', !!q0 && q0.acts.join() === 'profit,scale,loss', JSON.stringify(q0?.acts));
+ok('a new suggestion has no ADD/TRIM', await page.evaluate(() => ![...document.querySelectorAll('#board .rec')].some((c) => c.querySelector('[data-act="scale"]'))));
+const sc = await openScaleOn();
+ok('ADD/TRIM opens on Add, with the price and his risk filled and the amount ready to type', !!sc && sc.on === 'add' && Number(sc.px) > 0 && `$${Number(sc.risk).toFixed(2)}` === q0?.cells.Risk && sc.focus === 'sc-n' && /^You hold [\d.]+ shares at \$498\.20, stop \$495\.90\./.test(sc.sum), JSON.stringify(sc));
+await page.fill('#sc-n', '500');
+await page.fill('#sc-px', '497');
+const addPv = await scalePrev();
+ok('as he types, the new average, the new stop and what keeping the old one would risk are shown', !addPv.off && addPv.go === 'Save the add' && /^[\d.]+ shares at \$497\.\d\d$/.test(addPv.rows.Holds || '') && /^\$[\d,.]+ was \$495\.90$/.test(addPv.rows.Stop || '') && /Keeping the stop at \$495\.90 would risk \$[\d,.]+ instead\./.test(addPv.why), JSON.stringify(addPv));
+await shot('O-add-sheet');
+await page.click('#sc-go');
+const added = await until(() => !document.getElementById('sc-go') && document.querySelector('#toasts .toast')?.textContent, 4000);
+const q1 = await cardOf('QQQ', '#active .rec');
+const newStop = (addPv.rows.Stop || '').split(' ')[0];
+// The stop rounds toward the entry, so the risk after can be a few cents under what he had, never over.
+const dollars = (v) => Number(String(v || '').replace(/[$,]/g, ''));
+ok('Save lands on the card: the new stop, the same risk to within a few cents under, and his average after one add', /^Added\. QQQ stop \$/.test(added || '') && q1?.cells.Stop === newStop && dollars(q1?.cells.Risk) <= dollars(q0?.cells.Risk) && dollars(q0?.cells.Risk) - dollars(q1?.cells.Risk) <= 0.1 && /^Your size\. [\d.]+ shares at an average of \$497\.\d\d after 1 add\. The desk had the stop at \$495\.90/.test(await note('QQQ')), JSON.stringify({ added, cells: q1?.cells, note: await note('QQQ') }));
+const tighter = Number(newStop.replace(/[$,]/g, '')) > 495.9;
+ok('adding more at the same risk pulls the stop up toward the entry', tighter, newStop);
+await openScaleOn();
+await page.evaluate(() => document.querySelector('#sc-seg [data-k="trim"]').click());
+await page.fill('#sc-n', '999999');
+await page.fill('#sc-px', '499');
+const wholePv = await scalePrev();
+ok('trimming more than he holds is refused in words, and Save waits', wholePv.off && /That is the whole position\. Mark it PROFIT or LOSS instead\./.test(wholePv.why), JSON.stringify(wholePv));
+await page.fill('#sc-n', '400');
+const trimPv = await scalePrev();
+ok('a trim keeps his average and widens the stop to hold the same risk', !trimPv.off && trimPv.go === 'Save the trim' && (trimPv.rows.Holds || '').endsWith((await note('QQQ')).match(/average of (\$[\d.]+)/)?.[1] || 'x') && Number((trimPv.rows.Stop || '').split(' ')[0].replace(/[$,]/g, '')) < Number(newStop.replace(/[$,]/g, '')), JSON.stringify(trimPv));
+await page.click('#sc-go');
+const trimmed = await until(() => !document.getElementById('sc-go') && document.querySelector('#toasts .toast')?.textContent, 4000);
+ok('the trim lands and the card counts both', /^Trimmed\. QQQ stop \$/.test(trimmed || '') && / after 1 add and 1 trim\./.test(await note('QQQ')), JSON.stringify({ trimmed, note: await note('QQQ') }));
+await tapCell('QQQ', 'amount');
+const sized = await until(() => document.getElementById('sz-amt') && { reset: !!document.getElementById('sz-reset'), holds: [...document.querySelectorAll('#sz-prev .row .k')].map((k) => k.textContent.trim()) }, 3000);
+ok('after an add or a trim his size opens without the way back to the desk\'s plan, and says Holds', !!sized && !sized.reset && sized.holds.includes('Holds'), JSON.stringify(sized));
+await page.evaluate(() => document.querySelector('.sheet [data-x]')?.click());
+await page.waitForTimeout(300);
+await page.setViewportSize({ width: 320, height: 640 });
+await page.waitForTimeout(400);
+const at320 = await page.evaluate(() => { const c = [...document.querySelectorAll('#active .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'QQQ'); const bs = [...c.querySelectorAll('.acts .btn')]; return { doc: document.documentElement.scrollWidth, card: [c.clientWidth, c.scrollWidth], right: Math.round(c.getBoundingClientRect().right), cut: bs.filter((x) => x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent), row: new Set(bs.map((x) => Math.round(x.getBoundingClientRect().top))).size === 1, tall: bs.map((x) => Math.round(x.getBoundingClientRect().height)) }; });
+// The card itself is measured: the first build grew the card past the screen and the page hid it.
+ok('at 320px the three buttons fit on one row inside the card with nothing cut', at320.doc <= 321 && at320.card[1] <= at320.card[0] + 1 && at320.right <= 320 && !at320.cut.length && at320.row && at320.tall.every((h) => h >= 44), JSON.stringify(at320));
+await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.scrollIntoView({ block: 'center' }));
+await shot('O-card-320');
+await page.setViewportSize({ width: 390, height: 844 });
+await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="profit"]')?.click());
+await until(() => ![...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'QQQ'), 5000);
+await go('history');
+const qRow = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'QQQ'); if (!h) return null; h.querySelector('summary').click(); return h.querySelector('.more').textContent.replace(/\s+/g, ' '); }, 5000);
+ok('History says his average beside what he put in', /You put in \$[\d,.]+, average \$497\.\d\d, risked \$/.test(qRow || ''), qRow || '');
+await go('trades');
 
 console.log('\n--- J. reduced motion keeps the moment still ---');
 const still = await ctx.newPage();

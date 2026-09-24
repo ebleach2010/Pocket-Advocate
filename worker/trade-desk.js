@@ -129,6 +129,8 @@ export const SAY = {
   badResult: 'Mark it PROFIT or LOSS.',
   notAdjustable: 'That trade is closed, so its size can no longer change.',
   notDeclinable: 'Only a new suggestion can be passed on.',
+  notScalable: 'Tap YES on this trade before adding to it or trimming it.',
+  scaledNoReset: 'You have added to or trimmed this trade, so the desk\'s plan no longer fits it. Change its size instead.',
   badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
   busy: 'The desk was busy for a moment. Tap again.',
   noDesk: 'The trade desk is not open.',

@@ -2275,6 +2275,18 @@ html[data-desk]:root .rec .why dd { margin: 0; font-size: 14px; line-height: 1.4
 html[data-desk]:root .rec .why:empty { display: none; }
 html[data-desk]:root .rec .acts { display: flex; gap: 10px; }
 html[data-desk]:root .rec .acts .btn.big { flex: 1; min-height: 56px; font-size: 16px; letter-spacing: .08em; }
+/* ADD/TRIM (Eric, 2026-09-24) sits between PROFIT and LOSS on a taken trade, narrower and quieter than either. */
+html[data-desk]:root .rec .acts .btn.big.scale { flex: 0 0 auto; padding: 0 12px; font-size: 13px; letter-spacing: .04em; color: var(--volt-core); background: rgba(var(--volt-rgb),.08); border: 1px solid rgba(var(--volt-rgb),.6); text-shadow: none; box-shadow: none; }
+html[data-desk]:root .rec .acts .btn.big.scale:active { background: rgba(var(--volt-rgb),.2); }
+/* Three to a row on a taken trade: they give up padding before the card grows past a 320px screen. */
+html[data-desk]:root .rec.active .acts { gap: 8px; }
+html[data-desk]:root .rec.active .acts .btn.big { min-width: 0; padding: 0 10px; }
+html[data-desk]:root .rec.active .acts .btn.big.scale { padding: 0 8px; }
+@media (max-width: 359px) {
+  html[data-desk]:root .rec.active .acts .btn.big { padding: 0 6px; font-size: 14px; letter-spacing: .04em; }
+  html[data-desk]:root .rec.active .acts .btn.big.scale { font-size: 12px; letter-spacing: .02em; }
+}
+html[data-desk]:root .sheet .sizeprev .was { font-size: 12px; color: var(--dim); margin-left: 6px; }
 html[data-desk]:root .rec .said:empty { display: none; }
 html[data-desk]:root .btn.profit { --c: var(--green); --c-rgb: var(--green-rgb); --c-core: var(--green-core); color: #04140B; background-color: #45F09E; background-image: linear-gradient(180deg, #6BFFB8, #2FE08A); border: 1px solid var(--green-core); text-shadow: none; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 10px rgba(var(--green-rgb),.6), 0 0 26px rgba(var(--green-rgb),.3); }
 html[data-desk]:root .btn.loss { --c: var(--red); --c-rgb: var(--red-rgb); --c-core: var(--red-core); color: #1A0308; background-color: #F85D79; background-image: linear-gradient(180deg, #FF8098, #F03A5C); border: 1px solid var(--red-core); text-shadow: none; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 10px rgba(var(--red-rgb),.6), 0 0 26px rgba(var(--red-rgb),.3); }

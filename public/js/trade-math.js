@@ -538,11 +538,12 @@ export function recSizing({ rec, accountCents, rules }) {
  * the card sizes from, and the stop is rounded toward the entry so the loss at it is never more than he
  * said. A size that cannot be done answers { ok: false, why } with a sentence he can act on.
  */
-export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules = null }) {
+export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules = null, entry: at = null }) {
   const inst = ['stock', 'call', 'put'].includes(rec?.instrument) ? rec.instrument : 'stock';
   const up = inst !== 'stock' || rec?.side !== 'short';
   const lo = fin(rec?.entryLow); const hi = fin(rec?.entryHigh);
-  const entry = lo != null && hi != null ? (up ? Math.max(lo, hi) : Math.min(lo, hi)) : fin(rec?.entry) ?? lo ?? hi;
+  // `at` is his average once he has added or trimmed; otherwise the worst fill in the zone.
+  const entry = fin(at) ?? (lo != null && hi != null ? (up ? Math.max(lo, hi) : Math.min(lo, hi)) : fin(rec?.entry) ?? lo ?? hi);
   const amount = Math.round(Number(amountCents));
   const risk = Math.round(Number(riskCents));
   const no = (why) => ({ ok: false, why });
@@ -555,6 +556,26 @@ export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules =
   // Rounded down, so what goes in is never a cent more than he said.
   const qty = whole ? Math.floor(amount / unitCents + 1e-9) : Math.floor((amount / unitCents) * 10000 + 1e-6) / 10000;
   if (!(qty > 0)) return no(whole ? `One contract costs ${fmtMoney(Math.round(unitCents))}, more than ${fmtMoney(amount)}.` : 'That amount is too small to buy any.');
+  return planAt({ rec, entry, qty, riskCents: risk, amountCents: amount, accountCents, rules });
+}
+
+/**
+ * The stop and targets for a quantity held at an entry, losing `riskCents` at the stop: planFor's
+ * second half, shared with an add or a trim, where the entry is his average and the quantity what he
+ * holds. The targets keep the multiples of the risk the desk gave them, measured from the desk's own
+ * entry, so moving his average does not change what the desk asked of the trade.
+ */
+export function planAt({ rec, entry, qty, riskCents, amountCents = null, accountCents = 0, rules = null }) {
+  const inst = ['stock', 'call', 'put'].includes(rec?.instrument) ? rec.instrument : 'stock';
+  const up = inst !== 'stock' || rec?.side !== 'short';
+  const no = (why) => ({ ok: false, why });
+  const risk = Math.round(Number(riskCents));
+  if (!(entry > 0) || !(qty > 0)) return no('There is nothing held to set a stop for.');
+  if (!(risk > 0)) return no('The risk in dollars, for example 60.');
+  const M = inst === 'stock' ? 1 : OPTION_MULT;
+  const unitCents = entry * M * 100;
+  const whole = inst !== 'stock';
+  const amount = amountCents == null ? Math.round(qty * unitCents) : Math.round(Number(amountCents));
   const costCents = Math.round(qty * unitCents);
   // A buy cannot lose more than it cost, and a stop at nothing is no stop.
   if (up && risk >= costCents) return no(`The risk has to be less than the ${fmtMoney(costCents)} going in.`);
@@ -567,14 +588,16 @@ export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules =
   if (up ? stop >= entry : stop <= entry) return no('That risk is too small for this size: the stop would sit on the entry.');
   if (!(stop > 0)) return no('The stop would fall below zero at that risk.');
   // The desk's targets as multiples of the desk's risk, carried to his.
+  const zLo = fin(rec?.entryLow); const zHi = fin(rec?.entryHigh);
+  const deskEntry = zLo != null && zHi != null ? (up ? Math.max(zLo, zHi) : Math.min(zLo, zHi)) : fin(rec?.entry) ?? entry;
   const deskStop = fin(rec?.stop);
-  const deskDist = deskStop == null ? null : up ? entry - deskStop : deskStop - entry;
+  const deskDist = deskStop == null ? null : up ? deskEntry - deskStop : deskStop - deskEntry;
   const deskTargets = (Array.isArray(rec?.targets) ? rec.targets : []).map(fin).filter((x) => x != null);
   const newDist = up ? entry - stop : stop - entry;
   let targets = deskTargets;
   if (deskDist > 0 && deskTargets.length) {
     targets = deskTargets.map((x) => {
-      const k = (up ? x - entry : entry - x) / deskDist;
+      const k = (up ? x - deskEntry : deskEntry - x) / deskDist;
       const p = up ? entry + k * newDist : entry - k * newDist;
       return Math.round(p * tick(p)) / tick(p);
     }).filter((p) => p > 0 && (up ? p > entry : p < entry));
@@ -597,6 +620,66 @@ export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules =
     out.overRule = actualRisk > out.budgetCents;
   }
   return out;
+}
+
+/**
+ * What he holds of a taken trade: the quantity, his average entry and the dollars at risk. His own
+ * size when he set one, else the card's own sizing from his balance and rule.
+ */
+export function heldOf({ rec, accountCents = 0, rules = null }) {
+  const m = rec?.mine;
+  const up = (['call', 'put'].includes(rec?.instrument)) || rec?.side !== 'short';
+  const lo = fin(rec?.entryLow); const hi = fin(rec?.entryHigh);
+  const zone = lo != null && hi != null ? (up ? Math.max(lo, hi) : Math.min(lo, hi)) : fin(rec?.entry) ?? lo ?? hi;
+  if (m && Number(m.qty) > 0) return { qty: Number(m.qty), entry: fin(m.entry) ?? zone, riskCents: Math.round(Number(m.riskCents)) || null, stop: fin(m.stop) ?? fin(rec?.stop) };
+  const sz = recSizing({ rec, accountCents, rules });
+  return sz.qty > 0 ? { qty: sz.qty, entry: sz.entry, riskCents: sz.riskCents, stop: fin(rec?.stop) } : { qty: 0, entry: zone, riskCents: null, stop: fin(rec?.stop) };
+}
+
+/**
+ * ADD OR TRIM (Eric, 2026-09-24: "Button between profit and loss that says add/trim and this opens the
+ * card to add/subtract a new contract or stock amount (in dollars) manually. It gives me a new suggested
+ * stop loss."). An add buys more at `price` and his average moves to the blend; a trim sells some and
+ * his average stays. The new stop is where the whole position loses `riskCents`, his risk as it was
+ * unless he changed it; `keepStopRiskCents` is what leaving the stop where it is would risk instead.
+ * Dollars for stock, whole contracts for an option. Answers { ok: false, why } when it cannot be done.
+ */
+export function scalePosition({ rec, kind, amountCents = null, contracts = null, price, riskCents, accountCents = 0, rules = null }) {
+  const no = (why) => ({ ok: false, why });
+  const inst = ['stock', 'call', 'put'].includes(rec?.instrument) ? rec.instrument : 'stock';
+  const whole = inst !== 'stock';
+  const M = whole ? OPTION_MULT : 1;
+  const up = whole || rec?.side !== 'short';
+  if (kind !== 'add' && kind !== 'trim') return no('Add or trim.');
+  const held = heldOf({ rec, accountCents, rules });
+  if (!(held.qty > 0) || !(held.entry > 0)) return no('Set your size first: tap Amount on the card.');
+  const px = fin(price);
+  if (!(px > 0)) return no(whole ? 'The premium per share you traded at, for example 2.10.' : 'The price you traded at, for example 199.50.');
+  let q;
+  if (whole) {
+    q = Math.floor(Number(contracts));
+    if (!(q >= 1)) return no('How many contracts, for example 1.');
+  } else {
+    const cents = Math.round(Number(amountCents));
+    if (!(cents > 0) || cents > 1e9) return no('The amount in dollars, for example 250.');
+    q = Math.floor((cents / (px * 100)) * 10000 + 1e-6) / 10000;
+    if (!(q > 0)) return no('That amount is too small to buy any.');
+  }
+  let qty; let entry;
+  if (kind === 'add') {
+    qty = whole ? held.qty + q : Math.round((held.qty + q) * 10000) / 10000;
+    entry = r4((held.qty * held.entry + q * px) / qty);
+  } else {
+    if (q >= held.qty - 1e-9) return no('That is the whole position. Mark it PROFIT or LOSS instead.');
+    qty = whole ? held.qty - q : Math.round((held.qty - q) * 10000) / 10000;
+    entry = held.entry;
+  }
+  const risk = riskCents == null ? held.riskCents : Math.round(Number(riskCents));
+  const plan = planAt({ rec, entry, qty, riskCents: risk, accountCents, rules });
+  if (!plan.ok) return plan;
+  const keepStopRiskCents = held.stop != null && (up ? held.stop < entry : held.stop > entry)
+    ? Math.round(Math.abs(entry - held.stop) * M * 100 * qty) : null;
+  return { ...plan, kind, changeQty: q, price: px, heldBefore: held, keepStop: held.stop, keepStopRiskCents };
 }
 
 /** Which way a trade leans: a put or a short sale is down, a call or a stock bought is up. */

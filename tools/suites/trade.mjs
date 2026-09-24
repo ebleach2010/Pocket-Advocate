@@ -119,7 +119,7 @@ function world(over = {}) {
       return over.runOut || { ok: true, already: false, run: { id: 'run-1', status: 'queued', trigger, queuedAt: new Date(now), done: 0 } };
     },
     runAlive: DR.runAlive, riskPctOf: DR.riskPctOf, RESEARCH_PATH: DR.RESEARCH_PATH, LENSES: DR.LENSES,
-    isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries, planFor: math.planFor, positionKey: math.positionKey,
+    isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries, planFor: math.planFor, positionKey: math.positionKey, scalePosition: math.scalePosition,
     TARGET_DAILY: math.TARGET_DAILY, PROJECTION_MIN_DAYS: math.PROJECTION_MIN_DAYS, DEFAULT_START_CENTS: math.DEFAULT_START_CENTS,
     MARKET_OPEN_MIN: math.MARKET_OPEN_MIN,
     fetch: async (url) => {
@@ -1117,12 +1117,17 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-23 (v7.3, Eric: "I should be able to manually tap on the amount traded and update it"):
   // adjust joins the writes; it carries two numbers and nothing he types in words.
   // RE-PINNED 2026-09-24 (v7.6): decline joins them, the NO beside YES; it carries only the trade's id.
-  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, decline, result, adjust, balance, settings and open',
+  // RE-PINNED 2026-09-24 (v7.8): scale joins them, ADD/TRIM on a taken trade; and the list now reads every
+  // call whatever follows the route's name, since `call('scale', body())` slipped past the old `, {` match.
+  const WRITES = [...APP.matchAll(/call\('(\w+)',/g)].map((x) => x[1]);
+  // NEGATIVE CONTROL (run 2026-09-24, v7.8): an extra `call('ask', body())` added to the app made this read
+  //   FAIL  T53 the stream is gone: ...
+  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, decline, result, adjust, scale, balance, settings and open',
     !/<textarea|id="composer"|id="stream"|id="drawer"|id="say"|data-page="desk"|data-page="plays"|data-page="positions"|data-page="stats"/.test(PAGE)
     && !/firebase\.js|onSnapshot|addDoc|advisor\/ask|advisor\/state|isQuestion|mergeStream|md\(|splitPages|confirm\(/.test(APP)
-    && (APP.match(/call\('(\w+)', \{/g) || []).map((x) => x.slice(6, -4)).every((sub) => ['run', 'take', 'decline', 'result', 'adjust', 'balance', 'settings'].includes(sub))
+    && WRITES.includes('scale') && WRITES.every((sub) => ['run', 'take', 'decline', 'result', 'adjust', 'scale', 'balance', 'settings'].includes(sub))
     && /fetch\('\/api\/admin\/trade\/open'/.test(APP),
-    JSON.stringify((APP.match(/call\('(\w+)', \{/g) || [])));
+    JSON.stringify(WRITES));
 }
 
 // ---- T54: the effects, as pure functions (2026-09-22, the desk as one app) ------------------
@@ -1281,8 +1286,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
     // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
-    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat120/.test(f(`public/${p}.html`)))
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat121/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1380,6 +1385,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry76 = (CL.match(/\{\n\s+\/\/ ACCEPT OR PASS \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.7): how many agree, its own quiet entry.
   const entry77 = (CL.match(/\{\n\s+\/\/ HOW MANY AGREE \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.8): add or trim, its own quiet entry.
+  const entry78 = (CL.match(/\{\n\s+\/\/ ADD OR TRIM \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1433,8 +1440,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.7): both versions read 7.7 with the agree-shown tag; the 7.6 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.7): 'even when it is only one or none' reworded to 'even when it is one or none' in the 7.7 entry made this read
   //   FAIL  T36 both versions read 7.7 ...
-  check('T36 both versions read 7.7 with the new tag, the 4.7 through 7.7 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.7';/.test(CL) && /const VERSION = '7\.7';/.test(W) && /const BUILD_TAG = 'v2026-09-24-agree-shown';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.8): both versions read 7.8 with the add-trim tag; the 7.7 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.8): 'keeps what you would lose at it the same' reworded to 'keeps your risk the same' in the 7.8 entry made this read
+  //   FAIL  T36 both versions read 7.8 ...
+  check('T36 both versions read 7.8 with the new tag, the 4.7 through 7.8 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.8';/.test(CL) && /const VERSION = '7\.8';/.test(W) && /const BUILD_TAG = 'v2026-09-24-add-trim';/.test(W)
+    && /version: '7\.8',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry78)
+    && /keeps what you would lose at it the same/.test(entry78) && /ADD\/TRIM between PROFIT and LOSS/.test(entry78) && !DASH.test(entry78) && !HARD.some((re) => re.test(entry78))
     && /version: '7\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry77)
     && /even when it is only one or none/.test(entry77) && !DASH.test(entry77) && !HARD.some((re) => re.test(entry77))
     && /version: '7\.6',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry76)
@@ -1498,7 +1510,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat120/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat121/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2208,10 +2220,12 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
     && /<p class="mine"><span class="k">You<\/span> put in \$999\.99, risked \$60\.00, stop \$233\.12, targets \$268\.29 then \$285\.20\.<\/p>/.test(hist)
     && !/class="mine"/.test(histPlain) && !/<span class="k">Desk<\/span>/.test(histPlain)
     && /for \(const b of \$\$\('#pg-trades \[data-edit\]'\)\) b\.addEventListener\('click', \(\) => openSize\(b\)\);/.test(APP)
-    && /planFor\(\{ rec: r, amountCents: a, riskCents: k, accountCents: acct, rules: ctx\.rules \}\)/.test(APP)
+    // RE-PINNED 2026-09-24 (v7.8): the preview and the demo's adjust also carry his average once he has
+    // added or trimmed (`entry`), null before, so the same size saves the same way.
+    && /planFor\(\{ rec: r, amountCents: a, riskCents: k, accountCents: acct, rules: ctx\.rules, entry: at \}\)/.test(APP)
     && /call\('adjust', \{ id: r\.id, \.\.\.body \}\)/.test(APP) && /send\(\{ amountCents: dollarsIn\(amtIn\.value\), riskCents: dollarsIn\(riskIn\.value\) \}/.test(APP)
     && /send\(\{ reset: true \}/.test(APP)
-    && /if \(sub === 'adjust'\) \{[\s\S]*?planFor\(\{ rec: d, amountCents: body\.amountCents, riskCents: body\.riskCents \}\)/.test(D)
+    && /if \(sub === 'adjust'\) \{[\s\S]*?planFor\(\{ rec: d, amountCents: body\.amountCents, riskCents: body\.riskCents, entry: legs\.length \? d\.mine\.entry : null \}\)/.test(D)
     && /html\[data-desk\]:root \.rec \.cell\.tap \{[^}]*min-height: 44px;/.test(CSS)
     && ![his, hist, hisOver].some((h) => DASH.test(h)),
     JSON.stringify({ amt: tapV(his, 'amount'), risk: tapV(his, 'risk'), stop: cellV(his, 'Stop'), hist: hist.replace(/\s+/g, ' ').slice(0, 500) }));
@@ -2374,6 +2388,122 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
     && /holding: new Map\(\(S\.state\?\.active \|\| \[\]\)\.map\(\(r\) => \[positionKey\(r\), r\]\)\),/.test(APP)
     && !DASH.test(add),
     JSON.stringify({ rows: [row(0), row(1), row(5)], add: (add.match(/You already hold.*?position\./) || [''])[0] }));
+}
+
+// ---- T76 to T78: ADD/TRIM (2026-09-24, v7.8) -----------------------------------------------------
+// Eric: "Button between profit and loss that says add/trim and this opens the card to add/subtract a new
+// contract or stock amount (in dollars) manually. It gives me a new suggested stop loss."
+// He holds 2 BA at 203 with the stop at 197, $12 at risk; the desk's targets are 1 and 2 times its risk.
+const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'stock', entryLow: 200, entryHigh: 203, stop: 197, targets: [209, 215], status: 'took',
+  mine: { qty: 2, entry: 203, riskCents: 1200, stop: 197, targets: [209, 215], amountCents: 40600, costCents: 40600 } };
+{
+  const S = BA_HELD;
+  const add = math.scalePosition({ rec: S, kind: 'add', amountCents: 60000, price: 200 });
+  const trim = math.scalePosition({ rec: S, kind: 'trim', amountCents: 21000, price: 210 });
+  const riskTyped = math.scalePosition({ rec: S, kind: 'add', amountCents: 60000, price: 200, riskCents: 2100 });
+  const O = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'call', entryLow: 3, entryHigh: 3.2, stop: 2, targets: [4.4], status: 'took', mine: { qty: 3, entry: 3.2, riskCents: 36000, stop: 2, amountCents: 96000 } };
+  const opt = math.scalePosition({ rec: O, kind: 'add', contracts: 2, price: 2.9 });
+  const optTrim = math.scalePosition({ rec: O, kind: 'trim', contracts: 1, price: 4 });
+  const H = { ticker: 'F', side: 'short', horizon: 'intraday', instrument: 'stock', entryLow: 50, entryHigh: 49, stop: 51, targets: [45], status: 'took', mine: { qty: 10, entry: 49, riskCents: 2000, stop: 51, amountCents: 49000 } };
+  const short = math.scalePosition({ rec: H, kind: 'add', amountCents: 50000, price: 50 });
+  const bare = { ...S, mine: null, allocPct: 10 };
+  const fromBal = math.scalePosition({ rec: bare, kind: 'add', amountCents: 60000, price: 200, accountCents: 245000, rules: { riskPct: 3 } });
+  const why = (o) => math.scalePosition({ rec: S, kind: 'add', amountCents: 60000, price: 200, ...o }).why;
+  const pick = (p) => (p.ok ? { qty: p.qty, entry: p.entry, stop: p.stop, targets: p.targets, risk: p.riskCents, keep: p.keepStopRiskCents } : p.why);
+  // NEGATIVE CONTROL (run 2026-09-24): scalePosition's add blend put back to `entry = held.entry;` made this read
+  //   FAIL  T76 an add or a trim RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-24): scalePosition's whole-position guard removed made this read
+  //   FAIL  T76 an add or a trim RUNS ...
+  check('T76 an add or a trim RUNS: $600 of BA at 200 on 2 held at 203 holds 5 at an average of 201.20, and the stop moves up to 198.80 so the whole still loses his $12, the targets keeping the desk\'s multiples from his average, with keeping the old stop at 197 risking $21 instead; a risk he types is the one used; a trim keeps the average and the $12, so its stop widens, and keeping the old stop would risk $6; the whole position is refused as a trim; an option adds and trims whole contracts at the premium; a short\'s stop stays above; a taken trade he never sized holds what its card showed; and what cannot be done says so in a sentence',
+    add.ok && add.qty === 5 && add.entry === 201.2 && add.stop === 198.8 && add.targets.join() === '203.6,206' && add.riskCents === 1200 && add.keepStop === 197 && add.keepStopRiskCents === 2100 && add.changeQty === 3 && add.costCents === 100600
+    && riskTyped.stop === 197 && riskTyped.riskCents === 2100
+    && trim.ok && trim.qty === 1 && trim.entry === 203 && trim.stop === 191 && trim.riskCents === 1200 && trim.keepStopRiskCents === 600
+    && math.scalePosition({ rec: S, kind: 'trim', amountCents: 50000, price: 210 }).why === 'That is the whole position. Mark it PROFIT or LOSS instead.'
+    && opt.ok && opt.contracts === 5 && opt.entry === 3.08 && opt.stop === 2.36 && opt.targets.join() === '3.8' && opt.riskCents === 36000
+    && optTrim.ok && optTrim.contracts === 2 && optTrim.entry === 3.2 && optTrim.stop === 1.4
+    && short.ok && short.qty === 20 && short.entry === 49.5 && short.stop === 50.5 && short.targets.join() === '47.5'
+    && fromBal.ok && fromBal.heldBefore.qty === 1.2069 && fromBal.heldBefore.entry === 203
+    && math.scalePosition({ rec: { ...S, mine: null }, kind: 'add', amountCents: 60000, price: 200 }).why === 'Set your size first: tap Amount on the card.'
+    && why({ price: null }) === 'The price you traded at, for example 199.50.' && why({ kind: 'sell' }) === 'Add or trim.'
+    && why({ amountCents: 0 }) === 'The amount in dollars, for example 250.'
+    && math.scalePosition({ rec: O, kind: 'add', contracts: 0, price: 2.9 }).why === 'How many contracts, for example 1.'
+    && math.scalePosition({ rec: O, kind: 'add', contracts: 1, price: null }).why === 'The premium per share you traded at, for example 2.10.',
+    JSON.stringify({ add: pick(add), trim: pick(trim), opt: pick(opt), short: pick(short) }));
+}
+{
+  const now = at('2026-09-24T16:00:00Z');
+  const run = async (sub, rec, body, over = {}) => {
+    const { w, api } = world(over);
+    w.docs.set('trade/plays/items/r1', { data: rec, updateTime: 'P1' });
+    let out = null; let err = null;
+    try { out = await api.tradeRoute(env, { sub, method: 'POST', body: { id: 'r1', ...body }, now }); } catch (e) { err = e; }
+    return { w, out, err, patch: w.patches.find((x) => x.path === 'trade/plays/items/r1') };
+  };
+  const add = await run('scale', BA_HELD, { kind: 'add', amountCents: 60000, price: 200 });
+  const scaled = { ...BA_HELD, mine: add.patch?.data.mine };
+  const trim = await run('scale', scaled, { kind: 'trim', amountCents: 20000, price: 205 });
+  const open = await run('scale', { ...BA_HELD, status: 'open' }, { kind: 'add', amountCents: 60000, price: 200 });
+  const whole = await run('scale', BA_HELD, { kind: 'trim', amountCents: 50000, price: 210 });
+  const lost = await run('scale', BA_HELD, { kind: 'add', amountCents: 60000, price: 200 }, { claim: false });
+  const many = await run('scale', { ...BA_HELD, mine: { ...BA_HELD.mine, legs: Array.from({ length: 20 }, (_, i) => ({ kind: 'add', qty: 0.1, price: 200 + i, at: new Date(now - 1e6) })) } }, { kind: 'add', amountCents: 60000, price: 200 });
+  const reset = await run('adjust', scaled, { reset: true });
+  const resize = await run('adjust', scaled, { amountCents: 100600, riskCents: 2100 });
+  const m = add.patch?.data.mine || {};
+  // NEGATIVE CONTROL (run 2026-09-24): tradeScale's status guard (`if (d.status !== 'took')`) removed made this read
+  //   FAIL  T77 the add and trim route RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-24): tradeScale's new leg left off the list (`const legs = [...(...)].slice(-20)` without it) made this read
+  //   FAIL  T77 the add and trim route RUNS ...
+  check('T77 the add and trim route RUNS: on a trade he took it saves what he holds now, his average, the new stop and targets, the risk, and the add itself as a leg, under the trade\'s own time and touching nothing of the desk\'s; a trim after it keeps the average and adds its own leg; an open trade is a 409 that says tap YES first; the whole position is a 400 with the sentence and nothing written; a lost race says tap again; only the last twenty legs are kept, the newest last; once added to, the desk\'s plan is refused and a resize keeps his average and his legs',
+    add.out?.ok && add.patch?.opts.mask.join() === 'mine' && add.patch.opts.ifUpdateTime === 'P1' && Object.keys(add.patch.data).join() === 'mine'
+    && m.qty === 5 && m.entry === 201.2 && m.stop === 198.8 && m.targets.join() === '203.6,206' && m.riskCents === 1200 && m.costCents === 100600 && m.amountCents === 100600
+    && m.legs.length === 1 && m.legs[0].kind === 'add' && m.legs[0].qty === 3 && m.legs[0].price === 200
+    && add.out.rec.mine.entry === 201.2 && add.out.rec.mine.legs[0].kind === 'add' && add.out.rec.stop === 197 && add.out.rec.targets.join() === '209,215'
+    && trim.out?.ok && trim.patch.data.mine.entry === 201.2 && trim.patch.data.mine.legs.map((l) => l.kind).join() === 'add,trim' && trim.patch.data.mine.qty === 4.0244
+    && open.err?.status === 409 && open.err.message === K.SAY.notScalable && !open.patch
+    && whole.err?.status === 400 && whole.err.message === 'That is the whole position. Mark it PROFIT or LOSS instead.' && !whole.patch
+    && lost.err?.status === 409 && lost.err.message === K.SAY.busy
+    && many.patch?.data.mine.legs.length === 20 && many.patch.data.mine.legs[19].price === 200 && many.patch.data.mine.legs[0].price === 201
+    && reset.err?.status === 409 && reset.err.message === K.SAY.scaledNoReset && !reset.patch
+    && resize.out?.ok && resize.patch.data.mine.entry === 201.2 && resize.patch.data.mine.legs.length === 1 && resize.patch.data.mine.stop === 197 && resize.patch.data.mine.qty === 5,
+    JSON.stringify({ add: m, trim: trim.patch?.data.mine?.qty, open: open.err?.message, reset: reset.err?.message, resize: resize.patch?.data.mine?.stop }));
+}
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 } };
+  const txt = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const mine = { qty: 5, entry: 201.2, riskCents: 1200, stop: 198.8, targets: [203.6, 206], amountCents: 100600, costCents: 100600, legs: [{ kind: 'add', qty: 3, price: 200 }] };
+  const REC = { ...BA_HELD, id: 'r1', agreement: 3, mine };
+  const card = mod.recCardHtml(REC, ctx);
+  const both = txt(mod.recCardHtml({ ...REC, mine: { ...mine, legs: [...mine.legs, { kind: 'trim', qty: 1, price: 205 }] } }, ctx));
+  const openCard = mod.recCardHtml({ ...REC, status: 'open', mine: null }, ctx);
+  const hist = txt(mod.historyRowHtml({ ...REC, status: 'closed', result: 'profit', closedAt: '2026-09-24T19:00:00Z' }));
+  const APP = f('public/js/admin-deskapp.js');
+  const CSS = f('public/css/admin.css');
+  const DS = (k) => ((D.match(new RegExp(`${k}: '((?:[^'\\\\]|\\\\.)*)'`)) || [])[1] || '').replace(/\\'/g, '\'');
+  // NEGATIVE CONTROL (run 2026-09-24): the ADD/TRIM button taken out of recCardHtml's taken acts made this read
+  //   FAIL  T78 ADD/TRIM on the card ...
+  // NEGATIVE CONTROL (run 2026-09-24): act()'s `if (kind === 'scale') { openScale(btn); return; }` removed made this read
+  //   FAIL  T78 ADD/TRIM on the card ...
+  // NEGATIVE CONTROL (run 2026-09-24): the taken card's `min-width: 0; padding: 0 10px;` rule dropped (the card grew to 329px on a 320px screen without it) made this read
+  //   FAIL  T78 ADD/TRIM on the card ...
+  check('T78 ADD/TRIM on the card: a taken trade has PROFIT, then ADD/TRIM, then LOSS, and a new suggestion has none of them; after an add the card sizes from what he holds at his average, says so with how many adds and trims, keeps the desk\'s plan beside it, and History says his average; the page opens its own sheet before anything is disabled, previews with the function the Worker saves with, sends the add or trim, sizes at his average and hides the way back to the desk\'s plan once he has added or trimmed; the button is narrower than the other two and the three give up padding to fit a 320px screen; and the demo takes the same route with the same sentences',
+    /data-act="profit">PROFIT<\/button><button type="button" class="btn big quiet scale" data-act="scale" aria-label="Add to or trim this trade">ADD\/TRIM<\/button><button type="button" class="btn big loss" data-act="loss">LOSS<\/button>/.test(card)
+    && !/data-act="scale"/.test(openCard)
+    && /Amount \$1,006 · 5 shares/.test(txt(card)) && /Stop \$198\.80/.test(txt(card)) && /Targets \$203\.60 then \$206\.00/.test(txt(card)) && /Risk \$12\.00/.test(txt(card))
+    && /Your size\. 5 shares at an average of \$201\.20 after 1 add\. The desk had the stop at \$197\.00, targets \$209\.00 then \$215\.00\./.test(txt(card))
+    && /at an average of \$201\.20 after 1 add and 1 trim\./.test(both)
+    && /You put in \$1,006\.00, average \$201\.20, risked \$12\.00, stop \$198\.80/.test(hist)
+    && /const kind = btn\.dataset\.act;\n  if \(kind === 'scale'\) \{ openScale\(btn\); return; \}\n  const saidEl/.test(APP)
+    && /scalePosition\(\{ rec: r, \.\.\.b, accountCents: acct, rules: ctx\.rules \}\)/.test(APP) && /const out = await call\('scale', body\(\)\);/.test(APP)
+    && /\.\.\.\(opt \? \{ contracts: numIn\(nIn\.value\) \} : \{ amountCents: dollarsIn\(nIn\.value\) \}\)/.test(APP)
+    && /const at = scaled \? r\.mine\.entry : null;/.test(APP) && /\$\{r\.mine && !scaled \? '<button type="button" class="btn quiet wide" id="sz-reset"/.test(APP)
+    && /html\[data-desk\]:root \.rec \.acts \.btn\.big\.scale \{ flex: 0 0 auto;/.test(CSS)
+    && /html\[data-desk\]:root \.rec\.active \.acts \.btn\.big \{ min-width: 0; padding: 0 10px; \}/.test(CSS) && /@media \(max-width: 359px\) \{\n  html\[data-desk\]:root \.rec\.active \.acts \.btn\.big \{ padding: 0 6px;/.test(CSS)
+    && /if \(sub === 'scale'\) \{[\s\S]*?if \(d\.status !== 'took'\) return fail\(409, SAY\.notScalable\);[\s\S]*?scalePosition\(\{ rec: d, kind: body\.kind/.test(D)
+    && DS('notScalable') === K.SAY.notScalable && DS('scaledNoReset') === K.SAY.scaledNoReset
+    && /if \(legs\.length && body\.reset === true\) return fail\(409, SAY\.scaledNoReset\);/.test(D)
+    && ![card, both, hist].some((h) => DASH.test(h)),
+    JSON.stringify({ note: (txt(card).match(/Your size\..*?\.\s.*?\./) || [''])[0], hist: (hist.match(/You put in[^.]*\./) || [''])[0] }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

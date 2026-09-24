@@ -11,7 +11,7 @@
 import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
 // PR 420 (2026-09-23) took the positions, the calculator, the stats and the scan off the desk, so two are left.
-import { tradeMetrics, rulesOf, planFor, positionKey, screenTrades } from '../trade-math.js';
+import { tradeMetrics, rulesOf, planFor, positionKey, screenTrades, scalePosition } from '../trade-math.js';
 // The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
 import { textPdf } from '../textpdf.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
@@ -1770,6 +1770,8 @@ export function demoApi(role, store) {
         badResult: 'Mark it PROFIT or LOSS.',
         notAdjustable: 'That trade is closed, so its size can no longer change.',
         notDeclinable: 'Only a new suggestion can be passed on.',
+        notScalable: 'Tap YES on this trade before adding to it or trimming it.',
+        scaledNoReset: 'You have added to or trimmed this trade, so the desk\'s plan no longer fits it. Change its size instead.',
         badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
       };
       const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'];
@@ -1808,6 +1810,8 @@ export function demoApi(role, store) {
         mine: d.mine && Number(d.mine.amountCents) > 0 && Number(d.mine.riskCents) > 0 ? {
           amountCents: Number(d.mine.amountCents), riskCents: Number(d.mine.riskCents), stop: d.mine.stop ?? null,
           targets: Array.isArray(d.mine.targets) ? d.mine.targets : [], qty: d.mine.qty ?? null, costCents: d.mine.costCents ?? null, at: iso(d.mine.at),
+          entry: Number.isFinite(Number(d.mine.entry)) && Number(d.mine.entry) > 0 ? Number(d.mine.entry) : null,
+          legs: Array.isArray(d.mine.legs) ? d.mine.legs.slice(-20).map((l) => ({ kind: l.kind === 'trim' ? 'trim' : 'add', qty: Number(l.qty) || 0, price: Number(l.price) || 0, at: iso(l.at) })) : [],
         } : null,
         adds: d.adds === true,
         reoffered: d.reoffered && Number.isFinite(Number(d.reoffered.was)) ? { was: Number(d.reoffered.was), now: Number(d.reoffered.now) || 0 } : null,
@@ -2032,12 +2036,33 @@ export function demoApi(role, store) {
         const d = readRec(id);
         if (!d) return fail(404, SAY.noRec);
         if (d.status !== 'open' && d.status !== 'took') return fail(409, SAY.notAdjustable);
+        const legs = Array.isArray(d.mine?.legs) ? d.mine.legs : [];
+        if (legs.length && body.reset === true) return fail(409, SAY.scaledNoReset);
         let mine = null;
         if (body.reset !== true) {
-          const p = planFor({ rec: d, amountCents: body.amountCents, riskCents: body.riskCents });
+          const p = planFor({ rec: d, amountCents: body.amountCents, riskCents: body.riskCents, entry: legs.length ? d.mine.entry : null });
           if (!p.ok) return fail(400, p.why);
           mine = { amountCents: p.amountCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, at: new Date() };
+          if (legs.length) Object.assign(mine, { entry: d.mine.entry, legs });
         }
+        const next = { ...d, mine };
+        store.docs.set(`trade/plays/items/${id}`, next);
+        store.persist?.();
+        return ok({ ok: true, rec: recRow(id, next) });
+      }
+      // ADD/TRIM (2026-09-24): the Worker's tradeScale, on the same scalePosition.
+      if (sub === 'scale') {
+        const id = String(body.id || '');
+        const d = readRec(id);
+        if (!d) return fail(404, SAY.noRec);
+        if (d.status !== 'took') return fail(409, SAY.notScalable);
+        const s = settings();
+        const bal = balanceOf(s);
+        const p = scalePosition({ rec: d, kind: body.kind, amountCents: body.amountCents, contracts: body.contracts, price: body.price,
+          riskCents: body.riskCents, accountCents: bal.typed ? bal.cents : 0, rules: { riskPct: riskOf(s) } });
+        if (!p.ok) return fail(400, p.why);
+        const legs = [...(Array.isArray(d.mine?.legs) ? d.mine.legs : []), { kind: p.kind, qty: p.changeQty, price: p.price, at: new Date() }].slice(-20);
+        const mine = { amountCents: p.costCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, entry: p.entry, legs, at: new Date() };
         const next = { ...d, mine };
         store.docs.set(`trade/plays/items/${id}`, next);
         store.persist?.();

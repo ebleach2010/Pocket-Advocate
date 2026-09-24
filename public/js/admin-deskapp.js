@@ -15,6 +15,7 @@
 //   NO                 the card goes, and that position stays off the board
 //                      until more of the desk agrees than when he passed
 //   PROFIT / LOSS      the trade leaves for History with its setup and times
+//   ADD/TRIM           more or less of a taken trade, with a new suggested stop
 //   Amount or Risk     his own size on any card, open or taken; stop and targets follow
 //   Settings           his balance, the risk per trade, and a few switches
 // There is no chat and no question box: the desk never asks him anything.
@@ -32,7 +33,7 @@ import {
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
-import { recSizing, planFor, positionKey } from './trade-math.js';
+import { recSizing, planFor, positionKey, heldOf, scalePosition } from './trade-math.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -228,6 +229,7 @@ async function act(btn) {
   const id = card?.dataset.rec;
   if (!id || btn.disabled) return;
   const kind = btn.dataset.act;
+  if (kind === 'scale') { openScale(btn); return; }
   const saidEl = card.querySelector('[data-rec-said]');
   for (const b of card.querySelectorAll('[data-act]')) b.disabled = true;
   say(saidEl, '');
@@ -297,6 +299,9 @@ function openSize(btn) {
   const amt0 = r.mine ? r.mine.amountCents : (ctx.balanceTyped ? base.costCents : null);
   const risk0 = r.mine ? r.mine.riskCents : (ctx.balanceTyped ? base.riskCents : null);
   const live = Number(S.quotes?.[r.ticker]?.last);
+  // After an add or a trim the size is measured at his average, and the desk's plan no longer fits it.
+  const scaled = Array.isArray(r.mine?.legs) && r.mine.legs.length > 0;
+  const at = scaled ? r.mine.entry : null;
   const { sheet, close } = openSheet(`<h3>${esc(r.ticker)} · your size</h3>
     <div class="sum">What goes in, and what you would lose at the stop. The stop and targets move to match, and the targets keep the desk's reward for the risk.</div>
     <label>Amount in the trade<span class="box"><span style="padding-left:10px">$</span><input class="num" inputmode="decimal" id="sz-amt" value="${esc(plainDollars(amt0))}" placeholder="500"></span></label>
@@ -304,7 +309,7 @@ function openSize(btn) {
     <div class="panel sizeprev" id="sz-prev" aria-live="polite"></div>
     <button type="button" class="btn tall wide primary" id="sz-go">Save my size</button>
     <p class="said" id="sz-said" style="margin:8px 0 0"></p>
-    ${r.mine ? '<button type="button" class="btn quiet wide" id="sz-reset" style="margin-top:8px">Back to the desk\'s plan</button>' : ''}
+    ${r.mine && !scaled ? '<button type="button" class="btn quiet wide" id="sz-reset" style="margin-top:8px">Back to the desk\'s plan</button>' : ''}
     <button type="button" class="btn quiet wide" data-x style="margin-top:8px">Cancel</button>`);
   const amtIn = sheet.querySelector('#sz-amt');
   const riskIn = sheet.querySelector('#sz-risk');
@@ -312,7 +317,7 @@ function openSize(btn) {
   const prev = sheet.querySelector('#sz-prev');
   const preview = () => {
     const a = dollarsIn(amtIn.value); const k = dollarsIn(riskIn.value);
-    const p = a && k ? planFor({ rec: r, amountCents: a, riskCents: k, accountCents: acct, rules: ctx.rules }) : { ok: false, why: 'Type the amount and the risk in dollars.' };
+    const p = a && k ? planFor({ rec: r, amountCents: a, riskCents: k, accountCents: acct, rules: ctx.rules, entry: at }) : { ok: false, why: 'Type the amount and the risk in dollars.' };
     go.disabled = !p.ok;
     if (!p.ok) { prev.innerHTML = `<p class="why">${esc(p.why)}</p>`; return p; }
     const qty = p.contracts != null ? `${p.contracts} contract${p.contracts === 1 ? '' : 's'}` : `${p.shares} share${p.shares === 1 ? '' : 's'}`;
@@ -320,7 +325,7 @@ function openSize(btn) {
     const hit = Number.isFinite(live) && live > 0 && (up ? live <= p.stop : live >= p.stop);
     prev.innerHTML = `<div class="row"><span class="k">Stop</span><span class="v red num">${esc(price(p.stop))}</span></div>
       <div class="row"><span class="k">Targets</span><span class="v green num">${esc(p.targets.map(price).join(' then '))}</span></div>
-      <div class="row"><span class="k">Buys</span><span class="v num">${esc(qty)} at ${esc(price(p.entry))}, ${esc(money(p.costCents))}</span></div>
+      <div class="row"><span class="k">${scaled ? 'Holds' : 'Buys'}</span><span class="v num">${esc(qty)} at ${esc(price(p.entry))}, ${esc(money(p.costCents))}</span></div>
       <div class="row"><span class="k">Risk</span><span class="v num">${esc(money(p.riskCents))}${p.rewardCents != null ? ` for ${esc(money(p.rewardCents))}, 1 : ${esc(p.rr)}` : ''}</span></div>
       ${p.overRule ? `<p class="warn">Over your ${esc(money(p.budgetCents))} rule for one trade.</p>` : ''}
       ${hit ? `<p class="warn">At ${esc(price(live))} now, that stop is already hit.</p>` : ''}`;
@@ -356,6 +361,96 @@ function openSize(btn) {
   });
   sheet.querySelector('#sz-reset')?.addEventListener('click', () => send({ reset: true }, (rec) => `${rec.ticker} is back on the desk's plan.`));
   (btn.dataset.edit === 'risk' ? riskIn : amtIn).focus();
+}
+
+// ---- add or trim ------------------------------------------------------------------------
+// Eric, 2026-09-24: "Button between profit and loss that says add/trim and this opens the card to
+// add/subtract a new contract or stock amount (in dollars) manually. It gives me a new suggested stop
+// loss." Stock in dollars, an option in whole contracts, at a price he can change. The preview is
+// scalePosition, the function the Worker saves with: the new stop keeps his dollars at risk the same
+// unless he types another, and one line says what keeping the old stop would risk instead.
+function openScale(btn) {
+  const card = btn.closest('[data-rec]');
+  const r = recOf(card?.dataset.rec);
+  if (!r) return;
+  const ctx = cardCtx();
+  const acct = ctx.balanceTyped ? ctx.accountCents : 0;
+  const opt = r.instrument !== 'stock';
+  const held = heldOf({ rec: r, accountCents: acct, rules: ctx.rules });
+  const live = Number(S.quotes?.[r.ticker]?.last);
+  const px0 = !opt && Number.isFinite(live) && live > 0 ? live : held.entry;
+  const unit = (q) => (opt ? `${q} contract${q === 1 ? '' : 's'}` : `${Math.round(q * 10000) / 10000} share${q === 1 ? '' : 's'}`);
+  const hold = held.qty > 0 ? `You hold ${unit(held.qty)} at ${price(held.entry)}${held.stop != null ? `, stop ${price(held.stop)}` : ''}.` : '';
+  let mode = 'add';
+  const { sheet, close } = openSheet(`<h3>${esc(r.ticker)} · add or trim</h3>
+    <div class="sum">${esc(hold)} The new stop keeps what you would lose at it the same, unless you change the risk.</div>
+    <div class="seg views" id="sc-seg"><button type="button" data-k="add" class="on" aria-pressed="true">Add</button><button type="button" data-k="trim" aria-pressed="false">Trim</button></div>
+    ${opt
+      ? '<label>Contracts<span class="box"><input class="num" inputmode="numeric" id="sc-n" placeholder="1"></span></label>'
+      : '<label>Amount in dollars<span class="box"><span style="padding-left:10px">$</span><input class="num" inputmode="decimal" id="sc-n" placeholder="250"></span></label>'}
+    <label>${opt ? 'Premium per share' : 'Price per share'}<span class="box"><span style="padding-left:10px">$</span><input class="num" inputmode="decimal" id="sc-px" value="${esc(px0 > 0 ? String(Math.round(px0 * 100) / 100) : '')}"></span></label>
+    <label>Risk, lost at the stop<span class="box"><span style="padding-left:10px">$</span><input class="num" inputmode="decimal" id="sc-risk" value="${esc(plainDollars(held.riskCents))}" placeholder="60"></span></label>
+    <div class="panel sizeprev" id="sc-prev" aria-live="polite"></div>
+    <button type="button" class="btn tall wide primary" id="sc-go">Save</button>
+    <p class="said" id="sc-said" style="margin:8px 0 0"></p>
+    <button type="button" class="btn quiet wide" data-x style="margin-top:8px">Cancel</button>`);
+  const nIn = sheet.querySelector('#sc-n');
+  const pxIn = sheet.querySelector('#sc-px');
+  const riskIn = sheet.querySelector('#sc-risk');
+  const go = sheet.querySelector('#sc-go');
+  const prev = sheet.querySelector('#sc-prev');
+  const numIn = (v) => { const raw = String(v ?? '').replace(/[$,\s]/g, ''); const x = Number(raw); return raw && Number.isFinite(x) && x > 0 ? x : null; };
+  const body = () => ({
+    id: r.id, kind: mode, price: numIn(pxIn.value), riskCents: dollarsIn(riskIn.value),
+    ...(opt ? { contracts: numIn(nIn.value) } : { amountCents: dollarsIn(nIn.value) }),
+  });
+  const preview = () => {
+    const b = body();
+    const p = (opt ? b.contracts : b.amountCents) ? scalePosition({ rec: r, ...b, accountCents: acct, rules: ctx.rules })
+      : { ok: false, why: opt ? 'How many contracts, for example 1.' : 'The amount in dollars, for example 250.' };
+    go.disabled = !p.ok;
+    go.textContent = mode === 'add' ? 'Save the add' : 'Save the trim';
+    if (!p.ok) { prev.innerHTML = `<p class="why">${esc(p.why)}</p>`; return p; }
+    const up = opt || r.side !== 'short';
+    const hit = Number.isFinite(live) && live > 0 && (up ? live <= p.stop : live >= p.stop);
+    const keep = p.keepStopRiskCents != null && p.keepStop != null && Math.abs(p.keepStop - p.stop) > 1e-9;
+    prev.innerHTML = `<div class="row"><span class="k">Holds</span><span class="v num">${esc(unit(p.qty))} at ${esc(price(p.entry))}</span></div>
+      <div class="row"><span class="k">Stop</span><span class="v red num">${esc(price(p.stop))}${p.keepStop != null ? ` <span class="was">was ${esc(price(p.keepStop))}</span>` : ''}</span></div>
+      <div class="row"><span class="k">Targets</span><span class="v green num">${esc(p.targets.map(price).join(' then '))}</span></div>
+      <div class="row"><span class="k">Risk</span><span class="v num">${esc(money(p.riskCents))}${p.rewardCents != null ? ` for ${esc(money(p.rewardCents))}, 1 : ${esc(p.rr)}` : ''}</span></div>
+      ${keep ? `<p class="why">Keeping the stop at ${esc(price(p.keepStop))} would risk ${esc(money(p.keepStopRiskCents))} instead.</p>` : ''}
+      ${p.overRule ? `<p class="warn">Over your ${esc(money(p.budgetCents))} rule for one trade.</p>` : ''}
+      ${hit ? `<p class="warn">At ${esc(price(live))} now, that stop is already hit.</p>` : ''}`;
+    return p;
+  };
+  for (const b of sheet.querySelectorAll('#sc-seg button')) {
+    b.addEventListener('click', () => {
+      mode = b.dataset.k;
+      for (const x of sheet.querySelectorAll('#sc-seg button')) { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', String(x === b)); }
+      preview();
+    });
+  }
+  for (const x of [nIn, pxIn, riskIn]) x.addEventListener('input', preview);
+  preview();
+  go.addEventListener('click', async () => {
+    const p = preview();
+    if (!p.ok) return;
+    go.disabled = true;
+    say(sheet.querySelector('#sc-said'), 'Saving…');
+    S.rev += 1;
+    try {
+      const out = await call('scale', body());
+      const rec = out.rec;
+      S.state = { ...S.state, active: (S.state.active || []).map((x) => (x.id === rec.id ? rec : x)) };
+      paintBoard();
+      close();
+      toast(`${mode === 'add' ? 'Added' : 'Trimmed'}. ${rec.ticker} stop ${price(rec.mine?.stop)}.`);
+    } catch (err) {
+      say(sheet.querySelector('#sc-said'), err.message);
+      go.disabled = false;
+    }
+  });
+  nIn.focus();
 }
 
 // ---- live prices on the cards ---------------------------------------------------------

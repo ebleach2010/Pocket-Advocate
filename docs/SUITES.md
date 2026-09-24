@@ -490,6 +490,17 @@ desk.mjs D28 hold it; drive-trade.mjs N plays NO, a run, YES and the add.
 drawn for every count now, and an Add compares with the agreement on the trade
 he holds, found on the page by `positionKey`. trade.mjs T75.
 
+**Add or trim (2026-09-24, v7.8).** A taken trade has ADD/TRIM between PROFIT
+and LOSS. `scalePosition` in trade-math.js is the one piece of arithmetic the
+sheet previews with and `POST trade/scale` saves with: an add blends his
+average, a trim keeps it, and the new stop keeps his dollars at risk the same
+unless he types another; the sheet also says what keeping the old stop would
+risk. Stock is sized in dollars, an option in whole contracts. Each add and
+trim is kept as a leg (the last twenty), and once there is one the desk's plan
+is refused and a resize keeps his average. trade.mjs T76 to T78 hold it, T53
+now reads every write the page makes, and drive-trade.mjs O adds and trims on
+the demo.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.7';
+export const VERSION = '7.8';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.7';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ADD OR TRIM (Eric, 2026-09-24: "Button between profit and loss that says
+    // add/trim ... It gives me a new suggested stop loss."). Admin only.
+    version: '7.8',
+    quiet: true,
+    client: [],
+    admin: [
+      'A trade you took has ADD/TRIM between PROFIT and LOSS. Type the dollars for stock or the contracts for an option, and the price.',
+      'It shows your new average and a new stop that keeps what you would lose at it the same, and what keeping the old stop would risk instead.',
+    ],
+  },
   {
     // HOW MANY AGREE (Eric, 2026-09-24: "I need to see how many agents agreed
     // to a position if it's a repeat. I'm not seeing it."). Admin only.
