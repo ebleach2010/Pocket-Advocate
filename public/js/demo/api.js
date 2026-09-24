@@ -1818,6 +1818,7 @@ export function demoApi(role, store) {
         tookAgreement: Number.isFinite(Number(d.tookAgreement)) && d.tookAgreement !== null ? Number(d.tookAgreement) : null,
         agreedAt: iso(d.agreedAt),
         dropped: d.dropped ? { at: iso(d.dropped.at), runId: d.dropped.runId || null } : null,
+        verdict: d.verdict && (d.verdict.call === 'hold' || d.verdict.call === 'sell') ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null } : null,
       });
       const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
       const runBlock = (run) => (run ? {
@@ -1856,7 +1857,7 @@ export function demoApi(role, store) {
           desk: st.desk ? {
             at: iso(st.desk.at), trigger: st.desk.trigger || 'manual', read: st.desk.read || '', none: st.desk.none || '',
             count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
-            dropped: Array.isArray(st.desk.dropped) ? st.desk.dropped.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday' })) : [],
+            verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: x?.call === 'sell' ? 'sell' : 'hold', why: String(x?.why || '') })) : [],
           } : null,
           recs: rows.filter((r) => deskIds.includes(r.id) && live(r)),
           active: rows.filter((r) => r.status === 'took').sort((a, b) => String(b.tookAt).localeCompare(String(a.tookAt))),
@@ -2114,24 +2115,22 @@ export function demoApi(role, store) {
           ];
           // THE RE-CHECK, as the Worker's run does it (2026-09-24). The demo has no researchers, so their
           // count is stood in for: a held position the run brings again takes that trade's count, and the
-          // demo's own table does the rest, SOFI at none of the five so a drop can be seen.
+          // demo's own table does the rest. HOLD or SELL (v7.12) follows the count, SOFI at none of the five
+          // so a SELL can be seen; nothing leaves his list until he marks it.
           const DEMO_BACKING = { PLTR: 3, SOFI: 0 };
-          const dropped = [];
+          const verdicts = [];
           for (const hid of tstate().activeIds || []) {
             const d = readRec(hid);
             if (!d || d.status !== 'took') continue;
             const again = FRESH.find((t) => positionKey(t) === positionKey(d));
             const backs = again ? again.agreement : DEMO_BACKING[d.ticker];
             if (backs == null) continue;
-            const tookAgreement = d.tookAgreement ?? d.agreement ?? null;
-            if (backs === 0) {
-              store.docs.set(`trade/plays/items/${hid}`, { ...d, status: 'closed', closedAt: new Date(now), result: null, agreement: 0, tookAgreement, dropped: { at: new Date(now), runId } });
-              dropped.push({ id: hid, ticker: d.ticker, horizon: d.horizon });
-            } else if (Number(d.agreement) !== backs) {
-              store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: backs, agreedAt: new Date(now), agreedRunId: runId, tookAgreement });
-            }
+            const call = backs >= 3 ? 'hold' : 'sell';
+            const why = backs === 0 ? 'None of the five back it any more.' : call === 'hold' ? 'Still holding its level with volume behind it.' : 'Lost the level it was built on.';
+            store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: backs, agreedAt: new Date(now), agreedRunId: runId, tookAgreement: d.tookAgreement ?? d.agreement ?? null, verdict: { call, why, at: new Date(now), runId } });
+            verdicts.push({ ticker: d.ticker, horizon: d.horizon, side: d.side, instrument: d.instrument, call, why });
           }
-          if (dropped.length) store.docs.set('trade/state', { ...tstate(), activeIds: (tstate().activeIds || []).filter((x) => !dropped.some((g) => g.id === x)) });
+          verdicts.sort((a, b) => (b.call === 'sell') - (a.call === 'sell'));
           // Screened as the Worker's desk firing screens them: against what he holds and what he passed on.
           const held = (tstate().activeIds || []).map((x) => readRec(x)).filter((d) => d && d.status === 'took').map(positionKey);
           const { keep } = screenTrades(FRESH, { held, declined: tstate().declined || {} });
@@ -2153,7 +2152,7 @@ export function demoApi(role, store) {
             ...tstate(),
             run: { ...st.run, status: 'idle', finishedAt: new Date(now), count: ids.length, error: null, done: 5 },
             desk: {
-              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', dropped: dropped.map(({ ticker, horizon }) => ({ ticker, horizon })),
+              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', verdicts,
               read: 'Semis are leading and the index is holding its opening range on better volume than yesterday. Buy strength that holds a retest; skip anything extended.',
               news: [
                 { headline: 'Micron beats on memory pricing and raises its outlook', why: 'Fuel for the whole chip group today, and the reason MU is on the board.', tickers: ['MU', 'NVDA'] },

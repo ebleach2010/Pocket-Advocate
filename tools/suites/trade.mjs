@@ -1288,8 +1288,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
     // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
-    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat121/.test(f(`public/${p}.html`)))
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat122/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1395,6 +1395,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry710 = (CL.match(/\{\n\s+\/\/ THE RE-CHECK \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.11): the Clients page's safety net, its own quiet entry.
   const entry711 = (CL.match(/\{\n\s+\/\/ NEVER STUCK ON LOADING \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.12): HOLD or SELL, its own quiet entry.
+  const entry712 = (CL.match(/\{\n\s+\/\/ HOLD OR SELL \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1460,8 +1462,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.11): both versions read 7.11 with the no-hang tag; the 7.10 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.11): 'it reloads itself once' reworded to 'it reloads once' in the 7.11 entry made this read
   //   FAIL  T36 both versions read 7.11 ...
-  check('T36 both versions read 7.11 with the new tag, the 4.7 through 7.11 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.11';/.test(CL) && /const VERSION = '7\.11';/.test(W) && /const BUILD_TAG = 'v2026-09-24-no-hang';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.12): both versions read 7.12 with the hold-sell tag; the 7.11 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.12): 'nothing disappears on its own any more' reworded to 'nothing goes away by itself now' in the 7.12 entry made this read
+  //   FAIL  T36 both versions read 7.12 ...
+  check('T36 both versions read 7.12 with the new tag, the 4.7 through 7.12 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.12';/.test(CL) && /const VERSION = '7\.12';/.test(W) && /const BUILD_TAG = 'v2026-09-24-hold-sell';/.test(W)
+    && /version: '7\.12',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry712)
+    && /nothing disappears on its own any more/.test(entry712) && /HOLD or SELL/.test(entry712) && !DASH.test(entry712) && !HARD.some((re) => re.test(entry712))
     && /version: '7\.11',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry711)
     && /it reloads itself once/.test(entry711) && !DASH.test(entry711) && !HARD.some((re) => re.test(entry711))
     && /version: '7\.10',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry710)
@@ -1533,7 +1540,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat121/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat122/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2566,7 +2573,8 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
   const now = at('2026-09-24T16:05:00Z');
   const { w, api } = world();
   w.docs.set('trade/settings', { data: { caseId: 'c1' }, updateTime: 'S1' });
-  w.docs.set('trade/state', { data: { desk: { at: new Date(now - 60_000), ids: [], count: 0, dropped: [{ ticker: 'F', horizon: 'intraday' }, { ticker: 'XOM', horizon: 'weekly' }] }, activeIds: [] }, updateTime: 'T1' });
+  // RE-PINNED 2026-09-24 (v7.12): a run no longer drops a trade he took; the board carries its HOLD or SELL calls (T81).
+  w.docs.set('trade/state', { data: { desk: { at: new Date(now - 60_000), ids: [], count: 0, verdicts: [{ ticker: 'F', horizon: 'intraday', side: 'long', instrument: 'stock', call: 'sell', why: 'Lost 11.' }, { ticker: 'XOM', horizon: 'weekly', call: 'maybe', why: 'x' }] }, activeIds: [] }, updateTime: 'T1' });
   const board = await api.tradeState(env, { now });
   const APP = f('public/js/admin-deskapp.js');
   const CSS = f('public/css/admin.css');
@@ -2574,20 +2582,55 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
   //   FAIL  T80 the re-check on the card ...
   // NEGATIVE CONTROL (run 2026-09-24): History's Dropped tag put back to Closed made this read
   //   FAIL  T80 the re-check on the card ...
-  check('T80 the re-check on the card, the board and History: the count sits just under the chance in the chance\'s own type and the Desk row is gone; a taken trade shows the count the last run gave it; an add still says how many agreed when he took the one he holds, not the re-checked count; History marks a dropped trade Dropped and says which run and why, and a plain closed one stays Closed; the row carries the count at the take and the drop; the board carries what the run dropped; and the page says so when the run lands and refreshes History',
+  check('T80 the re-check on the card, the board and History: the count sits just under the chance in the chance\'s own type and the Desk row is gone; a taken trade shows the count the last run gave it; an add still says how many agreed when he took the one he holds, not the re-checked count; History still marks a trade dropped before v7.12 Dropped and says which run and why, and a plain closed one stays Closed; the row carries the count at the take and the drop; the board carries the run\'s calls, each read back as hold or sell; and the demo stands in for the count and the call without dropping anything',
     /<span class="odds"><span class="k">Chance<\/span><span class="v">51 to 56%<\/span><span class="v agree">2 of 5 agree<\/span><\/span>/.test(took)
     && !/<dt>Desk<\/dt>/.test(took + add) && !/\.agree\b/.test(CSS) && /html\[data-desk\]:root \.rec \.odds \.v \{ font-family: var\(--mono\); font-size: 14px;/.test(CSS)
     && /You already hold BA\. 3 of 5 agreed when you took it; 2 of 5 agree now\./.test(txt(add))
     && / Swing Dropped Entry /.test(hist) && /Dropped by the 10:02 AM run: none of the five backed it any more\./.test(hist) && /\bClosed\b/.test(histPlain) && !/Dropped/.test(histPlain)
     && row.tookAgreement === 3 && row.agreement === 0 && row.dropped?.runId === 'run9' && row.agreedAt === '2026-09-24T16:02:00.000Z'
     && K.recRow('x', { ...REC }).tookAgreement === null && K.recRow('x', { ...REC }).dropped === null
-    && board.desk.dropped.map((x) => `${x.ticker}/${x.horizon}`).join() === 'F/intraday,XOM/intraday'
-    && /const gone = S\.state\.desk\?\.dropped \|\| \[\];\n\s+if \(gone\.length\) \{ S\.history = null; S\.histAt = 0; \}/.test(APP)
-    && /Dropped \$\{gone\.map\(\(x\) => x\.ticker\)\.join\(', '\)\}: none of the five back \$\{gone\.length === 1 \? 'it' : 'them'\} now\./.test(APP)
-    && /const DEMO_BACKING = \{ PLTR: 3, SOFI: 0 \};/.test(D) && /status: 'closed', closedAt: new Date\(now\), result: null, agreement: 0, tookAgreement, dropped: \{ at: new Date\(now\), runId \}/.test(D)
-    && /tookAgreement: Number\.isFinite\(Number\(d\.tookAgreement\)\)/.test(D) && /dropped: Array\.isArray\(st\.desk\.dropped\)/.test(D)
+    && board.desk.verdicts.map((x) => `${x.ticker}/${x.horizon}/${x.call}`).join() === 'F/intraday/sell,XOM/intraday/hold'
+    && /const DEMO_BACKING = \{ PLTR: 3, SOFI: 0 \};/.test(D) && !/status: 'closed', closedAt: new Date\(now\), result: null, agreement: 0/.test(D)
+    && /const call = backs >= 3 \? 'hold' : 'sell';/.test(D)
+    && /tookAgreement: Number\.isFinite\(Number\(d\.tookAgreement\)\)/.test(D) && /verdicts: Array\.isArray\(st\.desk\.verdicts\)/.test(D)
     && ![took, add, hist].some((h) => DASH.test(h)),
-    JSON.stringify({ odds: (took.match(/<span class="odds">.*?<\/span><\/span>/) || [''])[0], hist: hist.slice(0, 200), dropped: board.desk?.dropped }));
+    JSON.stringify({ odds: (took.match(/<span class="odds">.*?<\/span><\/span>/) || [''])[0], hist: hist.slice(0, 200), verdicts: board.desk?.verdicts }));
+}
+
+// ---- T81: HOLD or SELL, front and center (2026-09-24, v7.12) -----------------------------------------
+// Eric: "If I took a trade and scan, it should scan that same trade and tell me if I should hold or if
+// things have changed and I need to sell, front and center." Asked what a SELL card does, he chose: it
+// stays up in red until he marks PROFIT or LOSS.
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 }, now: at('2026-09-24T18:00:00Z') };
+  const REC = { id: 'h1', ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'stock', entryLow: 200.5, entryHigh: 203, stop: 197.4, targets: [206, 209], allocPct: 10, profitLow: 51, profitHigh: 56, agreement: 2, status: 'took' };
+  const sell = mod.recCardHtml({ ...REC, verdict: { call: 'sell', why: 'Lost 200 on volume.', at: '2026-09-24T16:02:00Z' } }, ctx);
+  const hold = mod.recCardHtml({ ...REC, verdict: { call: 'hold', why: 'Still basing above 200.', at: '2026-09-23T16:02:00Z' } }, ctx);
+  const cover = mod.recCardHtml({ ...REC, side: 'short', verdict: { call: 'sell', why: 'Squeezing.', at: '2026-09-24T16:02:00Z' } }, ctx);
+  const fresh = mod.recCardHtml({ ...REC }, ctx);
+  const open = mod.recCardHtml({ ...REC, status: 'open', verdict: { call: 'sell', why: 'x', at: '2026-09-24T16:02:00Z' } }, ctx);
+  const row = K.recRow('h1', { ...REC, verdict: { call: 'sell', why: 'Lost 200.', at: new Date('2026-09-24T16:02:00Z'), runId: 'run9' } });
+  const APP = f('public/js/admin-deskapp.js');
+  const CSS = f('public/css/admin.css');
+  // NEGATIVE CONTROL (run 2026-09-24): the verdict block taken out of the card (`${verdictHtml}` removed) made this read
+  //   FAIL  T81 HOLD or SELL, front and center ...
+  // NEGATIVE CONTROL (run 2026-09-24): the Active list's sell-first sort removed (`const active = st.active || [];`) made this read
+  //   FAIL  T81 HOLD or SELL, front and center ...
+  check('T81 HOLD or SELL, front and center: a taken trade opens with the last run\'s call, SELL NOW in red with its reason and the run\'s time, or HOLD in green, dated when it is not today\'s; a short stock says COVER NOW; a taken trade not yet re-checked says so and how to check it; a new suggestion carries no call; a SELL card is red all over; the row carries the call; the Active list puts sells first; and the landing says sell or cover and hold, and brings the list into view when there is a sell',
+    /^<article class="outlined rec active sell"[^>]*>\s*<div class="verdict sell" role="status"><span class="call">SELL NOW<\/span><span class="why">Lost 200 on volume\.<\/span><span class="when">From the 10:02 AM run<\/span><\/div>\s*<div class="head">/.test(sell)
+    && /<div class="verdict hold" role="status"><span class="call">HOLD<\/span><span class="why">Still basing above 200\.<\/span><span class="when">From the Sep 23 10:02 AM run<\/span><\/div>/.test(hold) && !/rec active sell/.test(hold)
+    && /<span class="call">COVER NOW<\/span>/.test(cover)
+    && /<div class="verdict none"><span class="why">Not re-checked yet\. RUN TRADING DESK checks it\.<\/span><\/div>/.test(fresh)
+    && !/class="verdict/.test(open)
+    && row.verdict?.call === 'sell' && row.verdict.why === 'Lost 200.' && row.verdict.at === '2026-09-24T16:02:00.000Z' && K.recRow('x', { ...REC }).verdict === null
+    && /const active = \[\.\.\.\(st\.active \|\| \[\]\)\]\.sort\(\(a, b\) => \(b\.verdict\?\.call === 'sell'\) - \(a\.verdict\?\.call === 'sell'\)\);/.test(APP)
+    && /`\$\{x\.instrument === 'stock' && x\.side === 'short' \? 'Cover' : 'Sell'\} \$\{x\.ticker\} now\.`/.test(APP) && /Hold \$\{holds\.join\(', '\)\}\./.test(APP)
+    && /if \(sells\.length\) \$\('#active-wrap'\)\?\.scrollIntoView/.test(APP) && /html\[data-desk\]:root #active-wrap, html\[data-desk\]:root \.rec \{ scroll-margin-top: calc\(var\(--demo-bar-h, 0px\) \+ var\(--top-h\)/.test(CSS)
+    && /html\[data-desk\]:root \.rec \.verdict\.sell \{ border-color: var\(--red\);/.test(CSS) && /html\[data-desk\]:root \.rec\.active\.sell \{ border-color: var\(--red\);/.test(CSS)
+    && /html\[data-desk\]:root \.rec \.verdict \.call \{ font-family: var\(--display\); font-weight: 800; font-size: 26px;/.test(CSS)
+    && ![sell, hold, cover, fresh].some((h) => DASH.test(h)),
+    sell.slice(0, 400));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

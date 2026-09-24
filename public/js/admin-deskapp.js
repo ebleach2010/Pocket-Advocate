@@ -177,7 +177,8 @@ function paintRun() {
 function paintBoard() {
   const st = S.state || {};
   const ctx = cardCtx();
-  const active = st.active || [];
+  // A trade the last run says to sell leads the list (v7.12), in the order he took them otherwise.
+  const active = [...(st.active || [])].sort((a, b) => (b.verdict?.call === 'sell') - (a.verdict?.call === 'sell'));
   const recs = st.recs || [];
   $('#active-wrap').hidden = !active.length;
   $('#active-n').textContent = active.length > 1 ? String(active.length) : '';
@@ -718,11 +719,13 @@ async function pollOnce() {
       const fresh = (S.state.recs || []).filter((r) => !before.has(r.id)).length;
       if (S.state.run?.status === 'error') toast('The run did not finish. The line under the button says why.');
       else {
-        // A trade he held that none of the five back any more has left for History (2026-09-24).
-        const gone = S.state.desk?.dropped || [];
-        if (gone.length) { S.history = null; S.histAt = 0; }
-        const dropLine = gone.length ? ` Dropped ${gone.map((x) => x.ticker).join(', ')}: none of the five back ${gone.length === 1 ? 'it' : 'them'} now.` : '';
-        toast(`${fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.'}${dropLine}`);
+        // What the run says about the trades he took, sells first (v7.12).
+        const vs = S.state.desk?.verdicts || [];
+        const sells = vs.filter((x) => x.call === 'sell').map((x) => `${x.instrument === 'stock' && x.side === 'short' ? 'Cover' : 'Sell'} ${x.ticker} now.`);
+        const holds = vs.filter((x) => x.call === 'hold').map((x) => x.ticker);
+        const yours = `${sells.length ? ` ${sells.join(' ')}` : ''}${holds.length ? ` Hold ${holds.join(', ')}.` : ''}`;
+        toast(`${fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.'}${yours}`);
+        if (sells.length) $('#active-wrap')?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       }
       S.news = null;
       quotesAt = 0;

@@ -154,7 +154,7 @@ const qtyText = (sz) => {
  * electric yellow, with PROFIT and LOSS in place of the one button, and ADD/TRIM
  * between them (2026-09-24).
  */
-export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quotes = null, holding = null } = {}) {
+export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quotes = null, holding = null, now: ctxNow = Date.now() } = {}) {
   // HIS SIZE (2026-09-23): when he set the amount and the risk himself, the card is sized from his
   // numbers, and the stop and targets are the ones they give; the desk's own are named under the grid.
   // Once he has added or trimmed (2026-09-24), the size is what he holds at his average, not a fresh amount.
@@ -169,6 +169,16 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const targetsNow = mine ? mine.targets : (r.targets || []);
   const active = r.status === 'took';
   const kind = HORIZON_WORDS[r.horizon] || 'Intraday';
+  // HOLD OR SELL, front and center (Eric, 2026-09-24: "it should scan that same trade and tell me if I
+  // should hold or if things have changed and I need to sell"): the last run's call on a trade he took,
+  // first thing on the card. A SELL stays until he marks PROFIT or LOSS.
+  const v = active && r.verdict && (r.verdict.call === 'hold' || r.verdict.call === 'sell') ? r.verdict : null;
+  const exit = r.instrument === 'stock' && r.side === 'short' ? 'COVER' : 'SELL';
+  const today = (x) => dayShort(x) === dayShort(new Date(ctxNow).toISOString());
+  const vWhen = v?.at ? `From the ${today(v.at) ? '' : `${dayShort(v.at)} `}${clock(v.at)} run` : '';
+  const verdictHtml = !active ? ''
+    : v ? `<div class="verdict ${v.call}" role="status"><span class="call">${v.call === 'sell' ? `${exit} NOW` : 'HOLD'}</span>${v.why ? `<span class="why">${esc(v.why)}</span>` : ''}${vWhen ? `<span class="when">${esc(vWhen)}</span>` : ''}</div>`
+      : '<div class="verdict none"><span class="why">Not re-checked yet. RUN TRADING DESK checks it.</span></div>';
   const entry = r.entryLow != null && r.entryHigh != null && Number(r.entryLow) !== Number(r.entryHigh)
     ? `${price(r.entryLow)} to ${price(r.entryHigh)}` : price(r.entryLow ?? r.entry ?? r.entryHigh);
   const targets = targetsNow.map(price).filter(Boolean).join(' then ');
@@ -203,7 +213,8 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const scaled = mine && legs.length
     ? `${qtyText(mine)} at an average of ${price(mine.entry)} after ${[adds && `${adds} add${adds === 1 ? '' : 's'}`, trims && `${trims} trim${trims === 1 ? '' : 's'}`].filter(Boolean).join(' and ')}. `
     : '';
-  return `<article class="outlined rec${active ? ' active' : ''}" data-kind="${esc(r.horizon || 'intraday')}" data-rec="${esc(r.id)}">
+  return `<article class="outlined rec${active ? ' active' : ''}${v?.call === 'sell' ? ' sell' : ''}" data-kind="${esc(r.horizon || 'intraday')}" data-rec="${esc(r.id)}">
+    ${verdictHtml}
     <div class="head">
       <span class="tk">${esc(r.ticker)}</span>
       <span class="side ${r.side === 'short' ? 'short' : 'long'}">${r.side === 'short' ? 'Short' : 'Long'}</span>

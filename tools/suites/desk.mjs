@@ -737,7 +737,8 @@ const SPARE = 6;
     && xOut.ok === false && X.w.pushes.length === 1 && X.w.calls <= room
     && dOut.ok === true && recs.length === 6 && D.w.calls <= room
     && D.w.batches.filter((b) => b.write).length === 3 && D.w.batches.filter((b) => b.get).length === 2
-    && heldIds.every((id, i) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === (i % 2 ? 'closed' : 'took'))
+    // RE-PINNED 2026-09-24 (v7.12): nothing leaves his list; the ones all five are against are SELL.
+    && heldIds.every((id, i) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'took' && D.docs.get(`${TD.PLAYS}/${id}`).data.verdict?.call === (i % 2 ? 'sell' : 'hold'))
     && prevIds.every((id) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'expired'),
     JSON.stringify({ room, research: R.w.calls, failed: X.w.calls, desk: D.w.calls, recs: recs.length, d: dOut }));
 }
@@ -913,9 +914,15 @@ const SPARE = 6;
   };
   // Researchers 1 and 2 back BA; all five plainly do not back F; four do not back XOM and one is silent on it.
   const verdict = (n) => `\n## Earlier calls\nE1: ${n <= 2 ? 'backs, still basing above 200' : 'does not back, momentum faded'}\nE2: does not back, lost the level\n${n === 5 ? '' : 'E3: does not back, the premium bled\n'}`;
-  const r = await oneRun({ state, plays, turns: { research: (n) => ({ text: REPORT(n) + verdict(n) }) } });
+  // RE-PINNED 2026-09-24 (v7.12, Eric: "it should scan that same trade and tell me if I should hold or if things
+  // have changed and I need to sell", and a SELL stays up in red until he marks it): nothing leaves his list;
+  // the desk calls BA a sell though two back it, calls F a hold though all five are against it (overruled:
+  // all five against is a sell), and says nothing on XOM, where four of the five against decide it.
+  const holdings = [{ ref: 'E1', call: 'sell', why: 'Momentum faded and it lost 200 on volume.' }, { ref: 'E2', call: 'hold', why: 'Fine.' }];
+  const deskSays = () => ({ text: JSON.stringify(DESK_OUT({ holdings })) });
+  const r = await oneRun({ state, plays, turns: { research: (n) => ({ text: REPORT(n) + verdict(n) }), desk: deskSays } });
   // A thin run: researcher 5 does not report, so four plain noes on F are not five.
-  const thin = await oneRun({ state, plays, turns: { research: (n) => (n === 5 ? Object.assign(new Error('Overloaded'), { status: 529 }) : { text: REPORT(n) + verdict(n) }) } });
+  const thin = await oneRun({ state, plays, turns: { research: (n) => (n === 5 ? Object.assign(new Error('Overloaded'), { status: 529 }) : { text: REPORT(n) + verdict(n) }), desk: () => ({ text: JSON.stringify(DESK_OUT({ holdings: [] })) }) } });
   const research = r.w.bodies.filter((b) => b.tools).map((b) => b.messages[0].content[0].text);
   const asked = JSON.stringify(r.w.bodies);
   const doc = (W, id) => W.docs.get(`${TD.PLAYS}/${id}`).data;
@@ -924,26 +931,32 @@ const SPARE = 6;
   const writes = r.w.patches.filter((p) => /\/h[123]$/.test(p.path));
   // NEGATIVE CONTROL (run 2026-09-24): tallyEarlier's drop rule loosened to `against >= 1` made this read
   //   FAIL  D30 every run re-checks the trades he took ...
+  // NEGATIVE CONTROL (run 2026-09-24, v7.12): holdOrSell's all-five-against rule removed (the desk's hold on F standing) made this read
+  //   FAIL  D30 every run re-checks the trades he took ...
   // NEGATIVE CONTROL (run 2026-09-24): the re-check's writes left unsent (`const recheckOk = [];`) made this read
   //   FAIL  D30 every run re-checks the trades he took ...
   // NEGATIVE CONTROL (run 2026-09-24): the research firing's `market += ... liveNote(liveRows)` line removed made this read
   //   FAIL  D30 every run re-checks the trades he took ...
-  check('D30 every run re-checks the trades he took: the five researchers are shown each one as the desk filed it and nothing of his size, and asked for a verdict under their own heading; BA, backed by two, reads 2 of 5 and keeps the 3 it was taken at; F, which all five plainly do not back, leaves his list for History marked dropped by this run, and the push says so; XOM, with one researcher silent, is left as it was; each write goes under the trade\'s own time; and a run with a researcher missing drops nothing',
+  check('D30 every run re-checks the trades he took: the five researchers are shown each one as the desk filed it and nothing of his size, and asked for a verdict under their own heading; BA, backed by two, reads 2 of 5, keeps the 3 it was taken at and takes the desk\'s SELL with its reason; F, which all five plainly do not back, reads 0 of 5 and is a SELL whatever the desk said, and stays on his list; XOM, with one silent and four against, keeps its count and is a SELL on the verdicts; each write goes under the trade\'s own time; the board and the push lead with the sells; and a thin run with no call from the desk calls what the verdicts decide, and a tie calls nothing',
     r.out.ok === true && research.length === 5
     && research.every((t) => /E1: BA long swing, the stock\. Entry 200\.5 to 203, stop 197\.4, targets 206 then 209\. Filed 2026-09-2\d\. Setup: Base above 200\. Out if: Close under 197\./.test(t)
       && /E2: F long intraday, the stock\./.test(t) && /E3: XOM long swing, the 120 call expiring 2026-10-16, prices are the premium\./.test(t) && !/OLDX|E4:/.test(t))
     && !/4321|142100|"qty"/.test(asked) && /## Earlier calls\nOne line for each earlier call/.test(r.w.bodies[0].system[0].text)
     && r.docs.get(DR.RESEARCH_PATH).data.live.map((x) => `${x.ref}=${x.id}`).join() === 'E1=h1,E2=h2,E3=h3'
     && doc(r, 'h1').status === 'took' && doc(r, 'h1').agreement === 2 && doc(r, 'h1').tookAgreement === 3 && doc(r, 'h1').agreedRunId === 'run_x'
-    && doc(r, 'h2').status === 'closed' && doc(r, 'h2').result === null && doc(r, 'h2').dropped?.runId === 'run_x' && doc(r, 'h2').agreement === 0 && doc(r, 'h2').tookAgreement === 2
-    && doc(r, 'h3').status === 'took' && doc(r, 'h3').agreement === 4 && doc(r, 'h3').tookAgreement === undefined
-    && writes.length === 2 && writes.every((p) => p.opts.batch && /^U\d+$/.test(p.opts.ifUpdateTime))
-    && st.activeIds.join() === 'h1,h3,h4' && st.desk.dropped.map((x) => `${x.ticker}/${x.horizon}`).join() === 'F/intraday'
-    && /Dropped, none of the five back it now: F intraday\./.test(r.w.pushes[0]?.body || '')
-    && end?.recheck?.live === 3 && end.recheck.updated === 1 && end.recheck.dropped === 1 && end.recheck.keep === 1
-    && thin.out.ok === true && doc(thin, 'h2').status === 'took' && doc(thin, 'h2').agreement === 2 && doc(thin, 'h1').agreement === 2
+    && doc(r, 'h1').verdict?.call === 'sell' && doc(r, 'h1').verdict.why === 'Momentum faded and it lost 200 on volume.' && doc(r, 'h1').verdict.runId === 'run_x'
+    && doc(r, 'h2').status === 'took' && !doc(r, 'h2').dropped && doc(r, 'h2').agreement === 0 && doc(r, 'h2').tookAgreement === 2
+    && doc(r, 'h2').verdict?.call === 'sell' && doc(r, 'h2').verdict.why === 'None of the five back it any more.'
+    && doc(r, 'h3').status === 'took' && doc(r, 'h3').agreement === 4 && doc(r, 'h3').tookAgreement === 4 && doc(r, 'h3').verdict?.call === 'sell' && doc(r, 'h3').verdict.why === '4 of 5 no longer back it.'
+    && writes.length === 3 && writes.every((p) => p.opts.batch && /^U\d+$/.test(p.opts.ifUpdateTime))
+    && st.activeIds.join() === 'h1,h2,h3,h4' && st.desk.verdicts.map((x) => `${x.ticker}:${x.call}`).join() === 'BA:sell,F:sell,XOM:sell'
+    && /^Sell BA now: Momentum faded and it lost 200 on volume\. Sell F now: None of the five back it any more\. Sell XOM now: 4 of 5 no longer back it\./.test(r.w.pushes[0]?.body || '')
+    && end?.recheck?.live === 3 && end.recheck.updated === 2 && end.recheck.sells === 3 && end.recheck.holds === 0 && end.recheck.keep === 1
+    && thin.out.ok === true && doc(thin, 'h2').status === 'took' && doc(thin, 'h2').agreement === 2 && doc(thin, 'h2').verdict?.call === 'sell' && doc(thin, 'h2').verdict.why === '4 of 5 no longer back it.'
+    // BA in the thin run is two for and two against: a tie gives no call, and there is no earlier one to stand.
+    && doc(thin, 'h1').agreement === 2 && doc(thin, 'h1').verdict === undefined
     && thin.docs.get(TD.STATE_PATH).data.activeIds.join() === 'h1,h2,h3,h4',
-    JSON.stringify({ h1: doc(r, 'h1'), h2: doc(r, 'h2')?.status, h3: doc(r, 'h3')?.agreement, ids: st.activeIds, push: r.w.pushes[0]?.body, recheck: end?.recheck, thin: doc(thin, 'h2')?.status }));
+    JSON.stringify({ h1: doc(r, 'h1')?.verdict, h2: doc(r, 'h2')?.verdict, h3: doc(r, 'h3')?.verdict, ids: st.activeIds, push: r.w.pushes[0]?.body, recheck: end?.recheck, thin: [doc(thin, 'h1')?.verdict, doc(thin, 'h2')?.verdict] }));
 }
 {
   // The verdicts are read from the researcher's own words under its heading, however it writes the line.
@@ -953,6 +966,31 @@ const SPARE = 6;
   check('D31 a verdict is read only under the Earlier calls heading, however the line is written: backs, a bold does not back, a hyphen, and no longer are read; unsure is no verdict; a line under another heading does not count',
     JSON.stringify(v) === JSON.stringify({ E1: true, E2: false, E3: true, E5: false }),
     JSON.stringify(v));
+}
+
+// ---- D32: HOLD or SELL (2026-09-24, v7.12) -------------------------------------------------------
+// Eric: "If I took a trade and scan, it should scan that same trade and tell me if I should hold or if
+// things have changed and I need to sell, front and center." The desk makes the call, in its schema.
+{
+  const sys = DR.deskSystem('cash');
+  const H = DR.DESK_SCHEMA.properties.holdings;
+  const c = DR.checkDesk({ trades: [], holdings: [
+    { ref: 'e1', call: 'hold', why: 'Still basing above 200 with volume.' }, { ref: 'E1', call: 'sell', why: 'second answer for E1' },
+    { ref: 'E2', call: 'sell', why: 'Lost the level \u2014 on volume.' }, { ref: 'X9', call: 'hold', why: 'not a ref' }, { ref: 'E3', call: 'trim', why: 'not a call' },
+  ] });
+  const t = (backs, against) => ({ backs, against });
+  // NEGATIVE CONTROL (run 2026-09-24): checkDesk's `ref in holdings` guard dropped (a second answer for E1 overwriting the first) made this read
+  //   FAIL  D32 the desk calls HOLD or SELL ...
+  check('D32 the desk calls HOLD or SELL on every earlier call: its schema requires holdings, each a ref, hold or sell, and a reason; its brief says when to sell; the answer keeps the first call per real ref, drops anything but hold or sell, and strips a dash from the reason; all five against is a sell whatever the desk said; the desk\'s call stands over the count otherwise; with no call the verdicts decide when they lean, and a tie calls nothing; and closing a short stock is a cover',
+    DR.DESK_SCHEMA.required.includes('holdings') && H.items.required.join() === 'ref,call,why' && H.items.properties.call.enum.join() === 'hold,sell'
+    && /holdings: the market data may list earlier calls from this desk that are still live, as E1, E2/.test(sys) && /Sell when what the trade was built on has broken/.test(sys)
+    && JSON.stringify(Object.keys(c.holdings)) === '["E1","E2"]' && c.holdings.E1.call === 'hold' && c.holdings.E2.call === 'sell' && !/[\u2013\u2014]/.test(c.holdings.E2.why)
+    && DR.holdOrSell(t(0, 5), { call: 'hold', why: 'Fine.' }).call === 'sell' && DR.holdOrSell(t(0, 5), { call: 'sell', why: 'Broke 11.' }).why === 'Broke 11.'
+    && DR.holdOrSell(t(3, 2), { call: 'sell', why: 'Offering after hours.' }).call === 'sell' && DR.holdOrSell(t(1, 4), { call: 'hold', why: 'Holding 200.' }).call === 'hold'
+    && DR.holdOrSell(t(3, 1)).call === 'hold' && DR.holdOrSell(t(3, 1)).why === '3 of 5 still back it.' && DR.holdOrSell(t(1, 3)).why === '3 of 5 no longer back it.'
+    && DR.holdOrSell(t(2, 2)) === null && DR.holdOrSell(t(0, 0)) === null
+    && DR.exitWord({ instrument: 'stock', side: 'short' }) === 'Cover' && DR.exitWord({ instrument: 'put', side: 'long' }) === 'Sell' && DR.exitWord({ instrument: 'stock', side: 'long' }) === 'Sell',
+    JSON.stringify({ holdings: c.holdings }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

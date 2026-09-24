@@ -2287,6 +2287,20 @@ html[data-desk]:root .rec.active .acts .btn.big.scale { padding: 0 8px; }
   html[data-desk]:root .rec.active .acts .btn.big.scale { font-size: 12px; letter-spacing: .02em; }
 }
 html[data-desk]:root .sheet .sizeprev .was { font-size: 12px; color: var(--dim); margin-left: 6px; }
+/* HOLD OR SELL, front and center (Eric, 2026-09-24): the last run's call on a trade he took, first on
+   the card. A SELL card goes red and leads the list until he marks it. */
+html[data-desk]:root .rec .verdict { display: grid; gap: 4px; padding: 12px 14px; border-radius: 12px; border: 2px solid var(--line); background: rgba(6,10,19,.6); }
+html[data-desk]:root .rec .verdict .call { font-family: var(--display); font-weight: 800; font-size: 26px; line-height: 1; letter-spacing: .08em; }
+html[data-desk]:root .rec .verdict .why { font-size: 15px; line-height: 1.4; color: var(--ink); }
+html[data-desk]:root .rec .verdict .when { font-size: 12px; color: var(--dim); }
+html[data-desk]:root .rec .verdict.hold { border-color: var(--green); background: rgba(var(--green-rgb),.12); }
+html[data-desk]:root .rec .verdict.hold .call { color: #8CFFC6; }
+html[data-desk]:root .rec .verdict.sell { border-color: var(--red); background: rgba(var(--red-rgb),.18); box-shadow: 0 0 14px rgba(var(--red-rgb),.45); }
+html[data-desk]:root .rec .verdict.sell .call { color: #FF8FA3; }
+html[data-desk]:root .rec .verdict.none .why { font-size: 13px; color: var(--ink-2); }
+html[data-desk]:root .rec.active.sell { border-color: var(--red); box-shadow: inset 0 0 0 1px rgba(var(--red-rgb),.35), 0 0 12px rgba(var(--red-rgb),.7), 0 0 30px rgba(var(--red-rgb),.35); animation: none; }
+/* Brought into view when a run says SELL: below the fixed top bar, with the ACTIVE heading showing. */
+html[data-desk]:root #active-wrap, html[data-desk]:root .rec { scroll-margin-top: calc(var(--demo-bar-h, 0px) + var(--top-h) + env(safe-area-inset-top, 0px) + 12px); }
 html[data-desk]:root .rec .said:empty { display: none; }
 html[data-desk]:root .btn.profit { --c: var(--green); --c-rgb: var(--green-rgb); --c-core: var(--green-core); color: #04140B; background-color: #45F09E; background-image: linear-gradient(180deg, #6BFFB8, #2FE08A); border: 1px solid var(--green-core); text-shadow: none; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.5), 0 0 10px rgba(var(--green-rgb),.6), 0 0 26px rgba(var(--green-rgb),.3); }
 html[data-desk]:root .btn.loss { --c: var(--red); --c-rgb: var(--red-rgb); --c-core: var(--red-core); color: #1A0308; background-color: #F85D79; background-image: linear-gradient(180deg, #FF8098, #F03A5C); border: 1px solid var(--red-core); text-shadow: none; font-weight: 700; box-shadow: inset 0 1px 0 rgba(255,255,255,.45), 0 0 10px rgba(var(--red-rgb),.6), 0 0 26px rgba(var(--red-rgb),.3); }

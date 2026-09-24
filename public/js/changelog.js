@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.11';
+export const VERSION = '7.12';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.11';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HOLD OR SELL (Eric, 2026-09-24: "If I took a trade and scan, it should
+    // scan that same trade and tell me if I should hold or ... sell, front and
+    // center."). Admin only.
+    version: '7.12',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every run now tells you HOLD or SELL on each trade you took, with the reason, at the top of its card.',
+      'A SELL card turns red and moves to the top of your Active list. It stays until you tap PROFIT or LOSS; nothing disappears on its own any more.',
+    ],
+  },
   {
     // NEVER STUCK ON LOADING (Eric, 2026-09-24: "It's stuck loading in the
     // client case menu on launch"). Admin only.

@@ -384,12 +384,27 @@ await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c)
 await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'SOFI'), 4000);
 await page.click('#run');
 const rechecked = await until(() => !document.getElementById('run').disabled && [...document.querySelectorAll('#toasts .toast')].map((t) => t.textContent).find((t) => /The desk is in/.test(t)), 20000);
-ok('the run lands and says SOFI was dropped because none of the five back it', /Dropped SOFI: none of the five back it now\.$/.test(rechecked || ''), rechecked || '');
-const activeNow = await page.evaluate(() => [...document.querySelectorAll('#active .rec')].map((c) => [c.querySelector('.tk').textContent.trim(), c.querySelector('.odds .agree')?.textContent.trim()]));
-ok('SOFI has left the Active list, and PLTR now reads the 3 of 5 the run gave it', !activeNow.some((x) => x[0] === 'SOFI') && activeNow.some((x) => x[0] === 'PLTR' && x[1] === '3 of 5 agree'), JSON.stringify(activeNow));
+// RE-PINNED 2026-09-24 (v7.12, Eric: "tell me if I should hold or if things have changed and I need to sell,
+// front and center"; a SELL stays up in red until he marks it): nothing is dropped; each taken trade gets HOLD or SELL.
+ok('the run lands and says to sell SOFI and hold PLTR', /Sell SOFI now\. Hold PLTR\.$/.test(rechecked || ''), rechecked || '');
+const activeNow = await page.evaluate(() => [...document.querySelectorAll('#active .rec')].map((c) => ({
+  tk: c.querySelector('.tk').textContent.trim(), agree: c.querySelector('.odds .agree')?.textContent.trim(), sell: c.classList.contains('sell'),
+  call: c.querySelector('.verdict .call')?.textContent.trim() || '', why: c.querySelector('.verdict .why')?.textContent.trim() || '',
+  first: c.firstElementChild?.classList.contains('verdict'),
+  red: getComputedStyle(c.querySelector('.verdict')).borderTopColor,
+})));
+ok('SOFI stays on the Active list, first, red, with SELL NOW and why, at the very top of its card', activeNow[0]?.tk === 'SOFI' && activeNow[0].sell && activeNow[0].call === 'SELL NOW' && /None of the five back it any more\./.test(activeNow[0].why) && activeNow[0].first, JSON.stringify(activeNow));
+ok('PLTR reads HOLD with its reason and the 3 of 5 the run gave it', activeNow.some((x) => x.tk === 'PLTR' && x.call === 'HOLD' && x.why && x.agree === '3 of 5 agree' && !x.sell && x.first), JSON.stringify(activeNow));
+await page.evaluate(() => document.getElementById('active-wrap')?.scrollIntoView({ block: 'start' }));
+await page.waitForTimeout(300);
+const seen = await page.evaluate(() => { const v = document.querySelector('#active .rec .verdict'); const top = document.querySelector('.top'); return v && top ? { verdict: Math.round(v.getBoundingClientRect().top), bar: Math.round(top.getBoundingClientRect().bottom) } : null; });
+ok('brought into view, the SELL banner sits below the top bar, not under it', !!seen && seen.verdict >= seen.bar, JSON.stringify(seen));
+await shot('P-sell');
+await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'SOFI')?.querySelector('[data-act="loss"]')?.click());
+await until(() => ![...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'SOFI'), 5000);
 await go('history');
-const sofi = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'SOFI'); if (!h) return null; h.querySelector('summary').click(); return { tag: h.querySelector('.res')?.textContent.trim(), more: h.querySelector('.more').textContent.replace(/\s+/g, ' ') }; }, 5000);
-ok('History has SOFI marked Dropped, with the run and the reason', sofi?.tag === 'Dropped' && /Dropped by the \d{1,2}:\d{2} (AM|PM) run: none of the five backed it any more\./.test(sofi?.more || ''), JSON.stringify(sofi));
+const sofi = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'SOFI'); if (!h) return null; return { tag: h.querySelector('.res')?.textContent.trim() }; }, 5000);
+ok('SOFI leaves only when he marks it, and lands in History as he marked it', sofi?.tag === 'LOSS', JSON.stringify(sofi));
 await shot('P-history');
 await go('trades');
 

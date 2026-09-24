@@ -531,6 +531,16 @@ paints; the case list gives up after 15 seconds, the covers and extras after
 defects.mjs runs the net against a fake page; drive-nohang.mjs holds the
 page's code for real in the demo.
 
+**Hold or sell (2026-09-24, v7.12).** Every run gives each trade he took a
+HOLD or SELL with a one-line reason: the desk makes the call in its schema
+(`holdings`), from the researchers' verdicts; all five against is a SELL
+whatever it said; with no call from the desk the verdicts decide when they
+lean, and a tie calls nothing (`holdOrSell`). Nothing leaves his list on its
+own any more (he chose it: a SELL stays up in red until PROFIT or LOSS). The
+call is first on the card, a SELL card is red and leads Active, and the push
+and the landing lead with sells. desk.mjs D30 (re-pinned), D32 and D24;
+trade.mjs T81 and T80 (re-pinned); drive-trade.mjs P.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

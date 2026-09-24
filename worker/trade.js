@@ -98,6 +98,8 @@ export function recRow(id, d) {
     tookAgreement: Number.isFinite(Number(d?.tookAgreement)) && d?.tookAgreement !== null ? Number(d.tookAgreement) : null,
     agreedAt: iso(d?.agreedAt),
     dropped: d?.dropped ? { at: iso(d.dropped.at), runId: d.dropped.runId || null } : null,
+    // HOLD or SELL from the last run that re-checked it (2026-09-24, v7.12).
+    verdict: d?.verdict && (d.verdict.call === 'hold' || d.verdict.call === 'sell') ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null } : null,
   };
 }
 const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0 ? {
@@ -177,7 +179,7 @@ export async function tradeState(env, { now = Date.now() } = {}) {
     desk: st.desk ? {
       at: st.desk.at ? new Date(st.desk.at).toISOString() : null, trigger: st.desk.trigger || 'manual',
       read: st.desk.read || '', none: st.desk.none || '', count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
-      dropped: Array.isArray(st.desk.dropped) ? st.desk.dropped.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday' })) : [],
+      verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: x?.call === 'sell' ? 'sell' : 'hold', why: String(x?.why || '') })) : [],
     } : null,
     recs, active, timedOut,
     market: {

@@ -131,6 +131,8 @@ export const MARKET_TICKERS = ['SPY', 'QQQ', 'IWM', 'DIA'];
 // is taken from their words, not asked of the desk.
 export const LIVE_MAX = 12;
 const HWORD = { scalp: 'scalp', intraday: 'intraday', swing: 'swing' };
+/** What closing a trade he holds is called: buying back a short stock is a cover, the rest is a sale. */
+export const exitWord = (r) => (r?.instrument === 'stock' && r?.side === 'short' ? 'Cover' : 'Sell');
 export function liveNote(rows) {
   if (!Array.isArray(rows) || !rows.length) return '';
   const lines = rows.map(({ ref, rec: r }) => {
@@ -163,16 +165,31 @@ export function earlierVerdicts(text) {
 }
 /**
  * The count for each earlier call across the reports that came back. Some back it: the new count.
- * All five said plainly that they do not: it goes. Anything else, a researcher missing or silent on
- * it, leaves it as it was, so a thin run never throws out a trade he holds.
+ * All five said plainly that they do not: the count goes to none (v7.12: the card stays, marked SELL,
+ * until he marks it). Anything else, a researcher missing or silent on it, leaves the count as it was.
  */
 export function tallyEarlier(live, texts) {
   const verdicts = (texts || []).map(earlierVerdicts);
   return (Array.isArray(live) ? live : []).map(({ ref, id }) => {
     const backs = verdicts.filter((v) => v[ref] === true).length;
     const against = verdicts.filter((v) => v[ref] === false).length;
-    return { ref, id, backs, against, action: backs > 0 ? 'update' : against >= LENSES.length ? 'drop' : 'keep' };
+    return { ref, id, backs, against, action: backs > 0 ? 'update' : against >= LENSES.length ? 'against' : 'keep' };
   });
+}
+/**
+ * HOLD OR SELL (Eric, 2026-09-24: "If I took a trade and scan, it should scan that same trade and tell
+ * me if I should hold or if things have changed and I need to sell, front and center."). The desk
+ * makes the call, as it makes every call, from the five verdicts and the market. All five plainly
+ * against is a sell whatever it said. With no call from the desk, the verdicts decide when they lean
+ * one way, and a tie or silence gives no new call, leaving the last one standing.
+ */
+export function holdOrSell(t, desk = null) {
+  const none = 'None of the five back it any more.';
+  if (t.against >= LENSES.length) return { call: 'sell', why: desk?.call === 'sell' && desk.why ? desk.why : none };
+  if (desk && (desk.call === 'hold' || desk.call === 'sell')) return { call: desk.call, why: desk.why || (desk.call === 'hold' ? `${t.backs} of 5 still back it.` : `${t.against} of 5 no longer back it.`) };
+  if (t.backs > t.against) return { call: 'hold', why: `${t.backs} of 5 still back it.` };
+  if (t.against > t.backs) return { call: 'sell', why: `${t.against} of 5 no longer back it.` };
+  return null;
 }
 
 export function chainNote(chain = GLP1_CHAIN) {
@@ -268,6 +285,8 @@ What he reads has to fit on a phone card at a glance. setup is one sentence unde
 
 read is one sentence on what the tape is doing. none is one sentence on why there are no trades, or an empty string when there are some.
 
+holdings: the market data may list earlier calls from this desk that are still live, as E1, E2 and so on, and each researcher gave a verdict on them under Earlier calls. For each one give its ref, call hold or sell, and why: one plain sentence under 20 words he can act on. Sell when what the trade was built on has broken, its catalyst has turned, or the evidence now says the stop comes before the target; hold otherwise. Weigh the researchers' verdicts the way you weigh their candidates. An empty list when the market data lists none.
+
 news is up to ${MAX_NEWS} items that matter for trading today, each with the tickers it touches and one sentence on why it matters. Not general financial news: only what could change a trade.`;
 }
 
@@ -277,7 +296,7 @@ const NULL_STR = { anyOf: [{ type: 'string' }, { type: 'null' }] };
 export const DESK_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['read', 'none', 'trades', 'news'],
+  required: ['read', 'none', 'trades', 'news', 'holdings'],
   properties: {
     read: { type: 'string' },
     none: { type: 'string' },
@@ -310,6 +329,19 @@ export const DESK_SCHEMA = {
           strike: NULL_NUM,
           expiry: NULL_STR,
           agreement: { type: 'integer' },
+        },
+      },
+    },
+    holdings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['ref', 'call', 'why'],
+        properties: {
+          ref: { type: 'string' },
+          call: { type: 'string', enum: ['hold', 'sell'] },
+          why: { type: 'string' },
         },
       },
     },
@@ -567,7 +599,14 @@ export function checkDesk(out, ctx = {}) {
     tickers: (Array.isArray(n?.tickers) ? n.tickers : []).map((x) => String(x).trim().toUpperCase()).filter((x) => TICKER_RE.test(x)).slice(0, 6),
     why: clip(n?.why, 220),
   })).filter((n) => n.headline).slice(0, MAX_NEWS);
-  return { trades, news, read: clip(out?.read, 240), none: clip(out?.none, 240), dropped };
+  // The call on each earlier call, by its ref (v7.12). Anything but hold or sell on a real ref is left out.
+  const holdings = {};
+  for (const h of Array.isArray(out?.holdings) ? out.holdings : []) {
+    const ref = String(h?.ref || '').trim().toUpperCase();
+    if (!/^E\d{1,2}$/.test(ref) || ref in holdings || (h?.call !== 'hold' && h?.call !== 'sell')) continue;
+    holdings[ref] = { call: h.call, why: clip(h?.why, 200) };
+  }
+  return { trades, news, read: clip(out?.read, 240), none: clip(out?.none, 240), dropped, holdings };
 }
 
 /** The desk's answer as JSON: the structured output itself, or failing that the first JSON object in the text. */
@@ -911,7 +950,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     const deskBody = (structured) => ({
       model: DESK_MODEL,
       max_tokens: DESK_MAX_TOKENS,
-      system: [{ type: 'text', text: deskSystem(accountType, riskPctOf(settings)) + (structured ? '' : '\n\nReturn only one JSON object with the fields read, none, trades and news, and nothing else.') }],
+      system: [{ type: 'text', text: deskSystem(accountType, riskPctOf(settings)) + (structured ? '' : '\n\nReturn only one JSON object with the fields read, none, trades, news and holdings, and nothing else.') }],
       messages: [{ role: 'user', content: [{ type: 'text', text: deskUser }] }],
       thinking: THINKING,
       output_config: structured ? { effort: DESK_EFFORT, format: { type: 'json_schema', schema: DESK_SCHEMA } } : { effort: DESK_EFFORT },
@@ -979,31 +1018,32 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     for (const t of tally) {
       const doc = heldById.get(t.id);
       const d = doc?.data;
-      if (!d || d.status !== 'took' || t.action === 'keep') continue;
-      const tookAgreement = d.tookAgreement ?? d.agreement ?? null;
-      if (t.action === 'update' && Number(d.agreement) !== t.backs) {
-        rechecks.push({ id: t.id, kind: 'update', d, write: { path: `${PLAYS}/${t.id}`, data: { agreement: t.backs, agreedAt: recheckAt, agreedRunId: run.id, tookAgreement }, mask: ['agreement', 'agreedAt', 'agreedRunId', 'tookAgreement'], ifUpdateTime: doc.updateTime } });
-      } else if (t.action === 'drop') {
-        rechecks.push({ id: t.id, kind: 'drop', d, write: { path: `${PLAYS}/${t.id}`, data: { status: 'closed', closedAt: recheckAt, result: null, agreement: 0, tookAgreement, dropped: { at: recheckAt, runId: run.id } }, mask: ['status', 'closedAt', 'result', 'agreement', 'tookAgreement', 'dropped'], ifUpdateTime: doc.updateTime } });
-      }
+      if (!d || d.status !== 'took') continue;
+      const verdict = holdOrSell(t, checked.holdings[t.ref]);
+      const count = t.action === 'update' ? t.backs : t.action === 'against' ? 0 : null;
+      const recount = count != null && Number(d.agreement) !== count;
+      if (!verdict && !recount) continue;
+      const data = { tookAgreement: d.tookAgreement ?? d.agreement ?? null };
+      if (recount) Object.assign(data, { agreement: count, agreedAt: recheckAt, agreedRunId: run.id });
+      if (verdict) data.verdict = { call: verdict.call, why: verdict.why, at: recheckAt, runId: run.id };
+      rechecks.push({ id: t.id, d, recount, verdict, write: { path: `${PLAYS}/${t.id}`, data, mask: Object.keys(data), ifUpdateTime: doc.updateTime } });
     }
     const recheckOk = rechecks.length ? await writeMany(env, rechecks.map((x) => x.write)).catch(() => rechecks.map(() => false)) : [];
-    const dropped = rechecks.filter((x, i) => recheckOk[i] && x.kind === 'drop').map((x) => ({ id: x.id, ticker: x.d.ticker, horizon: x.d.horizon }));
-    const updated = rechecks.filter((x, i) => recheckOk[i] && x.kind === 'update').length;
-    const droppedIds = new Set(dropped.map((x) => x.id));
+    const landed = rechecks.filter((x, i) => recheckOk[i]);
+    const updated = landed.filter((x) => x.recount).length;
+    // Sells first: they are what he has to act on.
+    const verdicts = landed.filter((x) => x.verdict).map((x) => ({ ticker: x.d.ticker, horizon: x.d.horizon, side: x.d.side === 'short' ? 'short' : 'long', instrument: x.d.instrument || 'stock', call: x.verdict.call, why: x.verdict.why }))
+      .sort((a, b) => (b.call === 'sell') - (a.call === 'sell'));
     const finishedAt = new Date();
     const finalPatch = {
       run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: filed.ids.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
-      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, dropped: dropped.map(({ ticker, horizon }) => ({ ticker, horizon })) },
+      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, verdicts: verdicts.slice(0, 12) },
     };
     let wrote = false;
     for (let i = 0; i < 2 && !wrote; i++) {
       const d = i === 0 && own ? own : await mine();
       if (d === false) return superseded('final write');
-      // A dropped trade leaves his list in the same write, from the list as it stands now.
-      const patch = d && droppedIds.size ? { ...finalPatch, activeIds: (Array.isArray(d.data?.activeIds) ? d.data.activeIds : []).filter((id) => !droppedIds.has(id)) } : finalPatch;
-      const mask = patch.activeIds ? ['run', 'desk', 'activeIds'] : ['run', 'desk'];
-      wrote = await patchDoc(env, STATE_PATH, patch, d ? { mask, ifUpdateTime: d.updateTime } : { mask }) !== false;
+      wrote = await patchDoc(env, STATE_PATH, finalPatch, d ? { mask: ['run', 'desk'], ifUpdateTime: d.updateTime } : { mask: ['run', 'desk'] }) !== false;
     }
     if (!wrote) throw new Error('the board could not be saved');
     const expired = await retireRecs(env, previous, filed.ids, { getMany, writeMany }).catch(() => 0);
@@ -1011,13 +1051,15 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // The push: always for the 7:00 run, and for his own run when there is something to take.
     let pushed = false;
     const n = filed.ids.length;
-    if (env.ADMIN_UID && settings.pushOn !== false && (run.trigger === 'morning' || n || dropped.length)) {
+    if (env.ADMIN_UID && settings.pushOn !== false && (run.trigger === 'morning' || n || verdicts.length)) {
       const names = checked.trades.slice(0, 3).map((r) => `${r.ticker} ${r.side}`).join(', ');
       const parts = [];
+      // His trades first, sells before holds (v7.12): what he has to act on leads the push.
+      for (const v of verdicts.filter((x) => x.call === 'sell').slice(0, 3)) parts.push(`${exitWord(v)} ${v.ticker} now: ${v.why.replace(/[.\s]+$/, '')}.`);
+      const holds = verdicts.filter((x) => x.call === 'hold');
+      if (holds.length) parts.push(`Hold ${holds.map((v) => v.ticker).join(', ')}.`);
       if (n) parts.push(`${n} trade${n === 1 ? '' : 's'} ready. ${names}${n > 3 ? ' and more' : ''}.`);
-      else if (run.trigger === 'morning' || !dropped.length) parts.push('nothing worth taking yet.');
-      // A trade he holds that the desk no longer backs: he may still hold it at his broker.
-      if (dropped.length) parts.push(`Dropped, none of the five back ${dropped.length === 1 ? 'it' : 'them'} now: ${dropped.map((x) => `${x.ticker} ${HWORD[x.horizon] || 'intraday'}`).join(', ')}.`);
+      else if (run.trigger === 'morning' || !verdicts.length) parts.push(`${parts.length ? 'Nothing' : 'nothing'} worth taking yet.`);
       const body = `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${parts.join(' ')}`;
       await push(env, env.ADMIN_UID, { title: 'PR 420', body, link: '/admin-desk.html', max: PUSH_MAX }).catch(() => {});
       pushed = true;
@@ -1025,7 +1067,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     await diagLog(env, {
       ev: 'desk-run-end', ok: true, trigger: run.trigger || 'manual', attempt: run.attempt || 1, reports: got.length,
       trades: n, dropped: checked.dropped, screened: screened.dropped, expired, news: checked.news.length, pushed,
-      recheck: { live: tally.length, updated, dropped: dropped.length, keep: tally.filter((t) => t.action === 'keep').length },
+      recheck: { live: tally.length, updated, sells: verdicts.filter((v) => v.call === 'sell').length, holds: verdicts.filter((v) => v.call === 'hold').length, keep: tally.filter((t) => t.action === 'keep').length },
       desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
       ms: Date.now() - t0,
     }).catch(() => {});
