@@ -26,7 +26,7 @@
 import { requireAdmin } from './auth.js';
 import { VERSION } from './changelog.js';
 import {
-  esc, money, price, clock, dayShort, agoShort, tradeCall, runLine,
+  esc, money, price, clock, dayShort, agoShort, tradeCall, runLine, runProgress,
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
@@ -130,7 +130,29 @@ function paintMarket() {
     ? `Balance ${money(b.cents)} · risk ${pct}% a trade`
     : 'Set your balance in Settings so each trade can be sized.';
 }
+// THE BAR (Eric, 2026-09-24: "Is a loading bar for the desk scan possible?"). It fills from runProgress,
+// which only moves on real stages and researchers back; it is repainted each second while a run is
+// going, never goes backwards within one run, reads 100 for a moment when the trades land, then goes.
+const BAR = { runId: null, max: 0, doneUntil: 0 };
+function paintBar() {
+  const bar = $('#runbar');
+  const fill = $('#runbar-fill');
+  const run = S.state?.run;
+  let pct = runProgress(run);
+  if (pct != null) {
+    const id = run.queuedAt || run.startedAt || 'run';
+    if (BAR.runId !== id) { BAR.runId = id; BAR.max = 0; }
+    pct = Math.max(pct, BAR.max);
+    BAR.max = pct;
+  } else if (Date.now() < BAR.doneUntil) pct = 100;
+  bar.hidden = pct == null;
+  if (pct == null) return;
+  fill.style.width = `${pct}%`;
+  bar.setAttribute('aria-valuenow', String(Math.round(pct)));
+  bar.classList.toggle('full', pct >= 100);
+}
 function paintRun() {
+  paintBar();
   const st = S.state || {};
   const run = st.run || { status: 'idle' };
   const line = runLine(run, st.desk);
@@ -579,6 +601,8 @@ async function pollOnce() {
       // The run landed: say so, light the box, and let the fresh cards arrive.
       const box = $('#runbox');
       box.classList.remove('landed'); void box.offsetWidth; box.classList.add('landed');
+      // The bar reads full for a moment when trades land, then goes; a run that failed just goes.
+      if (S.state.run?.status !== 'error') { BAR.doneUntil = Date.now() + 1400; paintBar(); setTimeout(paintBar, 1500); }
       const fresh = (S.state.recs || []).filter((r) => !before.has(r.id)).length;
       if (S.state.run?.status === 'error') toast('The run did not finish. The line under the button says why.');
       else toast(fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.');
@@ -593,6 +617,7 @@ async function pollOnce() {
   }
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) kickPoll(); else { clearTimeout(pollTimer); pollTimer = 0; } });
+setInterval(() => { if (!document.hidden && S.page === 'trades' && runBusy()) paintBar(); }, 1000);
 setInterval(() => {
   if (document.hidden || !S.state) return;
   paintMarket();

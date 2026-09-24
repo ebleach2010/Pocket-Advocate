@@ -108,6 +108,8 @@ ok('the sub line shows the balance and the 3% rule', /Balance \$2,380\.00 · ris
 await shot('C-board');
 
 console.log('\n--- D. RUN TRADING DESK: one tap, no confirmation, the stages, the landing ---');
+// The run's bar (2026-09-24), sampled five times a second from the tap to after the landing.
+await page.evaluate(() => { window.__bar = []; window.__barTick = setInterval(() => { const b = document.getElementById('runbar'); window.__bar.push(b.hidden ? null : parseFloat(b.querySelector('i').style.width)); }, 200); });
 await page.click('#run');
 const started = await until(() => document.getElementById('run').disabled && /Starting|researchers/.test(document.getElementById('run-line').textContent) && document.getElementById('run-line').textContent, 5000);
 ok('one tap starts it with no confirmation and the button goes down', !!started, started || '');
@@ -115,6 +117,11 @@ const researching = await until(() => /of 5 back/.test(document.getElementById('
 ok('the line counts the researchers back, with five dots', !!researching, researching || '');
 const landed = await until(() => !document.getElementById('run').disabled && /Last run/.test(document.getElementById('run-line').textContent) && document.querySelector('#toasts .toast')?.textContent, 20000);
 ok('the run lands on its own and says how many trades', /The desk is in: 3 trades\./.test(landed || ''), landed || '');
+await page.waitForTimeout(2200);
+const bar = await page.evaluate(() => { clearInterval(window.__barTick); return { seen: window.__bar.filter((v) => v != null), hiddenNow: document.getElementById('runbar').hidden }; });
+const shown = bar.seen;
+const beforeFull = shown.slice(0, Math.max(0, shown.indexOf(100)));
+ok('the bar shows while the run goes, only ever moves forward, stays under 100 until the trades land, reads 100 when they do, and then goes', shown.length > 5 && shown.every((v, i) => i === 0 || v >= shown[i - 1]) && beforeFull.length > 3 && beforeFull.every((v) => v < 100) && beforeFull.some((v) => v >= 8 && v < 72) && shown.includes(100) && bar.hiddenNow, JSON.stringify({ n: shown.length, first: shown.slice(0, 4), last: shown.slice(-4), hidden: bar.hiddenNow }));
 const fresh = await cards('#board .rec');
 ok('the board is the fresh run\'s trades and nothing from the last one', fresh.map((c) => c.tk).join() === 'AMD,QQQ,MU', fresh.map((c) => c.tk).join());
 ok('the desk\'s one line on the tape is shown', /Semis are leading/.test(await page.evaluate(() => document.getElementById('deskread-t').textContent)));

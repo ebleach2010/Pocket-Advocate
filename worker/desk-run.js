@@ -818,7 +818,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       }
       // Research is in. The desk decides in the next firing, which starts
       // with its own fifty calls; the page says so meanwhile.
-      await setRun({ status: 'decide', done: got.length }, own);
+      await setRun({ status: 'decide', done: got.length, decideAt: new Date() }, own);
       await diagLog(env, { ev: 'desk-run-handoff', reports: got.length, agents, ms: Date.now() - t0 }).catch(() => {});
       return { ok: true, handedOff: true, reports: got.length };
     }

@@ -107,6 +107,8 @@ export function runBlock(run, now = Date.now()) {
     alive: runAlive(run, now),
     trigger: run.trigger || 'manual',
     queuedAt: iso(run.queuedAt), startedAt: iso(run.startedAt), finishedAt: iso(run.finishedAt),
+    // When the research was handed over and when the desk took it: the progress bar's clocks.
+    decideAt: iso(run.decideAt), claimedAt: iso(run.claimedAt),
     done: Number(run.done) || 0, of: LENSES.length,
     count: Number.isFinite(Number(run.count)) ? Number(run.count) : null,
     error: run.status === 'error' ? (run.error || SAY.runStalled) : null,

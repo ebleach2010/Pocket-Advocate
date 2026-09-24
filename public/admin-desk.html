@@ -14,7 +14,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@500;600;700&display=swap">
 <link rel="stylesheet" href="/css/site.css?v=sp15">
-<link rel="stylesheet" href="/css/admin.css?v=stat118">
+<link rel="stylesheet" href="/css/admin.css?v=stat119">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -32,6 +32,7 @@
     <header class="title"><div><h1 class="pt fl">TRADES</h1><p class="ps" id="trades-sub">&nbsp;</p></div><span class="slot"><span class="mkt" id="mkt"><span class="dot"></span><span id="mkt-word">Market</span></span></span></header>
     <div class="panel runbox" id="runbox" aria-busy="false">
       <button type="button" class="btn primary run fl" id="run"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg> RUN TRADING DESK</button>
+      <div class="runbar" id="runbar" role="progressbar" aria-label="How far the desk run is" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden><i id="runbar-fill"></i></div>
       <div class="line" id="run-line">Reading the desk&hellip;</div>
       <p class="said" id="run-said"></p>
     </div>

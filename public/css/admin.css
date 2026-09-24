@@ -2200,7 +2200,14 @@ html[data-desk]:root .runbox .agents { display: inline-flex; gap: 5px; margin-ri
 html[data-desk]:root .runbox .agents i { width: 9px; height: 9px; border-radius: 50%; background: var(--raised); border: 1px solid rgba(var(--blue-rgb),.4); }
 html[data-desk]:root .runbox .agents i.on { background: var(--blue); border-color: var(--blue-core); box-shadow: 0 0 4px #fff, 0 0 8px rgba(var(--blue-rgb),.9); }
 html[data-desk]:root .runbox[aria-busy="true"] { animation: dk-breathe 1.2s ease-in-out infinite; }
-html[data-desk]:root .runbox[aria-busy="true"]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--blue) 50%, transparent) 0 0 / 96px 2px no-repeat; animation: dk-sweep 1.4s linear infinite; }
+/* THE RUN'S BAR (Eric, 2026-09-24): it replaces the sweep that used to run along the box's
+   bottom edge, which moved whether anything happened or not. */
+html[data-desk]:root .runbar { height: 8px; border-radius: 4px; background: var(--raised); border: 1px solid rgba(var(--blue-rgb),.3); overflow: hidden; }
+html[data-desk]:root .runbar[hidden] { display: none; }
+html[data-desk]:root .runbar i { display: block; height: 100%; width: 0; border-radius: 3px; background: linear-gradient(90deg, var(--blue), var(--blue-core)); box-shadow: 0 0 6px rgba(var(--blue-rgb),.9), 0 0 14px rgba(var(--blue-rgb),.45); transition: width .9s ease-out; }
+html[data-desk]:root .runbar.full i { background: linear-gradient(90deg, var(--green), var(--green-core)); box-shadow: 0 0 6px rgba(var(--green-rgb),.9), 0 0 14px rgba(var(--green-rgb),.45); }
+html[data-desk]:root.reduce .runbar i { transition: none; }
+@media (prefers-reduced-motion: reduce) { html[data-desk]:root .runbar i { transition: none; } }
 html[data-desk]:root .runbox.landed { animation: dk-landed .5s ease-out; }
 html[data-desk]:root .runbox .said:empty { display: none; }
 html[data-desk]:root .deskread { margin: 0 0 14px; padding: 10px 14px; font-size: 14px; color: var(--ink-2); line-height: 1.45; }

@@ -90,6 +90,37 @@ export function runLine(run, desk, now = Date.now()) {
   return { busy: false, html: `Last run <b>${esc(clock(desk.at))}</b>${ago === 'just now' ? '' : `, ${esc(ago)}`} · ${n} trade${n === 1 ? '' : 's'}` };
 }
 
+/**
+ * HOW FAR THE RUN IS (Eric, 2026-09-24: "Is a loading bar for the desk scan possible?"). The bar
+ * moves on what really happened: each stage owns a band, each researcher back lifts it one step,
+ * and inside a step it creeps with the time gone toward the next step without ever reaching it, so
+ * it never shows a step that has not happened. It reads 100 only when the trades are in, which the
+ * page shows itself; while a run is going it stays under the last band's top. null when nothing runs.
+ */
+export const RUN_BANDS = { queued: [0, 8], researching: [8, 72], decide: [72, 80], deciding: [80, 97] };
+export function runProgress(run, now = Date.now()) {
+  const band = RUN_BANDS[run?.status];
+  if (!band) return null;
+  const [lo, hi] = band;
+  const since = (v) => { const t = v ? new Date(v).getTime() : NaN; return Number.isFinite(t) ? Math.max(0, (now - t) / 1000) : 0; };
+  // How far into a step the clock alone may carry the bar: most of the way, never all of it.
+  const creep = (seconds, tau) => 0.9 * (1 - Math.exp(-seconds / tau));
+  let pct;
+  if (run.status === 'researching') {
+    const of = Math.max(1, Number(run.of) || 5);
+    const done = Math.min(of, Math.max(0, Number(run.done) || 0));
+    const step = (hi - lo) / of;
+    pct = lo + done * step + (done < of ? step * creep(since(run.startedAt || run.queuedAt), 60) : 0);
+  } else if (run.status === 'queued') {
+    pct = lo + (hi - lo) * creep(since(run.queuedAt), 25);
+  } else if (run.status === 'decide') {
+    pct = lo + (hi - lo) * creep(since(run.decideAt), 25);
+  } else {
+    pct = lo + (hi - lo) * creep(since(run.claimedAt), 40);
+  }
+  return Math.round(Math.min(hi, Math.max(lo, pct)) * 10) / 10;
+}
+
 // ---- one trade --------------------------------------------------------------------
 /** How long he should expect to hold it, in the words a card has room for. */
 export function holdText(r) {

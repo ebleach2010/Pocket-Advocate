@@ -1814,6 +1814,7 @@ export function demoApi(role, store) {
         status: ['queued', 'researching', 'decide', 'deciding', 'error', 'idle'].includes(run.status) ? run.status : 'idle',
         alive: BUSY_RUN.includes(run.status), trigger: run.trigger || 'manual',
         queuedAt: iso(run.queuedAt), startedAt: iso(run.startedAt), finishedAt: iso(run.finishedAt),
+        decideAt: iso(run.decideAt), claimedAt: iso(run.claimedAt),
         done: Number(run.done) || 0, of: 5,
         count: Number.isFinite(Number(run.count)) ? Number(run.count) : null,
         error: run.status === 'error' ? (run.error || SAY.runStalled) : null,
@@ -2041,9 +2042,11 @@ export function demoApi(role, store) {
         };
         store.docs.set('trade/state', { ...st0, run: { id: runId, status: 'queued', trigger: 'manual', queuedAt: new Date(), done: 0, attempt: 0 } });
         store.persist?.();
-        setTimeout(() => put({ status: 'researching', startedAt: new Date(), done: 0 }), 900);
+        setTimeout(() => put({ status: 'researching', startedAt: new Date(), claimedAt: new Date(), done: 0 }), 900);
         for (let n = 1; n <= 5; n++) setTimeout(() => put({ done: n }), 900 + n * 650);
-        setTimeout(() => put({ status: 'deciding' }), 900 + 5 * 650 + 300);
+        // The handover and the desk's claim, as the cron does them a firing apart.
+        setTimeout(() => put({ status: 'decide', decideAt: new Date() }), 900 + 5 * 650 + 150);
+        setTimeout(() => put({ status: 'deciding', claimedAt: new Date() }), 900 + 5 * 650 + 700);
         setTimeout(() => {
           const st = tstate();
           if (st.run?.id !== runId) return;

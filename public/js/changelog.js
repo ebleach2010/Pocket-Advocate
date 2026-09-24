@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.4';
+export const VERSION = '7.5';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '7.4';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE RUN'S BAR (Eric, 2026-09-24: "Is a loading bar for the desk scan
+    // possible?"). Admin only.
+    version: '7.5',
+    quiet: true,
+    client: [],
+    admin: [
+      'A progress bar under RUN TRADING DESK. It moves with the run itself: a step for each researcher who comes back, then the hand over, then the final call, and it only fills to the end when the trades are in.',
+    ],
+  },
   {
     // HIS BAR (Eric, 2026-09-23: "It should suggest anything over a 50%
     // profit for a scalp, intraday, swing, for stocks and options. So three

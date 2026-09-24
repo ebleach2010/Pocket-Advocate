@@ -1278,8 +1278,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T35 the portal page and its module are gone ...
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
-    // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat118/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat119/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1288,7 +1288,10 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && ADMIN_ASSET.test('/js/advisor.js') && !ADMIN_ASSET.test('/js/trade.js') && !ADMIN_ASSET.test('/js/trade-math.js') && !ADMIN_ASSET.test('/js/textpdf.js')
     && ['state', 'history', 'news', 'quote', 'research'].every((sub) => mirror.includes(`if (sub === '${sub}' && init.method !== 'POST')`))
     && ['open', 'balance', 'settings', 'take', 'result', 'run'].every((sub) => mirror.includes(`if (sub === '${sub}') {`))
-    && /status: 'researching', startedAt: new Date\(\), done: 0/.test(mirror) && /put\(\{ status: 'deciding' \}\)/.test(mirror)
+    // RE-PINNED 2026-09-24 (v7.5): the demo's walk stamps the claim, the handover and the desk's claim, for the bar,
+    // and passes through decide as the cron does.
+    && /status: 'researching', startedAt: new Date\(\), claimedAt: new Date\(\), done: 0/.test(mirror)
+    && /put\(\{ status: 'decide', decideAt: new Date\(\) \}\)/.test(mirror) && /put\(\{ status: 'deciding', claimedAt: new Date\(\) \}\)/.test(mirror)
     && /if \(BUSY_RUN\.includes\(st0\.run\?\.status\)\) return ok\(\{ ok: true, already: true/.test(mirror)
     && /if \(settings\(\)\.debugResearch !== true\) return fail\(404, SAY\.notFound\);/.test(mirror)
     && /if \(d\.status !== 'took'\) return fail\(409, SAY\.notTaken\);/.test(mirror) && /if \(d\.status !== 'open'\) return fail\(409, SAY\.notOpen\);/.test(mirror)
@@ -1368,6 +1371,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry73 = (CL.match(/\{\n\s+\/\/ YOUR SIZE \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-23 (v7.4): his bar, its own quiet entry.
   const entry74 = (CL.match(/\{\n\s+\/\/ HIS BAR \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.5): the run's bar, its own quiet entry.
+  const entry75 = (CL.match(/\{\n\s+\/\/ THE RUN'S BAR \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1412,8 +1417,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-23 (v7.4): both versions read 7.4 with the his-bar tag; the 7.3 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-23, v7.4): 'better than a 50% chance' reworded to 'more than a 50% chance' in the 7.4 entry made this read
   //   FAIL  T36 both versions read 7.4 ...
-  check('T36 both versions read 7.4 with the new tag, the 4.7 through 7.4 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.4';/.test(CL) && /const VERSION = '7\.4';/.test(W) && /const BUILD_TAG = 'v2026-09-23-his-bar';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.5): both versions read 7.5 with the run-bar tag; the 7.4 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.5): 'only fills to the end when the trades are in' reworded to 'fills up when the trades are in' in the 7.5 entry made this read
+  //   FAIL  T36 both versions read 7.5 ...
+  check('T36 both versions read 7.5 with the new tag, the 4.7 through 7.5 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.5';/.test(CL) && /const VERSION = '7\.5';/.test(W) && /const BUILD_TAG = 'v2026-09-24-run-bar';/.test(W)
+    && /version: '7\.5',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry75)
+    && /only fills to the end when the trades are in/.test(entry75) && !DASH.test(entry75) && !HARD.some((re) => re.test(entry75))
     && /version: '7\.4',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry74)
     && /better than a 50% chance/.test(entry74) && /best scalp, intraday and swing/.test(entry74) && !DASH.test(entry74)
     && !HARD.some((re) => re.test(entry74))
@@ -1471,7 +1481,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat118/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat119/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2188,6 +2198,49 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
     && /html\[data-desk\]:root \.rec \.cell\.tap \{[^}]*min-height: 44px;/.test(CSS)
     && ![his, hist, hisOver].some((h) => DASH.test(h)),
     JSON.stringify({ amt: tapV(his, 'amount'), risk: tapV(his, 'risk'), stop: cellV(his, 'Stop'), hist: hist.replace(/\s+/g, ' ').slice(0, 500) }));
+}
+
+// ---- T71: the run's bar (2026-09-24, v7.5) ----------------------------------------------------------
+// Eric: "Is a loading bar for the desk scan possible?" It moves on real stages and researchers back only.
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const t0 = at('2026-09-24T16:00:00Z');
+  const iso = (ms) => new Date(ms).toISOString();
+  const P = (run, now) => mod.runProgress(run, now);
+  const q0 = P({ status: 'queued', queuedAt: iso(t0) }, t0);
+  const q60 = P({ status: 'queued', queuedAt: iso(t0) }, t0 + 60_000);
+  const r = (done, secs) => P({ status: 'researching', startedAt: iso(t0), done, of: 5 }, t0 + secs * 1000);
+  const step = (72 - 8) / 5;
+  const dec = P({ status: 'decide', decideAt: iso(t0) }, t0 + 30_000);
+  const d0 = P({ status: 'deciding', claimedAt: iso(t0) }, t0);
+  const dLate = P({ status: 'deciding', claimedAt: iso(t0) }, t0 + 3600_000);
+  // A whole run, in the order the cron walks it, sampled every ten seconds: never backwards, never 100.
+  const walk = [];
+  for (let s = 0; s <= 50; s += 10) walk.push(P({ status: 'queued', queuedAt: iso(t0) }, t0 + s * 1000));
+  for (let d = 0; d <= 5; d++) for (let s = 0; s <= 30; s += 10) walk.push(r(d, 60 + d * 20 + s));
+  for (let s = 0; s <= 50; s += 10) walk.push(P({ status: 'decide', decideAt: iso(t0) }, t0 + s * 1000));
+  for (let s = 0; s <= 300; s += 10) walk.push(P({ status: 'deciding', claimedAt: iso(t0) }, t0 + s * 1000));
+  const rising = walk.every((v, i) => i === 0 || v >= walk[i - 1]);
+  const PAGE = f('public/admin-desk.html');
+  const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-24): the creep's 0.9 raised to 1.3, so the clock alone carried the bar past the next researcher's mark, made this read
+  //   FAIL  T71 the run's bar RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-24): RUN_BANDS' deciding band put to [80, 100] made this read
+  //   FAIL  T71 the run's bar RUNS ...
+  check('T71 the run\'s bar RUNS: nothing running is no bar; waiting to be picked up stays in its first band; with no researcher back it creeps but never reaches the first researcher\'s mark however long it waits, and each one back lifts it a step; handed over and deciding each keep their band and never read 100 while the run is going; a whole run sampled in order never goes backwards; the page has the bar, repaints it each second while a run goes, never lets it fall within a run, and shows it full only when the trades land',
+    P(null) === null && P({ status: 'idle' }) === null && P({ status: 'error' }) === null
+    && q0 === 0 && q60 > 0 && q60 < 8
+    && r(0, 0) === 8 && r(0, 3600) < 8 + step && r(0, 3600) > 8 + step * 0.8
+    && r(3, 90) >= 8 + 3 * step && r(3, 90) < 8 + 4 * step && r(5, 200) === 72
+    && dec >= 72 && dec < 80 && d0 === 80 && dLate < 97 && dLate > 95
+    && rising && walk.every((v) => v < 100)
+    && /<div class="runbar" id="runbar" role="progressbar"[^>]*hidden><i id="runbar-fill"><\/i><\/div>/.test(PAGE)
+    && /setInterval\(\(\) => \{ if \(!document\.hidden && S\.page === 'trades' && runBusy\(\)\) paintBar\(\); \}, 1000\);/.test(APP)
+    && /pct = Math\.max\(pct, BAR\.max\);/.test(APP) && /BAR\.doneUntil = Date\.now\(\) \+ 1400;/.test(APP)
+    && /decideAt: iso\(run\.decideAt\), claimedAt: iso\(run\.claimedAt\),/.test(T) && /decideAt: iso\(run\.decideAt\), claimedAt: iso\(run\.claimedAt\),/.test(D)
+    && /status: 'decide', done: got\.length, decideAt: new Date\(\)/.test(f('worker/desk-run.js'))
+    && !/\.runbox\[aria-busy="true"\]::after/.test(CSS),
+    JSON.stringify({ q60, r0: r(0, 3600), r3: r(3, 90), dec, d0, dLate, rising }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

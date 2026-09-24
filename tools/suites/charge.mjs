@@ -392,12 +392,15 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // stat116 (2026-09-22, v6.0) for the desk's own page and its neon,
     // and to stat117 (2026-09-23, PR 420) for the electric yellow of a
     // trade he took and the new card, and to stat118 (2026-09-23, v7.3)
-    // for the Amount and Risk cells he can tap to set his own size.
+    // for the Amount and Risk cells he can tap to set his own size, and to
+    // stat119 (2026-09-24, v7.5) for the run's progress bar.
     // NEGATIVE CONTROL (run 2026-09-23): admin-chats.html put back to stat116 made this read
     //   FAIL  CH7 the pages: ...
     // NEGATIVE CONTROL (run 2026-09-23, v7.3): admin-desk.html put back to stat117 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat118/.test(f(`public/${p}.html`)))
+    // NEGATIVE CONTROL (run 2026-09-24, v7.5): admin-desk.html put back to stat118 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat119/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

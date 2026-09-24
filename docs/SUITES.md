@@ -469,6 +469,13 @@ desk-run.js is his rule: `validRec` drops any trade whose chance starts at
 50% or under, and both prompts ask for every trade over it, the desk for the
 best of each kind. desk.mjs D27 holds all three.
 
+**The run's bar (2026-09-24, v7.5).** `runProgress` in admin-desk.js gives each
+stage a band (queued, researching, handed over, deciding), lifts the bar one
+step per researcher back, and lets time creep inside a step without ever
+reaching the next, so the bar never shows a step that has not happened. The
+Worker's run block carries `decideAt` and `claimedAt` for its clocks. T71 runs
+it over a whole run, drive-trade.mjs D samples it five times a second.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's
