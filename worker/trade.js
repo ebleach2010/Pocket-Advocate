@@ -17,7 +17,7 @@
 
 import { patchDoc, listDocs, tryGet, batchGetDocs, READ_FAILED, readFailedError, deleteDoc } from './firestore.js';
 import { requestRun, runAlive, riskPctOf, RESEARCH_PATH, LENSES } from './desk-run.js';
-import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN, planFor } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, MARKET_OPEN_MIN, planFor, positionKey } from '../public/js/trade-math.js';
 import {
   TRADE_TZ, DESK_NAME, SAY, SETTINGS_PATH, STATE_PATH, PLAYS, BALANCES, POSITIONS, DEFAULT_WATCHLIST, WATCHLIST_MAX, KEY_RE,
   QUOTE_MAX, mtParts, keyTail, resolveKey, watchlistOf, startOf, realDate,
@@ -90,6 +90,9 @@ export function recRow(id, d) {
     runId: d?.runId || null,
     // His own size, when he set one: what he typed, and the stop and targets it gave.
     mine: mineOf(d?.mine),
+    // An add to a position he holds, and a position back after he passed on it (2026-09-24).
+    adds: d?.adds === true,
+    reoffered: d?.reoffered && Number.isFinite(Number(d.reoffered.was)) ? { was: Number(d.reoffered.was), now: Number(d.reoffered.now) || 0 } : null,
   };
 }
 const mineOf = (m) => (m && Number(m.amountCents) > 0 && Number(m.riskCents) > 0 ? {
@@ -270,6 +273,40 @@ export async function tradeAdjust(env, body, now = Date.now()) {
   const won = await patchDoc(env, `${PLAYS}/${id}`, { mine }, { mask: ['mine'], ifUpdateTime: doc.updateTime }).catch(() => false);
   if (won === false) throw new TradeError(409, SAY.busy);
   return { ok: true, rec: recRow(id, { ...d, mine }) };
+}
+
+/**
+ * NO (Eric, 2026-09-24: "I should be able to accept/deny. If denied, it
+ * doesn't suggest that position to me again unless an additional agent
+ * agrees."). The suggestion leaves the board, and its position is remembered
+ * on trade/state with how many of the desk agreed, which is what a later run
+ * has to beat. A second NO changes nothing. A trade he took is not passed on.
+ */
+export const DECLINED_MAX = 200;
+export async function tradeDecline(env, body, now = Date.now()) {
+  const id = String(body?.id || '');
+  const doc = await readRec(env, id);
+  const d = doc.data || {};
+  if (d.status !== 'open' && d.status !== 'declined') throw new TradeError(409, SAY.notDeclinable);
+  const key = positionKey(d);
+  const agreement = Math.max(0, Number(d.agreement) || 0);
+  if (d.status === 'open') {
+    const patch = { status: 'declined', declinedAt: new Date(now) };
+    const won = await patchDoc(env, `${PLAYS}/${id}`, patch, { mask: Object.keys(patch), ifUpdateTime: doc.updateTime }).catch(() => false);
+    if (won === false) throw new TradeError(409, SAY.busy);
+  }
+  for (let i = 0; i < 4; i++) {
+    const st = await readState(env);
+    const cur = st?.data?.declined && typeof st.data.declined === 'object' ? st.data.declined : {};
+    // The newest two hundred positions are kept; the oldest pass is the first to go.
+    const next = Object.fromEntries(Object.entries({ ...cur, [key]: { agreement, at: new Date(now), recId: id } })
+      .sort((a, b) => new Date(b[1]?.at || 0) - new Date(a[1]?.at || 0)).slice(0, DECLINED_MAX));
+    const won = await patchDoc(env, STATE_PATH, { declined: next }, st
+      ? { mask: ['declined'], ifUpdateTime: st.updateTime }
+      : { mask: ['declined'], mustNotExist: true }).catch(() => false);
+    if (won !== false) return { ok: true, rec: recRow(id, { ...d, status: 'declined', declinedAt: new Date(now) }), key, agreement };
+  }
+  throw new TradeError(409, SAY.busy);
 }
 
 // ---- history ----------------------------------------------------------------------
@@ -529,6 +566,7 @@ export async function tradeRoute(env, { sub, method, body, query = {}, now = Dat
   if (sub === 'take') return tradeTake(env, body, now);
   if (sub === 'result') return tradeResult(env, body, now);
   if (sub === 'adjust') return tradeAdjust(env, body, now);
+  if (sub === 'decline') return tradeDecline(env, body, now);
   if (sub === 'balance') return tradeBalance(env, body, now);
   if (sub === 'settings') return tradeSettings(env, body);
   if (sub === 'open') return tradeOpen(env, { now: new Date(now) });

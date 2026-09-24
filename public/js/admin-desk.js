@@ -189,6 +189,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
       <span class="tk">${esc(r.ticker)}</span>
       <span class="side ${r.side === 'short' ? 'short' : 'long'}">${r.side === 'short' ? 'Short' : 'Long'}</span>
       <span class="kind">${esc(kind)}</span>
+      ${r.adds && !active ? '<span class="addtag">Add</span>' : ''}
       ${chance ? `<span class="odds"><span class="k">Chance</span><span class="v">${chance}</span></span>` : ''}
     </div>
     ${active ? `<div class="live-tag">Active${r.tookAt ? ` since ${esc(clock(r.tookAt))}` : ''}</div>` : ''}
@@ -204,6 +205,8 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
       ${cell('R:R', sized && sz.rr != null ? esc(`1 : ${sz.rr}`) : '')}
     </div>
     ${mine ? `<p class="mine-note"><b>Your size.</b> ${esc(deskPlan)}${esc(ruleNote)}</p>` : ''}
+    ${r.adds && !active ? `<p class="deal-note add"><b>You already hold ${esc(r.ticker)}.</b> Taking this adds to your position.</p>` : ''}
+    ${r.reoffered && !active ? `<p class="deal-note back"><b>Back again.</b> You passed on this when ${esc(r.reoffered.was)} of 5 agreed. Now ${esc(r.reoffered.now)} of 5 do.</p>` : ''}
     ${vehicleText(r) ? `<p class="vehicle">${esc(vehicleText(r))}</p>` : ''}
     ${r.setup ? `<p class="setup">${esc(r.setup)}</p>` : ''}
     <dl class="why">
@@ -214,7 +217,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
     <div class="acts">
       ${active
         ? '<button type="button" class="btn big profit" data-act="profit">PROFIT</button><button type="button" class="btn big loss" data-act="loss">LOSS</button>'
-        : '<button type="button" class="btn big primary take fl" data-act="take">YES, I TOOK IT</button>'}
+        : '<button type="button" class="btn big primary take fl" data-act="take">YES, I TOOK IT</button><button type="button" class="btn big quiet pass" data-act="decline" aria-label="No, pass on this trade">NO</button>'}
     </div>
     <p class="said" data-rec-said></p>
   </article>`;

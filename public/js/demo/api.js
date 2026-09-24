@@ -11,7 +11,7 @@
 import { DEMO_CASE_ID } from './seed.js';
 // The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
 // PR 420 (2026-09-23) took the positions, the calculator, the stats and the scan off the desk, so two are left.
-import { tradeMetrics, rulesOf, planFor } from '../trade-math.js';
+import { tradeMetrics, rulesOf, planFor, positionKey, screenTrades } from '../trade-math.js';
 // The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
 import { textPdf } from '../textpdf.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
@@ -1769,6 +1769,7 @@ export function demoApi(role, store) {
         notTaken: 'Tap YES on this trade before marking how it ended.',
         badResult: 'Mark it PROFIT or LOSS.',
         notAdjustable: 'That trade is closed, so its size can no longer change.',
+        notDeclinable: 'Only a new suggestion can be passed on.',
         badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
       };
       const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'];
@@ -1808,6 +1809,8 @@ export function demoApi(role, store) {
           amountCents: Number(d.mine.amountCents), riskCents: Number(d.mine.riskCents), stop: d.mine.stop ?? null,
           targets: Array.isArray(d.mine.targets) ? d.mine.targets : [], qty: d.mine.qty ?? null, costCents: d.mine.costCents ?? null, at: iso(d.mine.at),
         } : null,
+        adds: d.adds === true,
+        reoffered: d.reoffered && Number.isFinite(Number(d.reoffered.was)) ? { was: Number(d.reoffered.was), now: Number(d.reoffered.now) || 0 } : null,
       });
       const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
       const runBlock = (run) => (run ? {
@@ -2008,6 +2011,21 @@ export function demoApi(role, store) {
         store.persist?.();
         return ok({ ok: true, rec: recRow(id, next) });
       }
+      // NO (2026-09-24): the Worker's tradeDecline. The position is remembered with its agreement.
+      if (sub === 'decline') {
+        const id = String(body.id || '');
+        const d = readRec(id);
+        if (!d) return fail(404, SAY.noRec);
+        if (d.status !== 'open' && d.status !== 'declined') return fail(409, SAY.notDeclinable);
+        const key = positionKey(d);
+        const agreement = Math.max(0, Number(d.agreement) || 0);
+        const next = d.status === 'open' ? { ...d, status: 'declined', declinedAt: new Date() } : d;
+        store.docs.set(`trade/plays/items/${id}`, next);
+        const st = tstate();
+        store.docs.set('trade/state', { ...st, declined: { ...(st.declined || {}), [key]: { agreement, at: new Date(), recId: id } } });
+        store.persist?.();
+        return ok({ ok: true, rec: recRow(id, next), key, agreement });
+      }
       // His own size (2026-09-23): the Worker's tradeAdjust, on the same planFor.
       if (sub === 'adjust') {
         const id = String(body.id || '');
@@ -2065,8 +2083,11 @@ export function demoApi(role, store) {
             { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, lastPrice: 168.4,
               setup: 'Pressing the day high at 169 with the supply news behind it.', catalyst: 'Supply agreement reported before the open.', invalidation: 'Losing 167.8, the morning low of the push.' },
           ];
+          // Screened as the Worker's desk firing screens them: against what he holds and what he passed on.
+          const held = (tstate().activeIds || []).map((x) => readRec(x)).filter((d) => d && d.status === 'took').map(positionKey);
+          const { keep } = screenTrades(FRESH, { held, declined: tstate().declined || {} });
           const ids = [];
-          FRESH.forEach((t, i) => {
+          keep.forEach((t, i) => {
             const id = `${runId}-${i + 1}`;
             ids.push(id);
             const hold = t.horizon === 'swing' ? 3 * 86_400_000 : t.horizon === 'scalp' ? 2 * 3600_000 : 4 * 3600_000;

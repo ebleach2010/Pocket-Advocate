@@ -61,7 +61,7 @@ import {
   SETTINGS_PATH, STATE_PATH, PLAYS, SAY, stripDashes, mtParts, mtInstant, mtLabel, watchlistOf, resolveKey,
   marketSnapshot, quoteCached, rid, realDate,
 } from './trade-desk.js';
-import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades } from '../public/js/trade-math.js';
 
 // ---- the settings of a run ---------------------------------------------------
 // "Use Fable unless I explicitly tell you otherwise." Every one of the six
@@ -192,7 +192,7 @@ How to weigh the reports:
 - His bar: he wants every trade whose honest chance of reaching the first target before the stop is above ${CHANCE_FLOOR}%, which means chanceLow of at least ${CHANCE_FLOOR + 1}. Give him the best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar, and a second in a kind only when it clears it too. Leave a kind empty only when nothing in it clears the bar, and never raise a number to clear it: the app drops anything at ${CHANCE_FLOOR}% or below.
 
 Limits:
-- At most ${MAX_TRADES} trades and at most ${MAX_PER_HORIZON} of each kind.
+- At most ${MAX_TRADES} trades and at most ${MAX_PER_HORIZON} of each kind, and never the same ticker twice in the same direction and kind: one trade per position, in the vehicle that suits it best.
 - Scalps are held 1 to 10 minutes, intraday trades 1 to 8 hours and flat by the close, swing trades up to 3 trading days and never over a weekend. Give holdMinutes for a scalp or intraday trade and holdDays for a swing.
 - Scalps only while the market is open or within an hour of the open.
 - ${accountRule(accountType)}
@@ -492,7 +492,9 @@ export function checkDesk(out, ctx = {}) {
   for (const t of Array.isArray(out?.trades) ? out.trades : []) {
     const r = validRec(t, ctx);
     if (!r) { dropped++; continue; }
-    const key = `${r.ticker}:${r.side}:${r.horizon}`;
+    // One trade per position (Eric, 2026-09-24: "I got the same position given to me twice"):
+    // a ticker in one direction and one kind, whatever the vehicle.
+    const key = positionKey(r);
     if (seen.has(key) || perKind[r.horizon] >= MAX_PER_HORIZON || trades.length >= MAX_TRADES) { dropped++; continue; }
     seen.add(key); perKind[r.horizon]++;
     trades.push(r);
@@ -867,6 +869,20 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     }
     const checked = checkDesk(decided.json, { accountType, session, todayKey });
 
+    // WHAT REACHES HIM (Eric, 2026-09-24: "The desk should only suggest new
+    // positions or increasing equity in a position ... If denied, it doesn't
+    // suggest that position to me again unless an additional agent agrees").
+    // Screened here, after the desk has decided, against the trades he holds
+    // and the ones he passed on, so nothing about him ever reaches an agent.
+    // The ownership read comes first because it is also what is screened with.
+    const own = await mine();
+    if (own === false) return superseded('filing');
+    const heldIds = (Array.isArray(own?.data?.activeIds) ? own.data.activeIds : []).slice(0, 40);
+    const heldDocs = heldIds.length ? await getMany(env, heldIds.map((id) => `${PLAYS}/${id}`)).catch(() => []) : [];
+    const held = heldDocs.filter((d) => d?.data?.status === 'took').map((d) => positionKey(d.data));
+    const screened = screenTrades(checked.trades, { held, declined: own?.data?.declined || {} });
+    checked.trades = screened.keep;
+
     // Current prices, from the quote feed rather than from the research.
     if (key) {
       await Promise.all(checked.trades.map(async (r) => {
@@ -880,8 +896,6 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     // ideas are written first, then the state points at them, and only then
     // does every idea still open from the last run give way. A trade he took
     // is never retired here: only PROFIT or LOSS moves it.
-    const own = await mine();
-    if (own === false) return superseded('filing');
     const previous = Array.isArray(own?.data?.desk?.ids) ? own.data.desk.ids : [];
     const filed = await fileRecs(env, run, checked.trades, { caseId: settings.caseId || '', writeMany });
     const finishedAt = new Date();
@@ -911,7 +925,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     }
     await diagLog(env, {
       ev: 'desk-run-end', ok: true, trigger: run.trigger || 'manual', attempt: run.attempt || 1, reports: got.length,
-      trades: n, dropped: checked.dropped, expired, news: checked.news.length, pushed,
+      trades: n, dropped: checked.dropped, screened: screened.dropped, expired, news: checked.news.length, pushed,
       desk: { ms: decided.ms, st: decided.stop, in: decided.usage?.input_tokens, out: decided.usage?.output_tokens },
       ms: Date.now() - t0,
     }).catch(() => {});

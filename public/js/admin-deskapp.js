@@ -12,6 +12,8 @@
 // What he can do here is exactly what he asked for and nothing else:
 //   RUN TRADING DESK   one tap, no confirmation, a fresh run by the desk
 //   YES, I TOOK IT     the card goes electric yellow and grows two buttons
+//   NO                 the card goes, and that position stays off the board
+//                      until more of the desk agrees than when he passed
 //   PROFIT / LOSS      the trade leaves for History with its setup and times
 //   Amount or Risk     his own size on any card, open or taken; stop and targets follow
 //   Settings           his balance, the risk per trade, and a few switches
@@ -243,6 +245,16 @@ async function act(btn) {
       lit?.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       return;
     }
+    if (kind === 'decline') {
+      const out = await call('decline', { id });
+      card.classList.add('leaving');
+      setTimeout(() => {
+        S.state = { ...S.state, recs: (S.state.recs || []).filter((r) => r.id !== id) };
+        paintBoard();
+        toast(`Passed on ${out.rec?.ticker || 'it'}. It comes back only if more than ${out.agreement} of 5 agree.`);
+      }, 300);
+      return;
+    }
     if (kind === 'profit' || kind === 'loss') {
       const r = btn.getBoundingClientRect();
       const out = await call('result', { id, result: kind });
@@ -261,7 +273,7 @@ async function act(btn) {
     for (const b of card.querySelectorAll('[data-act]')) b.disabled = false;
     say(saidEl, err.message);
     // A trade that timed out or was already marked elsewhere: the server knows best.
-    if (/not on the desk|no longer open|before marking/.test(err.message)) loadState().then(paintTrades).catch(() => {});
+    if (/not on the desk|no longer open|before marking|can be passed on/.test(err.message)) loadState().then(paintTrades).catch(() => {});
   }
 }
 

@@ -476,6 +476,15 @@ reaching the next, so the bar never shows a step that has not happened. The
 Worker's run block carries `decideAt` and `claimedAt` for its clocks. T71 runs
 it over a whole run, drive-trade.mjs D samples it five times a second.
 
+**Accept or pass (2026-09-24, v7.6).** A position is a ticker, a direction and
+a kind (`positionKey` in trade-math.js): a scalp and a swing are separate.
+`screenTrades` screens the desk's answer after it decides, so no agent ever
+sees what he holds or passed on: one per position, an add when he holds it,
+dropped when it leans against a held trade of the same kind, and a position he
+passed on (NO, `POST trade/decline`, remembered on trade/state with its
+agreement) held back until more of the desk agrees. trade.mjs T72 to T74 and
+desk.mjs D28 hold it; drive-trade.mjs N plays NO, a run, YES and the add.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

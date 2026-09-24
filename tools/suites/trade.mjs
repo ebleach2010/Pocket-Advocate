@@ -119,7 +119,7 @@ function world(over = {}) {
       return over.runOut || { ok: true, already: false, run: { id: 'run-1', status: 'queued', trigger, queuedAt: new Date(now), done: 0 } };
     },
     runAlive: DR.runAlive, riskPctOf: DR.riskPctOf, RESEARCH_PATH: DR.RESEARCH_PATH, LENSES: DR.LENSES,
-    isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries, planFor: math.planFor,
+    isTradingDay: math.isTradingDay, tradeMetrics: math.tradeMetrics, chartSeries: math.chartSeries, planFor: math.planFor, positionKey: math.positionKey,
     TARGET_DAILY: math.TARGET_DAILY, PROJECTION_MIN_DAYS: math.PROJECTION_MIN_DAYS, DEFAULT_START_CENTS: math.DEFAULT_START_CENTS,
     MARKET_OPEN_MIN: math.MARKET_OPEN_MIN,
     fetch: async (url) => {
@@ -1063,11 +1063,12 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T34 the desk's view module RUNS: ...
   check('T34 the desk\'s view module RUNS: a trade reads ticker, Long or Short, its kind and its chance, then the price now, the entry zone, the dollars and shares his 3% rule and the desk\'s allocation allow, how long to hold, the stop, both targets, the risk and reward in dollars and the R:R, then the setup, the catalyst, what kills it and how many researchers agree, with YES under it; a live quote replaces the desk\'s price; a taken one is lit active with the time and PROFIT and LOSS in place of YES; a contract says Stock for the price, names the strike and the date and counts whole contracts; a contract his allocation cannot buy or his rule cannot carry says so in dollars; no balance says to set it; a swing holds in days; and the board groups scalp, intraday and swing in that order with a count, leaving out an empty kind',
     // RE-PINNED 2026-09-23 (review): sized from the worst fill in the zone, $248.00 for this buy.
-    /^NVDA Long Intraday Chance 56 to 64% Now \$248\.10 Entry \$247\.50 to \$248\.00 Amount \$980 · 3\.9516 shares Hold 3 hours Stop \$245\.80 Targets \$251\.00 then \$253\.50 Risk \$8\.69 Reward \$11\.85 R:R 1 : 1\.36 Reclaimed VWAP on twice normal volume\. Catalyst Guide raised\. Out if Loses 246\. Desk 3 of 5 agree YES, I TOOK IT$/.test(t)
-    && /class="outlined rec" data-kind="intraday" data-rec="r1"/.test(card) && /data-act="take"/.test(card) && !/data-act="profit"/.test(card)
+    // RE-PINNED 2026-09-24 (v7.6, Eric: "I should be able to accept/deny"): NO sits beside YES on a new suggestion.
+    /^NVDA Long Intraday Chance 56 to 64% Now \$248\.10 Entry \$247\.50 to \$248\.00 Amount \$980 · 3\.9516 shares Hold 3 hours Stop \$245\.80 Targets \$251\.00 then \$253\.50 Risk \$8\.69 Reward \$11\.85 R:R 1 : 1\.36 Reclaimed VWAP on twice normal volume\. Catalyst Guide raised\. Out if Loses 246\. Desk 3 of 5 agree YES, I TOOK IT NO$/.test(t)
+    && /class="outlined rec" data-kind="intraday" data-rec="r1"/.test(card) && /data-act="take"/.test(card) && /data-act="decline"/.test(card) && !/data-act="profit"/.test(card)
     && /Now \$249\.30/.test(text(live))
     && /class="outlined rec active"/.test(took) && /Active since 10:02 AM/.test(text(took))
-    && /data-act="profit">PROFIT</.test(took) && /data-act="loss">LOSS</.test(took) && !/data-act="take"/.test(took)
+    && /data-act="profit">PROFIT</.test(took) && /data-act="loss">LOSS</.test(took) && !/data-act="take"/.test(took) && !/data-act="decline"/.test(took)
     && /Stock \$168\.40/.test(text(callCard)) && /\$170\.00 call expiring 16 Oct\. Prices below are the premium per share\./.test(callCard)
     && /Amount \$220 · 1 contract/.test(text(callCard))
     && /One contract costs \$220, more than the \$123 set aside/.test(text(dear))
@@ -1115,10 +1116,11 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T53 the stream is gone: ...
   // RE-PINNED 2026-09-23 (v7.3, Eric: "I should be able to manually tap on the amount traded and update it"):
   // adjust joins the writes; it carries two numbers and nothing he types in words.
-  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, result, adjust, balance, settings and open',
+  // RE-PINNED 2026-09-24 (v7.6): decline joins them, the NO beside YES; it carries only the trade's id.
+  check('T53 the stream is gone: the page has no composer, no text box, no stream and no reading, the app writes no log line, asks no question, reads no Firestore and imports none of the old pieces, and its only writes are run, take, decline, result, adjust, balance, settings and open',
     !/<textarea|id="composer"|id="stream"|id="drawer"|id="say"|data-page="desk"|data-page="plays"|data-page="positions"|data-page="stats"/.test(PAGE)
     && !/firebase\.js|onSnapshot|addDoc|advisor\/ask|advisor\/state|isQuestion|mergeStream|md\(|splitPages|confirm\(/.test(APP)
-    && (APP.match(/call\('(\w+)', \{/g) || []).map((x) => x.slice(6, -4)).every((sub) => ['run', 'take', 'result', 'adjust', 'balance', 'settings'].includes(sub))
+    && (APP.match(/call\('(\w+)', \{/g) || []).map((x) => x.slice(6, -4)).every((sub) => ['run', 'take', 'decline', 'result', 'adjust', 'balance', 'settings'].includes(sub))
     && /fetch\('\/api\/admin\/trade\/open'/.test(APP),
     JSON.stringify((APP.match(/call\('(\w+)', \{/g) || [])));
 }
@@ -1278,8 +1280,9 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   //   FAIL  T35 the portal page and its module are gone ...
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
-    // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat119/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat120/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1373,6 +1376,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry74 = (CL.match(/\{\n\s+\/\/ HIS BAR \(Eric, 2026-09-23[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.5): the run's bar, its own quiet entry.
   const entry75 = (CL.match(/\{\n\s+\/\/ THE RUN'S BAR \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.6): accept or pass, its own quiet entry.
+  const entry76 = (CL.match(/\{\n\s+\/\/ ACCEPT OR PASS \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1420,8 +1425,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.5): both versions read 7.5 with the run-bar tag; the 7.4 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.5): 'only fills to the end when the trades are in' reworded to 'fills up when the trades are in' in the 7.5 entry made this read
   //   FAIL  T36 both versions read 7.5 ...
-  check('T36 both versions read 7.5 with the new tag, the 4.7 through 7.5 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.5';/.test(CL) && /const VERSION = '7\.5';/.test(W) && /const BUILD_TAG = 'v2026-09-24-run-bar';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.6): both versions read 7.6 with the accept-or-pass tag; the 7.5 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.6): 'passing on one leaves the other alone' reworded to 'passing on one keeps the other' in the 7.6 entry made this read
+  //   FAIL  T36 both versions read 7.6 ...
+  check('T36 both versions read 7.6 with the new tag, the 4.7 through 7.6 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.6';/.test(CL) && /const VERSION = '7\.6';/.test(W) && /const BUILD_TAG = 'v2026-09-24-accept-or-pass';/.test(W)
+    && /version: '7\.6',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry76)
+    && /passing on one leaves the other alone/.test(entry76) && /shows as an Add to your position/.test(entry76) && !DASH.test(entry76) && !HARD.some((re) => re.test(entry76))
     && /version: '7\.5',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry75)
     && /only fills to the end when the trades are in/.test(entry75) && !DASH.test(entry75) && !HARD.some((re) => re.test(entry75))
     && /version: '7\.4',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry74)
@@ -1481,7 +1491,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat119/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat120/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2241,6 +2251,90 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
     && /status: 'decide', done: got\.length, decideAt: new Date\(\)/.test(f('worker/desk-run.js'))
     && !/\.runbox\[aria-busy="true"\]::after/.test(CSS),
     JSON.stringify({ q60, r0: r(0, 3600), r3: r(3, 90), dec, d0, dLate, rising }));
+}
+
+// ---- T72 to T74: accept or pass (2026-09-24, v7.6) ------------------------------------------------
+// Eric: "The desk should only suggest new positions or increasing equity in a position. I got the same
+// position given to me twice. I should be able to accept/deny. If denied, it doesn't suggest that position
+// to me again unless an additional agent agrees." And at review: "Passing on a scalp does not mean pass on
+// a swing. They are different categories."
+{
+  const T = (o) => ({ ticker: 'NVDA', side: 'long', instrument: 'stock', horizon: 'intraday', agreement: 2, ...o });
+  const keys = [math.positionKey(T({})), math.positionKey(T({ instrument: 'call' })), math.positionKey(T({ instrument: 'put' })), math.positionKey(T({ side: 'short' })), math.positionKey(T({ horizon: 'swing', ticker: ' nvda ' }))];
+  const run = math.screenTrades([
+    T({}), T({ instrument: 'call' }), T({ ticker: 'TSLA', horizon: 'scalp' }), T({ ticker: 'TSLA', horizon: 'scalp', instrument: 'put' }),
+    T({ ticker: 'AMD', horizon: 'scalp' }), T({ ticker: 'AMD', horizon: 'scalp', agreement: 3 }), T({ ticker: 'AMD', horizon: 'swing' }),
+    T({ ticker: 'MU', horizon: 'swing', instrument: 'put' }), T({ ticker: 'MU', horizon: 'scalp', instrument: 'put' }), T({ ticker: 'SOFI', agreement: 5 }),
+  ], { held: ['NVDA:up:intraday', 'MU:up:swing'], declined: { 'AMD:up:scalp': { agreement: 2 }, 'SOFI:up:intraday': { agreement: 5 } } });
+  const got = run.keep.map((k) => `${k.ticker}/${k.horizon}/${k.instrument}${k.adds ? '+add' : ''}${k.reoffered ? `+back${k.reoffered.was}>${k.reoffered.now}` : ''}`).join(' ');
+  // NEGATIVE CONTROL (run 2026-09-24): positionKey without the kind (`${ticker}:${direction}` only) made this read
+  //   FAIL  T72 what reaches him RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-24): screenTrades' pass test `agree <= was` changed to `agree < was` made this read
+  //   FAIL  T72 what reaches him RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-24): screenTrades' held-against test removed (`if (ways && !ways.has(dir))` changed to `if (false)`) made this read
+  //   FAIL  T72 what reaches him RUNS ...
+  check('T72 what reaches him RUNS: a position is a ticker, a direction and a kind whatever the vehicle, a put and a short both down; one per position in a run and never both ways on one ticker and kind; the same position as one he holds comes as an add, one leaning against it in the same kind does not come, and a different kind on the same ticker is new; a position he passed on stays off at the same agreement or less and comes back flagged when more agree; a pass on a scalp leaves the swing alone; and passed at 5 of 5 it can never beat itself',
+    keys.join() === 'NVDA:up:intraday,NVDA:up:intraday,NVDA:down:intraday,NVDA:down:intraday,NVDA:up:swing'
+    && got === 'NVDA/intraday/stock+add TSLA/scalp/stock AMD/scalp/stock+back2>3 AMD/swing/stock MU/scalp/put'
+    && run.dropped.twice === 2 && run.dropped.against === 1 && run.dropped.declined === 2,
+    JSON.stringify({ got, dropped: run.dropped }));
+}
+{
+  const now = at('2026-09-24T16:00:00Z');
+  const REC = { ticker: 'AMD', side: 'long', horizon: 'scalp', instrument: 'call', agreement: 2, status: 'open', entryLow: 2, entryHigh: 2.2, stop: 1.6, targets: [2.9] };
+  const decline = async (rec, over = {}, state = { declined: { 'OLD:up:swing': { agreement: 4, at: new Date(now - 86_400_000) } } }) => {
+    const { w, api } = world(over);
+    w.docs.set('trade/plays/items/r1', { data: rec, updateTime: 'P1' });
+    w.docs.set('trade/state', { data: state, updateTime: 'S1' });
+    let out = null; let err = null;
+    try { out = await api.tradeRoute(env, { sub: 'decline', method: 'POST', body: { id: 'r1' }, now }); } catch (e) { err = e; }
+    return { w, out, err, rec: w.patches.find((x) => x.path === 'trade/plays/items/r1'), st: w.patches.find((x) => x.path === 'trade/state') };
+  };
+  const ok1 = await decline(REC);
+  const again = await decline({ ...REC, status: 'declined' });
+  const took = await decline({ ...REC, status: 'took' });
+  const lost = await decline(REC, { claim: false });
+  const many = Object.fromEntries(Array.from({ length: 250 }, (_, i) => [`T${i}:up:swing`, { agreement: 1, at: new Date(now - (i + 1) * 60_000) }]));
+  const capped = await decline(REC, {}, { declined: many });
+  const capKeys = Object.keys(capped.st?.data.declined || {});
+  // NEGATIVE CONTROL (run 2026-09-24): tradeDecline's `{ agreement, at: new Date(now), recId: id }` written with `agreement: 0` made this read
+  //   FAIL  T73 NO RUNS ...
+  // NEGATIVE CONTROL (run 2026-09-24): tradeDecline's status guard allowing a taken trade (`d.status !== 'open' && d.status !== 'declined' && d.status !== 'took'`) made this read
+  //   FAIL  T73 NO RUNS ...
+  check('T73 NO RUNS: a new suggestion he passes on leaves the board under its own time, and its position is remembered with how many of the desk agreed, beside the ones already remembered; a second NO is answered and remembered again; a trade he took cannot be passed on; a lost race says tap again; and only the newest two hundred passes are kept, the new one among them',
+    ok1.out?.ok && ok1.rec?.data.status === 'declined' && ok1.rec.opts.ifUpdateTime === 'P1' && ok1.out.rec.status === 'declined'
+    && ok1.st?.opts.mask.join() === 'declined' && ok1.st.opts.ifUpdateTime === 'S1'
+    && ok1.st.data.declined['AMD:up:scalp']?.agreement === 2 && ok1.st.data.declined['AMD:up:scalp'].recId === 'r1' && ok1.st.data.declined['OLD:up:swing']?.agreement === 4
+    && ok1.out.agreement === 2 && ok1.out.key === 'AMD:up:scalp'
+    && again.out?.ok && !again.rec && again.st?.data.declined['AMD:up:scalp']?.agreement === 2
+    && took.err?.status === 409 && took.err.message === K.SAY.notDeclinable && !took.st
+    && lost.err?.status === 409 && lost.err.message === K.SAY.busy
+    && capKeys.length === 200 && capKeys.includes('AMD:up:scalp') && capKeys.includes('T0:up:swing') && !capKeys.includes('T249:up:swing'),
+    JSON.stringify({ ok: ok1.st?.data.declined?.['AMD:up:scalp'], took: took.err?.message, cap: capKeys.length }));
+}
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const REC = { id: 'r1', ticker: 'NVDA', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251, 253.5], allocPct: 40, status: 'open', agreement: 3 };
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 } };
+  const open = mod.recCardHtml(REC, ctx);
+  const add = mod.recCardHtml({ ...REC, adds: true }, ctx);
+  const back = mod.recCardHtml({ ...REC, reoffered: { was: 2, now: 3 } }, ctx);
+  const took = mod.recCardHtml({ ...REC, status: 'took', adds: true, reoffered: { was: 2, now: 3 } }, ctx);
+  const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-24): the NO button taken out of recCardHtml's open acts made this read
+  //   FAIL  T74 accept or pass on the card ...
+  // NEGATIVE CONTROL (run 2026-09-24): the app's decline branch sending the ticker (`call('decline', { id, ticker: ... })`) made this read
+  //   FAIL  T74 accept or pass on the card ...
+  check('T74 accept or pass on the card: a new suggestion carries YES and NO, a taken one neither; an add says Add and that he already holds it; a position back after a pass says when he passed and how many agree now; a taken card carries neither note; the page sends NO with the trade\'s id alone and says when it can come back; and the demo passes the same way and screens its run with the same function',
+    /data-act="take">YES, I TOOK IT<\/button><button type="button" class="btn big quiet pass" data-act="decline" aria-label="No, pass on this trade">NO<\/button>/.test(open)
+    && !/addtag|deal-note/.test(open)
+    && /<span class="addtag">Add<\/span>/.test(add) && /<p class="deal-note add"><b>You already hold NVDA\.<\/b> Taking this adds to your position\.<\/p>/.test(add)
+    && /<p class="deal-note back"><b>Back again\.<\/b> You passed on this when 2 of 5 agreed\. Now 3 of 5 do\.<\/p>/.test(back)
+    && !/addtag|deal-note|data-act="decline"/.test(took)
+    && /const out = await call\('decline', \{ id \}\);/.test(APP) && /Passed on \$\{out\.rec\?\.ticker \|\| 'it'\}\. It comes back only if more than \$\{out\.agreement\} of 5 agree\./.test(APP)
+    && /if \(sub === 'decline'\) \{[\s\S]*?positionKey\(d\)/.test(D) && /const \{ keep \} = screenTrades\(FRESH, \{ held, declined: tstate\(\)\.declined \|\| \{\} \}\);/.test(D)
+    && ![open, add, back].some((h) => DASH.test(h)),
+    back.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 400));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

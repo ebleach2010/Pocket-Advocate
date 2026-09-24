@@ -599,6 +599,51 @@ export function planFor({ rec, amountCents, riskCents, accountCents = 0, rules =
   return out;
 }
 
+/** Which way a trade leans: a put or a short sale is down, a call or a stock bought is up. */
+export const directionOf = (r) => (r?.instrument === 'put' || (r?.instrument !== 'call' && r?.side === 'short') ? 'down' : 'up');
+/**
+ * What "the same position" means on the desk: one ticker, one direction, one kind, whatever the
+ * vehicle (Eric, 2026-09-24: "Passing on a scalp does not mean pass on a swing. They are different
+ * categories.").
+ */
+const KINDS = ['scalp', 'intraday', 'swing'];
+export const positionKey = (r) => `${String(r?.ticker || '').trim().toUpperCase()}:${directionOf(r)}:${KINDS.includes(r?.horizon) ? r.horizon : 'intraday'}`;
+
+/**
+ * WHAT REACHES HIM (Eric, 2026-09-24: "The desk should only suggest new positions or increasing
+ * equity in a position. I got the same position given to me twice. I should be able to accept/deny.
+ * If denied, it doesn't suggest that position to me again unless an additional agent agrees."). The
+ * desk's trades, screened after it has decided, so nothing about him ever reaches its reasoning:
+ * one trade per position; a position he already holds comes back only as an add, and one that leans
+ * against a trade he holds of the same kind does not come back; a position he passed on comes back
+ * only when more of the desk agrees than when he passed, marked as back. A different kind on the
+ * same ticker is a different position. `held` is the keys of the trades he has taken and not closed;
+ * `declined` maps a key to the agreement it had when he passed.
+ */
+export function screenTrades(trades, { held = [], declined = {} } = {}) {
+  const holds = new Set(held);
+  // Which directions he holds each ticker in, kind by kind.
+  const heldWays = new Map();
+  for (const k of holds) { const [t, d, h] = String(k).split(':'); const at = `${t}:${h}`; if (!heldWays.has(at)) heldWays.set(at, new Set()); heldWays.get(at).add(d); }
+  const seen = new Set();
+  const keep = [];
+  const dropped = { twice: 0, against: 0, declined: 0 };
+  for (const t of Array.isArray(trades) ? trades : []) {
+    const key = positionKey(t);
+    const [tk, dir, kind] = key.split(':');
+    // The same position twice, or both ways on one ticker and kind in one run: the first stands.
+    if (seen.has(key) || seen.has(`${tk}:${dir === 'up' ? 'down' : 'up'}:${kind}`)) { dropped.twice++; continue; }
+    const ways = heldWays.get(`${tk}:${kind}`);
+    if (ways && !ways.has(dir)) { dropped.against++; continue; }
+    const agree = Math.max(0, Number(t?.agreement) || 0);
+    const was = declined?.[key];
+    if (was && agree <= (Math.max(0, Number(was.agreement) || 0))) { dropped.declined++; continue; }
+    seen.add(key);
+    keep.push({ ...t, adds: holds.has(key), reoffered: was ? { was: Math.max(0, Number(was.agreement) || 0), now: agree } : null });
+  }
+  return { keep, dropped };
+}
+
 /** The price ladder around the entry: the stop's distance as R, breakeven, then 1R, 2R and 3R the right way round. */
 export function ladder({ side, entry, stop }) {
   const e = fin(entry); const s = fin(stop);

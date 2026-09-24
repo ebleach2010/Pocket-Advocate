@@ -98,6 +98,7 @@ function load(deps) {
     marketSnapshot: TD.marketSnapshot, quoteCached: TD.quoteCached, rid: TD.rid, realDate: TD.realDate,
     isTradingDay: TM.isTradingDay, isMarketOpen: TM.isMarketOpen, swingLastDay: TM.swingLastDay, nextDateKey: TM.nextDateKey,
     EARLY_CLOSE_MIN: TM.EARLY_CLOSE_MIN, MARKET_CLOSE_MIN: TM.MARKET_CLOSE_MIN, MARKET_OPEN_MIN: TM.MARKET_OPEN_MIN,
+    positionKey: TM.positionKey, screenTrades: TM.screenTrades,
   };
   const keys = Object.keys(names);
   return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf };`)(...keys.map((k) => names[k]));
@@ -820,6 +821,41 @@ const SPARE = 6;
     && /Bring every candidate you honestly rate above 50%/.test(rs) && /stocks and options alike/.test(rs)
     && !/none than a weak one|Quality over count/.test(ds + rs) && !DASH.test(ds + rs),
     JSON.stringify({ at51: at51?.profitLow, at50, filed: filed.map((x) => `${x.ticker}:${x.profitLow}`) }));
+}
+
+// ---- D28: what reaches him, screened after the desk decides (2026-09-24, v7.6) -------------------------
+// Eric: "The desk should only suggest new positions or increasing equity in a position ... If denied, it
+// doesn't suggest that position to me again unless an additional agent agrees", and "Passing on a scalp
+// does not mean pass on a swing." He holds a HELDX intraday long and passed on an AMD scalp at 2 of 5.
+{
+  const held = { activeIds: ['held1'], declined: { 'AMD:up:scalp': { agreement: 2, at: new Date(WED_10 - 86_400_000), recId: 'old1' } } };
+  const plays = { held1: { ticker: 'HELDX', side: 'long', instrument: 'stock', horizon: 'intraday', status: 'took', runId: 'prev' } };
+  const first = DESK_OUT({ trades: [
+    TRADE({ ticker: 'HELDX', instrument: 'put', side: 'long', strike: 40, expiry: '2026-10-16', entryLow: 1.2, entryHigh: 1.3, stop: 0.8, targets: [2] }),
+    TRADE({ ticker: 'HELDX', entryLow: 41, entryHigh: 41.5, stop: 40, targets: [43.5] }),
+    TRADE({ ticker: 'HELDX', horizon: 'swing', holdMinutes: null, holdDays: 2, entryLow: 41, entryHigh: 41.5, stop: 39, targets: [45] }),
+    TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8, agreement: 2, entryLow: 168, entryHigh: 168.4, stop: 167.2, targets: [170] }),
+    TRADE({ ticker: 'AMD', horizon: 'swing', holdMinutes: null, holdDays: 2, agreement: 2, entryLow: 168, entryHigh: 168.4, stop: 162, targets: [178] }),
+  ] });
+  const second = DESK_OUT({ trades: [TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8, agreement: 3, entryLow: 168, entryHigh: 168.4, stop: 167.2, targets: [170] })] });
+  const a = await oneRun({ state: held, plays, turns: { desk: () => ({ text: JSON.stringify(first) }) } });
+  const b = await oneRun({ state: held, plays, turns: { desk: () => ({ text: JSON.stringify(second) }) } });
+  const recs = (r) => [...r.docs.entries()].filter(([k]) => k.startsWith(`${TD.PLAYS}/rec_`)).map(([, v]) => v.data);
+  const tag = (x) => `${x.ticker}/${x.horizon}/${x.instrument}${x.adds ? '+add' : ''}${x.reoffered ? `+back${x.reoffered.was}>${x.reoffered.now}` : ''}`;
+  const filedA = recs(a).map(tag).sort().join(' ');
+  const filedB = recs(b).map(tag).join(' ');
+  const endA = a.w.diag.find((e) => e.ev === 'desk-run-end');
+  const asked = JSON.stringify([...a.w.bodies, ...b.w.bodies]);
+  // NEGATIVE CONTROL (run 2026-09-24): the desk firing's `checked.trades = screened.keep;` removed made this read
+  //   FAIL  D28 what reaches him is screened after the desk decides ...
+  // NEGATIVE CONTROL (run 2026-09-24): the held read emptied (`const held = [];` in place of the batch read's keys) made this read
+  //   FAIL  D28 what reaches him is screened after the desk decides ...
+  check('D28 what reaches him is screened after the desk decides: the same position as the HELDX long he holds files as an add, a put leaning against it in the same kind is dropped, a HELDX swing files as new; the AMD scalp he passed on at 2 stays off while an AMD swing files as new, and a later run where 3 agree files the scalp as back; the recorder counts what was held back; and not one request to any agent carries what he holds or what he passed on',
+    a.out.ok === true && filedA === 'AMD/swing/stock HELDX/intraday/stock+add HELDX/swing/stock'
+    && b.out.ok === true && filedB === 'AMD/scalp/stock+back2>3'
+    && endA?.screened?.against === 1 && endA.screened.declined === 1 && endA.screened.twice === 0
+    && !/HELDX|declined|passed on|AMD:up/.test(asked),
+    JSON.stringify({ filedA, filedB, screened: endA?.screened, leak: (asked.match(/HELDX|declined|passed on|AMD:up/) || [''])[0] }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

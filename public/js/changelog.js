@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.5';
+export const VERSION = '7.6';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.5';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ACCEPT OR PASS (Eric, 2026-09-24: "The desk should only suggest new
+    // positions or increasing equity in a position ... I should be able to
+    // accept/deny."). Admin only.
+    version: '7.6',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every new suggestion has YES and NO. Tap NO and that trade leaves your board, and the same stock, direction and kind stays off it unless more of the desk backs it than when you passed. When that happens it comes back marked as back again.',
+      'A scalp and a swing are separate: passing on one leaves the other alone.',
+      'The desk no longer offers a trade you already hold as if it were new. If it likes it again, it shows as an Add to your position.',
+    ],
+  },
   {
     // THE RUN'S BAR (Eric, 2026-09-24: "Is a loading bar for the desk scan
     // possible?"). Admin only.

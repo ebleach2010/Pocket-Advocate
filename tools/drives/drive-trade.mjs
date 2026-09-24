@@ -100,7 +100,8 @@ ok('a trade reads every field he asked for', !!nv && ['Now', 'Entry', 'Amount', 
 ok('the amount is dollars and shares sized from his balance', !!nv && /^\$\d[\d,]* · [\d.]+ shares$/.test(nv.cells.Amount), nv?.cells.Amount);
 const put = board.find((c) => c.tk === 'TSLA');
 ok('a contract says Stock for the price and counts whole contracts', !!put && !!put.cells.Stock && /1 contract/.test(put.cells.Amount), JSON.stringify(put?.cells));
-ok('every trade on the board offers YES and nothing else', board.every((c) => c.acts.join() === 'take'));
+// RE-PINNED 2026-09-24 (v7.6, Eric: "I should be able to accept/deny"): YES and NO on every new suggestion.
+ok('every trade on the board offers YES and NO and nothing else', board.every((c) => c.acts.join() === 'take,decline'));
 ok('the one he took is lit, electric yellow, with PROFIT and LOSS', active.length === 1 && active[0].tk === 'PLTR' && active[0].active && active[0].acts.join() === 'profit,loss' && active[0].border === 'rgb(244, 255, 31)', JSON.stringify(active.map((c) => [c.tk, c.border])));
 ok('the tab carries the count of taken trades', (await page.evaluate(() => document.getElementById('bar-badge').textContent)) === '1');
 ok('the line under the button says when the last run was', /^Last run .+ · 4 trades$/.test(await page.evaluate(() => document.getElementById('run-line').textContent.trim())));
@@ -265,6 +266,31 @@ await go('history');
 const row = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'MU'); if (!h) return null; h.querySelector('summary').click(); return h.querySelector('.more').textContent.replace(/\s+/g, ' '); }, 5000);
 ok('History keeps the desk\'s plan and what he actually traded', (row || '').includes(`Desk Entry $118.20 to $119.00, stop ${muDesk?.cells.Stop}`) && /You put in \$(1,000\.00|999\.\d\d), risked \$50\.00/.test(row || '') && (row || '').includes(`stop ${pv.Stop}, targets ${pv.Targets}`), row || '');
 await go('trades');
+
+console.log('\n--- N. accept or pass: NO holds a position back, YES makes the next one an add ---');
+// Eric, 2026-09-24: "I should be able to accept/deny. If denied, it doesn't suggest that position to me
+// again unless an additional agent agrees", and "The desk should only suggest new positions or increasing
+// equity in a position."
+const boardTks = async () => (await cards('#board .rec')).map((c) => c.tk).sort().join();
+const runAgain = async () => {
+  await page.click('#run');
+  return until(() => !document.getElementById('run').disabled && /Last run/.test(document.getElementById('run-line').textContent) && document.querySelector('#toasts .toast')?.textContent, 20000);
+};
+const onBoard = await boardTks();
+ok('the board holds AMD before he passes on it', /AMD/.test(onBoard), onBoard);
+await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'AMD')?.querySelector('[data-act="decline"]')?.click());
+const passed = await until(() => ![...document.querySelectorAll('#board .rec')].some((c) => c.querySelector('.tk')?.textContent.trim() === 'AMD') && document.querySelector('#toasts .toast')?.textContent, 4000);
+ok('NO takes it off the board and says when it can come back', /^Passed on AMD\. It comes back only if more than 3 of 5 agree\.$/.test(passed || ''), passed || '');
+await runAgain();
+const afterPass = await boardTks();
+ok('the next run leaves the AMD scalp off the board, and the others come', afterPass === 'MU,QQQ', afterPass);
+await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="take"]')?.click());
+await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'QQQ'), 4000);
+await runAgain();
+const addCard = await page.evaluate(() => { const c = [...document.querySelectorAll('#board .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'QQQ'); return c ? { chip: c.querySelector('.addtag')?.textContent.trim() || '', note: c.querySelector('.deal-note.add')?.textContent.trim() || '' } : null; });
+ok('with QQQ taken, the next run offers QQQ only as an add to it', !!addCard && addCard.chip === 'Add' && /^You already hold QQQ\. Taking this adds to your position\.$/.test(addCard.note), JSON.stringify(addCard));
+ok('and the AMD scalp he passed on is still off', !(await boardTks()).includes('AMD'), await boardTks());
+await shot('N-add');
 
 console.log('\n--- J. reduced motion keeps the moment still ---');
 const still = await ctx.newPage();
