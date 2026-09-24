@@ -208,7 +208,8 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const LINE = { hold: 'HOLD', add: 'ADD', trim: 'TRIM', sell: exit, none: 'NO WORD' };
   const today = (x) => dayShort(x) === dayShort(new Date(ctxNow).toISOString());
   const vWhen = v?.at ? `Call by ${DESK_AGENT.name}, from the ${today(v.at) ? '' : `${dayShort(v.at)} `}${clock(v.at)} run` : '';
-  const votesHtml = v?.votes ? `<ul class="votes">${voteLines(v.votes, v.call).map((l) => `<li class="${l.call}"><span class="c">${LINE[l.call]}</span><span class="n">${l.n}</span><span class="who">${l.names.length ? esc(l.names.join(', ')) : 'none of the five'}</span></li>`).join('')}</ul>` : '';
+  // Folded under a tap (v7.14, Eric chose it): the call and its reason are what he acts on.
+  const votesHtml = v?.votes ? `<details class="votes-fold"><summary>How the five voted</summary><ul class="votes">${voteLines(v.votes, v.call).map((l) => `<li class="${l.call}"><span class="c">${LINE[l.call]}</span><span class="n">${l.n}</span><span class="who">${l.names.length ? esc(l.names.join(', ')) : 'none of the five'}</span></li>`).join('')}</ul></details>` : '';
   const verdictHtml = !active ? ''
     : v ? `<div class="verdict ${v.call}" role="status"><span class="call">${BIG[v.call]}</span>${v.why ? `<span class="why">${esc(v.why)}</span>` : ''}${votesHtml}${vWhen ? `<span class="when">${esc(vWhen)}</span>` : ''}</div>`
       : '<div class="verdict none"><span class="why">Not re-checked yet. RUN TRADING DESK checks it.</span></div>';

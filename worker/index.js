@@ -1054,6 +1054,26 @@ export default {
           }
           return json(out);
         }
+        // Does his market data key include 15-minute bars? (2026-09-24, before building the chart feed Eric
+        // asked for: "intraday 15min vwap, macd 3 EMA lines"). One call, SPY; the key never leaves.
+        if (url.searchParams.get('do') === 'bars-probe') {
+          const s = await getDoc(env, 'trade/settings').catch(() => null);
+          const key = String(env.FINNHUB_KEY || s?.data?.finnhubKey || '');
+          if (!key) return json({ key: false });
+          const to = Math.floor(Date.now() / 1000);
+          const from = to - 5 * 86_400;
+          const out = { key: true, source: env.FINNHUB_KEY ? 'env' : 'settings' };
+          try {
+            const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=SPY&resolution=15&from=${from}&to=${to}&token=${encodeURIComponent(key)}`, { signal: AbortSignal.timeout(8000) });
+            const text = await res.text();
+            let body = null; try { body = JSON.parse(text); } catch { /* not JSON */ }
+            Object.assign(out, { status: res.status, bars: Array.isArray(body?.c) ? body.c.length : null, s: body?.s ?? null, error: body?.error ? String(body.error).slice(0, 160) : (res.ok ? null : text.slice(0, 160)) });
+          } catch (err) {
+            out.error = String(err?.message || err).slice(0, 160);
+          }
+          if (out.error) out.error = out.error.split(key).join('[key]');
+          return json(out);
+        }
         if (url.searchParams.get('do') === 'firestore-probe') {
           const out = {};
           for (const [name, run] of [
@@ -2169,7 +2189,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-24-named-votes';
+const BUILD_TAG = 'v2026-09-24-judge-final';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2177,7 +2197,7 @@ const BUILD_TAG = 'v2026-09-24-named-votes';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.13';
+const VERSION = '7.14';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

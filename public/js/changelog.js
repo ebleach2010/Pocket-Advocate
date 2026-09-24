@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.13';
+export const VERSION = '7.14';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.13';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE JUDGE DECIDES (Eric, 2026-09-24: "if all the agents report to the
+    // 6th agent shouldn't he have the final call?"). Admin only.
+    version: '7.14',
+    quiet: true,
+    client: [],
+    admin: [
+      'Judge, jury, executioner has the final call on every trade you took, even when all five vote the other way.',
+      'The vote now sits behind How the five voted; tap it to see who said what.',
+    ],
+  },
   {
     // NAMED VOTES (Eric, 2026-09-24: "The agents each need names ... When I'm
     // told to hold, add, trim, or sell, I need to know what agents and how many

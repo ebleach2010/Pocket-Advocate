@@ -933,6 +933,10 @@ const SPARE = 6;
   //   FAIL  D30 every run re-checks the trades he took ...
   // NEGATIVE CONTROL (run 2026-09-24, v7.13): callFor's all-five-sell rule removed (the desk's hold on F standing) made this read
   //   FAIL  D30 every run re-checks the trades he took ...
+  // RE-PINNED 2026-09-24 (v7.14, Eric: "if all the agents report to the 6th agent shouldn't he have the final call?"):
+  // that rule is gone at his word. The desk's hold on F stands though all five say sell, and 0 of 5 agree with it.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.14): the all-five-sell rule put back in callFor made this read
+  //   FAIL  D30 every run re-checks the trades he took ...
   // NEGATIVE CONTROL (run 2026-09-24): the re-check's writes left unsent (`const recheckOk = [];`) made this read
   //   FAIL  D30 every run re-checks the trades he took ...
   // NEGATIVE CONTROL (run 2026-09-24): the research firing's `market += ... liveNote(liveRows)` line removed made this read
@@ -940,7 +944,7 @@ const SPARE = 6;
   // RE-PINNED 2026-09-24 (v7.13, Eric: "When I'm told to hold, add, trim, or sell, I need to know what agents and
   // how many agree with that decision"): each researcher's own vote is kept by number, and how many agree is how
   // many voted the call he is shown. The 7.10 words (backs, does not back) still read as hold and sell.
-  check('D30 every run re-checks the trades he took: the five researchers are shown each one as the desk filed it and nothing of his size, and asked for hold, add, trim or sell under their own heading; BA takes the desk\'s SELL with its reason, keeps each researcher\'s vote by number and reads 3 of 5, the three who said sell, keeping the 3 it was taken at; F, all five saying sell, is a SELL whatever the desk said, 5 of 5; XOM, one silent and four for sell, keeps the silent one as no word and is a SELL on the votes, 4 of 5; each write goes under the trade\'s own time; the board and the push lead with the sells and say how many; and in a thin run a tie calls nothing and leaves the count as it was',
+  check('D30 every run re-checks the trades he took: the five researchers are shown each one as the desk filed it and nothing of his size, and asked for hold, add, trim or sell under their own heading; BA takes the desk\'s SELL with its reason, keeps each researcher\'s vote by number and reads 3 of 5, the three who said sell, keeping the 3 it was taken at; F, all five saying sell, takes the desk\'s HOLD, which is final, 0 of 5; XOM, one silent and four for sell, keeps the silent one as no word and is a SELL on the votes, 4 of 5; each write goes under the trade\'s own time; the board and the push lead with the sells and say how many; and in a thin run a tie calls nothing and leaves the count as it was',
     r.out.ok === true && research.length === 5
     && research.every((t) => /E1: BA long swing, the stock\. Entry 200\.5 to 203, stop 197\.4, targets 206 then 209\. Filed 2026-09-2\d\. Setup: Base above 200\. Out if: Close under 197\./.test(t)
       && /E2: F long intraday, the stock\./.test(t) && /E3: XOM long swing, the 120 call expiring 2026-10-16, prices are the premium\./.test(t) && !/OLDX|E4:/.test(t))
@@ -949,14 +953,14 @@ const SPARE = 6;
     && doc(r, 'h1').status === 'took' && doc(r, 'h1').agreement === 3 && doc(r, 'h1').tookAgreement === 3
     && doc(r, 'h1').verdict?.call === 'sell' && doc(r, 'h1').verdict.why === 'Momentum faded and it lost 200 on volume.' && doc(r, 'h1').verdict.runId === 'run_x'
     && JSON.stringify(doc(r, 'h1').verdict.votes) === '{"1":"hold","2":"hold","3":"sell","4":"sell","5":"sell"}'
-    && doc(r, 'h2').status === 'took' && !doc(r, 'h2').dropped && doc(r, 'h2').agreement === 5 && doc(r, 'h2').tookAgreement === 2 && doc(r, 'h2').agreedRunId === 'run_x'
-    && doc(r, 'h2').verdict?.call === 'sell' && doc(r, 'h2').verdict.why === 'None of the five back it any more.'
+    && doc(r, 'h2').status === 'took' && !doc(r, 'h2').dropped && doc(r, 'h2').agreement === 0 && doc(r, 'h2').tookAgreement === 2 && doc(r, 'h2').agreedRunId === 'run_x'
+    && doc(r, 'h2').verdict?.call === 'hold' && doc(r, 'h2').verdict.why === 'Fine.'
     && doc(r, 'h3').status === 'took' && doc(r, 'h3').agreement === 4 && doc(r, 'h3').tookAgreement === 4 && doc(r, 'h3').verdict?.call === 'sell' && doc(r, 'h3').verdict.why === '4 of 5 say sell.'
     && doc(r, 'h3').verdict.votes['5'] === null
     && writes.length === 3 && writes.every((p) => p.opts.batch && /^U\d+$/.test(p.opts.ifUpdateTime))
-    && st.activeIds.join() === 'h1,h2,h3,h4' && st.desk.verdicts.map((x) => `${x.ticker}:${x.call}:${x.agree}`).join() === 'BA:sell:3,F:sell:5,XOM:sell:4'
-    && /^Sell BA now \(3 of 5\): Momentum faded and it lost 200 on volume\. Sell F now \(5 of 5\): None of the five back it any more\. Sell XOM now \(4 of 5\): 4 of 5 say sell\./.test(r.w.pushes[0]?.body || '')
-    && end?.recheck?.live === 3 && end.recheck.updated === 1 && end.recheck.sell === 3 && end.recheck.hold === 0 && end.recheck.none === 0
+    && st.activeIds.join() === 'h1,h2,h3,h4' && st.desk.verdicts.map((x) => `${x.ticker}:${x.call}:${x.agree}`).join() === 'BA:sell:3,XOM:sell:4,F:hold:0'
+    && /^Sell BA now \(3 of 5\): Momentum faded and it lost 200 on volume\. Sell XOM now \(4 of 5\): 4 of 5 say sell\. Hold F \(0 of 5\)\./.test(r.w.pushes[0]?.body || '')
+    && end?.recheck?.live === 3 && end.recheck.updated === 1 && end.recheck.sell === 2 && end.recheck.hold === 1 && end.recheck.none === 0
     && thin.out.ok === true && doc(thin, 'h2').status === 'took' && doc(thin, 'h2').agreement === 4 && doc(thin, 'h2').verdict?.call === 'sell' && doc(thin, 'h2').verdict.why === '4 of 5 say sell.'
     // BA in the thin run is two for hold and two for sell: a tie gives no call, and the count stays as it was.
     && doc(thin, 'h1').agreement === 3 && doc(thin, 'h1').verdict === undefined
@@ -989,12 +993,14 @@ const SPARE = 6;
   const t = (hold, add, trim, sell) => ({ counts: { hold, add, trim, sell } });
   // NEGATIVE CONTROL (run 2026-09-24): checkDesk's `ref in holdings` guard dropped (a second answer for E1 overwriting the first) made this read
   //   FAIL  D32 the desk calls HOLD, ADD, TRIM or SELL ...
-  check('D32 the desk calls HOLD, ADD, TRIM or SELL on every earlier call: its schema requires holdings, each a ref, one of the four and a reason; its brief says when to sell, trim and add; the answer keeps the first call per real ref, drops anything else, and strips a dash from the reason; all five saying sell is a sell whatever the desk said; the desk\'s call stands over the count otherwise; with no call the most-voted of the four wins and a tie or silence calls nothing; and closing a short stock is a cover',
+  // RE-PINNED 2026-09-24 (v7.14, Eric: "shouldn't he have the final call?"): the desk's call stands even against five sells.
+  check('D32 the desk calls HOLD, ADD, TRIM or SELL on every earlier call: its schema requires holdings, each a ref, one of the four and a reason; its brief says when to sell, trim and add; the answer keeps the first call per real ref, drops anything else, and strips a dash from the reason; the desk\'s call is final, even against five sells; with no call the most-voted of the four wins and a tie or silence calls nothing; and closing a short stock is a cover',
     DR.DESK_SCHEMA.required.includes('holdings') && H.items.required.join() === 'ref,call,why' && H.items.properties.call.enum.join() === 'hold,add,trim,sell'
     && /holdings: the market data may list earlier calls from this desk that are still live, as E1, E2/.test(sys) && /call hold, add, trim or sell/.test(sys)
     && /Sell when what the trade was built on has broken/.test(sys) && /Trim when it is still right but worth less size\. Add when it is stronger now and worth more size\./.test(sys)
     && JSON.stringify(Object.keys(c.holdings)) === '["E1","E2","E4","E5"]' && c.holdings.E1.call === 'hold' && c.holdings.E4.call === 'trim' && c.holdings.E5.call === 'add' && !/[\u2013\u2014]/.test(c.holdings.E2.why)
-    && DR.callFor(t(0, 0, 0, 5), { call: 'hold', why: 'Fine.' }).call === 'sell' && DR.callFor(t(0, 0, 0, 5), { call: 'sell', why: 'Broke 11.' }).why === 'Broke 11.'
+    && DR.callFor(t(0, 0, 0, 5), { call: 'hold', why: 'Fine.' }).call === 'hold' && DR.callFor(t(0, 0, 0, 5), { call: 'sell', why: 'Broke 11.' }).why === 'Broke 11.'
+    && DR.callFor(t(0, 0, 0, 5)).call === 'sell' && DR.callFor(t(0, 0, 0, 5)).why === '5 of 5 say sell.'
     && DR.callFor(t(3, 0, 0, 2), { call: 'trim', why: 'Near the target.' }).call === 'trim'
     && DR.callFor(t(1, 3, 0, 1)).call === 'add' && DR.callFor(t(1, 3, 0, 1)).why === '3 of 5 say add.' && DR.callFor(t(0, 1, 2, 1)).why === '2 of 5 say trim.'
     && DR.callFor(t(2, 0, 0, 2)) === null && DR.callFor(t(0, 0, 0, 0)) === null

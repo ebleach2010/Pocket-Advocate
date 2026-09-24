@@ -404,6 +404,9 @@ ok('PLTR reads HOLD with its reason and the 3 of 5 the run gave it', activeNow.s
 // v7.13 (Eric: "what agents and how many agree with that decision, what the second most popular decision is,
 // third, etc until the agents are fully listed").
 ok('PLTR lists who voted HOLD first, then TRIM, then SELL, every agent once, and names the desk on the call', JSON.stringify(activeNow.find((x) => x.tk === 'PLTR')?.votes) === JSON.stringify(['HOLD 3 Addy Boofer, Clark Kent, God', 'TRIM 1 Swinger', 'SELL 1 0 DTE n00b']) && /^Call by Judge, jury, executioner, from the /.test(activeNow.find((x) => x.tk === 'PLTR')?.when || ''), JSON.stringify(activeNow.find((x) => x.tk === 'PLTR')));
+// v7.14 (Eric chose it): the vote sits folded under a tap, How the five voted.
+const fold = await page.evaluate(() => { const d = document.querySelector('#active .rec .votes-fold'); if (!d) return null; const was = d.open; d.querySelector('summary').click(); return { was, now: d.open, label: d.querySelector('summary').textContent.trim() }; });
+ok('the vote is folded under How the five voted, and a tap opens it', !!fold && fold.was === false && fold.now === true && fold.label === 'How the five voted', JSON.stringify(fold));
 ok('SOFI\'s SELL lists all five under SELL and reads 5 of 5', JSON.stringify(activeNow[0]?.votes) === JSON.stringify(['SELL 5 Addy Boofer, Clark Kent, God, Swinger, 0 DTE n00b']) && activeNow[0].agree === '5 of 5 agree', JSON.stringify(activeNow[0]));
 
 await page.evaluate(() => document.getElementById('active-wrap')?.scrollIntoView({ block: 'start' }));

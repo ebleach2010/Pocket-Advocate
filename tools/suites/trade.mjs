@@ -1288,8 +1288,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
     // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
-    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat123/.test(f(`public/${p}.html`)))
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes; stat124 (2026-09-24, v7.14) for the vote folded under a tap.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat124/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1399,6 +1399,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry712 = (CL.match(/\{\n\s+\/\/ HOLD OR SELL \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.13): the named votes, their own quiet entry.
   const entry713 = (CL.match(/\{\n\s+\/\/ NAMED VOTES \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.14): the judge decides, its own quiet entry.
+  const entry714 = (CL.match(/\{\n\s+\/\/ THE JUDGE DECIDES \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1470,8 +1472,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.13): both versions read 7.13 with the named-votes tag; the 7.12 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.13): 'until all five are listed' reworded to 'until all five show' in the 7.13 entry made this read
   //   FAIL  T36 both versions read 7.13 ...
-  check('T36 both versions read 7.13 with the new tag, the 4.7 through 7.13 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.13';/.test(CL) && /const VERSION = '7\.13';/.test(W) && /const BUILD_TAG = 'v2026-09-24-named-votes';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.14): both versions read 7.14 with the judge-final tag; the 7.13 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.14): 'even when all five vote the other way' reworded to 'even when the five disagree' in the 7.14 entry made this read
+  //   FAIL  T36 both versions read 7.14 ...
+  check('T36 both versions read 7.14 with the new tag, the 4.7 through 7.14 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.14';/.test(CL) && /const VERSION = '7\.14';/.test(W) && /const BUILD_TAG = 'v2026-09-24-judge-final';/.test(W)
+    && /version: '7\.14',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry714)
+    && /even when all five vote the other way/.test(entry714) && !DASH.test(entry714) && !HARD.some((re) => re.test(entry714))
     && /version: '7\.13',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry713)
     && /until all five are listed/.test(entry713) && /Addy Boofer, Clark Kent, God, Swinger and 0 DTE n00b/.test(entry713) && !DASH.test(entry713) && !HARD.some((re) => re.test(entry713))
     && /version: '7\.12',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry712)
@@ -1547,7 +1554,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat123/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat124/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2670,7 +2677,9 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     Object.values(math.AGENTS).map((a) => a.name).join('|') === 'Addy Boofer|Clark Kent|God|Swinger|0 DTE n00b' && math.DESK_AGENT.name === 'Judge, jury, executioner'
     && lines === 'hold:3:Addy Boofer|Clark Kent|Swinger / trim:1:God / sell:1:0 DTE n00b'
     && over === 'trim:0 hold:3 sell:1 none:1'
-    && /<ul class="votes"><li class="hold"><span class="c">HOLD<\/span><span class="n">3<\/span><span class="who">Addy Boofer, Clark Kent, Swinger<\/span><\/li><li class="trim"><span class="c">TRIM<\/span><span class="n">1<\/span><span class="who">God<\/span><\/li><li class="sell"><span class="c">SELL<\/span><span class="n">1<\/span><span class="who">0 DTE n00b<\/span><\/li><\/ul><span class="when">Call by Judge, jury, executioner, from the 10:02 AM run<\/span>/.test(card)
+    // RE-PINNED 2026-09-24 (v7.14, Eric chose it): the vote is folded under a tap, How the five voted.
+    && /<details class="votes-fold"><summary>How the five voted<\/summary><ul class="votes"><li class="hold"><span class="c">HOLD<\/span><span class="n">3<\/span><span class="who">Addy Boofer, Clark Kent, Swinger<\/span><\/li><li class="trim"><span class="c">TRIM<\/span><span class="n">1<\/span><span class="who">God<\/span><\/li><li class="sell"><span class="c">SELL<\/span><span class="n">1<\/span><span class="who">0 DTE n00b<\/span><\/li><\/ul><\/details><span class="when">Call by Judge, jury, executioner, from the 10:02 AM run<\/span>/.test(card)
+    && /html\[data-desk\]:root \.rec \.verdict \.votes-fold > summary \{ cursor: pointer; min-height: 44px;/.test(f('public/css/admin.css'))
     && /For 3 · Addy Boofer, Clark Kent, Swinger Against 1 · 0 DTE n00b No view 1 · God/.test(txt(open))
     && /For 5 · Addy Boofer, Clark Kent, God, Swinger, 0 DTE n00b/.test(txt(openAll)) && !/Against|No view/.test(txt(openAll))
     && !/<dt>For<\/dt>/.test(nameless) && !/<dt>For<\/dt>/.test(card)

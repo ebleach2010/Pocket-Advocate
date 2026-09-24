@@ -185,13 +185,13 @@ export function tallyEarlier(live, reports) {
 /**
  * HOLD, ADD, TRIM OR SELL (Eric, 2026-09-24: "tell me if I should hold or if things have changed and I
  * need to sell, front and center", and "When I'm told to hold, add, trim, or sell, I need to know what
- * agents and how many agree"). The desk makes the call from the five votes and the market. All five
- * saying sell is a sell whatever it said. With no call from the desk the most-voted of the four wins,
- * and a tie or silence gives no new call, leaving the last one standing.
+ * agents and how many agree"). The desk makes the call from the five votes and the market, and its call
+ * is final (v7.14, Eric: "if all the agents report to the 6th agent shouldn't he have the final call?").
+ * Only with no call from the desk does the vote decide: the most-voted of the four wins, and a tie or
+ * silence gives no new call, leaving the last one standing.
  */
 export function callFor(t, desk = null) {
   const says = (c) => `${t.counts[c]} of 5 say ${c}.`;
-  if (t.counts.sell >= LENSES.length) return { call: 'sell', why: desk?.call === 'sell' && desk.why ? desk.why : 'None of the five back it any more.' };
   if (desk && CALLS.includes(desk.call)) return { call: desk.call, why: desk.why || says(desk.call) };
   const ranked = CALLS.map((c) => [c, t.counts[c]]).sort((a, b) => b[1] - a[1]);
   if (!ranked[0][1] || ranked[0][1] === ranked[1][1]) return null;

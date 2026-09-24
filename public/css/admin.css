@@ -2313,6 +2313,12 @@ html[data-desk]:root .rec .verdict .votes li.add .c { color: var(--blue-core); }
 html[data-desk]:root .rec .verdict .votes li.trim .c { color: var(--gold); }
 html[data-desk]:root .rec .verdict .votes li.sell .c { color: #FF8FA3; }
 html[data-desk]:root .rec .why dd.stance { font-size: 13px; }
+/* The vote, folded under a tap (v7.14). */
+html[data-desk]:root .rec .verdict .votes-fold > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-2); text-decoration: underline; text-underline-offset: 3px; list-style: none; }
+html[data-desk]:root .rec .verdict .votes-fold > summary::-webkit-details-marker { display: none; }
+html[data-desk]:root .rec .verdict .votes-fold > summary::after { content: '\203A'; font-size: 16px; transition: transform .18s; }
+html[data-desk]:root .rec .verdict .votes-fold[open] > summary::after { transform: rotate(90deg); }
+html[data-desk]:root .rec .verdict .votes-fold > summary:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 html[data-desk]:root .rec.active.sell { border-color: var(--red); box-shadow: inset 0 0 0 1px rgba(var(--red-rgb),.35), 0 0 12px rgba(var(--red-rgb),.7), 0 0 30px rgba(var(--red-rgb),.35); animation: none; }
 /* Brought into view when a run says SELL: below the fixed top bar, with the ACTIVE heading showing. */
 html[data-desk]:root #active-wrap, html[data-desk]:root .rec { scroll-margin-top: calc(var(--demo-bar-h, 0px) + var(--top-h) + env(safe-area-inset-top, 0px) + 12px); }

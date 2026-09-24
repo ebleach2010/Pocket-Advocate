@@ -941,5 +941,22 @@ ck('clock: all switches share one painter set, so no two can disagree',
     JSON.stringify({ first, second: { reloads: second.reloads, stuck: second.stuck }, code: code.stuck, noStore, slow: String(slow), profile: String(profile) }));
 }
 
+// ---- the bars probe never hands back the key (2026-09-24, v7.14) ------------------------------------
+// Before building the 15-minute chart feed ("intraday 15min vwap, macd 3 EMA lines"), one call asks whether
+// his market data key includes 15-minute bars. Finnhub's free plan does not. The answer is the status and a
+// count; an error line has the key cut out of it, and the key itself is never in what comes back.
+{
+  const probe = (W.match(/if \(url\.searchParams\.get\('do'\) === 'bars-probe'\) \{[\s\S]*?\n        \}\n/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-09-24): the probe's `out.error.split(key).join('[key]')` removed made this read
+  //   FAIL  the bars probe never hands back the key ...
+  ck('the bars probe never hands back the key: behind the diagnostics key, one call for SPY 15-minute bars, the answer is whether a key exists and where from, the status, the count and a short error with the key cut out',
+    /\/stock\/candle\?symbol=SPY&resolution=15&from=\$\{from\}&to=\$\{to\}&token=\$\{encodeURIComponent\(key\)\}/.test(probe)
+    && /if \(out\.error\) out\.error = out\.error\.split\(key\)\.join\('\[key\]'\);/.test(probe)
+    && /const out = \{ key: true, source: env\.FINNHUB_KEY \? 'env' : 'settings' \};/.test(probe)
+    && !/key: key|\{ key \}|token: key|out\.key = key/.test(probe)
+    && W.indexOf("'bars-probe'") > W.indexOf("url.pathname === '/api/diag'") && W.indexOf("'bars-probe'") > W.indexOf("do') === 'limits'"),
+    probe.slice(0, 200));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);
