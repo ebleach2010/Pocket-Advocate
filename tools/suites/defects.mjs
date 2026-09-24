@@ -875,5 +875,71 @@ ck('clock: all switches share one painter set, so no two can disagree',
     JSON.stringify({ res: res && res.status, firstCalls, still: still && still.status, stillCalls }));
 }
 
+// ---- the Clients page never hangs on Loading (2026-09-24, v7.11) ------------------------------------
+// Eric, 12:09 AM, a screenshot of the Clients page on "Loading…": "It's stuck loading in the client case
+// menu on launch." Every step the shelf waited on had no limit. The net in admin.html is lifted and RUN
+// here against a fake page: a first stall reloads once, a second names the step, a painted shelf is left
+// alone, and a phone with no storage never loops.
+{
+  const HTML = f('public/admin.html');
+  const APP = f('public/js/admin.js');
+  const AUTH = f('public/js/auth.js');
+  const net = (HTML.match(/<script>\n\/\/ NEVER STUCK ON LOADING[\s\S]*?<\/script>/) || [''])[0].replace(/^<script>|<\/script>$/g, '');
+  const runNet = ({ stage, flag = null, storage = true }) => {
+    const log = { reloads: 0, set: null, html: '', stuck: '' };
+    let timer = null;
+    const stuckB = { set textContent(v) { log.stuck = v; } };
+    const el = { set innerHTML(v) { log.html = v; }, get innerHTML() { return log.html; }, querySelector: () => stuckB };
+    const btn = { addEventListener: () => {} };
+    const store = { getItem: () => { if (!storage) throw new Error('blocked'); return flag; }, setItem: (k, v) => { if (!storage) throw new Error('blocked'); log.set = `${k}=${v}`; } };
+    const win = { __paStage: stage };
+    new Function('window', 'sessionStorage', 'location', 'document', 'setTimeout', net)(
+      win, store, { reload: () => { log.reloads += 1; } },
+      { getElementById: (id) => (id === 'list' ? el : id === 'list-retry' ? btn : null) },
+      (fn, ms) => { timer = { fn, ms }; },
+    );
+    if (timer) timer.fn();
+    return { ...log, ms: timer?.ms };
+  };
+  const first = runNet({ stage: 'cases' });
+  const second = runNet({ stage: 'cases', flag: '1' });
+  const code = runNet({ stage: undefined, flag: '1' });
+  const done = runNet({ stage: 'done' });
+  const noStore = runNet({ stage: 'signin', storage: false });
+  // admin.js's limit, lifted and run: a stall answers its fallback, a refusal still throws.
+  const within = new Function(`${(APP.match(/const TOO_SLOW = Symbol\('too slow'\);\n/) || [''])[0]}${(APP.match(/const within = \(ms, work, fallback = TOO_SLOW\) => new Promise\([\s\S]*?\n\}\);\n/) || [''])[0]}return { within, TOO_SLOW };`)();
+  const never = new Promise(() => {});
+  const slow = await within.within(20, () => never);
+  const slowCovers = await within.within(20, () => never, {});
+  let refused = null; try { await within.within(200, () => Promise.reject(new Error('permission-denied'))); } catch (e) { refused = e.message; }
+  const fast = await within.within(200, () => Promise.resolve('cases'));
+  const orTooSlow = new Function(`${(AUTH.match(/const TOO_SLOW = Symbol\('too slow'\);\nconst orTooSlow = [\s\S]*?\n\}\);\n/) || [''])[0]}return { orTooSlow, TOO_SLOW };`)();
+  const profile = await orTooSlow.orTooSlow(never, 20);
+  // NEGATIVE CONTROL (run 2026-09-24): the net's reload-once guard dropped (`if (!tried) {` made `if (true) {`) made this read
+  //   FAIL  the Clients page never hangs on Loading ...
+  // NEGATIVE CONTROL (run 2026-09-24): the cases read put back to a bare `await getDocs(collection(db, 'cases'))` made this read
+  //   FAIL  the Clients page never hangs on Loading ...
+  // NEGATIVE CONTROL (run 2026-09-24): isAdmin's `if (snapshot === TOO_SLOW) return null;` removed made this read
+  //   FAIL  the Clients page never hangs on Loading ...
+  ck('the Clients page never hangs on Loading (Eric, 2026-09-24: "It\'s stuck loading in the client case menu on launch"): after 12 seconds a first stall reloads once and marks it, a second says which step stopped with Try again, a stall before the app\'s code runs says so, a painted shelf is left alone, and a phone with no storage shows the step instead of looping; the case list gives up after 15 seconds with Try again, the covers and both extras after 10 with the shelf still drawn, each step is named as it starts and the net stands down when the shelf paints; and the two profile reads give up after 10, the admin check answering unknown, which keeps his phone his',
+    first.ms === 12000 && first.reloads === 1 && first.set === 'pa-list-retry=1' && !first.html
+    && second.reloads === 0 && /This is taking too long\. Stuck on: <b><\/b>\./.test(second.html) && /id="list-retry">Try again</.test(second.html) && second.stuck === 'reading your cases'
+    && code.stuck === "loading the app's code" && done.reloads === 0 && !done.html
+    && noStore.reloads === 0 && noStore.stuck === 'checking your sign-in'
+    && /window\.__paStage = window\.__paStage \|\| 'code';/.test(net) && HTML.indexOf('NEVER STUCK ON LOADING') < HTML.indexOf('<script type="module" src="/js/admin.js">')
+    && slow === within.TOO_SLOW && JSON.stringify(slowCovers) === '{}' && refused === 'permission-denied' && fast === 'cases'
+    && /const snapshot = await within\(15_000, \(\) => getDocs\(collection\(db, 'cases'\)\)\);\n\s+if \(snapshot === TOO_SLOW\) throw new Error\('the database did not answer'\);/.test(APP)
+    && /return within\(10_000, async \(\) => \{\n\s+const token = await user\.getIdToken\(\);\n\s+const res = await fetch\('\/api\/advisor\/covers'/.test(APP)
+    && (APP.match(/await within\(10_000, async \(\) => \{/g) || []).length === 2
+    && ["window.__paStage = 'signin';", "window.__paStage = 'cases';", "window.__paStage = 'covers';", "window.__paStage = 'extras';"].every((x) => APP.includes(x))
+    && (APP.match(/\n\s+painted\(\);\n/g) || []).length === 3 && /\+ rateBlock \+ voiceBlock \+ summary \+ `<\/div>`;\n  painted\(\);/.test(APP)
+    && /sessionStorage\.removeItem\('pa-list-retry'\)/.test(APP)
+    && profile === orTooSlow.TOO_SLOW
+    && /const snapshot = await orTooSlow\(getDoc\(doc\(db, 'users', user\.uid\)\)\);\n\s+if \(snapshot === TOO_SLOW\) return null;/.test(AUTH)
+    && /const snapshot = await orTooSlow\(getDoc\(ref\)\);\n\s+if \(snapshot === TOO_SLOW\) return;/.test(AUTH)
+    && !/[\u2013\u2014]/.test(net),
+    JSON.stringify({ first, second: { reloads: second.reloads, stuck: second.stuck }, code: code.stuck, noStore, slow: String(slow), profile: String(profile) }));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

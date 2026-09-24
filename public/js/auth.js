@@ -46,6 +46,15 @@ export function recallEmail() {
   return localStorage.getItem(EMAIL_KEY) || '';
 }
 
+// A read that never answers (2026-09-24, Eric: "It's stuck loading in the client case menu on launch").
+// A phone waking from the background can leave a database read waiting forever; these few are given
+// ten seconds and then treated the way a refused read already is.
+const TOO_SLOW = Symbol('too slow');
+const orTooSlow = (p, ms = 10_000) => new Promise((resolve, reject) => {
+  const t = setTimeout(() => resolve(TOO_SLOW), ms);
+  p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+});
+
 /** Resolves with the signed-in user, or null. */
 export function currentUser() {
   return new Promise((resolve) => {
@@ -71,7 +80,8 @@ export async function requireUser() {
 async function ensureProfile(user) {
   const ref = doc(db, 'users', user.uid);
   try {
-    const snapshot = await getDoc(ref);
+    const snapshot = await orTooSlow(getDoc(ref));
+    if (snapshot === TOO_SLOW) return;
     if (!snapshot.exists()) {
       await setDoc(ref, { email: user.email, name: '', role: 'client' });
     }
@@ -96,10 +106,10 @@ async function ensureAdminSession(user) {
   if (adminSessionAsked) return;
   adminSessionAsked = true;
   try {
-    await fetch('/api/admin/session', {
+    await orTooSlow((async () => fetch('/api/admin/session', {
       method: 'POST',
       headers: { authorization: `Bearer ${await user.getIdToken()}` },
-    });
+    }))());
   } catch { /* offline, or already holding a good cookie */ }
 }
 
@@ -112,7 +122,9 @@ async function ensureAdminSession(user) {
  */
 export async function isAdmin(user) {
   try {
-    const snapshot = await getDoc(doc(db, 'users', user.uid));
+    // Too slow is unknown, the same as refused: his phone stays his (2026-09-24).
+    const snapshot = await orTooSlow(getDoc(doc(db, 'users', user.uid)));
+    if (snapshot === TOO_SLOW) return null;
     return snapshot.exists() && snapshot.data().role === 'admin';
   } catch {
     return null;

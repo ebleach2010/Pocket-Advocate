@@ -58,6 +58,36 @@
   <div id="personal"></div>
   <div id="list"><p class="dim">Loading…</p></div>
 </main>
+<script>
+// NEVER STUCK ON LOADING (Eric, 2026-09-24, 12:09 AM: "It's stuck loading in the
+// client case menu on launch"). The shelf waits on the app's code, his sign-in,
+// the case list, the covers and two small extras, and a phone waking from the
+// background can leave any one of them waiting forever. This script waits on
+// none of them. Twelve seconds with the shelf still unpainted reloads the page
+// once; a second stall says which step it stopped on, with Try again.
+window.__paStage = window.__paStage || 'code';
+(function () {
+  var WORDS = {
+    code: "loading the app's code", signin: 'checking your sign-in', cases: 'reading your cases',
+    covers: 'reading the case covers', extras: 'reading the rate and the voice study',
+  };
+  setTimeout(function () {
+    if (window.__paStage === 'done') return;
+    var tried = true;
+    try { tried = sessionStorage.getItem('pa-list-retry') === '1'; } catch (e) { /* no storage: no reload loop either */ }
+    if (!tried) {
+      try { sessionStorage.setItem('pa-list-retry', '1'); } catch (e) { /* the reload still happens once */ }
+      location.reload();
+      return;
+    }
+    var el = document.getElementById('list');
+    if (!el) return;
+    el.innerHTML = '<p class="error" id="list-stuck">This is taking too long. Stuck on: <b></b>.</p><button type="button" class="btn" id="list-retry">Try again</button>';
+    el.querySelector('#list-stuck b').textContent = WORDS[window.__paStage] || 'loading';
+    document.getElementById('list-retry').addEventListener('click', function () { location.reload(); });
+  }, 12000);
+})();
+</script>
 <script type="module" src="/js/admin.js"></script>
 <script type="module" src="/js/admin-presence.js"></script>
 <script type="module" src="/js/version-note.js"></script>

@@ -1393,6 +1393,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry79 = (CL.match(/\{\n\s+\/\/ THE GLP-1 CHAIN \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.10): the re-check, its own quiet entry.
   const entry710 = (CL.match(/\{\n\s+\/\/ THE RE-CHECK \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.11): the Clients page's safety net, its own quiet entry.
+  const entry711 = (CL.match(/\{\n\s+\/\/ NEVER STUCK ON LOADING \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1455,8 +1457,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.10): both versions read 7.10 with the recheck tag; the 7.9 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.10): 'still back each one' reworded to 'still like each one' in the 7.10 entry made this read
   //   FAIL  T36 both versions read 7.10 ...
-  check('T36 both versions read 7.10 with the new tag, the 4.7 through 7.10 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.10';/.test(CL) && /const VERSION = '7\.10';/.test(W) && /const BUILD_TAG = 'v2026-09-24-recheck';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.11): both versions read 7.11 with the no-hang tag; the 7.10 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.11): 'it reloads itself once' reworded to 'it reloads once' in the 7.11 entry made this read
+  //   FAIL  T36 both versions read 7.11 ...
+  check('T36 both versions read 7.11 with the new tag, the 4.7 through 7.11 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.11';/.test(CL) && /const VERSION = '7\.11';/.test(W) && /const BUILD_TAG = 'v2026-09-24-no-hang';/.test(W)
+    && /version: '7\.11',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry711)
+    && /it reloads itself once/.test(entry711) && !DASH.test(entry711) && !HARD.some((re) => re.test(entry711))
     && /version: '7\.10',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry710)
     && /still back each one/.test(entry710) && /marked Dropped/.test(entry710) && !DASH.test(entry710) && !HARD.some((re) => re.test(entry710))
     && /version: '7\.9',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry79)

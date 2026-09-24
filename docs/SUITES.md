@@ -521,6 +521,16 @@ wider D24 hold it, D28 is re-pinned (the held trade reaches an agent only as
 the call to re-check), trade.mjs T80, T34 and T75; drive-trade.mjs P drops
 SOFI in the demo.
 
+**Never stuck on Loading (2026-09-24, v7.11).** The Clients page waited on its
+code, sign-in, two profile reads, the case list, the covers and two extras,
+none with a limit. An inline net in admin.html, which waits on none of them,
+reloads once after twelve seconds and then names the step it stopped on with
+Try again; admin.js names each step and stands the net down when the shelf
+paints; the case list gives up after 15 seconds, the covers and extras after
+10, and auth.js's profile reads after 10 (unknown, which keeps his phone his).
+defects.mjs runs the net against a fake page; drive-nohang.mjs holds the
+page's code for real in the demo.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

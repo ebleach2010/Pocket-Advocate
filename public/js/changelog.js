@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.10';
+export const VERSION = '7.11';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.10';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NEVER STUCK ON LOADING (Eric, 2026-09-24: "It's stuck loading in the
+    // client case menu on launch"). Admin only.
+    version: '7.11',
+    quiet: true,
+    client: [],
+    admin: [
+      'The Clients page no longer sits on Loading forever. If it stalls, it reloads itself once.',
+      'If it stalls again, it says which step it stopped on, with a Try again button, so a screenshot tells us where.',
+    ],
+  },
   {
     // THE RE-CHECK (Eric, 2026-09-24: "If a new run disagrees with a strategy
     // still on the table (0/5 agents agree), then it is removed."). Admin only.

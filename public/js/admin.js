@@ -15,6 +15,20 @@ import { mountPersonal } from './admin-personal.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
+// The step the shelf is on, for the net in admin.html (2026-09-24): it names the one that stalls.
+window.__paStage = 'signin';
+/** Settles within `ms`, or answers `fallback`; a step that can give up never holds the shelf. */
+const TOO_SLOW = Symbol('too slow');
+const within = (ms, work, fallback = TOO_SLOW) => new Promise((resolve) => {
+  const t = setTimeout(() => resolve(fallback), ms);
+  Promise.resolve().then(work).then((v) => { clearTimeout(t); resolve(v); }, (err) => { clearTimeout(t); resolve(fallback === TOO_SLOW ? Promise.reject(err) : fallback); });
+});
+/** The shelf is on screen, or an answer is: the net stands down, and the next stall may reload again. */
+const painted = () => {
+  window.__paStage = 'done';
+  try { sessionStorage.removeItem('pa-list-retry'); } catch { /* nothing to clear */ }
+};
+
 hydrateNav();
 const user = await requireAdmin();
 if (user) {
@@ -35,12 +49,13 @@ if (user) {
  * something a patient should find on their own record.
  */
 async function loadCovers() {
-  try {
+  // Ten seconds, then no covers (2026-09-24): a shelf with no covers is still a usable shelf.
+  return within(10_000, async () => {
     const token = await user.getIdToken();
     const res = await fetch('/api/advisor/covers', { headers: { authorization: `Bearer ${token}` } });
     if (!res.ok) return {};
     return (await res.json()).covers || {};
-  } catch { return {}; }   // a shelf with no covers is still a usable shelf
+  }, {});
 }
 
 /** Eric's own read of a case, typed onto the front of the folder. */
@@ -64,15 +79,21 @@ async function load() {
   const listEl = document.getElementById('list');
   initPushPrompt(user, document.querySelector('main')).catch(() => {});
   let cases = [];
+  window.__paStage = 'cases';
   try {
-    const snapshot = await getDocs(collection(db, 'cases'));
+    // Fifteen seconds (2026-09-24): a read that never answers says so, with Try again, instead of Loading forever.
+    const snapshot = await within(15_000, () => getDocs(collection(db, 'cases')));
+    if (snapshot === TOO_SLOW) throw new Error('the database did not answer');
     snapshot.forEach((d) => cases.push({ id: d.id, ...d.data() }));
   } catch (err) {
-    listEl.innerHTML = `<p class="error">Couldn't load cases: ${err.message}</p>`;
+    listEl.innerHTML = `<p class="error">Couldn't load cases: ${err.message}.</p><button type="button" class="btn" id="list-retry">Try again</button>`;
+    listEl.querySelector('#list-retry').addEventListener('click', () => location.reload());
+    painted();
     return;
   }
   if (!cases.length) {
     listEl.innerHTML = '<p class="dim">No clients yet. They appear here the moment a payment lands.</p>';
+    painted();
     return;
   }
 
@@ -114,7 +135,9 @@ async function load() {
   // folding one in would make the sentence a lie on the one number here that
   // must stay honest. So a hand-recorded payment is counted on its own line
   // and the headline stays what Stripe actually took.
+  window.__paStage = 'covers';
   const covers = await loadCovers();
+  window.__paStage = 'extras';
   // A PAYMENT HE RECORDED BY HAND ON THE CASE COUNTS TOO, and until now it
   // did not: the hand line read `extraPayments[].byHand` and nothing else, so
   // on a case with no such row handCents was 0 and the WHOLE block below did
@@ -153,29 +176,28 @@ async function load() {
   const handCents = byKind('hand');
   // What a case costs right now. It rises by $10 on every completed booking,
   // silently, so this is the only place the current number is stated.
-  let rate = null;
-  try {
+  // Each of the two extras gets ten seconds (2026-09-24); the shelf is still a shelf without either.
+  const rate = await within(10_000, async () => {
     const token = await user.getIdToken();
     const res = await fetch('/api/admin/rates', {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: '{}',
     });
-    if (res.ok) rate = await res.json();
-  } catch { /* the shelf is still a shelf without it */ }
+    return res.ok ? res.json() : null;
+  }, null);
 
   // The nightly voice study. It runs on its own; this is the switch and the
   // proof it is still running.
-  let voice = null;
-  try {
+  let voice = await within(10_000, async () => {
     const token = await user.getIdToken();
     const res = await fetch('/api/admin/voice', {
       method: 'POST',
       headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
       body: '{}',
     });
-    if (res.ok) voice = await res.json();
-  } catch { /* same */ }
+    return res.ok ? res.json() : null;
+  }, null);
 
   // Grouped, the same as the case page's. Without the separator the shelf's
   // headline rate read "$1200" and "$3400", which is the one number on this
@@ -452,6 +474,7 @@ async function load() {
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
     `<div class="cmd-quiet">` + rateBlock + voiceBlock + summary + `</div>`;
+  painted();
   // A door unfolds its form and folds the other; Open sends the form to its
   // route and walks into the case it made.
   for (const door of listEl.querySelectorAll('[data-open-door]')) {
