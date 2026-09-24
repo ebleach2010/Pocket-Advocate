@@ -1378,6 +1378,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry75 = (CL.match(/\{\n\s+\/\/ THE RUN'S BAR \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.6): accept or pass, its own quiet entry.
   const entry76 = (CL.match(/\{\n\s+\/\/ ACCEPT OR PASS \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-24 (v7.7): how many agree, its own quiet entry.
+  const entry77 = (CL.match(/\{\n\s+\/\/ HOW MANY AGREE \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1428,8 +1430,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.6): both versions read 7.6 with the accept-or-pass tag; the 7.5 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.6): 'passing on one leaves the other alone' reworded to 'passing on one keeps the other' in the 7.6 entry made this read
   //   FAIL  T36 both versions read 7.6 ...
-  check('T36 both versions read 7.6 with the new tag, the 4.7 through 7.6 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.6';/.test(CL) && /const VERSION = '7\.6';/.test(W) && /const BUILD_TAG = 'v2026-09-24-accept-or-pass';/.test(W)
+  // RE-PINNED 2026-09-24 (v7.7): both versions read 7.7 with the agree-shown tag; the 7.6 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-24, v7.7): 'even when it is only one or none' reworded to 'even when it is one or none' in the 7.7 entry made this read
+  //   FAIL  T36 both versions read 7.7 ...
+  check('T36 both versions read 7.7 with the new tag, the 4.7 through 7.7 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.7';/.test(CL) && /const VERSION = '7\.7';/.test(W) && /const BUILD_TAG = 'v2026-09-24-agree-shown';/.test(W)
+    && /version: '7\.7',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry77)
+    && /even when it is only one or none/.test(entry77) && !DASH.test(entry77) && !HARD.some((re) => re.test(entry77))
     && /version: '7\.6',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry76)
     && /passing on one leaves the other alone/.test(entry76) && /shows as an Add to your position/.test(entry76) && !DASH.test(entry76) && !HARD.some((re) => re.test(entry76))
     && /version: '7\.5',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry75)
@@ -2328,13 +2335,45 @@ check('T63 the fast look is gone: no Look button, no Scan button, no look route,
   check('T74 accept or pass on the card: a new suggestion carries YES and NO, a taken one neither; an add says Add and that he already holds it; a position back after a pass says when he passed and how many agree now; a taken card carries neither note; the page sends NO with the trade\'s id alone and says when it can come back; and the demo passes the same way and screens its run with the same function',
     /data-act="take">YES, I TOOK IT<\/button><button type="button" class="btn big quiet pass" data-act="decline" aria-label="No, pass on this trade">NO<\/button>/.test(open)
     && !/addtag|deal-note/.test(open)
-    && /<span class="addtag">Add<\/span>/.test(add) && /<p class="deal-note add"><b>You already hold NVDA\.<\/b> Taking this adds to your position\.<\/p>/.test(add)
+    // RE-PINNED 2026-09-24 (v7.7): the add note says how many agree now (T75 holds the comparison with when he took it).
+    && /<span class="addtag">Add<\/span>/.test(add) && /<p class="deal-note add"><b>You already hold NVDA\.<\/b> 3 of 5 agree now\. Taking this adds to your position\.<\/p>/.test(add)
     && /<p class="deal-note back"><b>Back again\.<\/b> You passed on this when 2 of 5 agreed\. Now 3 of 5 do\.<\/p>/.test(back)
     && !/addtag|deal-note|data-act="decline"/.test(took)
     && /const out = await call\('decline', \{ id \}\);/.test(APP) && /Passed on \$\{out\.rec\?\.ticker \|\| 'it'\}\. It comes back only if more than \$\{out\.agreement\} of 5 agree\./.test(APP)
     && /if \(sub === 'decline'\) \{[\s\S]*?positionKey\(d\)/.test(D) && /const \{ keep \} = screenTrades\(FRESH, \{ held, declined: tstate\(\)\.declined \|\| \{\} \}\);/.test(D)
     && ![open, add, back].some((h) => DASH.test(h)),
     back.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 400));
+}
+
+// ---- T75: how many agree, on every card (2026-09-24, v7.7) ---------------------------------------
+// Eric, from a BA card marked ADD with no Desk row: "I need to see how many agents agreed to a position if
+// it's a repeat. I'm not seeing it." The row was only drawn from 2 up.
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const REC = { id: 'r1', ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'stock', entryLow: 200.5, entryHigh: 203, stop: 197.4, targets: [206, 209], allocPct: 10, status: 'open', agreement: 1 };
+  const ctx = { accountCents: 245000, rules: { riskPct: 3 } };
+  const txt = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ');
+  const row = (a) => (txt(mod.recCardHtml({ ...REC, agreement: a }, ctx)).match(/Desk (\d) of 5 agree/) || [])[1];
+  const held = { ...REC, id: 'h1', status: 'took', agreement: 3 };
+  const holding = new Map([[math.positionKey(held), held]]);
+  const add = txt(mod.recCardHtml({ ...REC, adds: true }, { ...ctx, holding }));
+  const addAlone = txt(mod.recCardHtml({ ...REC, adds: true }, ctx));
+  const addNone = txt(mod.recCardHtml({ ...REC, adds: true }, { ...ctx, holding: new Map([[math.positionKey(held), { ...held, agreement: null }]]) }));
+  const took = txt(mod.recCardHtml({ ...held, adds: true }, { ...ctx, holding }));
+  const APP = f('public/js/admin-deskapp.js');
+  // NEGATIVE CONTROL (run 2026-09-24): the card's count put back to `Number(r.agreement) >= 2 ? ... : ''` made this read
+  //   FAIL  T75 how many agree, on every card ...
+  // NEGATIVE CONTROL (run 2026-09-24): the add's held comparison removed (`const heldRec = null;`) made this read
+  //   FAIL  T75 how many agree, on every card ...
+  check('T75 how many agree, on every card: the Desk row reads 0, 1 and 5 of 5 as well as the rest; an add says how many agreed when he took the trade he holds and how many agree now, or only now when the first is not on record or not in hand; a taken card has no add note; and the page hands the card his taken trades by position',
+    row(0) === '0' && row(1) === '1' && row(3) === '3' && row(5) === '5'
+    && /You already hold BA\. 3 of 5 agreed when you took it; 1 of 5 agree now\. Taking this adds to your position\./.test(add)
+    && /You already hold BA\. 1 of 5 agree now\. Taking this adds to your position\./.test(addAlone)
+    && /You already hold BA\. 1 of 5 agree now\. Taking this adds/.test(addNone)
+    && !/You already hold/.test(took)
+    && /holding: new Map\(\(S\.state\?\.active \|\| \[\]\)\.map\(\(r\) => \[positionKey\(r\), r\]\)\),/.test(APP)
+    && !DASH.test(add),
+    JSON.stringify({ rows: [row(0), row(1), row(5)], add: (add.match(/You already hold.*?position\./) || [''])[0] }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

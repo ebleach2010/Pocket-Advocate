@@ -10,7 +10,7 @@
 // The name is load-bearing: admin-desk.js matches the Worker's asset gate, so
 // this file is a 404 to anyone but him.
 
-import { recSizing, planFor, HORIZON_WORDS } from './trade-math.js';
+import { recSizing, planFor, positionKey, HORIZON_WORDS } from './trade-math.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = (cents, signed = false) => {
@@ -153,7 +153,7 @@ const qtyText = (sz) => {
  * pays, how long, why, and what kills it. A taken trade is the same card lit
  * electric yellow, with PROFIT and LOSS in place of the one button.
  */
-export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quotes = null } = {}) {
+export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quotes = null, holding = null } = {}) {
   // HIS SIZE (2026-09-23): when he set the amount and the risk himself, the card is sized from his
   // numbers, and the stop and targets are the ones they give; the desk's own are named under the grid.
   const his = r.mine ? planFor({ rec: r, amountCents: r.mine.amountCents, riskCents: r.mine.riskCents, accountCents: balanceTyped ? accountCents : 0, rules }) : null;
@@ -173,7 +173,15 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const live = Number(quotes?.[r.ticker]?.last);
   const now = Number.isFinite(live) && live > 0 ? price(live) : r.priceNow != null ? price(r.priceNow) : r.lastPrice != null ? price(r.lastPrice) : '';
   const chance = r.profitLow != null && r.profitHigh != null ? `${esc(r.profitLow)} to ${esc(r.profitHigh)}%` : '';
-  const agree = Number(r.agreement) >= 2 ? `${Number(r.agreement)} of 5 agree` : '';
+  // How many of the five backed it, on every card whatever the count (Eric, 2026-09-24: "I need to see
+  // how many agents agreed to a position if it's a repeat. I'm not seeing it."). It used to show only from 2 up.
+  const n = r.agreement === '' || r.agreement == null ? NaN : Number(r.agreement);
+  const agreeN = Number.isFinite(n) && n >= 0 && n <= 5 ? Math.round(n) : null;
+  const agree = agreeN == null ? '' : `${agreeN} of 5 agree`;
+  // On an add, the same count when he took the trade he holds, from the page's own list of his trades.
+  const heldRec = r.adds && holding ? holding.get(positionKey(r)) : null;
+  const heldN = heldRec && heldRec.agreement !== '' && heldRec.agreement != null && Number.isFinite(Number(heldRec.agreement)) ? Math.round(Number(heldRec.agreement)) : null;
+  const addWhy = agreeN == null ? '' : heldN != null ? ` ${heldN} of 5 agreed when you took it; ${agreeN} of 5 agree now.` : ` ${agreeN} of 5 agree now.`;
   const amount = !sized || sz.qty == null ? 'Set your balance in Settings'
     : sz.qty === 0 ? (sz.overRule ? `One contract risks ${money(sz.unitRiskCents)}, over your ${money(sz.budgetCents)} rule`
       : sz.contracts === 0 && sz.unitCostCents > sz.allocCents ? `One contract costs ${wholeMoney(sz.unitCostCents)}, more than the ${wholeMoney(sz.allocCents)} set aside`
@@ -205,7 +213,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
       ${cell('R:R', sized && sz.rr != null ? esc(`1 : ${sz.rr}`) : '')}
     </div>
     ${mine ? `<p class="mine-note"><b>Your size.</b> ${esc(deskPlan)}${esc(ruleNote)}</p>` : ''}
-    ${r.adds && !active ? `<p class="deal-note add"><b>You already hold ${esc(r.ticker)}.</b> Taking this adds to your position.</p>` : ''}
+    ${r.adds && !active ? `<p class="deal-note add"><b>You already hold ${esc(r.ticker)}.</b>${esc(addWhy)} Taking this adds to your position.</p>` : ''}
     ${r.reoffered && !active ? `<p class="deal-note back"><b>Back again.</b> You passed on this when ${esc(r.reoffered.was)} of 5 agreed. Now ${esc(r.reoffered.now)} of 5 do.</p>` : ''}
     ${vehicleText(r) ? `<p class="vehicle">${esc(vehicleText(r))}</p>` : ''}
     ${r.setup ? `<p class="setup">${esc(r.setup)}</p>` : ''}

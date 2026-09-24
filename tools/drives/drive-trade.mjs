@@ -288,7 +288,9 @@ await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c)
 await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'QQQ'), 4000);
 await runAgain();
 const addCard = await page.evaluate(() => { const c = [...document.querySelectorAll('#board .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'QQQ'); return c ? { chip: c.querySelector('.addtag')?.textContent.trim() || '', note: c.querySelector('.deal-note.add')?.textContent.trim() || '' } : null; });
-ok('with QQQ taken, the next run offers QQQ only as an add to it', !!addCard && addCard.chip === 'Add' && /^You already hold QQQ\. Taking this adds to your position\.$/.test(addCard.note), JSON.stringify(addCard));
+// RE-PINNED 2026-09-24 (v7.7): the add says how many agreed when he took it and how many agree now.
+ok('with QQQ taken, the next run offers QQQ only as an add to it, and says how many agreed then and now', !!addCard && addCard.chip === 'Add' && /^You already hold QQQ\. 4 of 5 agreed when you took it; 4 of 5 agree now\. Taking this adds to your position\.$/.test(addCard.note), JSON.stringify(addCard));
+ok('every card on the board shows how many of the desk agree', await page.evaluate(() => [...document.querySelectorAll('#board .rec')].every((c) => /^\d of 5 agree$/.test([...c.querySelectorAll('.why dt')].find((d) => d.textContent.trim() === 'Desk')?.nextElementSibling?.textContent.trim() || ''))));
 ok('and the AMD scalp he passed on is still off', !(await boardTks()).includes('AMD'), await boardTks());
 await shot('N-add');
 

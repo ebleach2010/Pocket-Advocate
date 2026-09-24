@@ -32,7 +32,7 @@ import {
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
-import { recSizing, planFor } from './trade-math.js';
+import { recSizing, planFor, positionKey } from './trade-math.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -114,6 +114,8 @@ const cardCtx = () => ({
   rules: { riskPct: settingsNow().riskPct ?? 3 },
   balanceTyped: !!balanceNow().typed && balanceNow().cents > 0,
   quotes: S.quotes,
+  // His taken trades by position, so an add can say how many agreed when he took it (2026-09-24).
+  holding: new Map((S.state?.active || []).map((r) => [positionKey(r), r])),
 });
 const runBusy = () => BUSY.has(S.state?.run?.status);
 

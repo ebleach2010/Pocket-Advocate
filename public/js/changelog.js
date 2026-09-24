@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.6';
+export const VERSION = '7.7';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.6';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HOW MANY AGREE (Eric, 2026-09-24: "I need to see how many agents agreed
+    // to a position if it's a repeat. I'm not seeing it."). Admin only.
+    version: '7.7',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every trade now shows how many of the five researchers backed it, even when it is only one or none. It used to show only from two up.',
+      'An Add card says how many agreed when you took the trade you hold and how many agree now.',
+    ],
+  },
   {
     // ACCEPT OR PASS (Eric, 2026-09-24: "The desk should only suggest new
     // positions or increasing equity in a position ... I should be able to

@@ -485,6 +485,11 @@ passed on (NO, `POST trade/decline`, remembered on trade/state with its
 agreement) held back until more of the desk agrees. trade.mjs T72 to T74 and
 desk.mjs D28 hold it; drive-trade.mjs N plays NO, a run, YES and the add.
 
+**How many agree (2026-09-24, v7.7).** The card's Desk row was drawn only from
+2 of 5 up, so a repeat backed by one researcher showed no count at all. It is
+drawn for every count now, and an Add compares with the agreement on the trade
+he holds, found on the page by `positionKey`. trade.mjs T75.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's
