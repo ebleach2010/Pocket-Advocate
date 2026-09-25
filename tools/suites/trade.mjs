@@ -1414,6 +1414,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry716 = (CL.match(/\{\n\s+\/\/ SIGN-IN WAITS ON GOOGLE \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-25 (v7.17): the high-risk trade, its own quiet entry.
   const entry717 = (CL.match(/\{\n\s+\/\/ THE HIGH-RISK TRADE \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-25 (v7.18): the wider desk, its own quiet entry.
+  const entry718 = (CL.match(/\{\n\s+\/\/ A WIDER DESK \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1497,8 +1499,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-25 (v7.17): both versions read 7.17 with the high-risk tag; the 7.16 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-25, v7.17): 'in its own High risk section' reworded to 'in a section of its own' in the 7.17 entry made this read
   //   FAIL  T36 both versions read 7.17 ...
-  check('T36 both versions read 7.17 with the new tag, the 4.7 through 7.17 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.17';/.test(CL) && /const VERSION = '7\.17';/.test(W) && /const BUILD_TAG = 'v2026-09-25-high-risk';/.test(W)
+  // RE-PINNED 2026-09-25 (v7.18): both versions read 7.18 with the wider-desk tag; the 7.17 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-25, v7.18): 'none is ever a trade' reworded to 'none is traded' in the 7.18 entry made this read
+  //   FAIL  T36 both versions read 7.18 ...
+  check('T36 both versions read 7.18 with the new tag, the 4.7 through 7.18 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.18';/.test(CL) && /const VERSION = '7\.18';/.test(W) && /const BUILD_TAG = 'v2026-09-25-wider-desk';/.test(W)
+    && /version: '7\.18',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry718)
+    && /none is ever a trade/.test(entry718) && !DASH.test(entry718) && !HARD.some((re) => re.test(entry718))
     && /version: '7\.17',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry717)
     && /in its own High risk section/.test(entry717) && !DASH.test(entry717) && !HARD.some((re) => re.test(entry717))
     && /version: '7\.16',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry716)
@@ -2591,7 +2598,8 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     /import \{[^}]*\bGLP1_CHAIN\b[^}]*\} from '\.\/trade-math\.js';/.test(APP)
     && /<div><h2>GLP-1 chain<\/h2><div class="grp">/.test(APP)
     && /\$\{GLP1_CHAIN\.map\(\(g\) => `<span class="sub" style="margin-top:12px">\$\{esc\(g\.role\)\}<\/span><div class="watch">\$\{g\.tickers\.map\(\(t\) => `<span class="chip">\$\{esc\(t\)\}<\/span>`\)\.join\(''\)\}<\/div>`\)\.join\(''\)\}/.test(APP)
-    && /From the makers to the sellers\. A trade from it clears the same 50% bar as any other\./.test(APP)
+    // RE-PINNED 2026-09-25 (v7.18): the bar is named from CHANCE_BAR, 45 now.
+    && /From the makers to the sellers\. A trade from it clears the same \$\{CHANCE_BAR\}% bar as any other\./.test(APP) && /const CHANCE_BAR = 45;/.test(APP)
     && !/Always priced|prices these on every run|Tickers the desk prices/.test(APP) && /Named to the desk on every run\./.test(APP)
     && math.GLP1_CHAIN.find((g) => g.role === 'Sellers')?.tickers.includes('HIMS'),
     '');
@@ -2821,6 +2829,34 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     && /REC\('r-demo-6', \{[\s\S]*?ticker: 'SOUN'[\s\S]*?highRisk: true,/.test(SEED)
     && !DASH.test(card) && !DASH.test(board),
     JSON.stringify({ plain: [plain.budgetCents, plain.riskCents], bold: [bold.budgetCents, bold.riskCents], his: [his.budgetCents, his.overRule, hisPlain.overRule], row: row.highRisk }));
+}
+
+// ---- T85: the wider desk on the page (2026-09-25, v7.18) ----------------------------------------------------
+// Eric: "This stock trading app PR is so weak and limited in scope." Settings says whether the market scan is
+// on, off or waiting for the Alpaca key; the board carries the last run's scan status; the default watchlist is
+// stocks; and the demo's run no longer offers a fund.
+{
+  const APP = f('public/js/admin-deskapp.js');
+  const { w: bw, api: bapi } = world();
+  bw.docs.set('trade/settings', { data: { caseId: 'c1' } });
+  bw.docs.set('trade/state', { data: { activeIds: [], desk: { ids: [], scanner: 'ok' } }, updateTime: 'T1' });
+  const board = await bapi.tradeState(env, { now: at('2026-09-25T16:00:00Z') });
+  const scanSub = new Function('S', `${(APP.match(/function scanSub\(pub\) \{[\s\S]*?\n\}\n/) || [''])[0]}return scanSub;`);
+  const say = (pub, scanner) => scanSub({ state: { desk: { scanner } } })(pub);
+  // NEGATIVE CONTROL (run 2026-09-25): the Market scan row taken out of openSettings made this read
+  //   FAIL  T85 the wider desk on the page ...
+  check('T85 the wider desk on the page: Settings has a Market scan line under the 15-minute charts that says it needs the Alpaca key, is on, was turned down or did not answer, from the last run; the board carries that run\'s scan status; the default watchlist has no fund; and the demo\'s run offers HOOD where it offered QQQ, with no fund among its trades',
+    /<div class="r"><span>Market scan<span class="sub" id="scan-sub">\$\{esc\(scanSub\(pub\)\)\}<\/span><\/span><\/div>/.test(APP)
+    && APP.indexOf('id="scan-sub"') > APP.indexOf('id="bars-sub"')
+    && say({ hasBarsKey: false }, null) === 'Needs the Alpaca key above. Until then each run searches for the day\'s movers.'
+    && say({ hasBarsKey: true }, 'ok') === 'On. Every run starts from the day\'s top gainers, losers and most active stocks.'
+    && say({ hasBarsKey: true }, 'refused') === 'Alpaca turned the key down on the last run.'
+    && say({ hasBarsKey: true }, null) === 'On from the next run: the day\'s top gainers, losers and most active stocks.'
+    && board.desk.scanner === 'ok'
+    && K.DEFAULT_WATCHLIST.every((t) => !math.isFund(t)) && math.isFund('QQQ') && math.isFund('soxl') && !math.isFund('HOOD')
+    && /ticker: 'HOOD', side: 'long', instrument: 'stock'/.test(D) && !/ticker: 'QQQ', side: 'long'/.test(D)
+    && /const DEFAULT_WATCHLIST = \['NVDA', 'AMD', 'TSLA', 'PLTR', 'SOFI', 'HOOD', 'COIN', 'MARA', 'F', 'INTC', 'BAC'\];/.test(D),
+    JSON.stringify({ board: board.desk?.scanner, off: say({ hasBarsKey: false }, null) }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

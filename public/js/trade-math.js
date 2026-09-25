@@ -167,6 +167,22 @@ export const HORIZON_WORDS = { scalp: 'Scalp', intraday: 'Intraday', swing: 'Swi
  * (he chose both: "Up to 10%", "Needs 40%+"). His own rule still sizes every other trade.
  */
 export const HIGH_RISK_PCT = 10;
+/**
+ * STOCKS AND THEIR OPTIONS ONLY (Eric, 2026-09-25: "the trading desk gave me fucking qqq ... There are so
+ * many stocks with trading opportunities." He chose stocks and their options, no funds). Index, sector,
+ * leveraged and volatility funds read the market; none of them is ever a trade.
+ */
+export const FUND_TICKERS = new Set([
+  'SPY', 'QQQ', 'IWM', 'DIA', 'VOO', 'IVV', 'VTI', 'RSP', 'MDY', 'IJH', 'IJR', 'VT', 'VEA', 'VWO', 'EFA', 'EEM', 'QQQM', 'SPLG', 'ONEQ',
+  'XLK', 'XLF', 'XLE', 'XLV', 'XLI', 'XLY', 'XLP', 'XLU', 'XLB', 'XLRE', 'XLC', 'SMH', 'SOXX', 'XBI', 'IBB', 'KRE', 'KBE', 'XOP', 'OIH',
+  'XRT', 'XHB', 'ITB', 'IYR', 'VNQ', 'GDX', 'GDXJ', 'SIL', 'ARKK', 'ARKG', 'ARKW', 'TAN', 'ICLN', 'LIT', 'JETS', 'KWEB', 'FXI', 'EWZ', 'EWJ',
+  'GLD', 'SLV', 'USO', 'UNG', 'TLT', 'IEF', 'SHY', 'HYG', 'LQD', 'IBIT', 'FBTC', 'ETHA', 'BITO',
+  'TQQQ', 'SQQQ', 'SPXL', 'SPXS', 'SPXU', 'UPRO', 'SSO', 'SDS', 'SH', 'PSQ', 'QLD', 'QID', 'TNA', 'TZA', 'UDOW', 'SDOW', 'DDM', 'DXD',
+  'SOXL', 'SOXS', 'TECL', 'TECS', 'FAS', 'FAZ', 'LABU', 'LABD', 'NUGT', 'DUST', 'JNUG', 'JDST', 'GUSH', 'DRIP', 'ERX', 'ERY', 'BOIL', 'KOLD',
+  'UCO', 'SCO', 'TMF', 'TMV', 'TBT', 'YINN', 'YANG', 'FNGU', 'FNGD', 'BULZ', 'NVDL', 'NVDX', 'NVDU', 'TSLL', 'TSLQ', 'TSLZ', 'CONL', 'MSTU', 'MSTX',
+  'UVXY', 'VXX', 'VIXY', 'SVXY', 'UVIX', 'SVIX',
+]);
+export const isFund = (ticker) => FUND_TICKERS.has(String(ticker || '').toUpperCase());
 export const HIGH_RISK_FLOOR = 40;
 /** The share of the balance a trade may risk at its stop: the high-risk trade's own, else his rule. */
 export const riskPctFor = (rec, R) => (rec?.highRisk === true ? Math.max(HIGH_RISK_PCT, R.riskPct) : R.riskPct);

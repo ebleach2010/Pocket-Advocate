@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.17';
+export const VERSION = '7.18';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.17';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // A WIDER DESK (Eric, 2026-09-25: "There are so many stocks with trading
+    // opportunities ... the trading desk gave me fucking qqq"). Admin only.
+    version: '7.18',
+    quiet: true,
+    client: [],
+    admin: [
+      'Stocks and their options only. QQQ, SPY and every other fund now only read the market; none is ever a trade.',
+      'Every run starts from a market scan of the day\'s top gainers, losers and most active stocks, with 15-minute charts on the movers. It runs on your Alpaca key.',
+      'Up to 9 trades a run, 3 of each kind, plus the high-risk one. The bar is now 45%, and each researcher gets 7 searches instead of 5.',
+    ],
+  },
   {
     // THE HIGH-RISK TRADE (Eric, 2026-09-25: "Add exactly one stock per turn
     // for high risk high reward."). Admin only.

@@ -30,7 +30,7 @@ import {
   tradeMetrics, TARGET_DAILY, PROJECTION_MIN_DAYS, DEFAULT_START_CENTS,
   rulesOf, dayStatus, realizedToday, openRisk, tradeCalc, fmtMoney, fmtPct,
   HORIZONS, HORIZON_WORDS, horizonOf, horizonFor, swingLastDay, isTradingDay,
-  MARKET_OPEN_MIN, MARKET_CLOSE_MIN,
+  MARKET_OPEN_MIN, MARKET_CLOSE_MIN, isFund,
 } from '../public/js/trade-math.js';
 
 // ---- constants ------------------------------------------------------------
@@ -61,7 +61,8 @@ export const WATCHLIST_MAX = 20;
 // index beside them, and liquid names across sectors that a few hundred
 // dollars can actually buy. It is only a default: his own list, whenever he
 // sets one in Settings, wins, and the scan is told to look past both.
-export const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'];
+// RE-DRAWN 2026-09-25 (v7.18): stocks only. The index funds still ride every run as the market read.
+export const DEFAULT_WATCHLIST = ['NVDA', 'AMD', 'TSLA', 'PLTR', 'SOFI', 'HOOD', 'COIN', 'MARA', 'F', 'INTC', 'BAC'];
 export const TRADE_SEARCH_MAX_USES = 8;
 export const TRADE_WEB_SEARCH_TOOL = { type: 'web_search_20260209', name: 'web_search', max_uses: TRADE_SEARCH_MAX_USES };
 // The dictionary's trading half (2026-09-22: "Terms are a thing here as
@@ -688,6 +689,66 @@ export async function fetchBars(creds, symbols, now = Date.now()) {
     return { status: 'failed', bars: {} };
   }
 }
+// ---- THE MARKET SCAN (v7.18) -------------------------------------------------------
+// Eric, 2026-09-25: "There are so many stocks with trading opportunities. I made 7% today on my own and
+// the trading desk gave me fucking qqq." The run saw prices for four index funds and nothing that was
+// moving, and every researcher spent all its searches finding movers. Alpaca's free screener hands over
+// the day's top gainers, top losers and most active stocks: two requests, with the same key pair as the
+// 15-minute charts. Plain tickers of a dollar or more and no funds; the first 30 of each.
+export const SCAN_TOP = 30;
+const SCAN_BASE = 'https://data.alpaca.markets/v1beta1/screener/stocks';
+const PLAIN_RE = /^[A-Z]{1,5}$/;
+/** The day's movers and most active. `status` is ok, nokey, refused or failed; a list that fails alone is empty. */
+export async function fetchScanner(creds) {
+  if (!creds) return { status: 'nokey', gainers: [], losers: [], active: [] };
+  const headers = { 'APCA-API-KEY-ID': creds.id, 'APCA-API-SECRET-KEY': creds.secret, accept: 'application/json' };
+  const get = async (url) => {
+    try {
+      const res = await fetch(url, { headers, signal: AbortSignal.timeout(8000) });
+      if (res.status === 401 || res.status === 403) return { refused: true };
+      if (!res.ok) return null;
+      return await res.json().catch(() => null);
+    } catch { return null; }
+  };
+  const [movers, actives] = await Promise.all([
+    get(`${SCAN_BASE}/movers?top=${SCAN_TOP}`),
+    get(`${SCAN_BASE}/most-actives?by=volume&top=${SCAN_TOP}`),
+  ]);
+  if (movers?.refused || actives?.refused) return { status: 'refused', gainers: [], losers: [], active: [] };
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+  const move = (list) => (Array.isArray(list) ? list : [])
+    .map((x) => ({ ticker: String(x?.symbol || '').toUpperCase(), price: n(x?.price), pct: n(x?.percent_change) }))
+    .filter((x) => PLAIN_RE.test(x.ticker) && !isFund(x.ticker) && x.price != null && x.price >= 1 && x.pct != null)
+    .slice(0, SCAN_TOP);
+  const active = (Array.isArray(actives?.most_actives) ? actives.most_actives : [])
+    .map((x) => ({ ticker: String(x?.symbol || '').toUpperCase(), volume: n(x?.volume) }))
+    .filter((x) => PLAIN_RE.test(x.ticker) && !isFund(x.ticker))
+    .slice(0, SCAN_TOP);
+  const status = !movers && !actives ? 'failed' : 'ok';
+  return { status, gainers: move(movers?.gainers), losers: move(movers?.losers), active, at: movers?.last_updated || actives?.last_updated || null };
+}
+/** The tickers from a scan that get 15-minute charts: the top gainers, then losers, then most active, once each. */
+export function scanTickers(scan, { gainers = 15, losers = 5, active = 10 } = {}) {
+  if (!scan || scan.status !== 'ok') return [];
+  const out = [];
+  for (const t of [...scan.gainers.slice(0, gainers), ...scan.losers.slice(0, losers), ...scan.active.slice(0, active)].map((x) => x.ticker)) if (!out.includes(t)) out.push(t);
+  return out;
+}
+/** The block every agent reads. `when` is live (the session is under way), before (the lists are the last session's) or after. */
+export function moversBlock(scan, { when = 'live' } = {}) {
+  if (!scan || scan.status === 'nokey') return 'No market scan this run (the Alpaca key is not on file). Spend your first search on today\'s top gainers, top losers and most active stocks, then work from those.';
+  if (scan.status !== 'ok') return `No market scan this run: the scan ${scan.status === 'refused' ? 'turned the key down' : 'did not answer'}. Spend your first search on today's top gainers, top losers and most active stocks.`;
+  const pct = (v) => `${v >= 0 ? '+' : ''}${Math.round(v * 10) / 10}%`;
+  const vol = (v) => (v == null ? '' : v >= 1e6 ? ` ${Math.round(v / 1e5) / 10}M shares` : ` ${Math.round(v / 1e3)}K shares`);
+  const line = (xs) => (xs.length ? xs.map((x) => `${x.ticker} ${x.price} (${pct(x.pct)})`).join(', ') : 'none');
+  return [
+    `The market scan, ${when === 'live' ? 'this session so far' : when === 'before' ? 'from the last session (it resets at the open; search for today\'s premarket movers too)' : 'from the last session'}. Stocks only, a dollar or more. Start here: these are where the moves are.`,
+    `Top gainers: ${line(scan.gainers)}.`,
+    `Top losers: ${line(scan.losers)}.`,
+    `Most active by volume: ${scan.active.length ? scan.active.map((x) => `${x.ticker}${vol(x.volume)}`).join(', ') : 'none'}.`,
+  ].join('\n');
+}
+
 /** An EMA over a series, seeded with the simple average of its first n values; null until then. */
 function emaSeries(xs, n) {
   const out = new Array(xs.length).fill(null);

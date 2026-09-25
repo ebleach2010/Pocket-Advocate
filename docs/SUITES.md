@@ -595,6 +595,20 @@ gives it its own section after the kinds; the push and the landing name it.
 desk.mjs D37 and D24 (re-pinned: seven priced, 26 of 38); trade.mjs T84 and
 T35 (re-pinned); drive-trade.mjs R.
 
+**A wider desk (2026-09-25, v7.18).** Eric: "This stock trading app PR is
+so weak and limited in scope ... the trading desk gave me fucking qqq." The
+run priced four index funds and nothing that was moving, every researcher
+spent all five searches finding movers, and the last run filed nothing.
+Now: Alpaca's free screener (`fetchScanner`: the movers and the most
+active, two calls, plain stocks of a dollar or more) opens every run's
+market note (`moversBlock`) and its movers join the one chart request
+(`scanTickers`); funds are never a trade (trade-math.js `FUND_TICKERS`,
+`isFund`, in `validRec`); nine trades, three a kind; a 45% bar; seven
+searches; each beat starts from the scan. desk.mjs D38, D39 and D5, D11,
+D19, D24 (research 33, refused path 38, desk 29, of 38), D27, D37 re-pinned
+for stock fixtures and the new limits; trade.mjs T85, T79 re-pinned;
+drive-trade.mjs follows HOOD where it followed QQQ.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

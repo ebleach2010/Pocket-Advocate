@@ -71,6 +71,7 @@ const DEMO_QUOTES = {
   AAPL: { ticker: 'AAPL', last: 232.6, chg: 1.5, chgPct: 0.65, open: 231, high: 233.2, low: 230.6, prevClose: 231.1 },
   AMD: { ticker: 'AMD', last: 168.4, chg: 1.1, chgPct: 0.66, open: 167.2, high: 169.1, low: 166.8, prevClose: 167.3 },
   QQQ: { ticker: 'QQQ', last: 498.3, chg: 1.9, chgPct: 0.38, open: 496.8, high: 498.9, low: 495.7, prevClose: 496.4 },
+  HOOD: { ticker: 'HOOD', last: 98.3, chg: 3.9, chgPct: 4.13, open: 95.1, high: 98.9, low: 94.8, prevClose: 94.4 },
   MU: { ticker: 'MU', last: 118.9, chg: 6.2, chgPct: 5.5, open: 117.5, high: 119.6, low: 116.9, prevClose: 112.7 },
   SOFI: { ticker: 'SOFI', last: 15.62, chg: 0.31, chgPct: 2.02, open: 15.35, high: 15.7, low: 15.28, prevClose: 15.31 },
   PLTR: { ticker: 'PLTR', last: 41.35, chg: 0.82, chgPct: 2.02, open: 40.6, high: 41.5, low: 40.4, prevClose: 40.53 },
@@ -1777,7 +1778,7 @@ export function demoApi(role, store) {
         scaledNoReset: 'You have added to or trimmed this trade, so the desk\'s plan no longer fits it. Change its size instead.',
         badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
       };
-      const DEFAULT_WATCHLIST = ['SPY', 'QQQ', 'IWM', 'NVDA', 'AMD', 'SOFI', 'PLTR', 'F', 'INTC', 'BAC'];
+      const DEFAULT_WATCHLIST = ['NVDA', 'AMD', 'TSLA', 'PLTR', 'SOFI', 'HOOD', 'COIN', 'MARA', 'F', 'INTC', 'BAC'];
       const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
       const ID_RE = /^[\w-]{1,40}$/;
       const todayMT = deskToday();
@@ -1868,6 +1869,7 @@ export function demoApi(role, store) {
             at: iso(st.desk.at), trigger: st.desk.trigger || 'manual', read: st.desk.read || '', none: st.desk.none || '',
             count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
             charts: ['ok', 'nokey', 'refused', 'failed'].includes(st.desk.charts) ? st.desk.charts : null,
+            scanner: ['ok', 'nokey', 'refused', 'failed'].includes(st.desk.scanner) ? st.desk.scanner : null,
             verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
           } : null,
           recs: rows.filter((r) => deskIds.includes(r.id) && live(r)),
@@ -2126,9 +2128,10 @@ export function demoApi(role, store) {
           }
           const expiry = (days) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date(now + days * 86_400_000));
           const FRESH = [
-            { horizon: 'intraday', ticker: 'QQQ', side: 'long', instrument: 'stock', entryLow: 497.6, entryHigh: 498.2, stop: 495.9, targets: [501.5, 504], holdMinutes: 180, allocPct: 30, profitLow: 55, profitHigh: 63, agreement: 4, backers: [1, 2, 3, 5], doubters: [4], lastPrice: 498.1, priceNow: 498.1,
+            // A stock, not a fund (v7.18: "the trading desk gave me fucking qqq").
+            { horizon: 'intraday', ticker: 'HOOD', side: 'long', instrument: 'stock', entryLow: 97.6, entryHigh: 98.2, stop: 95.9, targets: [101.5, 104], holdMinutes: 180, allocPct: 30, profitLow: 55, profitHigh: 63, agreement: 4, backers: [1, 2, 3, 5], doubters: [4], lastPrice: 98.1, priceNow: 98.1,
               chart: { line: 'Above VWAP · EMAs stacked up · MACD above signal', at: new Date(now - 4 * 60_000) },
-              setup: 'Broke the opening range and held it on the retest, with volume rising into the break.', catalyst: 'Semis leading after the guidance raise.', invalidation: 'A close back under 496 on volume.' },
+              setup: 'Broke the opening range and held it on the retest, with volume rising into the break.', catalyst: 'Top gainer on the scan after record September trading volumes.', invalidation: 'A close back under 96 on volume.' },
             { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, backers: [2, 3, 4], doubters: [], lastPrice: 118.7, priceNow: 118.7,
               chart: { line: 'Above VWAP · EMAs stacked up · MACD just crossed up', at: new Date(now - 4 * 60_000) },
               setup: 'Beat on memory pricing before the open and is basing above the gap.', catalyst: 'Earnings beat and a raised outlook this morning.', invalidation: 'Filling the gap below 114.' },
@@ -2182,7 +2185,7 @@ export function demoApi(role, store) {
             ...tstate(),
             run: { ...st.run, status: 'idle', finishedAt: new Date(now), count: ids.length, error: null, done: 5 },
             desk: {
-              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', verdicts, charts: 'ok',
+              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', verdicts, charts: 'ok', scanner: 'ok',
               read: 'Semis are leading and the index is holding its opening range on better volume than yesterday. Buy strength that holds a retest; skip anything extended.',
               news: [
                 { headline: 'Micron beats on memory pricing and raises its outlook', why: 'Fuel for the whole chip group today, and the reason MU is on the board.', tickers: ['MU', 'NVDA'] },

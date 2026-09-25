@@ -686,7 +686,7 @@ export function seed({ set, file }) {
     run: { id: RUN, status: 'idle', trigger: 'morning', queuedAt: hours(2.1), startedAt: hours(2.1), finishedAt: hours(2), done: 5, count: 5 },
     desk: {
       runId: RUN, at: hours(2), trigger: 'morning', count: 5, reports: 5,
-      ids: ['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4', 'r-demo-6'], none: '',
+      ids: ['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4', 'r-demo-6'], none: '', charts: 'ok', scanner: 'ok',
       read: 'Chips lead and the index is holding its opening range on better volume than yesterday. Take strength that holds a retest; nothing extended.',
       news: [
         { headline: 'Nvidia raises data center guidance at its developer conference', why: 'The reason chips lead today, and the catalyst behind the NVDA trade.', tickers: ['NVDA', 'AMD'] },

@@ -102,6 +102,7 @@ function load(deps) {
     HIGH_RISK_PCT: TM.HIGH_RISK_PCT, HIGH_RISK_FLOOR: TM.HIGH_RISK_FLOOR,
     // The 15-minute charts (v7.15). A check that gives the settings Alpaca's pair also fakes fetchBars.
     resolveBars: TD.resolveBars, fetchBars: TD.fetchBars, chartsOf: TD.chartsOf, chartsBlock: TD.chartsBlock, chartLine: TD.chartLine, BARS_MAX_SYMBOLS: TD.BARS_MAX_SYMBOLS,
+    fetchScanner: TD.fetchScanner, scanTickers: TD.scanTickers, moversBlock: TD.moversBlock, isFund: TM.isFund,
   };
   const keys = Object.keys(names);
   return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf, chainNote };`)(...keys.map((k) => names[k]));
@@ -117,7 +118,8 @@ const TRADE = (over = {}) => ({
 });
 const DESK_OUT = (over = {}) => ({
   read: 'Indexes firm, tech leading.', none: '',
-  trades: [TRADE(), TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2, entryLow: 90, entryHigh: 90.5, stop: 88, targets: [94], chanceLow: 55, chanceHigh: 60, setup: 'Oil bid, energy leading the week.' })],
+  // RE-PINNED 2026-09-25 (v7.18): funds are never a trade now (Eric chose stocks and their options), so the fixture's XLE is CAT.
+  trades: [TRADE(), TRADE({ ticker: 'CAT', horizon: 'swing', holdMinutes: null, holdDays: 2, entryLow: 90, entryHigh: 90.5, stop: 88, targets: [94], chanceLow: 55, chanceHigh: 60, setup: 'Oil bid, energy leading the week.' })],
   news: [{ headline: 'Fed speaker at noon', tickers: ['SPY'], why: 'Could move rates and tech.' }],
   ...over,
 });
@@ -158,6 +160,9 @@ const BARS = (now, base = 100) => {
 };
 // Alpaca's pair as it sits in his settings, and a fetch that counts itself as one outside call.
 const PAIR = { alpacaKeyId: 'PKTEST1234567890ABCD', alpacaSecret: 'abcdEFGHijklMNOPqrstUVWXyz0123456789abcd' };
+// The market scan (v7.18): two requests, the movers and the most active, counted as two outside calls.
+const SCAN = { status: 'ok', gainers: [{ ticker: 'SOUN', price: 6.2, pct: 18.4 }, { ticker: 'RKLB', price: 28.9, pct: 11.2 }], losers: [{ ticker: 'LULU', price: 212.4, pct: -9.8 }], active: [{ ticker: 'NVDA', volume: 180e6 }, { ticker: 'SOUN', volume: 95e6 }] };
+const scanCounted = (W, out = SCAN) => async () => { W.w.calls += 2; W.w.scans = (W.w.scans || 0) + 1; return out; };
 const barsCounted = (W, status = 'ok') => async (creds, syms, now) => {
   W.w.calls += 1;
   (W.w.barsAsked ||= []).push([...syms]);
@@ -275,9 +280,10 @@ const SSE = [
     JSON.stringify({ ok: !!ok, cashShort, marginShort: !!marginShort, clamps }));
 }
 {
+  // RE-PINNED 2026-09-25 (v7.18): nine trades and three of each kind (Eric chose "Up to 9"), and a fund is never one.
   const many = { trades: [
-    TRADE(), TRADE(), TRADE({ ticker: 'AMD' }), TRADE({ ticker: 'SMCI' }),
-    TRADE({ ticker: 'XLE', horizon: 'swing', holdDays: 2 }), TRADE({ ticker: 'XLF', horizon: 'swing', holdDays: 2 }), TRADE({ ticker: 'XLK', horizon: 'swing', holdDays: 2 }),
+    TRADE(), TRADE(), TRADE({ ticker: 'AMD' }), TRADE({ ticker: 'SMCI' }), TRADE({ ticker: 'GOOG' }), TRADE({ ticker: 'QQQ' }),
+    TRADE({ ticker: 'CAT', horizon: 'swing', holdDays: 2 }), TRADE({ ticker: 'DE', horizon: 'swing', holdDays: 2 }), TRADE({ ticker: 'URI', horizon: 'swing', holdDays: 2 }), TRADE({ ticker: 'MSFT', horizon: 'swing', holdDays: 2 }),
     TRADE({ ticker: 'TSLA', horizon: 'scalp' }), TRADE({ ticker: 'META', horizon: 'scalp' }), TRADE({ ticker: 'AAPL', horizon: 'scalp' }),
     TRADE({ ticker: '12' }),
   ], news: Array.from({ length: 9 }, (_, i) => ({ headline: `News ${i} \u2013 moved`, tickers: ['spy', 'bad ticker', 'QQQ'], why: 'Because.' })), read: 'Firm.', none: '' };
@@ -285,9 +291,11 @@ const SSE = [
   const perKind = (k) => c.trades.filter((t) => t.horizon === k).length;
   // NEGATIVE CONTROL (run 2026-09-23): `perKind[r.horizon] >= MAX_PER_HORIZON` removed from checkDesk made this read
   //   FAIL  D5 the desk's answer is capped ...
-  check('D5 the desk\'s answer is capped the way his screen needs: at most six trades and two of each kind, the same ticker, side and kind never twice, a bad ticker dropped and counted, at most six news items with their tickers cleaned and no dashes',
-    c.trades.length === 6 && perKind('intraday') === 2 && perKind('swing') === 2 && perKind('scalp') === 2
-    && c.trades.filter((t) => t.ticker === 'NVDA').length === 1 && c.dropped === 5
+  // NEGATIVE CONTROL (run 2026-09-25, v7.18): MAX_PER_HORIZON put back to 2 made this read
+  //   FAIL  D5 the desk's answer is capped ...
+  check('D5 the desk\'s answer is capped the way his screen needs: at most nine trades and three of each kind, the same ticker, side and kind never twice, a fund and a bad ticker dropped and counted, at most six news items with their tickers cleaned and no dashes',
+    c.trades.length === 9 && perKind('intraday') === 3 && perKind('swing') === 3 && perKind('scalp') === 3
+    && c.trades.filter((t) => t.ticker === 'NVDA').length === 1 && !c.trades.some((t) => t.ticker === 'QQQ') && c.dropped === 5
     && c.news.length === 6 && c.news[0].tickers.join() === 'SPY,QQQ' && !c.news.some((n) => DASH.test(n.headline)),
     JSON.stringify({ n: c.trades.length, dropped: c.dropped }));
 }
@@ -446,16 +454,17 @@ async function oneRun(opts = {}) {
   //   FAIL  D11 one run, start to finish ...
   // RE-RUN 2026-09-23 (v7.2, retiring is one read and one write now): retireRecs' ids emptied (`const ids = [];`) made this read
   //   FAIL  D11 one run, start to finish ...
-  check('D11 one run, start to finish: five researchers on Fable 5.1 at medium with five web searches and streamed thinking summaries, each on its own beat and each report written as it lands; then one desk turn on Fable 5.1 at high with the structured schema and no tools; the checked trades filed as the new board with the run, an expiry and no taken time; the last run\'s untaken idea retired and the taken one left alone; the run closed with the count and the desk\'s read, news and ids; a push titled PR 420; and the recorder\'s end row',
+  check('D11 one run, start to finish: five researchers on Fable 5.1 at medium with seven web searches and streamed thinking summaries, each on its own beat and each report written as it lands; then one desk turn on Fable 5.1 at high with the structured schema and no tools; the checked trades filed as the new board with the run, an expiry and no taken time; the last run\'s untaken idea retired and the taken one left alone; the run closed with the count and the desk\'s read, news and ids; a push titled PR 420; and the recorder\'s end row',
     r.out.ok === true && research.length === 5 && desk.length === 1
-    && research.every((b) => b.model === 'claude-fable-5-1' && b.output_config.effort === 'medium' && b.tools[0].type === 'web_search_20260209' && b.tools[0].max_uses === 5 && b.thinking?.display === 'summarized')
+    // RE-PINNED 2026-09-25 (v7.18): seven searches each, up from five.
+    && research.every((b) => b.model === 'claude-fable-5-1' && b.output_config.effort === 'medium' && b.tools[0].type === 'web_search_20260209' && b.tools[0].max_uses === 7 && b.thinking?.display === 'summarized')
     && new Set(research.map((b) => b.messages[0].content[0].text.split('.')[0])).size === 5
     && ['r1', 'r2', 'r3', 'r4', 'r5'].every((k) => reportsDoc[k]?.status === 'ok') && reportsDoc.runId === 'run_x'
     && desk[0].model === 'claude-fable-5-1' && desk[0].output_config.effort === 'high' && desk[0].output_config.format.type === 'json_schema' && desk[0].thinking?.display === 'summarized'
     && recs.length === 2 && recs.every((x) => x.runId === 'run_x' && x.status === 'open' && x.expiresAt instanceof Date && x.tookAt === null)
     && r.docs.get(`${TD.PLAYS}/old_open`).data.status === 'expired' && r.docs.get(`${TD.PLAYS}/old_took`).data.status === 'took'
     && st.run.status === 'idle' && st.run.count === 2 && st.desk.runId === 'run_x' && st.desk.news.length === 1 && st.desk.ids.length === 2 && st.desk.read === 'Indexes firm, tech leading.'
-    && r.w.pushes.length === 1 && r.w.pushes[0].title === 'PR 420' && /2 trades ready\. NVDA long, XLE long\./.test(r.w.pushes[0].body)
+    && r.w.pushes.length === 1 && r.w.pushes[0].title === 'PR 420' && /2 trades ready\. NVDA long, CAT long\./.test(r.w.pushes[0].body)
     && end?.ok === true && end.reports === 5 && end.trades === 2 && handoff?.agents.length === 5,
     JSON.stringify({ out: r.out, recs: recs.length, run: st.run?.status, pushes: r.w.pushes }));
 }
@@ -570,10 +579,10 @@ async function oneRun(opts = {}) {
     && (s.type !== 'array' || allStrict(s.items)) && (!s.anyOf || s.anyOf.every(allStrict));
   // NEGATIVE CONTROL (run 2026-09-23): `DEFAULT_RISK_PCT` set to 1 made this read
   //   FAIL  D19 the six turns are told what he asked for ...
-  check('D19 the six turns are told what he asked for: every one on Fable 5.1, the researchers told his account can or cannot short and never to size or invent a price, the desk told his 3% risk rule, the six-trade and two-per-kind limits and the phone-card lengths; the schema is strict on every object so the structured output can be enforced; five distinct beats; no dash in any prompt; and a missing risk setting reads as 3%',
+  check('D19 the six turns are told what he asked for: every one on Fable 5.1, the researchers told his account can or cannot short and never to size or invent a price, the desk told his 3% risk rule, the nine-trade and three-per-kind limits (re-pinned 2026-09-25, v7.18) and the phone-card lengths; the schema is strict on every object so the structured output can be enforced; five distinct beats; no dash in any prompt; and a missing risk setting reads as 3%',
     DR.DESK_MODEL === 'claude-fable-5-1' && DR.RESEARCH_EFFORT === 'medium' && DR.DESK_EFFORT === 'high'
     && /cannot short stock/.test(rs) && /short stock is allowed/.test(rm) && /Never invent a price/.test(rs) && /Do not size positions/.test(rs) && /never ask a question/i.test(rs)
-    && /no more than 3% of the account/.test(ds) && /At most 6 trades and at most 2 of each kind/.test(ds) && /under 25 words/.test(ds)
+    && /no more than 3% of the account/.test(ds) && /At most 9 trades and at most 3 of each kind/.test(ds) && /under 25 words/.test(ds)
     && allStrict(DR.DESK_SCHEMA) && DR.LENSES.length === 5 && new Set(DR.LENSES.map((L) => L.key)).size === 5
     && !DASH.test(rs + rm + ds + DR.LENSES.map((L) => L.beat).join(' '))
     && DR.riskPctOf({}) === 3 && DR.riskPctOf({ riskPct: 2 }) === 2 && DR.riskPctOf({ riskPct: 40 }) === 3
@@ -708,10 +717,11 @@ async function oneRun(opts = {}) {
 // Measured in production the day after PR 420 shipped: one invocation gets fifty outside calls, then
 // every further one throws. The 7:00 run spent them partway through research, could not even save its
 // error, and died three times without a word, on a day the account was also out of credit.
+// RE-PINNED 2026-09-25 (v7.18): nine, three of each kind, and stocks only.
 const SIX = [
-  TRADE({ ticker: 'NVDA', horizon: 'scalp', holdMinutes: 8 }), TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8 }),
-  TRADE({ ticker: 'TSLA' }), TRADE({ ticker: 'META' }),
-  TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'XLF', horizon: 'swing', holdMinutes: null, holdDays: 2 }),
+  TRADE({ ticker: 'NVDA', horizon: 'scalp', holdMinutes: 8 }), TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8 }), TRADE({ ticker: 'MU', horizon: 'scalp', holdMinutes: 8 }),
+  TRADE({ ticker: 'TSLA' }), TRADE({ ticker: 'META' }), TRADE({ ticker: 'AAPL' }),
+  TRADE({ ticker: 'CAT', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'DE', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'URI', horizon: 'swing', holdMinutes: null, holdDays: 2 }),
 ];
 const snapCounted = (W) => async (k, tickers) => { W.w.calls += tickers.length + 2; return { at: 'T', quotes: tickers.map((t) => ({ ticker: t, last: 500, chgPct: 0.1, open: 1, high: 1, low: 1, prevClose: 1 })), news: [], earnings: [], missing: [] }; };
 const quoteCounted = (W) => async (k, t) => { W.w.calls += 1; return { ticker: t, last: 248.2 }; };
@@ -733,10 +743,10 @@ const SPARE = 6;
   // in one request: the research firing for the index funds, the twelve he holds and his watchlist, the
   // desk firing for the twelve and every candidate. Each is one more call, and both still fit.
   const R = world({ state: { run: { ...RUN, trigger: 'morning' }, desk: { runId: 'prev', ids: [] }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789', ...PAIR }, plays: HELD });
-  const rOut = await load(R.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, R.w), marketSnapshot: snapCounted(R), fetchBars: barsCounted(R) } });
+  const rOut = await load(R.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({}, R.w), marketSnapshot: snapCounted(R), fetchBars: barsCounted(R), fetchScanner: scanCounted(R) } });
   // The research firing that fails: every researcher refused, the error saved, the 7:00 push sent.
   const X = world({ state: { run: { ...RUN, trigger: 'morning' }, activeIds: heldIds }, settings: { caseId: 'c1', accountType: 'cash', finnhubKey: 'KEY123456789', ...PAIR }, plays: HELD });
-  const xOut = await load(X.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ research: creditErr }, X.w), marketSnapshot: snapCounted(X), fetchBars: barsCounted(X) } });
+  const xOut = await load(X.deps).executeRun(env, { ...RUN, trigger: 'morning' }, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ research: creditErr }, X.w), marketSnapshot: snapCounted(X), fetchBars: barsCounted(X), fetchScanner: scanCounted(X) } });
   // The desk firing at its worst: six stock trades each priced, six ideas from the last run to retire, the 7:00 push.
   const prevIds = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6'];
   const deskRun = { ...RUN, trigger: 'morning', phase: 'desk', status: 'deciding' };
@@ -768,10 +778,12 @@ const SPARE = 6;
   //   FAIL  D24 every firing fits inside the fifty calls ...
   // NEGATIVE CONTROL (run 2026-09-25, v7.17): checkDesk's high-risk trade never kept (`const r = null;`) made this read
   //   FAIL  D24 every firing fits inside the fifty calls ...
-  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key, twelve trades he holds to show and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices seven trades (the six and the high-risk one), files them in one write, re-checks twelve he holds in one read and one write, retires six old ideas in one read and one write, and pushes`,
+  // NEGATIVE CONTROL (run 2026-09-25, v7.18): the research firing's scan asked twice more (`await scanner(barsKey); await scanner(barsKey);`) made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key, twelve trades he holds to show and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices ten trades (the nine and the high-risk one), files them in one write, re-checks twelve he holds in one read and one write, retires six old ideas in one read and one write, and pushes`,
     rOut.handedOff === true && R.w.calls <= room && R.w.batches.filter((b) => b.get).length === 1
     && xOut.ok === false && X.w.pushes.length === 1 && X.w.calls <= room
-    && dOut.ok === true && recs.length === 7 && D.w.calls <= room
+    && dOut.ok === true && recs.length === 10 && D.w.calls <= room
     && D.w.batches.filter((b) => b.write).length === 3 && D.w.batches.filter((b) => b.get).length === 2
     // RE-PINNED 2026-09-24 (v7.12): nothing leaves his list; the ones all five are against are SELL.
     && heldIds.every((id, i) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'took' && D.docs.get(`${TD.PLAYS}/${id}`).data.verdict?.call === (i % 2 ? 'sell' : 'hold'))
@@ -842,15 +854,16 @@ const SPARE = 6;
 // been told none beats a weak one. Now every trade over his bar reaches him, and nothing under it.
 {
   const s = { open: true, minsToOpen: 0 };
-  const at51 = DR.validRec(TRADE({ chanceLow: 51, chanceHigh: 58 }), { session: s });
-  const at50 = DR.validRec(TRADE({ chanceLow: 50, chanceHigh: 60 }), { session: s });
-  const low = DR.validRec(TRADE({ chanceLow: 44, chanceHigh: 52 }), { session: s });
+  // RE-PINNED 2026-09-25 (v7.18): the bar is 45 now (Eric chose "Lower to 45%"): 46 passes, 45 and under do not.
+  const at51 = DR.validRec(TRADE({ chanceLow: 46, chanceHigh: 58 }), { session: s });
+  const at50 = DR.validRec(TRADE({ chanceLow: 45, chanceHigh: 60 }), { session: s });
+  const low = DR.validRec(TRADE({ chanceLow: 40, chanceHigh: 52 }), { session: s });
   const none = DR.validRec(TRADE({ chanceLow: null, chanceHigh: null }), { session: s });
   const three = DESK_OUT({ trades: [
     TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8, chanceLow: 55, chanceHigh: 62 }),
-    TRADE({ ticker: 'META', chanceLow: 49, chanceHigh: 58 }),
+    TRADE({ ticker: 'META', chanceLow: 44, chanceHigh: 58 }),
     TRADE({ ticker: 'SOFI', instrument: 'call', strike: 17, expiry: '2026-10-16', entryLow: 0.8, entryHigh: 0.85, stop: 0.5, targets: [1.3], chanceLow: 53, chanceHigh: 60 }),
-    TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2, entryLow: 90, entryHigh: 90.5, stop: 88, targets: [94], chanceLow: 57, chanceHigh: 63 }),
+    TRADE({ ticker: 'CAT', horizon: 'swing', holdMinutes: null, holdDays: 2, entryLow: 90, entryHigh: 90.5, stop: 88, targets: [94], chanceLow: 57, chanceHigh: 63 }),
   ] });
   const r = await oneRun({ turns: { desk: () => ({ text: JSON.stringify(three) }) } });
   const filed = [...r.docs.entries()].filter(([k]) => k.startsWith(`${TD.PLAYS}/rec_`)).map(([, v]) => v.data);
@@ -858,17 +871,19 @@ const SPARE = 6;
   const rs = DR.researchSystem('cash');
   // NEGATIVE CONTROL (run 2026-09-23): validRec's `if (!chanceOk || cLo <= CHANCE_FLOOR) return null;` removed made this read
   //   FAIL  D27 his bar ...
+  // NEGATIVE CONTROL (run 2026-09-25, v7.18): CHANCE_FLOOR put back to 50 made this read
+  //   FAIL  D27 his bar ...
   // NEGATIVE CONTROL (run 2026-09-23): the desk's bar line put back to "Only include trades you would take yourself today. No trades is the right answer when nothing is worth it; he would rather see none than a weak one." made this read
   //   FAIL  D27 his bar ...
   check('D27 his bar (Eric: "anything over a 50% profit for a scalp, intraday, swing, for stocks and options"): a trade whose chance starts above 50% reaches him, stock or option, and one at 50, under it or with no chance given never does; a run that returns a scalp, two intraday trades and a swing files every one over the bar and drops the one under; the desk is told to give him the best of each kind that clears it and never to lift a number to clear it; the researchers are told to bring every candidate over it; and "none beats a weak one" is gone',
-    at51?.profitLow === 51 && at50 === null && low === null && none === null && DR.CHANCE_FLOOR === 50
-    && r.out.ok === true && filed.map((x) => x.ticker).sort().join() === 'AMD,SOFI,XLE' && filed.every((x) => x.profitLow > 50)
+    at51?.profitLow === 46 && at50 === null && low === null && none === null && DR.CHANCE_FLOOR === 45
+    && r.out.ok === true && filed.map((x) => x.ticker).sort().join() === 'AMD,CAT,SOFI' && filed.every((x) => x.profitLow > 45)
     && filed.find((x) => x.ticker === 'SOFI')?.instrument === 'call'
     && r.w.diag.find((e) => e.ev === 'desk-run-end')?.dropped === 1
-    && /every trade whose honest chance of reaching the first target before the stop is above 50%, which means chanceLow of at least 51/.test(ds)
+    && /every trade whose honest chance of reaching the first target before the stop is above 45%, which means chanceLow of at least 46/.test(ds)
     && /best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar/.test(ds)
     && /never raise a number to clear it/.test(ds)
-    && /Bring every candidate you honestly rate above 50%/.test(rs) && /stocks and options alike/.test(rs)
+    && /Bring every candidate you honestly rate above 45%/.test(rs) && /stocks and options alike/.test(rs)
     && !/none than a weak one|Quality over count/.test(ds + rs) && !DASH.test(ds + rs),
     JSON.stringify({ at51: at51?.profitLow, at50, filed: filed.map((x) => `${x.ticker}:${x.profitLow}`) }));
 }
@@ -1195,7 +1210,7 @@ const SPARE = 6;
   const SIXT = [
     TRADE({ ticker: 'NVDA', horizon: 'scalp', holdMinutes: 8 }), TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8 }),
     TRADE({ ticker: 'TSLA' }), TRADE({ ticker: 'META' }),
-    TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'XLF', horizon: 'swing', holdMinutes: null, holdDays: 2 }),
+    TRADE({ ticker: 'CAT', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'DE', horizon: 'swing', holdMinutes: null, holdDays: 2 }),
   ];
   const c = DR.checkDesk({ trades: SIXT, highRisk: [HR({ ticker: 'SOUN', chanceLow: 39, chanceHigh: 47 }), HR({ ticker: 'TSLA', instrument: 'stock', strike: null, expiry: null, horizon: 'intraday', holdMinutes: 120, holdDays: null, entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251] }), HR(), HR({ ticker: 'IONQ' })] }, { accountType: 'cash', todayKey: '2026-09-24' });
   const hr = c.trades.filter((t) => t.highRisk);
@@ -1222,6 +1237,87 @@ const SPARE = 6;
     && filed.filter((d) => d.highRisk === true).length === 1 && filed.find((d) => d.highRisk).ticker === 'RKLB' && filed.filter((d) => !d.highRisk).length === 2
     && /High risk: RKLB call, 42 to 50%\./.test(push),
     JSON.stringify({ kept: c.trades.map((t) => `${t.ticker}${t.highRisk ? '*' : ''}`), dropped: c.dropped, plain: plain.trades.length, edge: edge.trades.length, filed: filed.map((d) => `${d.ticker}${d.highRisk ? '*' : ''}`), push }));
+}
+
+{
+  // ---- D38: the market scan (2026-09-25, v7.18) --------------------------------------------------------
+  // Eric: "There are so many stocks with trading opportunities. I made 7% today on my own and the trading desk
+  // gave me fucking qqq." The run saw prices for four index funds and nothing that was moving. Alpaca's free
+  // screener gives the day's top gainers, losers and most active: two requests, filtered to plain stocks of a
+  // dollar or more, handed to all five and the desk, and the movers charted in the one bar request.
+  const real = globalThis.fetch;
+  const seen = [];
+  const creds = { id: 'PKTEST1234567890ABCD', secret: 'abcdEFGHijklMNOPqrstUVWXyz0123456789abcd' };
+  const MOVERS = { gainers: [
+    { symbol: 'SOUN', price: 6.2, change: 0.96, percent_change: 18.4 }, { symbol: 'TQQQ', price: 80, change: 3, percent_change: 3.9 },
+    { symbol: 'ABCW', price: 0.4, change: 0.1, percent_change: 40 }, { symbol: 'BRK.B', price: 450, change: 5, percent_change: 1.1 }, { symbol: 'RKLB', price: 28.9, change: 2.9, percent_change: 11.2 },
+  ], losers: [{ symbol: 'LULU', price: 212.4, change: -23, percent_change: -9.8 }], last_updated: '2026-09-25T15:00:00Z' };
+  const ACTIVE = { most_actives: [{ symbol: 'SPY', volume: 70e6 }, { symbol: 'NVDA', volume: 180e6 }, { symbol: 'SOUN', volume: 95e6 }] };
+  let ok; let refused; let half; let none;
+  try {
+    globalThis.fetch = async (url, init) => { seen.push({ url: String(url), headers: init?.headers || {} }); return { ok: true, status: 200, json: async () => (/most-actives/.test(url) ? ACTIVE : MOVERS) }; };
+    ok = await TD.fetchScanner(creds);
+    globalThis.fetch = async () => ({ ok: false, status: 403, json: async () => ({}) });
+    refused = await TD.fetchScanner(creds);
+    globalThis.fetch = async (url) => (/most-actives/.test(url) ? { ok: false, status: 500, json: async () => ({}) } : { ok: true, status: 200, json: async () => MOVERS });
+    half = await TD.fetchScanner(creds);
+    const before = seen.length;
+    none = await TD.fetchScanner(null);
+    none.asked = seen.length !== before;
+  } finally { globalThis.fetch = real; }
+  const urls = seen.map((x) => x.url).sort();
+  const live = TD.moversBlock(ok, { when: 'live' });
+  const early = TD.moversBlock(ok, { when: 'before' });
+  // A run: every researcher reads the scan, the movers are charted in the one request, the document keeps the status.
+  const box = { w: { calls: 0 } };
+  const r = await oneRun({ settings: { finnhubKey: 'KEY123456789', ...PAIR }, deps: { fetchScanner: scanCounted(box), fetchBars: barsCounted(box), marketSnapshot: async (k, t) => ({ at: 'T', quotes: [], news: [], earnings: [], missing: [] }) } });
+  const research = r.w.bodies.filter((b) => b.tools).map((b) => b.messages[0].content[0].text);
+  const noKey = await oneRun({ settings: { finnhubKey: 'KEY123456789' } });
+  const noKeyText = noKey.w.bodies.filter((b) => b.tools).map((b) => b.messages[0].content[0].text);
+  // NEGATIVE CONTROL (run 2026-09-25): the research firing's `market += ...moversBlock(...)` line removed made this read
+  //   FAIL  D38 the market scan ...
+  check('D38 the market scan: two requests to Alpaca\'s screener, the movers and the most active by volume, thirty of each, the pair in its headers; only plain stocks of a dollar or more reach him, never a fund, a class share or a sub-dollar ticker; a 403 is refused, one list failing leaves the other, and no pair asks nothing; every researcher reads the gainers, losers and most active with prices and moves, told to start there, and before the open that they are the last session\'s; the top movers join the one chart request after what he holds; the research document and the board keep the status; with no pair they are told to search for the movers first; and the beats start from the scan',
+    urls.length === 2 && urls[0] === 'https://data.alpaca.markets/v1beta1/screener/stocks/most-actives?by=volume&top=30' && urls[1] === 'https://data.alpaca.markets/v1beta1/screener/stocks/movers?top=30'
+    && seen.every((x) => x.headers['APCA-API-KEY-ID'] === creds.id && x.headers['APCA-API-SECRET-KEY'] === creds.secret && !x.url.includes(creds.secret))
+    && ok.status === 'ok' && ok.gainers.map((x) => x.ticker).join() === 'SOUN,RKLB' && ok.losers.map((x) => x.ticker).join() === 'LULU' && ok.active.map((x) => x.ticker).join() === 'NVDA,SOUN'
+    && refused.status === 'refused' && half.status === 'ok' && half.gainers.length === 2 && half.active.length === 0 && none.status === 'nokey' && none.asked === false
+    && TD.scanTickers(ok).join() === 'SOUN,RKLB,LULU,NVDA'
+    && /^The market scan, this session so far\. Stocks only, a dollar or more\. Start here: these are where the moves are\.\nTop gainers: SOUN 6\.2 \(\+18\.4%\), RKLB 28\.9 \(\+11\.2%\)\.\nTop losers: LULU 212\.4 \(-9\.8%\)\.\nMost active by volume: NVDA 180M shares, SOUN 95M shares\.$/.test(live)
+    && /from the last session \(it resets at the open; search for today's premarket movers too\)/.test(early)
+    && research.length === 5 && research.every((t) => /Top gainers: SOUN 6\.2 \(\+18\.4%\), RKLB 28\.9 \(\+11\.2%\)\./.test(t))
+    && box.w.scans === 1 && ['SOUN', 'RKLB', 'LULU'].every((t) => box.w.barsAsked[0].includes(t)) && box.w.barsAsked[0].indexOf('SOUN') > box.w.barsAsked[0].indexOf('DIA')
+    && r.docs.get(DR.RESEARCH_PATH).data.scanner === 'ok' && r.docs.get(TD.STATE_PATH).data.desk.scanner === 'ok'
+    && noKeyText.every((t) => /No market scan this run \(the Alpaca key is not on file\)\. Spend your first search on today's top gainers, top losers and most active stocks, then work from those\./.test(t))
+    && noKey.docs.get(TD.STATE_PATH).data.desk.scanner === 'nokey'
+    && DR.LENSES.every((L) => /market scan/.test(L.beat)) && DR.RESEARCH_SEARCHES === 7
+    && !DASH.test(live + early),
+    JSON.stringify({ urls, ok: ok && { g: ok.gainers.map((x) => x.ticker), a: ok.active.map((x) => x.ticker) }, asked: box.w.barsAsked?.[0], scans: box.w.scans, live }));
+}
+{
+  // ---- D39: stocks and their options only (2026-09-25, v7.18) --------------------------------------------
+  // He chose "Stocks + their options": index, sector, leveraged and volatility funds read the market and are
+  // never a trade, the high-risk one included. A QQQ he already holds is still re-checked.
+  const funds = ['QQQ', 'SPY', 'IWM', 'XLE', 'SMH', 'TQQQ', 'SOXL', 'UVXY'].map((t) => DR.validRec(TRADE({ ticker: t }), {}));
+  const hrFund = DR.checkDesk({ trades: [], highRisk: [TRADE({ ticker: 'SOXL', chanceLow: 42, chanceHigh: 50 })] }, {});
+  const stock = DR.validRec(TRADE({ ticker: 'HOOD' }), {});
+  const held = { q1: { ticker: 'QQQ', side: 'long', instrument: 'stock', horizon: 'intraday', status: 'took', agreement: 3, entryLow: 497, entryHigh: 498, stop: 495, targets: [501] } };
+  const verdicts = '\n## Earlier calls\nE1: sell, lost VWAP.';
+  const r = await oneRun({
+    state: { activeIds: ['q1'] }, plays: held,
+    run: { phase: 'desk', status: 'deciding' },
+    research: { runId: 'run_x', market: 'SPY 500', live: [{ ref: 'E1', id: 'q1', ticker: 'QQQ' }], ...Object.fromEntries([1, 2, 3, 4, 5].map((n) => [`r${n}`, { status: 'ok', text: REPORT(n) + verdicts }])) },
+    turns: { desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: [TRADE(), TRADE({ ticker: 'QQQ' })] })) }) },
+  });
+  const filed = [...r.docs.entries()].filter(([k]) => k.startsWith(`${TD.PLAYS}/rec_`)).map(([, v]) => v.data.ticker);
+  // NEGATIVE CONTROL (run 2026-09-25): validRec's `if (isFund(ticker)) return null;` removed made this read
+  //   FAIL  D39 stocks and their options only ...
+  check('D39 stocks and their options only: QQQ, SPY, IWM, a sector fund, a chip fund, leveraged and volatility funds are never a trade, nor the high-risk trade, while a stock is; a run whose desk returns QQQ files only the stock; a QQQ he already holds still gets its call; both briefs say funds only read the market; the index funds still ride every run as the market read; and his default watchlist is stocks',
+    funds.every((x) => x === null) && hrFund.trades.length === 0 && stock?.ticker === 'HOOD'
+    && filed.join() === 'NVDA' && r.docs.get(`${TD.PLAYS}/q1`).data.verdict?.call === 'sell'
+    && /Index, sector, leveraged and volatility funds \(SPY, QQQ, IWM, the XL funds, TQQQ, SOXL and the like\) tell you where the market is; they are never a candidate\./.test(DR.researchSystem('cash'))
+    && /Index, sector, leveraged and volatility funds read the market and are never a trade, the high-risk trade included/.test(DR.deskSystem('cash'))
+    && DR.MARKET_TICKERS.join() === 'SPY,QQQ,IWM,DIA' && TD.DEFAULT_WATCHLIST.every((t) => !TM.isFund(t)) && /never the funds themselves/.test(DR.LENSES[2].beat),
+    JSON.stringify({ funds: funds.map((x) => x?.ticker || null), hr: hrFund.trades.length, filed, verdict: r.docs.get(`${TD.PLAYS}/q1`)?.data.verdict }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

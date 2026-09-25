@@ -91,6 +91,8 @@ ok('there is no chat, no composer and no text box anywhere on the page', shell.b
 ok('it is always dark', shell.dark === 'rgb(6, 10, 19)', shell.dark);
 
 console.log('\n--- C. the board: every field of a trade, grouped by kind, the taken one lit ---');
+// RE-PINNED 2026-09-25 (v7.18): the demo run's intraday trade is HOOD, a stock, where it was QQQ (Eric: "the trading
+// desk gave me fucking qqq"); the sections that take, scale and close it follow it.
 const board = await cards('#board .rec');
 const active = await cards('#active .rec');
 // RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
@@ -130,7 +132,7 @@ const beforeFull = shown.slice(0, Math.max(0, shown.indexOf(100)));
 ok('the bar shows while the run goes, only ever moves forward, stays under 100 until the trades land, reads 100 when they do, and then goes', shown.length > 5 && shown.every((v, i) => i === 0 || v >= shown[i - 1]) && beforeFull.length > 3 && beforeFull.every((v) => v < 100) && beforeFull.some((v) => v >= 8 && v < 72) && shown.includes(100) && bar.hiddenNow, JSON.stringify({ n: shown.length, first: shown.slice(0, 4), last: shown.slice(-4), hidden: bar.hiddenNow }));
 const fresh = await cards('#board .rec');
 // RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
-ok('the board is the fresh run\'s trades and nothing from the last one', fresh.map((c) => c.tk).join() === 'AMD,QQQ,MU,RKLB', fresh.map((c) => c.tk).join());
+ok('the board is the fresh run\'s trades and nothing from the last one', fresh.map((c) => c.tk).join() === 'AMD,HOOD,MU,RKLB', fresh.map((c) => c.tk).join());
 ok('the desk\'s one line on the tape is shown', /Semis are leading/.test(await page.evaluate(() => document.getElementById('deskread-t').textContent)));
 ok('the taken trade stays lit through a run', (await cards('#active .rec')).map((c) => c.tk).join() === 'PLTR');
 await shot('D-landed');
@@ -138,11 +140,11 @@ await shot('D-landed');
 console.log('\n--- E. YES: the card goes electric yellow and grows PROFIT and LOSS ---');
 await page.evaluate(() => document.querySelector('#board .rec[data-rec$="-1"] [data-act="take"]')?.click());
 const lit = await until(() => document.querySelectorAll('#active .rec').length === 2 && [...document.querySelectorAll('#active .rec')].map((c) => c.querySelector('.tk').textContent).join(), 6000);
-ok('YES moves QQQ into the active trades, first', lit === 'QQQ,PLTR', lit || '');
+ok('YES moves HOOD into the active trades, first', lit === 'HOOD,PLTR', lit || '');
 const qqq = (await cards('#active .rec'))[0];
 // RE-PINNED 2026-09-24 (v7.8): ADD/TRIM sits between PROFIT and LOSS.
 ok('it is lit electric yellow with PROFIT, ADD/TRIM and LOSS and no YES', !!qqq && qqq.active && qqq.border === 'rgb(244, 255, 31)' && qqq.acts.join() === 'profit,scale,loss', JSON.stringify(qqq));
-ok('it is off the board, and the tab count is two', !(await cards('#board .rec')).some((c) => c.tk === 'QQQ') && (await page.evaluate(() => document.getElementById('bar-badge').textContent)) === '2');
+ok('it is off the board, and the tab count is two', !(await cards('#board .rec')).some((c) => c.tk === 'HOOD') && (await page.evaluate(() => document.getElementById('bar-badge').textContent)) === '2');
 await shot('E-yes');
 
 console.log('\n--- F. PROFIT: the moment plays and the trade lands in History ---');
@@ -150,7 +152,7 @@ await page.evaluate(() => document.querySelector('#active .rec [data-act="profit
 const profitPlan = await until(() => window.__paFxLast?.kind === 'profit' && window.__paFxLast.plan, 4000);
 ok('PROFIT plays the full moment: flash, shake, coins', !!profitPlan && profitPlan.coins === true && profitPlan.shake === true && profitPlan.numberOnly === false, JSON.stringify(profitPlan));
 const gone = await until(() => document.querySelectorAll('#active .rec').length === 1 && document.querySelector('#toasts .toast')?.textContent, 4000);
-ok('the card leaves and the toast says where it went', /QQQ is in History, marked PROFIT\./.test(gone || ''), gone || '');
+ok('the card leaves and the toast says where it went', /HOOD is in History, marked PROFIT\./.test(gone || ''), gone || '');
 
 console.log('\n--- G. LOSS: the other moment ---');
 await page.evaluate(() => document.querySelector('#active .rec [data-act="loss"]')?.click());
@@ -159,7 +161,7 @@ ok('LOSS plays its own moment: the siren and no coins', !!lossPlan && lossPlan.s
 ok('nothing is active any more and the section hides', !!await until(() => document.getElementById('active-wrap').hidden && document.getElementById('bar-badge').hidden, 4000));
 await go('history');
 const hist = await until(() => document.querySelectorAll('#hist .hist[data-hist]').length && [...document.querySelectorAll('#hist .hist[data-hist]')].slice(0, 2).map((h) => `${h.querySelector('.what b').textContent} ${h.querySelector('.res').textContent}`).join('|'), 5000);
-ok('History leads with the two just marked, newest first', hist === 'PLTR LOSS|QQQ PROFIT', hist || '');
+ok('History leads with the two just marked, newest first', hist === 'PLTR LOSS|HOOD PROFIT', hist || '');
 await page.evaluate(() => document.querySelector('#hist .hist[data-hist] summary')?.click());
 await page.waitForTimeout(300);
 ok('a history row folds out the setup and both times', /Taken .+ Closed /.test(await page.evaluate(() => document.querySelector('#hist .hist[data-hist] .more')?.textContent || '')));
@@ -294,13 +296,13 @@ ok('NO takes it off the board and says when it can come back', /^Passed on AMD\.
 await runAgain();
 const afterPass = await boardTks();
 // RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
-ok('the next run leaves the AMD scalp off the board, and the others come', afterPass === 'MU,QQQ,RKLB', afterPass);
-await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="take"]')?.click());
-await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'QQQ'), 4000);
+ok('the next run leaves the AMD scalp off the board, and the others come', afterPass === 'HOOD,MU,RKLB', afterPass);
+await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'HOOD')?.querySelector('[data-act="take"]')?.click());
+await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'HOOD'), 4000);
 await runAgain();
-const addCard = await page.evaluate(() => { const c = [...document.querySelectorAll('#board .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'QQQ'); return c ? { chip: c.querySelector('.addtag')?.textContent.trim() || '', note: c.querySelector('.deal-note.add')?.textContent.trim() || '' } : null; });
+const addCard = await page.evaluate(() => { const c = [...document.querySelectorAll('#board .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'HOOD'); return c ? { chip: c.querySelector('.addtag')?.textContent.trim() || '', note: c.querySelector('.deal-note.add')?.textContent.trim() || '' } : null; });
 // RE-PINNED 2026-09-24 (v7.7): the add says how many agreed when he took it and how many agree now.
-ok('with QQQ taken, the next run offers QQQ only as an add to it, and says how many agreed then and now', !!addCard && addCard.chip === 'Add' && /^You already hold QQQ\. 4 of 5 agreed when you took it; 4 of 5 agree now\. Taking this adds to your position\.$/.test(addCard.note), JSON.stringify(addCard));
+ok('with HOOD taken, the next run offers HOOD only as an add to it, and says how many agreed then and now', !!addCard && addCard.chip === 'Add' && /^You already hold HOOD\. 4 of 5 agreed when you took it; 4 of 5 agree now\. Taking this adds to your position\.$/.test(addCard.note), JSON.stringify(addCard));
 // RE-PINNED 2026-09-24 (v7.10): read under the chance, where the count now sits.
 ok('every card on the board shows how many of the desk agree', await page.evaluate(() => [...document.querySelectorAll('#board .rec')].every((c) => /^\d of 5 agree$/.test(c.querySelector('.odds .agree')?.textContent.trim() || ''))));
 ok('and the AMD scalp he passed on is still off', !(await boardTks()).includes('AMD'), await boardTks());
@@ -309,9 +311,9 @@ await shot('N-add');
 console.log('\n--- O. ADD/TRIM: more or less of a taken trade, with a new suggested stop ---');
 // Eric, 2026-09-24: "Button between profit and loss that says add/trim and this opens the card to
 // add/subtract a new contract or stock amount (in dollars) manually. It gives me a new suggested stop loss."
-const qqqCard = () => page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ') || null);
+const hoodCard = () => page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'HOOD') || null);
 const openScaleOn = async () => {
-  await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="scale"]')?.click());
+  await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'HOOD')?.querySelector('[data-act="scale"]')?.click());
   return until(() => document.getElementById('sc-n') && { px: document.getElementById('sc-px').value, risk: document.getElementById('sc-risk').value, focus: document.activeElement?.id, on: document.querySelector('#sc-seg .on')?.dataset.k, sum: document.querySelector('.sheet .sum')?.textContent.trim() }, 3000);
 };
 const scalePrev = () => page.evaluate(() => ({
@@ -319,24 +321,24 @@ const scalePrev = () => page.evaluate(() => ({
   why: [...document.querySelectorAll('#sc-prev .why')].map((x) => x.textContent.trim()).join(' '),
   off: document.getElementById('sc-go').disabled, go: document.getElementById('sc-go').textContent.trim(),
 }));
-const q0 = await cardOf('QQQ', '#active .rec');
+const q0 = await cardOf('HOOD', '#active .rec');
 ok('a taken trade has PROFIT, then ADD/TRIM, then LOSS', !!q0 && q0.acts.join() === 'profit,scale,loss', JSON.stringify(q0?.acts));
 ok('a new suggestion has no ADD/TRIM', await page.evaluate(() => ![...document.querySelectorAll('#board .rec')].some((c) => c.querySelector('[data-act="scale"]'))));
 const sc = await openScaleOn();
-ok('ADD/TRIM opens on Add, with the price and his risk filled and the amount ready to type', !!sc && sc.on === 'add' && Number(sc.px) > 0 && `$${Number(sc.risk).toFixed(2)}` === q0?.cells.Risk && sc.focus === 'sc-n' && /^You hold [\d.]+ shares at \$498\.20, stop \$495\.90\./.test(sc.sum), JSON.stringify(sc));
+ok('ADD/TRIM opens on Add, with the price and his risk filled and the amount ready to type', !!sc && sc.on === 'add' && Number(sc.px) > 0 && `$${Number(sc.risk).toFixed(2)}` === q0?.cells.Risk && sc.focus === 'sc-n' && /^You hold [\d.]+ shares at \$98\.20, stop \$95\.90\./.test(sc.sum), JSON.stringify(sc));
 await page.fill('#sc-n', '500');
-await page.fill('#sc-px', '497');
+await page.fill('#sc-px', '97');
 const addPv = await scalePrev();
-ok('as he types, the new average, the new stop and what keeping the old one would risk are shown', !addPv.off && addPv.go === 'Save the add' && /^[\d.]+ shares at \$497\.\d\d$/.test(addPv.rows.Holds || '') && /^\$[\d,.]+ was \$495\.90$/.test(addPv.rows.Stop || '') && /Keeping the stop at \$495\.90 would risk \$[\d,.]+ instead\./.test(addPv.why), JSON.stringify(addPv));
+ok('as he types, the new average, the new stop and what keeping the old one would risk are shown', !addPv.off && addPv.go === 'Save the add' && /^[\d.]+ shares at \$97\.\d\d$/.test(addPv.rows.Holds || '') && /^\$[\d,.]+ was \$95\.90$/.test(addPv.rows.Stop || '') && /Keeping the stop at \$95\.90 would risk \$[\d,.]+ instead\./.test(addPv.why), JSON.stringify(addPv));
 await shot('O-add-sheet');
 await page.click('#sc-go');
 const added = await until(() => !document.getElementById('sc-go') && document.querySelector('#toasts .toast')?.textContent, 4000);
-const q1 = await cardOf('QQQ', '#active .rec');
+const q1 = await cardOf('HOOD', '#active .rec');
 const newStop = (addPv.rows.Stop || '').split(' ')[0];
 // The stop rounds toward the entry, so the risk after can be a few cents under what he had, never over.
 const dollars = (v) => Number(String(v || '').replace(/[$,]/g, ''));
-ok('Save lands on the card: the new stop, the same risk to within a few cents under, and his average after one add', /^Added\. QQQ stop \$/.test(added || '') && q1?.cells.Stop === newStop && dollars(q1?.cells.Risk) <= dollars(q0?.cells.Risk) && dollars(q0?.cells.Risk) - dollars(q1?.cells.Risk) <= 0.1 && /^Your size\. [\d.]+ shares at an average of \$497\.\d\d after 1 add\. The desk had the stop at \$495\.90/.test(await note('QQQ')), JSON.stringify({ added, cells: q1?.cells, note: await note('QQQ') }));
-const tighter = Number(newStop.replace(/[$,]/g, '')) > 495.9;
+ok('Save lands on the card: the new stop, the same risk to within a few cents under, and his average after one add', /^Added\. HOOD stop \$/.test(added || '') && q1?.cells.Stop === newStop && dollars(q1?.cells.Risk) <= dollars(q0?.cells.Risk) && dollars(q0?.cells.Risk) - dollars(q1?.cells.Risk) <= 0.1 && /^Your size\. [\d.]+ shares at an average of \$97\.\d\d after 1 add\. The desk had the stop at \$95\.90/.test(await note('HOOD')), JSON.stringify({ added, cells: q1?.cells, note: await note('HOOD') }));
+const tighter = Number(newStop.replace(/[$,]/g, '')) > 95.9;
 ok('adding more at the same risk pulls the stop up toward the entry', tighter, newStop);
 await openScaleOn();
 await page.evaluate(() => document.querySelector('#sc-seg [data-k="trim"]').click());
@@ -346,28 +348,28 @@ const wholePv = await scalePrev();
 ok('trimming more than he holds is refused in words, and Save waits', wholePv.off && /That is the whole position\. Mark it PROFIT or LOSS instead\./.test(wholePv.why), JSON.stringify(wholePv));
 await page.fill('#sc-n', '400');
 const trimPv = await scalePrev();
-ok('a trim keeps his average and widens the stop to hold the same risk', !trimPv.off && trimPv.go === 'Save the trim' && (trimPv.rows.Holds || '').endsWith((await note('QQQ')).match(/average of (\$[\d.]+)/)?.[1] || 'x') && Number((trimPv.rows.Stop || '').split(' ')[0].replace(/[$,]/g, '')) < Number(newStop.replace(/[$,]/g, '')), JSON.stringify(trimPv));
+ok('a trim keeps his average and widens the stop to hold the same risk', !trimPv.off && trimPv.go === 'Save the trim' && (trimPv.rows.Holds || '').endsWith((await note('HOOD')).match(/average of (\$[\d.]+)/)?.[1] || 'x') && Number((trimPv.rows.Stop || '').split(' ')[0].replace(/[$,]/g, '')) < Number(newStop.replace(/[$,]/g, '')), JSON.stringify(trimPv));
 await page.click('#sc-go');
 const trimmed = await until(() => !document.getElementById('sc-go') && document.querySelector('#toasts .toast')?.textContent, 4000);
-ok('the trim lands and the card counts both', /^Trimmed\. QQQ stop \$/.test(trimmed || '') && / after 1 add and 1 trim\./.test(await note('QQQ')), JSON.stringify({ trimmed, note: await note('QQQ') }));
-await tapCell('QQQ', 'amount');
+ok('the trim lands and the card counts both', /^Trimmed\. HOOD stop \$/.test(trimmed || '') && / after 1 add and 1 trim\./.test(await note('HOOD')), JSON.stringify({ trimmed, note: await note('HOOD') }));
+await tapCell('HOOD', 'amount');
 const sized = await until(() => document.getElementById('sz-amt') && { reset: !!document.getElementById('sz-reset'), holds: [...document.querySelectorAll('#sz-prev .row .k')].map((k) => k.textContent.trim()) }, 3000);
 ok('after an add or a trim his size opens without the way back to the desk\'s plan, and says Holds', !!sized && !sized.reset && sized.holds.includes('Holds'), JSON.stringify(sized));
 await page.evaluate(() => document.querySelector('.sheet [data-x]')?.click());
 await page.waitForTimeout(300);
 await page.setViewportSize({ width: 320, height: 640 });
 await page.waitForTimeout(400);
-const at320 = await page.evaluate(() => { const c = [...document.querySelectorAll('#active .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'QQQ'); const bs = [...c.querySelectorAll('.acts .btn')]; return { doc: document.documentElement.scrollWidth, card: [c.clientWidth, c.scrollWidth], right: Math.round(c.getBoundingClientRect().right), cut: bs.filter((x) => x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent), row: new Set(bs.map((x) => Math.round(x.getBoundingClientRect().top))).size === 1, tall: bs.map((x) => Math.round(x.getBoundingClientRect().height)) }; });
+const at320 = await page.evaluate(() => { const c = [...document.querySelectorAll('#active .rec')].find((x) => x.querySelector('.tk')?.textContent.trim() === 'HOOD'); const bs = [...c.querySelectorAll('.acts .btn')]; return { doc: document.documentElement.scrollWidth, card: [c.clientWidth, c.scrollWidth], right: Math.round(c.getBoundingClientRect().right), cut: bs.filter((x) => x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent), row: new Set(bs.map((x) => Math.round(x.getBoundingClientRect().top))).size === 1, tall: bs.map((x) => Math.round(x.getBoundingClientRect().height)) }; });
 // The card itself is measured: the first build grew the card past the screen and the page hid it.
 ok('at 320px the three buttons fit on one row inside the card with nothing cut', at320.doc <= 321 && at320.card[1] <= at320.card[0] + 1 && at320.right <= 320 && !at320.cut.length && at320.row && at320.tall.every((h) => h >= 44), JSON.stringify(at320));
-await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.scrollIntoView({ block: 'center' }));
+await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'HOOD')?.scrollIntoView({ block: 'center' }));
 await shot('O-card-320');
 await page.setViewportSize({ width: 390, height: 844 });
-await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="profit"]')?.click());
-await until(() => ![...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'QQQ'), 5000);
+await page.evaluate(() => [...document.querySelectorAll('#active .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'HOOD')?.querySelector('[data-act="profit"]')?.click());
+await until(() => ![...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'HOOD'), 5000);
 await go('history');
-const qRow = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'QQQ'); if (!h) return null; h.querySelector('summary').click(); return h.querySelector('.more').textContent.replace(/\s+/g, ' '); }, 5000);
-ok('History says his average beside what he put in', /You put in \$[\d,.]+, average \$497\.\d\d, risked \$/.test(qRow || ''), qRow || '');
+const qRow = await until(() => { const h = [...document.querySelectorAll('#hist .hist[data-hist]')].find((x) => x.querySelector('.what b')?.textContent === 'HOOD'); if (!h) return null; h.querySelector('summary').click(); return h.querySelector('.more').textContent.replace(/\s+/g, ' '); }, 5000);
+ok('History says his average beside what he put in', /You put in \$[\d,.]+, average \$97\.\d\d, risked \$/.test(qRow || ''), qRow || '');
 await go('trades');
 
 console.log('\n--- P. the re-check: a run updates how many agree on what he took, and drops one none of the five back ---');
@@ -435,7 +437,7 @@ const chartRows = await page.evaluate(() => [...document.querySelectorAll('.rec'
   const i = dt.findIndex((d) => d.textContent.trim() === '15m chart');
   return { tk: c.querySelector('.tk').textContent.trim(), active: c.classList.contains('active'), first: i === 0, line: i >= 0 ? dt[i].nextElementSibling.textContent.trim() : '' };
 }));
-const freshChart = chartRows.find((r) => ['QQQ', 'MU'].includes(r.tk) && !r.active);
+const freshChart = chartRows.find((r) => ['HOOD', 'MU'].includes(r.tk) && !r.active);
 const heldChart = chartRows.find((r) => r.tk === 'PLTR' && r.active);
 ok('a fresh trade from the run shows its 15m chart first under the setup, with the time of its last bar', !!freshChart && freshChart.first && /^Above VWAP · EMAs stacked up · MACD (?:above signal|just crossed up) \(\d{1,2}:\d{2} [AP]M\)$/.test(freshChart.line), JSON.stringify(chartRows));
 ok('the trade he holds shows the chart its re-check brought', !!heldChart && heldChart.first && /^Above VWAP · EMAs stacked up/.test(heldChart.line), JSON.stringify(heldChart));

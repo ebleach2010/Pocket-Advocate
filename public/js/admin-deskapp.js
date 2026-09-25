@@ -548,6 +548,17 @@ const riskSub = (pct) => {
   const bold = b > 0 ? ` The one high-risk trade a run may risk up to ${HIGH_RISK_PCT}%, <span class="num">${money(Math.round((b * HIGH_RISK_PCT) / 100))}</span>.` : ` The one high-risk trade a run may risk up to ${HIGH_RISK_PCT}%.`;
   return (b > 0 ? `${pct}% of ${money(b)} is <span class="num">${money(Math.round((b * pct) / 100))}</span> a trade.` : 'of the balance, on every trade.') + bold;
 };
+// His bar (v7.18: he chose "Lower to 45%"), said where the page names it.
+const CHANCE_BAR = 45;
+/** The market scan's line in Settings (v7.18): it runs on the same Alpaca key, so it says what the last run's scan did. */
+function scanSub(pub) {
+  if (!pub?.hasBarsKey) return 'Needs the Alpaca key above. Until then each run searches for the day\'s movers.';
+  const st = S.state?.desk?.scanner;
+  return st === 'ok' ? 'On. Every run starts from the day\'s top gainers, losers and most active stocks.'
+    : st === 'refused' ? 'Alpaca turned the key down on the last run.'
+      : st === 'failed' ? 'Alpaca did not answer on the last run; the next run tries again.'
+        : 'On from the next run: the day\'s top gainers, losers and most active stocks.';
+}
 /** The 15-minute charts' line in Settings: whether Alpaca's key is on file, and what Alpaca said when it was saved. */
 function barsSub(pub) {
   if (!pub?.hasBarsKey) return 'Alpaca key: none on file';
@@ -576,10 +587,11 @@ function openSettings() {
     <div><h2>Market data</h2><div class="grp">
       <div class="r"><span>Price key<span class="sub num" id="key-sub">${pub.hasKey ? `on file · ends ${esc(pub.keyTail || '')}` : 'none on file'}</span></span><button type="button" class="btn tiny quiet" style="margin-left:auto" id="key-go">${pub.hasKey ? 'Replace' : 'Add'}</button></div>
       <div class="r"><span>15-minute charts<span class="sub num" id="bars-sub">${esc(barsSub(pub))}</span></span><button type="button" class="btn tiny quiet" style="margin-left:auto" id="bars-go">${pub.hasBarsKey ? 'Replace' : 'Add'}</button></div>
+      <div class="r"><span>Market scan<span class="sub" id="scan-sub">${esc(scanSub(pub))}</span></span></div>
       <div class="r" style="display:block"><span>Always looked at<span class="sub">Named to the desk on every run. It still looks well past them.</span></span><div class="watch" id="watch-chips">${(pub.watchlist || []).map((t) => `<span class="chip tap">${esc(t)}</span>`).join('')}</div><button type="button" class="btn tiny quiet" id="watch-go" style="margin-top:10px">Edit the list</button></div>
     </div><p class="said" id="key-said"></p></div>
     <div><h2>GLP-1 chain</h2><div class="grp">
-      <div class="r" style="display:block" id="chain"><span>Searched on every run<span class="sub">From the makers to the sellers. A trade from it clears the same 50% bar as any other.</span></span>${GLP1_CHAIN.map((g) => `<span class="sub" style="margin-top:12px">${esc(g.role)}</span><div class="watch">${g.tickers.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>`).join('')}</div>
+      <div class="r" style="display:block" id="chain"><span>Searched on every run<span class="sub">From the makers to the sellers. A trade from it clears the same ${CHANCE_BAR}% bar as any other.</span></span>${GLP1_CHAIN.map((g) => `<span class="sub" style="margin-top:12px">${esc(g.role)}</span><div class="watch">${g.tickers.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>`).join('')}</div>
     </div></div>
     <div><h2>Alerts</h2><div class="grp">
       <div class="r"><span>Pushes<span class="sub">The 7:00 run, and any run that finds a strong trade.</span></span>${sw('pushOn', pub.pushOn !== false)}</div>
@@ -665,6 +677,7 @@ function openSettings() {
         const out = await call('settings', { alpacaKeyId: sheet.querySelector('#ak').value.trim(), alpacaSecret: sheet.querySelector('#as').value.trim() });
         S.state = { ...S.state, settings: out.settings };
         ov.querySelector('#bars-sub').textContent = barsSub(out.settings);
+        ov.querySelector('#scan-sub').textContent = scanSub(out.settings);
         ov.querySelector('#bars-go').textContent = out.settings.hasBarsKey ? 'Replace' : 'Add';
         const st = out.settings.barsCheck?.status;
         if (st === 'refused') { say(sheet.querySelector('#ak-said'), 'Saved, but Alpaca turned it down. Check you copied both halves of the same key.'); return; }

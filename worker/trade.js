@@ -200,6 +200,8 @@ export async function tradeState(env, { now = Date.now() } = {}) {
       read: st.desk.read || '', none: st.desk.none || '', count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
       // Whether the last run had its 15-minute charts (v7.15).
       charts: BARS_STATUS.includes(st.desk.charts) ? st.desk.charts : null,
+      // And its market scan (v7.18).
+      scanner: BARS_STATUS.includes(st.desk.scanner) ? st.desk.scanner : null,
       verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
     } : null,
     recs, active, timedOut,

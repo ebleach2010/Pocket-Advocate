@@ -61,8 +61,9 @@ import {
   SETTINGS_PATH, STATE_PATH, PLAYS, SAY, stripDashes, mtParts, mtInstant, mtLabel, watchlistOf, resolveKey,
   marketSnapshot, quoteCached, rid, realDate,
   resolveBars, fetchBars, chartsOf, chartsBlock, chartLine, BARS_MAX_SYMBOLS,
+  fetchScanner, scanTickers, moversBlock,
 } from './trade-desk.js';
-import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades, GLP1_CHAIN, HIGH_RISK_PCT, HIGH_RISK_FLOOR } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades, GLP1_CHAIN, HIGH_RISK_PCT, HIGH_RISK_FLOOR, isFund } from '../public/js/trade-math.js';
 
 // ---- the settings of a run ---------------------------------------------------
 // "Use Fable unless I explicitly tell you otherwise." Every one of the six
@@ -75,7 +76,9 @@ export const DESK_MODEL = 'claude-fable-5-1';
 // the whole run is allowed. The desk, which makes the call, runs at high.
 export const RESEARCH_EFFORT = 'medium';
 export const DESK_EFFORT = 'high';
-export const RESEARCH_SEARCHES = 5;
+// RAISED 2026-09-25 (v7.18): all five used every one of five, finding movers the scan now hands them.
+// The slowest took 140 seconds of its 200; two more searches go to catalysts.
+export const RESEARCH_SEARCHES = 7;
 export const RESEARCH_MAX_TOKENS = 32_000;
 export const DESK_MAX_TOKENS = 32_000;
 // SHORT TURNS, ON PURPOSE (2026-09-23). In August two streamed turns died
@@ -103,14 +106,16 @@ export const PUSH_MAX = 3;
 export const RUN_GIVE_UP_MS = 45 * 60_000;
 export const MAX_ATTEMPTS = 3;
 export const MIN_REPORTS = 2;
-export const MAX_TRADES = 6;
-export const MAX_PER_HORIZON = 2;
+// Nine, three of each kind (Eric, 2026-09-25, chose "Up to 9"), and the high-risk trade beside them.
+export const MAX_TRADES = 9;
+export const MAX_PER_HORIZON = 3;
 export const MAX_NEWS = 6;
 // HIS BAR (Eric, 2026-09-23: "It should suggest anything over a 50% profit for a scalp, intraday,
 // swing, for stocks and options. So three possible trades if they're there"). A trade reaches him
 // when the low end of the desk's honest chance of its first target before its stop is above this,
 // and never when it is not. The desk is told to find the best of each kind that clears it.
-export const CHANCE_FLOOR = 50;
+// LOWERED 2026-09-25 (v7.18): the last run filed nothing at 50, and he chose "Lower to 45%".
+export const CHANCE_FLOOR = 45;
 export const MAX_CONTINUES = 1;
 export const RESEARCH_PATH = 'trade/research';
 export const WEB_SEARCH = { type: 'web_search_20260209', name: 'web_search', max_uses: RESEARCH_SEARCHES };
@@ -227,23 +232,23 @@ export function candidateTickers(texts) {
 export const LENSES = [
   {
     n: 1, key: 'tape', name: 'Momentum and the tape',
-    beat: 'Price action right now: premarket and intraday movers, relative volume, VWAP holds and losses, EMA structure (9, 20, 50), opening range breaks, and breakouts and breakdowns with real volume behind them. Your natural horizon is scalps and intraday trades. When the message carries 15-minute charts, read VWAP, the 9, 20 and 50 EMAs and the MACD from them rather than searching: they are worked out from the bars, and your searches are better spent on what is moving.',
+    beat: 'Start from the market scan: the top gainers, losers and most active stocks. Price action right now: premarket and intraday movers, relative volume, VWAP holds and losses, EMA structure (9, 20, 50), opening range breaks, and breakouts and breakdowns with real volume behind them. Your natural horizon is scalps and intraday trades. When the message carries 15-minute charts, read VWAP, the 9, 20 and 50 EMAs and the MACD from them rather than searching: they are worked out from the bars, and your searches are better spent on what is moving.',
   },
   {
     n: 2, key: 'catalysts', name: 'Catalysts',
-    beat: 'What is making specific stocks move today and this week: earnings reported overnight or due today and after the close, guidance changes, analyst upgrades, downgrades and target changes, SEC filings (8-K, S-1 and offerings, 13D, clusters of Form 4 insider buying or selling), FDA and legal decisions, contracts, mergers. Every horizon.',
+    beat: 'Why the stocks on the market scan are moving, and what else is moving specific stocks today and this week: earnings reported overnight or due today and after the close, guidance changes, analyst upgrades, downgrades and target changes, SEC filings (8-K, S-1 and offerings, 13D, clusters of Form 4 insider buying or selling), FDA and legal decisions, contracts, mergers. Every horizon.',
   },
   {
     n: 3, key: 'macro', name: 'Macro and sectors',
-    beat: 'The index trend (SPY, QQQ, IWM), sector strength and rotation, today\'s and this week\'s macro calendar (Fed speakers, CPI, PPI, jobs, GDP), rates and yields, the dollar, oil, and volatility. Tell the desk which direction the tape favors and which sectors lead or lag, and bring the best-positioned leaders and laggards, or the sector funds themselves, as candidates.',
+    beat: 'The index trend (SPY, QQQ, IWM), sector strength and rotation, today\'s and this week\'s macro calendar (Fed speakers, CPI, PPI, jobs, GDP), rates and yields, the dollar, oil, and volatility. Tell the desk which direction the tape favors and which sectors lead or lag, including the sectors behind the stocks on the market scan, and bring the strongest leading and weakest lagging stocks in them as candidates, never the funds themselves.',
   },
   {
     n: 4, key: 'swing', name: 'Swing structure',
-    beat: 'Daily and weekly charts: bases, pullbacks to rising moving averages, reclaimed levels, multi-day support and resistance, gaps to fill, and relative strength against the index over weeks. Your natural horizon is swing trades of up to three trading days that are out before the weekend; say what would stop one out overnight.',
+    beat: 'Daily and weekly charts, starting with the stocks on the market scan and the leaders of the strongest sectors: bases, pullbacks to rising moving averages, reclaimed levels, multi-day support and resistance, gaps to fill, and relative strength against the index over weeks. Your natural horizon is swing trades of up to three trading days that are out before the weekend; say what would stop one out overnight.',
   },
   {
     n: 5, key: 'options', name: 'Options, volatility and risk',
-    beat: 'Unusual options activity and large directional flow, implied volatility and what the options market expects a stock to move, liquidity and spreads, short interest and squeeze risk, and the risk and reward of the day\'s most crowded names. Also the traps: names that look good and are not.',
+    beat: 'Options on the stocks on the market scan first. Unusual options activity and large directional flow, implied volatility and what the options market expects a stock to move, liquidity and spreads, short interest and squeeze risk, and the risk and reward of the day\'s most crowded names. Also the traps: names that look good and are not.',
   },
 ];
 
@@ -264,6 +269,7 @@ What the desk needs from you:
 
 Hard rules:
 - Never invent a price, a level, a headline or a number. Every price comes from the market data in the message or from a search you ran today, and you say which. If you cannot confirm a current price, say so and mark the candidate unconfirmed.
+- Stocks and options on stocks only. Index, sector, leveraged and volatility funds (SPY, QQQ, IWM, the XL funds, TQQQ, SOXL and the like) tell you where the market is; they are never a candidate.
 - Search for what you need. The market data in the message is a starting point, not the universe: do not stop at the names listed in it. You have at most ${RESEARCH_SEARCHES} searches and a few minutes, so spend them on what would change a call, then finish with what you have.
 - Do not size positions and do not mention an account balance. The desk sizes every trade.
 - ${accountRule(accountType)}
@@ -295,8 +301,9 @@ How to weigh the reports:
 - When researchers disagree on direction, only take the trade if one side has decisive evidence.
 - A rejection by one researcher counts against a candidate from another. Read the Rejected lines.
 - The macro and sector read sets the bias. Be slower to trade against it.
+- Stocks and options on stocks only (Eric: "There are so many stocks with trading opportunities."). Index, sector, leveraged and volatility funds read the market and are never a trade, the high-risk trade included; the app drops any. The market scan in the message is where the day's moves are: look there first.
 - The 15-minute charts, when the message has them, are worked out from real bars. For a scalp or an intraday trade, set the entry and the stop against VWAP and the 9, 20 and 50 EMAs, and be slow to go long below VWAP with the EMAs stacked down, or short above VWAP with them stacked up, unless the catalyst is decisive. Use them on the earlier calls too.
-- His bar: he wants every trade whose honest chance of reaching the first target before the stop is above ${CHANCE_FLOOR}%, which means chanceLow of at least ${CHANCE_FLOOR + 1}. Give him the best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar, and a second in a kind only when it clears it too. Leave a kind empty only when nothing in it clears the bar, and never raise a number to clear it: the app drops anything at ${CHANCE_FLOOR}% or below.
+- His bar: he wants every trade whose honest chance of reaching the first target before the stop is above ${CHANCE_FLOOR}%, which means chanceLow of at least ${CHANCE_FLOOR + 1}. Give him the best trade in each of the three kinds, scalp, intraday and swing, stock or option, whenever one clears that bar, and a second and third in a kind whenever they clear it too. Leave a kind empty only when nothing in it clears the bar, and never raise a number to clear it: the app drops anything at ${CHANCE_FLOOR}% or below.
 
 Limits:
 - At most ${MAX_TRADES} trades and at most ${MAX_PER_HORIZON} of each kind, and never the same ticker twice in the same direction and kind: one trade per position, in the vehicle that suits it best.
@@ -562,6 +569,8 @@ export function validRec(t, { accountType = 'cash', session = null, todayKey = n
   if (!t || typeof t !== 'object') return null;
   const ticker = String(t.ticker || '').trim().toUpperCase();
   if (!TICKER_RE.test(ticker)) return null;
+  // Stocks and their options only (v7.18): a fund is never a trade.
+  if (isFund(ticker)) return null;
   const side = t.side === 'short' ? 'short' : t.side === 'long' ? 'long' : null;
   const horizon = ['scalp', 'intraday', 'swing'].includes(t.horizon) ? t.horizon : null;
   const instrument = ['stock', 'call', 'put'].includes(t.instrument) ? t.instrument : 'stock';
@@ -855,6 +864,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
   const snapshot = deps.marketSnapshot || marketSnapshot;
   const quote = deps.quoteCached || quoteCached;
   const bars = deps.fetchBars || fetchBars;
+  const scanner = deps.fetchScanner || fetchScanner;
   const push = deps.notifyUser || notifyUser;
   const getMany = deps.batchGetDocs || batchGetDocs;
   const writeMany = deps.batchWrite || batchWrite;
@@ -916,9 +926,12 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       if (typeof prior?.market !== 'string') {
         const snap = key ? await snapshot(key, MARKET_TICKERS, t0).catch(() => null) : null;
         let market = snapshotText(snap, { hasKey: !!key });
-        const watch = watchlistOf(settings).filter((t) => !MARKET_TICKERS.includes(t)).slice(0, 25);
+        const watch = watchlistOf(settings).filter((t) => !MARKET_TICKERS.includes(t) && !isFund(t)).slice(0, 25);
         if (watch.length) market += `\n\nHis watchlist, not priced here: ${watch.join(', ')}.`;
         market += `\n\n${chainNote()}`;
+        // THE MARKET SCAN (v7.18): the day's gainers, losers and most active, before anything else is read.
+        const scan = barsKey ? await scanner(barsKey).catch(() => ({ status: 'failed', gainers: [], losers: [], active: [] })) : { status: 'nokey', gainers: [], losers: [], active: [] };
+        market += `\n\n${moversBlock(scan, { when: session.open ? 'live' : session.minsToOpen != null ? 'before' : 'after' })}`;
         // The calls he took, for the re-check: one read of the board's list and one of the trades.
         const st0 = await tryGet(env, STATE_PATH).catch(() => null);
         const liveIds = (Array.isArray(st0?.data?.activeIds) ? st0.data.activeIds : []).slice(0, LIVE_MAX);
@@ -928,14 +941,17 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
         if (liveRows.length) market += `\n\n${liveNote(liveRows)}`;
         // THE 15-MINUTE CHARTS (v7.15): the index funds, the trades he took and his watchlist, all in
         // one request, worked out here and handed to all five and the desk as numbers.
-        const chartSyms = [...MARKET_TICKERS, ...liveRows.map((x) => x.rec.ticker), ...watch];
+        // The movers get charts too (v7.18), after the funds and what he holds and before his watchlist:
+        // the one request takes forty.
+        const chartSyms = [...MARKET_TICKERS, ...liveRows.map((x) => x.rec.ticker), ...scanTickers(scan), ...watch];
         const bars15 = barsKey ? await bars(barsKey, chartSyms, t0).catch(() => ({ status: 'failed', bars: {} })) : { status: 'nokey', bars: {} };
         const block = chartsBlock(bars15, chartSyms, t0);
         if (block) market += `\n\n${block}`;
         const charts = bars15.status;
+        const scanned = scan.status;
         const wrote = prior
-          ? await patchDoc(env, RESEARCH_PATH, { market, live, charts }, { mask: ['market', 'live', 'charts'] }).catch(() => false)
-          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, live, charts, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
+          ? await patchDoc(env, RESEARCH_PATH, { market, live, charts, scanner: scanned }, { mask: ['market', 'live', 'charts', 'scanner'] }).catch(() => false)
+          : await patchDoc(env, RESEARCH_PATH, { runId: run.id, at: new Date(), market, live, charts, scanner: scanned, r1: null, r2: null, r3: null, r4: null, r5: null }).catch(() => false);
         // A fresh run whose document could not be reset would file its
         // reports beside another run's: it goes back to be claimed again.
         if (wrote === false && !prior) {
@@ -943,7 +959,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
           await diagLog(env, { ev: 'desk-run-retry', err: 'research not reset', attempt: run.attempt || 0 }).catch(() => {});
           return { ok: false, retry: true };
         }
-        prior = { ...(prior || { runId: run.id }), market, live, charts };
+        prior = { ...(prior || { runId: run.id }), market, live, charts, scanner: scanned };
       }
       const system = researchSystem(accountType);
       // A resumed run that already holds enough reports does not buy the missing ones twice.
@@ -995,7 +1011,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
       // Research is in. The desk decides in the next firing, which starts
       // with its own fifty calls; the page says so meanwhile.
       await setRun({ status: 'decide', done: got.length, decideAt: new Date() }, own);
-      await diagLog(env, { ev: 'desk-run-handoff', reports: got.length, agents, charts: prior?.charts || null, ms: Date.now() - t0 }).catch(() => {});
+      await diagLog(env, { ev: 'desk-run-handoff', reports: got.length, agents, charts: prior?.charts || null, scanner: prior?.scanner || null, ms: Date.now() - t0 }).catch(() => {});
       return { ok: true, handedOff: true, reports: got.length };
     }
 
@@ -1122,7 +1138,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     const finishedAt = new Date();
     const finalPatch = {
       run: { ...run, status: 'idle', finishedAt, heartbeatAt: finishedAt, done: got.length, error: null, count: filed.ids.length, ms: finishedAt.getTime() - ms(run.startedAt || t0) },
-      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, verdicts: verdicts.slice(0, 12), charts: fresh.status },
+      desk: { runId: run.id, at: finishedAt, trigger: run.trigger || 'manual', read: checked.read, none: checked.none, news: checked.news, count: filed.ids.length, reports: got.length, ids: filed.ids, verdicts: verdicts.slice(0, 12), charts: fresh.status, scanner: ['ok', 'nokey', 'refused', 'failed'].includes(prior?.scanner) ? prior.scanner : null },
     };
     let wrote = false;
     for (let i = 0; i < 2 && !wrote; i++) {
