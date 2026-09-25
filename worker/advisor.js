@@ -2432,8 +2432,10 @@ export async function maybeVoiceStudy(env, now = Date.now(), { force = false } =
       return { ran: false, reason: 'could not read the profile' };
     }
     const loop = profile?.data.voiceLoop || {};
-    // Absent means on. He asked for it to run; only an explicit off stops it.
-    if (loop.enabled === false) return { ran: false, reason: 'switched off' };
+    // Absent means on. He asked for it to run; only an explicit off stops it. Since 2026-09-25 the
+    // clock is gone and only his "Run one now" reaches here, which is his say-so; the old switch is
+    // not in his way any more.
+    if (!force && loop.enabled === false) return { ran: false, reason: 'switched off' };
     const last = loop.lastRunAt ? new Date(loop.lastRunAt).getTime() : 0;
     // `force` is him pressing "Run one now", which skips the clock. It does not
     // skip the switch above, and it does not skip the claim below.
@@ -3544,34 +3546,20 @@ async function sweepOne(env, t) {
   // else ever reads those files again.
   const carryOwed = Array.isArray(d.pendingMedia) && d.pendingMedia.length
     && d.status === 'idle' && upd && Date.now() - upd > 10 * 60_000;
-  // Errors used to park forever: the give-up wrote status "error" and every
-  // background path refused it, so half a day passed with work owed and
-  // nothing retrying. A parked error now retries on a slow clock, bounded,
-  // and never for the error classes where retrying is throwing money at a
-  // wall (credits out, rate limited).
-  const standing = /credits|Rate limited/i.test(String(d.error || ''));
-  const errAge = upd ? Date.now() - upd : Infinity;
-  const errRetryDue = d.status === 'error' && !standing && pend && pend > upd
-    && (Number(d.errorRetries) || 0) < 8
-    && (!d.errorRetryAt || Date.now() - new Date(d.errorRetryAt).getTime() > 30 * 60_000)
-    && errAge > 30 * 60_000;
+  // NO RETRY ON ITS OWN (Eric, 2026-09-25: "No auto token burn anywhere."). A read that failed stays
+  // failed with its reason on screen until he taps Update; the sweep used to retry it up to eight times
+  // on a half-hour clock, each retry a full read he never asked for.
   // No scheduled look any more (2026-09-13): the sweep rescues work he
   // asked for and books nothing of its own.
-  if (!stuckRunning && !owed && !carryOwed && !errRetryDue) return;
+  if (!stuckRunning && !owed && !carryOwed) return;
   if (stuckRunning)
     await setState(env, t.kind, t.id, { status: 'idle', startedAt: null, progressAt: null, stage: null })
       .catch(() => {});
-  if (errRetryDue)
-    await setState(env, t.kind, t.id, {
-      status: 'idle',
-      errorRetries: (Number(d.errorRetries) || 0) + 1,
-      errorRetryAt: new Date(),
-    }).catch(() => {});
   await patchDoc(env, queuePath(t.kind, t.id), { kind: t.kind, id: t.id, at: new Date(), tries: 0 })
     .catch(() => {});
   await diagLog(env, {
     ev: 'requeue', kind: t.kind,
-    why: stuckRunning ? 'stuck-running' : owed ? 'owed' : carryOwed ? 'carry' : 'error-retry',
+    why: stuckRunning ? 'stuck-running' : owed ? 'owed' : 'carry',
   });
   console.warn(`advisor sweep: re-queued stranded ${t.kind}/${t.id}`);
 }

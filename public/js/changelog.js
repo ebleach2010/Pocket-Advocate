@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.18';
+export const VERSION = '7.19';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.18';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PARKED, AND NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420.
+    // No scans unless I manually do it. No auto token burn anywhere.").
+    // Admin only.
+    version: '7.19',
+    quiet: true,
+    client: [],
+    admin: [
+      'PR 420 is parked: it runs only when you tap RUN TRADING DESK. The 7:00 run is gone.',
+      'Nothing in the app spends on its own any more: the nightly voice study now runs only when you tap Run one now, and a read that fails waits for your Update instead of retrying by itself.',
+    ],
+  },
   {
     // A WIDER DESK (Eric, 2026-09-25: "There are so many stocks with trading
     // opportunities ... the trading desk gave me fucking qqq"). Admin only.

@@ -594,7 +594,7 @@ function openSettings() {
       <div class="r" style="display:block" id="chain"><span>Searched on every run<span class="sub">From the makers to the sellers. A trade from it clears the same ${CHANCE_BAR}% bar as any other.</span></span>${GLP1_CHAIN.map((g) => `<span class="sub" style="margin-top:12px">${esc(g.role)}</span><div class="watch">${g.tickers.map((t) => `<span class="chip">${esc(t)}</span>`).join('')}</div>`).join('')}</div>
     </div></div>
     <div><h2>Alerts</h2><div class="grp">
-      <div class="r"><span>Pushes<span class="sub">The 7:00 run, and any run that finds a strong trade.</span></span>${sw('pushOn', pub.pushOn !== false)}</div>
+      <div class="r"><span>Pushes<span class="sub">When a run you started lands. Nothing runs unless you tap RUN TRADING DESK.</span></span>${sw('pushOn', pub.pushOn !== false)}</div>
       <div class="r"><span>Show the research<span class="sub">For debugging only: the five researchers' reports from the last run.</span></span>${sw('debugResearch', pub.debugResearch === true)}</div>
       <button type="button" class="r" id="research-go"${pub.debugResearch === true ? '' : ' hidden'}>The last run's research<span class="chev">&rsaquo;</span></button>
     </div><p class="said" id="sw-said"></p></div>

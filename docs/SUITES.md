@@ -609,6 +609,15 @@ D19, D24 (research 33, refused path 38, desk 29, of 38), D27, D37 re-pinned
 for stock fixtures and the new limits; trade.mjs T85, T79 re-pinned;
 drive-trade.mjs follows HOOD where it followed QQQ.
 
+**Nothing spends on its own (2026-09-25, v7.19).** Eric: "Park pr 420. No
+scans unless I manually do it. No auto token burn anywhere." Gone: the
+desk's 7:00 run (`maybeMorningRun`), the nightly voice study on the cron,
+the one-shot voice study and the one-shot re-queue of parked reads, and
+the sweep's retries of failed reads. The cron only carries what a tap
+queued; the voice study runs only from Run one now. defects.mjs, nothing
+spends on its own; desk.mjs D18 (no clock) and D23 re-pinned; trade.mjs
+T30 and T57 re-pinned.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

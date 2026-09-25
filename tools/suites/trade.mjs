@@ -938,10 +938,13 @@ check('T23 a question on the desk: the desk note rides the user text, the ask no
 //   FAIL  T30 the Worker imports ...
 // RE-PINNED 2026-09-24 (v7.15): the Worker also imports the 15-minute charts' fetch and reading for
 // the diagnostics' bars probe, which asks Alpaca now.
-check('T30 the Worker imports the desk\'s routes and panel block, the run and its morning clock, and the categories; queues the 7:00 run at every firing and runs a queued one awaited before the case drain; no longer collects a scan or books a reading; hands the panel the desk\'s block and the trading half of the glossary on a desk; prints the standing on the covers; refuses to pull from the desk or continue it; and a deleted desk clears the settings\' pointer',
-  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, maybeMorningRun, peekDesk \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY, resolveBars, fetchBars, chartsOf, chartText \} from '\.\/trade-desk\.js';/.test(W)
+// RE-PINNED 2026-09-25 (v7.19): Eric, "Park pr 420. No scans unless I manually do it. No auto token burn
+// anywhere." The morning clock is gone from the import and the firing; the one-shot re-queue of parked reads
+// is gone from the chores; and the drain no longer hands the voice study a turn when it was idle.
+check('T30 the Worker imports the desk\'s routes and panel block, the run, and the categories; queues no run of its own and runs a queued one awaited before the case drain; no longer collects a scan or books a reading; hands the panel the desk\'s block and the trading half of the glossary on a desk; prints the standing on the covers; refuses to pull from the desk or continue it; and a deleted desk clears the settings\' pointer',
+  /import \{ tradeRoute, TradeError, tradePanelBlock \} from '\.\/trade\.js';\nimport \{ maybeRunDesk, peekDesk \} from '\.\/desk-run\.js';\nimport \{ TRADE_CATEGORIES, SAY as TRADE_SAY, resolveBars, fetchBars, chartsOf, chartText \} from '\.\/trade-desk\.js';/.test(W)
   && !/maybeTradeScan|maybeMorningRead|maybeCollectScan|pollScanFlight/.test(W)
-  && /ctx\.waitUntil\(maybeMorningRun\(env\)\.catch\(\(\) => \{\}\)\);/.test(W)
+  && !/maybeMorningRun|maybeVoiceStudy\(env\);|voiceStudyKickoff|unparkAdvisor/.test(W)
   // RE-PINNED 2026-09-23 (review): never on a quarter hour, whose firing carries the medical sweeps.
   // NEGATIVE CONTROL (run 2026-09-23): `minute % 15 === 0 ? false` changed to `minute % 15 === 99 ? false` made this read
   //   FAIL  T30 the Worker imports ...
@@ -954,11 +957,10 @@ check('T30 the Worker imports the desk\'s routes and panel block, the run and it
   //   FAIL  T30 the Worker imports ...
   && /const deskDoc = minute % 15 === 0 \? null : await peekDesk\(env\)\.catch\(\(\) => null\);/.test(W)
   && W.indexOf('await peekDesk(env)') < W.indexOf("ctx.waitUntil(patchDoc(env, 'diag/cron'")
-  && /if \(!deskDoc\) \{\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(unparkAdvisor\(env\)\);\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(runWorkClockNudges\(env\)\);\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(closeBookingsAug2026\(env\)\);\n\s+\}/.test(W)
-  && (W.match(/ctx\.waitUntil\(unparkAdvisor\(env\)\)/g) || []).length === 1
+  && /if \(!deskDoc\) \{\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(runWorkClockNudges\(env\)\);\n(?:\s*\/\/[^\n]*\n)*\s+ctx\.waitUntil\(closeBookingsAug2026\(env\)\);\n\s+\}/.test(W)
   && /const ranDesk = !deskDoc \? false\n\s+: await maybeRunDesk\(env, \{ deadlineAt, doc: deskDoc \}\)\.catch\(/.test(W)
-  && /const ranAnalysis = ranDesk \? true : await runQueuedAnalyses\(env, deadlineAt\);/.test(W)
-  && W.indexOf(': await maybeRunDesk(') < W.indexOf('const ranAnalysis = ranDesk')
+  && /if \(!ranDesk\) await runQueuedAnalyses\(env, deadlineAt\);/.test(W)
+  && W.indexOf(': await maybeRunDesk(') < W.indexOf('if (!ranDesk) await runQueuedAnalyses')
   && /pollCaseFlight, pollFlightsNow, pollAskFlight,\n/.test(W)
   && !/pollTradeFlights/.test(W) && !/pollTradeFlights|submitTradeBatch|tradeAsk|tradeSeen|tradeScanNow|trade\/feed|trade\/flights/.test(T)
   && /const trade = !!state\?\.data\.trade;\n\s+const terms = knowledge\.filter\(\(r\) => TRADE_CATEGORIES\.includes\(String\(r\.data\.category \|\| ''\)\) === trade\);\n(?:\s*\/\/[^\n]*\n)*\s+const tradeBlock = trade \? await tradePanelBlock\(env\)\.catch\(\(\) => null\) : null;/.test(W)
@@ -1416,6 +1418,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry717 = (CL.match(/\{\n\s+\/\/ THE HIGH-RISK TRADE \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-25 (v7.18): the wider desk, its own quiet entry.
   const entry718 = (CL.match(/\{\n\s+\/\/ A WIDER DESK \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-25 (v7.19): parked, and nothing spends on its own, its own quiet entry.
+  const entry719 = (CL.match(/\{\n\s+\/\/ PARKED, AND NOTHING SPENDS ON ITS OWN \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1502,8 +1506,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-25 (v7.18): both versions read 7.18 with the wider-desk tag; the 7.17 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-25, v7.18): 'none is ever a trade' reworded to 'none is traded' in the 7.18 entry made this read
   //   FAIL  T36 both versions read 7.18 ...
-  check('T36 both versions read 7.18 with the new tag, the 4.7 through 7.18 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.18';/.test(CL) && /const VERSION = '7\.18';/.test(W) && /const BUILD_TAG = 'v2026-09-25-wider-desk';/.test(W)
+  // RE-PINNED 2026-09-25 (v7.19): both versions read 7.19 with the no-auto-spend tag; the 7.18 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-25, v7.19): 'The 7:00 run is gone.' reworded to 'No more 7:00 run.' in the 7.19 entry made this read
+  //   FAIL  T36 both versions read 7.19 ...
+  check('T36 both versions read 7.19 with the new tag, the 4.7 through 7.19 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.19';/.test(CL) && /const VERSION = '7\.19';/.test(W) && /const BUILD_TAG = 'v2026-09-25-no-auto-spend';/.test(W)
+    && /version: '7\.19',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry719)
+    && /The 7:00 run is gone\./.test(entry719) && !DASH.test(entry719) && !HARD.some((re) => re.test(entry719))
     && /version: '7\.18',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry718)
     && /none is ever a trade/.test(entry718) && !DASH.test(entry718) && !HARD.some((re) => re.test(entry718))
     && /version: '7\.17',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry717)
@@ -1770,10 +1779,11 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
 // nothing of the scan's collection is left on the desk's routes or the Worker.
 // NEGATIVE CONTROL (run 2026-09-23): `export async function maybeCollectScan() { return null; }` added back to trade.js made this read
 //   FAIL  T57 the scan collector is gone ...
-check('T57 the scan collector is gone: the desk\'s routes export no collector, no morning reading and no scan block, nothing in the Worker or the advisor names one, and the firing\'s only desk calls are the run it queues at 7:00 and the queued run it hosts',
+check('T57 the scan collector is gone: the desk\'s routes export no collector, no morning reading and no scan block, nothing in the Worker or the advisor names one, and the firing\'s only desk call is the queued run it hosts',
   K.maybeCollectScan === undefined && K.maybeMorningRead === undefined && K.scanBlock === undefined
   && !/maybeCollectScan|maybeMorningRead|scanBlock|pollScanFlight|runTradeScan|runTradeLook|finishTradeScan/.test(T + W + ADV)
-  && (W.match(/maybeRunDesk\(|maybeMorningRun\(/g) || []).length === 2);
+  // RE-PINNED 2026-09-25 (v7.19): the 7:00 run is gone; the firing's one desk call hosts a run he queued.
+  && (W.match(/maybeRunDesk\(|maybeMorningRun\(/g) || []).length === 1);
 
 // ---- T59 to T62 (PR 420) ------------------------------------------------------------------
 // RE-PINNED 2026-09-23 (PR 420): the position sheet and its dollars-or-shares chip, the play card's one

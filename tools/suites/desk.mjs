@@ -105,7 +105,7 @@ function load(deps) {
     fetchScanner: TD.fetchScanner, scanTickers: TD.scanTickers, moversBlock: TD.moversBlock, isFund: TM.isFund,
   };
   const keys = Object.keys(names);
-  return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, maybeMorningRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf, chainNote };`)(...keys.map((k) => names[k]));
+  return new Function(...keys, `${body}\nreturn { accumulateSse, liveTurn, requestRun, maybeRunDesk, executeRun, runAlive, RefusedError, peekDesk, deskClaimable, fatalOf, chainNote };`)(...keys.map((k) => names[k]));
 }
 
 // A research turn and a desk turn, scripted per test.
@@ -553,23 +553,23 @@ async function oneRun(opts = {}) {
     JSON.stringify({ r: r.out, pushes: none.w.pushes }));
 }
 
-// ---- D18 to D19: the 7:00 run and the prompts ------------------------------------------
+// ---- D18 to D19: no clock, and the prompts ------------------------------------------
+// RE-PINNED 2026-09-25 (v7.19): Eric, "Park pr 420. No scans unless I manually do it. No auto token burn
+// anywhere." The 7:00 run is gone. What stands here is that nothing starts a desk run on a clock: the
+// engine exports no morning run, the Worker's cron never queues one, and the only caller of requestRun is
+// the route his tap on RUN TRADING DESK reaches.
 {
-  const seven = Date.UTC(2026, 8, 23, 13, 5); // 07:05 MT Wednesday
-  const W = world();
-  const M = load(W.deps);
-  const a = await M.maybeMorningRun(env, { now: seven });
-  const b = await M.maybeMorningRun(env, { now: seven + 60_000 });
-  const early = await load(world().deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 23, 12, 59) });
-  const late = await load(world().deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 23, 13, 30) });
-  const sat = await load(world().deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 26, 13, 5) });
-  const noDesk = await load(world({ settings: {} }).deps).maybeMorningRun(env, { now: seven });
-  // NEGATIVE CONTROL (run 2026-09-23): the `morningDay === dateKey` check removed made this read
-  //   FAIL  D18 the 7:00 run is the only automatic one ...
-  check('D18 the 7:00 run is the only automatic one (Eric: "That remains the ONLY automatic scheduled run."): between 7:00 and 7:29 Mountain on a trading day with a desk open it queues exactly one morning run under a claim, and not at 6:59, not at 7:30, not on a Saturday, not twice and not without a desk',
-    a.ran === true && runOf(W.docs).trigger === 'morning' && b.ran === false && b.why === 'already ran'
-    && early.ran === false && late.ran === false && sat.ran === false && noDesk.ran === false,
-    JSON.stringify({ a, b, early, late, sat, noDesk }));
+  const W = f('worker/index.js');
+  const T = f('worker/trade.js');
+  const cron = (W.match(/async scheduled\(event, env, ctx\) \{[\s\S]*?\n  \},\n/) || [''])[0];
+  const callers = ['worker/index.js', 'worker/trade.js', 'worker/desk-run.js', 'worker/advisor.js', 'worker/trade-desk.js'].filter((p) => /(?<!function )requestRun\(env/.test(f(p)));
+  // NEGATIVE CONTROL (run 2026-09-25): `ctx.waitUntil(requestRun(env, { trigger: 'morning' }).catch(() => {}));` added to the cron made this read
+  //   FAIL  D18 no desk run starts on a clock ...
+  check('D18 no desk run starts on a clock (Eric: "No scans unless I manually do it."): the engine has no morning run, the cron neither names nor queues one and its one desk call carries a run already queued, and requestRun is reached only from the route his tap calls',
+    DR.maybeMorningRun === undefined && !/maybeMorningRun|MORNING_MIN/.test(SRC) && !/maybeMorningRun|requestRun|trigger: 'morning'/.test(cron)
+    && (cron.match(/maybeRunDesk\(/g) || []).length === 1
+    && JSON.stringify(callers) === '["worker/trade.js"]' && /await requestRun\(env, \{ trigger: 'manual', now \}\)/.test(T),
+    JSON.stringify({ callers, cron: cron.length }));
 }
 {
   const rs = DR.researchSystem('cash');
@@ -677,17 +677,8 @@ async function oneRun(opts = {}) {
     JSON.stringify({ f: outF, late: lateScalp.toISOString(), short: shortCall.toISOString(), long: longCall.toISOString() }));
 }
 {
-  // The 7:00 run: the clock first, then one write that stamps the day and queues the run together.
-  const reads = [];
-  const mk = (over) => { const X = world(over); const g = X.deps.tryGet; X.deps.tryGet = async (e, p) => { reads.push(p); return g(e, p); }; return X; };
-  const before = mk({});
-  const beforeOut = await load(before.deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 23, 12, 30) });
-  const readsBefore = reads.length;
-  const fresh = mk({ state: { run: { id: 'old', status: 'idle' } } });
-  const freshOut = await load(fresh.deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 23, 13, 5) });
-  const stamp = fresh.w.patches.find((p) => p.path === TD.STATE_PATH);
-  const busy = mk({ state: { run: { id: 'mine', status: 'researching', startedAt: new Date(Date.UTC(2026, 8, 23, 13, 0)), heartbeatAt: new Date(Date.UTC(2026, 8, 23, 13, 4, 30)), attempt: 1 } } });
-  const busyOut = await load(busy.deps).maybeMorningRun(env, { now: Date.UTC(2026, 8, 23, 13, 5) });
+  // RE-PINNED 2026-09-25 (v7.19): the 7:00 run is gone (D18), so its three clauses are too; the run of his on
+  // its last attempt still hands over and is decided.
   // RE-PINNED 2026-09-23 (v7.2): every research firing hands over, the last attempt too, and the desk's
   // claim of research handed over is never given up for attempts: the handoff is not a death.
   const lastTry = await oneRun({ researchOnly: true, run: { attempt: 3 } });
@@ -696,21 +687,14 @@ async function oneRun(opts = {}) {
   at(WED_10);
   const lastDeskOut = await load(lastDesk.deps).maybeRunDesk(env, { deadlineAt: WED_10 + 12 * 60_000, now: WED_10, deps: { liveTurn: turns({}, lastDesk.w) } });
   restore();
-  // NEGATIVE CONTROL (run 2026-09-23): maybeMorningRun's `if (runAlive(doc?.data?.run, now)) return { ran: false, why: 'a run is going' };` removed made this read
-  //   FAIL  D23 the 7:00 run reads nothing before seven ...
   // NEGATIVE CONTROL (run 2026-09-23): the handoff's `&& (Number(run.attempt) || 1) < MAX_ATTEMPTS` removed made this read
-  //   FAIL  D23 the 7:00 run reads nothing before seven ...
+  //   FAIL  D23 a run on its last attempt ...
   // NEGATIVE CONTROL (run 2026-09-23, v7.2): the give-up's `(!ready && ...)` changed to `(... >= MAX_ATTEMPTS)` without the ready guard made this read
-  //   FAIL  D23 the 7:00 run reads nothing before seven ...
-  check('D23 the 7:00 run reads nothing before seven, stamps the day and queues the run in one write so the stamp can never stand without its run, waits rather than spending the day on a run of his still going, and a run on its last attempt still hands its research over and has its decision made, never given up for it',
-    beforeOut.why === 'not the hour' && readsBefore === 0
-    && freshOut.ran === true && stamp && stamp.opts.mask.join() === 'morningDay,morningAt,run' && stamp.data.run.trigger === 'morning'
-    && runOf(fresh.docs).status === 'queued' && fresh.docs.get(TD.STATE_PATH).data.morningDay === '2026-09-23'
-    && fresh.w.patches.filter((p) => p.path === TD.STATE_PATH).length === 1
-    && busyOut.ran === false && busyOut.why === 'a run is going' && !busy.docs.get(TD.STATE_PATH).data.morningDay
-    && lastTry.out.ok === true && lastTry.out.handedOff === true && runOf(lastTry.docs).status === 'decide'
+  //   FAIL  D23 a run on its last attempt ...
+  check('D23 a run on its last attempt still hands its research over and has its decision made, never given up for it',
+    lastTry.out.ok === true && lastTry.out.handedOff === true && runOf(lastTry.docs).status === 'decide'
     && lastDeskOut === true && runOf(lastDesk.docs).status === 'idle' && lastDesk.w.bodies.filter((b) => !b.tools).length === 1,
-    JSON.stringify({ before: beforeOut, fresh: freshOut, busy: busyOut, last: lastTry.out }));
+    JSON.stringify({ last: lastTry.out, desk: lastDeskOut }));
 }
 
 // ---- D24 to D26: the fifty calls, and a run that cannot run (2026-09-23) -----------------------

@@ -1040,5 +1040,31 @@ ck('clock: all switches share one painter set, so no two can disagree',
     probe.slice(0, 200));
 }
 
+// ---- nothing spends on its own (2026-09-25, v7.19) --------------------------------------------------
+// Eric: "Park pr 420. No scans unless I manually do it. No auto token burn anywhere." The cron firing starts
+// no model turn of its own: no desk run on a clock, no voice study, no one-shot re-queue of reads; it only
+// carries work a tap queued (the desk run he started, a read, a question or a draft in flight). The sweep
+// rescues work he asked for that never finished, and never retries a read that failed.
+{
+  const DRUN = readFileSync(`${R}/worker/desk-run.js`, 'utf8');
+  const cron = (W.match(/async scheduled\(event, env, ctx\) \{[\s\S]*?\n  \},\n/) || [''])[0];
+  const sweep = (ADV.match(/async function sweepOne\(env, t\) \{[\s\S]*?\n\}\n/) || [''])[0];
+  const MODEL = /maybeVoiceStudy|runStyleDistill|runDaySummary|runAnalysis\(|runQuestion\(|runDraft\(|runAppeal\(|runCallNotes\(|runCallDoc\(|pingModel|markPending|requestRun|maybeMorningRun|voiceStudyKickoff|unparkAdvisor/;
+  const voiceCalls = [...W.matchAll(/maybeVoiceStudy\(([^\n]*)/g)].map((m) => m[1]);
+  // NEGATIVE CONTROL (run 2026-09-25): `if (minute % 5 === 0) await maybeVoiceStudy(env);` put back at the end of the cron made this read
+  //   FAIL  nothing spends on its own ...
+  // NEGATIVE CONTROL (run 2026-09-25): the sweep's `errRetryDue` put back (a failed read retried on a half-hour clock) made this read
+  //   FAIL  nothing spends on its own ...
+  ck('nothing spends on its own (Eric: "No auto token burn anywhere."): the cron names no model job, no voice study, no desk clock and no re-queue, and runs only the drain of what he queued and the desk run he started; the voice study is reached only from his Run one now, which is not held back by the old switch; the sweep never retries a failed read; the engine has no morning run; and the Clients page offers Run one now and no nightly switch',
+    cron.length > 500 && !MODEL.test(cron)
+    && /if \(!ranDesk\) await runQueuedAnalyses\(env, deadlineAt\);/.test(cron) && /: await maybeRunDesk\(env, \{ deadlineAt, doc: deskDoc \}\)/.test(cron)
+    && voiceCalls.length === 1 && /force: true/.test(voiceCalls[0])
+    && /if \(!force && loop\.enabled === false\) return \{ ran: false, reason: 'switched off' \};/.test(ADV)
+    && sweep.length > 200 && !/errRetryDue|errorRetries|errorRetryAt|error-retry/.test(sweep) && /if \(!stuckRunning && !owed && !carryOwed\) return;/.test(sweep)
+    && !/maybeMorningRun|MORNING_MIN/.test(DRUN)
+    && /id="voice-now">Run one now<\/button>/.test(readFileSync(`${R}/public/js/admin.js`, 'utf8')) && !/voice-toggle|Every night at/.test(readFileSync(`${R}/public/js/admin.js`, 'utf8')),
+    JSON.stringify({ voiceCalls, cron: (cron.match(MODEL) || [])[0] || null, sweep: (sweep.match(/errRetryDue|errorRetries/) || [])[0] || null }));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

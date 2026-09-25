@@ -58,7 +58,7 @@ import {
 // 2026-09-23): its routes, the six-agent run the cron hosts and its one
 // morning clock, and the leaf they all stand on.
 import { tradeRoute, TradeError, tradePanelBlock } from './trade.js';
-import { maybeRunDesk, maybeMorningRun, peekDesk } from './desk-run.js';
+import { maybeRunDesk, peekDesk } from './desk-run.js';
 import { TRADE_CATEGORIES, SAY as TRADE_SAY, resolveBars, fetchBars, chartsOf, chartText } from './trade-desk.js';
 
 /**
@@ -1421,7 +1421,6 @@ export default {
       // Run-once migrations: instant no-ops on every fire after their first.
       ctx.waitUntil(grandfatherFollowUps(env));
       ctx.waitUntil(openTuesdaySlots(env));
-      ctx.waitUntil(voiceStudyKickoff(env));
       ctx.waitUntil(reviveLostSend(env));
       ctx.waitUntil(seedWorkClock(env));
       ctx.waitUntil(restructureRates(env));
@@ -1429,21 +1428,17 @@ export default {
       ctx.waitUntil(clearOpenSlots(env));
     }
 
-    // THE DESK'S ONE CLOCK (PR 420, Eric 2026-09-23: "The Trading Desk
-    // automatically performs its full market scan once per trading day at
-    // 7:00 AM Mountain Time. That remains the ONLY automatic scheduled run.").
-    // Un-gated so a firing inside the window is never missed; the day stamp
-    // inside makes every firing after the first a single document read. It
-    // only queues the run; the awaited call below runs it.
-    ctx.waitUntil(maybeMorningRun(env).catch(() => {}));
-    // The three per-minute chores below skip a firing the desk is using
+    // NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420. No scans
+    // unless I manually do it. No auto token burn anywhere."). This firing
+    // starts no model turn of its own: the desk's 7:00 run, the nightly voice
+    // study, the one-shot voice study and the one-shot re-queue of parked
+    // reads are gone, and the sweep no longer retries a read that failed.
+    // What is left here only carries work he started with a tap: a desk run
+    // through its two firings, a queued read, a question or a draft in flight.
+    // The two per-minute chores below skip a firing the desk is using
     // (THE DESK'S FIFTY CALLS, above); each simply runs a minute later.
     if (!deskDoc) {
-      // Un-gated on purpose: the wedged case should recover on the FIRST
-      // firing after this deploys, not up to a quarter hour later. One marker
-      // read per firing once finished; remove with the diag scaffolding.
-      ctx.waitUntil(unparkAdvisor(env));
-      // Also un-gated, and for a plainer reason: the first rung of the clock
+      // Un-gated, and for a plain reason: the first rung of the clock
       // ladder is five minutes, so a quarter-hour gate could not deliver it.
       // One document read on any firing where he is in the app or nothing is
       // running, which is nearly all of them.
@@ -1474,10 +1469,9 @@ export default {
     // ordinary retry path.
     //
     // One model job per firing, and the drain goes FIRST so the wall clock
-    // belongs to the turn. The sweep runs on the five-minute marks after
-    // it; the voice study waits for one of those firings with an empty
-    // queue. The quick jobs above stay on waitUntil: they finish in
-    // seconds, well inside the post-event grace.
+    // belongs to the turn. The sweep runs on the quarter hours after it. The
+    // quick jobs above stay on waitUntil: they finish in seconds, well inside
+    // the post-event grace.
     // PR 420 (2026-09-23): the six-agent desk run is the firing's one model
     // job whenever one is queued, handed to the desk, or needs resuming. It
     // runs HERE, awaited, because this invocation has fifteen minutes of wall
@@ -1492,7 +1486,7 @@ export default {
     // promise a case read (2026-09-23).
     const ranDesk = !deskDoc ? false
       : await maybeRunDesk(env, { deadlineAt, doc: deskDoc }).catch((err) => { console.error('desk run:', err?.stack || err); return false; });
-    const ranAnalysis = ranDesk ? true : await runQueuedAnalyses(env, deadlineAt);
+    if (!ranDesk) await runQueuedAnalyses(env, deadlineAt);
     if (minute % 5 === 0) {
       // The sweep reads every open case and subscription and each one's
       // advisor state, so it is the most expensive thing on this clock. It
@@ -1502,7 +1496,6 @@ export default {
       // of the slower sweep is that a stranded case waits at most a quarter
       // hour instead of five minutes for someone to notice it.
       if (minute % 15 === 0) await requeueStranded(env);
-      if (!ranAnalysis) await maybeVoiceStudy(env);
     }
   },
 };
@@ -1525,31 +1518,6 @@ export default {
  * Written as a marker doc created with mustNotExist, so two cron fires in the
  * same minute cannot both claim the job, and a restart cannot replay it.
  */
-/**
- * Run-once: fire one voice study immediately (Eric, 2026-08-22: seven
- * readers "to read through my messages NOW"). force skips the clock and the
- * once-a-day gap but honors his off switch and the concurrent-claim guard
- * inside maybeVoiceStudy, so this can never stack a second study on a live
- * one. The nightly loop then carries on at its new 10pm hour.
- */
-async function voiceStudyKickoff(env) {
-  const MARKER = 'migrations/voice-study-2026-08-22';
-  const m = await getDoc(env, MARKER);
-  if (m?.data.finishedAt) return;
-  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 30 * 60_000) return;
-  const claimed = m
-    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
-    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
-  if (!claimed) return;
-  try {
-    const out = await maybeVoiceStudy(env, Date.now(), { force: true });
-    await patchDoc(env, MARKER, { finishedAt: new Date(), result: out?.reason || (out?.ran ? 'ran' : 'no') },
-      { mask: ['finishedAt', 'result'] });
-    console.log('voice study kickoff:', JSON.stringify(out));
-  } catch (err) {
-    console.error('voice study kickoff:', err.message || err);
-  }
-}
 
 /**
  * The books-closed window.
@@ -2048,51 +2016,6 @@ async function seedWorkClock(env) {
   }
 }
 
-/**
- * One-shot recovery from the 2026-08-24 wedge: cases whose overnight retries
- * burned the error-retry cap on full reads that could never fit the
- * background budget. With the delta bootstrap live those cases now run
- * short passes, so clear the burned counters, un-park the error, and queue
- * one attempt. Runs once; the marker pattern is the standard one.
- */
-async function unparkAdvisor(env) {
-  const MARKER = 'migrations/unpark-2026-08-25b';
-  const m = await getDoc(env, MARKER);
-  if (m?.data.finishedAt) return;
-  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
-  const claimed = m
-    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
-    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
-  if (!claimed) return;
-  const done = (result) => patchDoc(env, MARKER, { finishedAt: new Date(), result },
-    { mask: ['finishedAt', 'result'] }).catch(() => {});
-  try {
-    const cases = await listDocs(env, 'cases', { pageSize: 100, all: true }).catch(() => []);
-    let fixed = 0;
-    for (const c of cases.filter((r) => r.data.status !== 'closed')) {
-      const st = await getDoc(env, `cases/${c.id}/advisor/state`).catch(() => null);
-      const d = st?.data;
-      if (!d) continue;
-      const owed = d.pendingAt && (!d.updatedAt || new Date(d.pendingAt) > new Date(d.updatedAt));
-      // A "running" with a live beat is real work: leave it. A stale one is a
-      // corpse from the pre-batch era (every in-place background turn died),
-      // and waiting out the sweep's clocks costs another half hour.
-      const beatT = Math.max(d.startedAt ? new Date(d.startedAt).getTime() : 0,
-        d.progressAt ? new Date(d.progressAt).getTime() : 0);
-      const liveRun = d.status === 'running' && beatT && Date.now() - beatT < 10 * 60_000;
-      if (!owed || liveRun) continue;
-      await patchDoc(env, `cases/${c.id}/advisor/state`, {
-        status: 'idle', error: null, errorRetries: null, errorRetryAt: null,
-        startedAt: null, progressAt: null, stage: null, batchCtx: null,
-      }, { mask: ['status', 'error', 'errorRetries', 'errorRetryAt', 'startedAt', 'progressAt', 'stage', 'batchCtx'] });
-      await markPending(env, 'case', c.id).catch(() => {});
-      fixed += 1;
-    }
-    return done(`un-parked ${fixed}`);
-  } catch (err) {
-    console.error('unpark advisor:', err.message || err);
-  }
-}
 
 async function reviveLostSend(env) {
   const MARKER = 'migrations/revive-2026-08-22';
@@ -2189,7 +2112,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-25-wider-desk';
+const BUILD_TAG = 'v2026-09-25-no-auto-spend';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2197,7 +2120,7 @@ const BUILD_TAG = 'v2026-09-25-wider-desk';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.18';
+const VERSION = '7.19';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

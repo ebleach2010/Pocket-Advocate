@@ -1228,35 +1228,7 @@ async function retireRecs(env, previous, keep = [], { getMany = batchGetDocs, wr
   return ok.filter(Boolean).length;
 }
 
-/**
- * THE 7:00 RUN (Eric, 2026-09-23: "The Trading Desk automatically performs its
- * full market scan once per trading day at 7:00 AM Mountain Time. That remains
- * the ONLY automatic scheduled run."). Half an hour before the open, on a
- * trading day, once: the day is claimed under a precondition so two isolates
- * in the same minute cannot both queue it. It only queues; the drain runs it.
- */
-export const MORNING_MIN = 7 * 60;
-export const MORNING_WINDOW_MIN = 30;
-export async function maybeMorningRun(env, { now = Date.now() } = {}) {
-  // The clock first: outside the half hour this costs no read at all.
-  const { dateKey, minuteOfDay } = mtParts(now);
-  if (!isTradingDay(dateKey)) return { ran: false, why: 'not a trading day' };
-  if (minuteOfDay < MORNING_MIN || minuteOfDay >= MORNING_MIN + MORNING_WINDOW_MIN) return { ran: false, why: 'not the hour' };
-  const settings = await readSettings(env);
-  if (!settings.caseId) return { ran: false, why: 'no desk' };
-  const doc = await tryGet(env, STATE_PATH);
-  if (doc === READ_FAILED) return { ran: false, why: 'state unreadable' };
-  if (doc?.data?.morningDay === dateKey) return { ran: false, why: 'already ran' };
-  // A run of his still going: wait for it inside the window rather than
-  // spend the day's 7:00 run on it.
-  if (runAlive(doc?.data?.run, now)) return { ran: false, why: 'a run is going' };
-  // The day's stamp and the queued run land in ONE write, so the stamp can
-  // never be set without the run it stands for.
-  const next = { id: rid('run_'), status: 'queued', trigger: 'morning', queuedAt: new Date(now), attempt: 0, done: 0, error: null };
-  const mask = ['morningDay', 'morningAt', 'run'];
-  const claimed = await patchDoc(env, STATE_PATH, { morningDay: dateKey, morningAt: new Date(now), run: next },
-    doc ? { mask, ifUpdateTime: doc.updateTime } : { mask, mustNotExist: true }).catch(() => false);
-  if (claimed === false) return { ran: false, why: 'another isolate claimed it' };
-  await diagLog(env, { ev: 'desk-run-queued', trigger: 'morning' }).catch(() => {});
-  return { ran: true, day: dateKey, already: false, run: next };
-}
+// PARKED (Eric, 2026-09-25: "Park pr 420. No scans unless I manually do it. No auto token burn
+// anywhere."). The 7:00 run is gone: nothing starts a desk run on a clock. The only thing that queues
+// one is his tap on RUN TRADING DESK (requestRun, from the route); the cron only carries a run he
+// started through its two firings.

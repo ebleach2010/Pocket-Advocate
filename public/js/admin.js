@@ -260,15 +260,14 @@ async function load() {
     <details class="panel" style="margin-bottom:1rem;">
       <summary class="row" style="cursor:pointer;">
         <strong>Voice study</strong>
-        <span class="dim small">${voice.enabled ? `ran ${ago(voice.lastRunAt)}` : 'off'}</span>
+        <span class="dim small">${voice.lastRunAt ? `ran ${ago(voice.lastRunAt)}` : 'not run yet'}</span>
       </summary>
-      <p class="dim small" style="margin:.5rem 0 .6rem;">Every night at
-        ${voice.hour > 12 ? voice.hour - 12 : voice.hour}pm your time, three passes read how
-        you edit drafts and how you write to clients, and fold what they find into
+      <p class="dim small" style="margin:.5rem 0 .6rem;">Only when you tap Run one now
+        (2026-09-25: nothing spends on its own any more): three passes read how you edit
+        drafts and how you write to clients, and fold what they find into
         About&nbsp;you. ${voice.runs} run${voice.runs === 1 ? '' : 's'} so far.
         ${voice.lastError ? `<span style="color:var(--magenta);">Last one said: ${esc(voice.lastError)}</span>` : ''}</p>
       <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-        <button class="btn quiet" id="voice-toggle">${voice.enabled ? 'Stop it' : 'Start it again'}</button>
         <button class="btn quiet" id="voice-now">Run one now</button>
       </div>
       <p class="dim small" id="voice-said" style="margin:.4rem 0 0;" hidden></p>
@@ -607,14 +606,6 @@ async function load() {
     voiceSay.hidden = false;
     btn.disabled = false;
   };
-  const toggleVoice = listEl.querySelector('#voice-toggle');
-  if (toggleVoice) {
-    toggleVoice.addEventListener('click', () => voicePost(toggleVoice, { enabled: !voice.enabled }, (d) => {
-      voice = d;
-      toggleVoice.textContent = d.enabled ? 'Stop it' : 'Start it again';
-      return d.enabled ? 'Back on. Next one tonight.' : 'Stopped. Nothing runs until you start it again.';
-    }));
-  }
   const voiceNow = listEl.querySelector('#voice-now');
   if (voiceNow) {
     voiceNow.addEventListener('click', () => voicePost(voiceNow, { run: true }, (d) => {
