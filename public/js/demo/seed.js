@@ -640,6 +640,14 @@ export function seed({ set, file }) {
     catalyst: 'Deliveries 4% under the street estimate.', invalidation: 'A reclaim of VWAP at 412.',
     status: 'open', expiresAt: later(2),
   });
+  // The run's one high-risk trade (v7.17): a lower-cap stock whose size goes past his 3% rule.
+  REC('r-demo-6', {
+    slot: 5, horizon: 'intraday', ticker: 'SOUN', side: 'long', instrument: 'stock',
+    entryLow: 6.1, entryHigh: 6.25, stop: 5.45, targets: [7.4, 8.2], holdMinutes: 300, allocPct: 30,
+    profitLow: 41, profitHigh: 49, agreement: 2, backers: [1, 5], doubters: [3], lastPrice: 6.18, priceNow: 6.18, highRisk: true,
+    setup: 'Short interest near a quarter of the float and pressing yesterday\'s high on three times its volume.', catalyst: 'New automaker voice deal announced before the open.',
+    invalidation: 'Back under 5.60, the morning low.', status: 'open', expiresAt: later(4),
+  });
   // The one he took, forty minutes ago, lit yellow with PROFIT and LOSS on it.
   REC('r-demo-5', {
     runId: 'run-demo-earlier', slot: 1, horizon: 'intraday', ticker: 'PLTR', side: 'long', instrument: 'stock',
@@ -675,10 +683,10 @@ export function seed({ set, file }) {
     openedAt: days(8), openedDay: dk(8), status: 'closed', closedAt: days(8), closedDay: dk(8), exitPrice: 409.8, pnlCents: 5750,
   });
   set('trade/state', {
-    run: { id: RUN, status: 'idle', trigger: 'morning', queuedAt: hours(2.1), startedAt: hours(2.1), finishedAt: hours(2), done: 5, count: 4 },
+    run: { id: RUN, status: 'idle', trigger: 'morning', queuedAt: hours(2.1), startedAt: hours(2.1), finishedAt: hours(2), done: 5, count: 5 },
     desk: {
-      runId: RUN, at: hours(2), trigger: 'morning', count: 4, reports: 5,
-      ids: ['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4'], none: '',
+      runId: RUN, at: hours(2), trigger: 'morning', count: 5, reports: 5,
+      ids: ['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4', 'r-demo-6'], none: '',
       read: 'Chips lead and the index is holding its opening range on better volume than yesterday. Take strength that holds a retest; nothing extended.',
       news: [
         { headline: 'Nvidia raises data center guidance at its developer conference', why: 'The reason chips lead today, and the catalyst behind the NVDA trade.', tickers: ['NVDA', 'AMD'] },

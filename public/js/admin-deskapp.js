@@ -33,7 +33,7 @@ import {
   recCardHtml, boardHtml, historyRowHtml, deskNewsHtml, newsRowHtml, earningsChipHtml,
 } from './admin-desk.js';
 import { createFx, seedFlicker } from './admin-deskfx.js';
-import { recSizing, planFor, positionKey, heldOf, scalePosition, GLP1_CHAIN, AGENTS } from './trade-math.js';
+import { recSizing, planFor, positionKey, heldOf, scalePosition, GLP1_CHAIN, AGENTS, HIGH_RISK_PCT } from './trade-math.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -544,7 +544,9 @@ function openSheet(html) {
 }
 const riskSub = (pct) => {
   const b = balanceNow().cents;
-  return b > 0 ? `${pct}% of ${money(b)} is <span class="num">${money(Math.round((b * pct) / 100))}</span> a trade` : 'of the balance, on every trade';
+  // The one high-risk trade a run (v7.17) has its own cap, said here so the bigger size is never a surprise.
+  const bold = b > 0 ? ` The one high-risk trade a run may risk up to ${HIGH_RISK_PCT}%, <span class="num">${money(Math.round((b * HIGH_RISK_PCT) / 100))}</span>.` : ` The one high-risk trade a run may risk up to ${HIGH_RISK_PCT}%.`;
+  return (b > 0 ? `${pct}% of ${money(b)} is <span class="num">${money(Math.round((b * pct) / 100))}</span> a trade.` : 'of the balance, on every trade.') + bold;
 };
 /** The 15-minute charts' line in Settings: whether Alpaca's key is on file, and what Alpaca said when it was saved. */
 function barsSub(pub) {
@@ -749,7 +751,10 @@ async function pollOnce() {
       box.classList.remove('landed'); void box.offsetWidth; box.classList.add('landed');
       // The bar reads full for a moment when trades land, then goes; a run that failed just goes.
       if (S.state.run?.status !== 'error') { BAR.doneUntil = Date.now() + 1400; paintBar(); setTimeout(paintBar, 1500); }
-      const fresh = (S.state.recs || []).filter((r) => !before.has(r.id)).length;
+      const freshRecs = (S.state.recs || []).filter((r) => !before.has(r.id));
+      const fresh = freshRecs.length;
+      // The high-risk trade is named as such the moment it lands (v7.17).
+      const bold = freshRecs.some((r) => r.highRisk) ? (fresh === 1 ? ', and it is high risk' : ', one of them high risk') : '';
       if (S.state.run?.status === 'error') toast('The run did not finish. The line under the button says why.');
       else {
         // What the run says about the trades he took, sells first, with how many agree (v7.13).
@@ -758,7 +763,7 @@ async function pollOnce() {
         const sells = vs.filter((x) => x.call === 'sell').map((x) => `${x.instrument === 'stock' && x.side === 'short' ? 'Cover' : 'Sell'} ${x.ticker} now${of(x)}.`);
         const rest = ['trim', 'add', 'hold'].map((c) => { const t = vs.filter((x) => x.call === c); return t.length ? ` ${c[0].toUpperCase()}${c.slice(1)} ${t.map((x) => `${x.ticker}${of(x)}`).join(', ')}.` : ''; }).join('');
         const yours = `${sells.length ? ` ${sells.join(' ')}` : ''}${rest}`;
-        toast(`${fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}.` : 'The desk is in. Nothing worth taking right now.'}${yours}`);
+        toast(`${fresh ? `The desk is in: ${fresh} trade${fresh === 1 ? '' : 's'}${bold}.` : 'The desk is in. Nothing worth taking right now.'}${yours}`);
         if (sells.length) $('#active-wrap')?.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
       }
       S.news = null;

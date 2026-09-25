@@ -115,6 +115,8 @@ export function recRow(id, d) {
     verdict: d?.verdict && ['hold', 'add', 'trim', 'sell'].includes(d.verdict.call) ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null, votes: d?.verdict?.votes && typeof d.verdict.votes === 'object' ? Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, ['hold', 'add', 'trim', 'sell'].includes(d.verdict.votes[n]) ? d.verdict.votes[n] : null])) : null } : null,
     // Who was for and against a new trade, by researcher number (v7.13).
     backers: Array.isArray(d?.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d?.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
+    // The one high-risk trade of its run (v7.17), sized to its own cap.
+    highRisk: d?.highRisk === true,
     // The 15-minute chart at its last run, in a line (v7.15).
     chart: d?.chart && typeof d.chart.line === 'string' && d.chart.line ? { line: d.chart.line.slice(0, 120), at: iso(d.chart.at) } : null,
   };

@@ -5,7 +5,7 @@
 // Eric, 2026-09-23: "Simplify the trading app substantially. The app should
 // now have only two primary purposes: 1. Suggested Trades 2. Market News."
 //
-// Twelve sections, A to L (M, N and O came after: his size, accept or pass, and ADD/TRIM; P the re-check; Q the 15-minute charts): the shelf card opens the desk; the shell is three
+// Twelve sections, A to L (M, N and O came after: his size, accept or pass, and ADD/TRIM; P the re-check; Q the 15-minute charts; R the high-risk trade): the shelf card opens the desk; the shell is three
 // tabs and a cog with no chat anywhere; the board reads every field of a trade
 // grouped by kind with the taken one lit yellow; RUN TRADING DESK walks its
 // stages and lands fresh trades; YES lights a card and gives it PROFIT and
@@ -93,8 +93,9 @@ ok('it is always dark', shell.dark === 'rgb(6, 10, 19)', shell.dark);
 console.log('\n--- C. the board: every field of a trade, grouped by kind, the taken one lit ---');
 const board = await cards('#board .rec');
 const active = await cards('#active .rec');
-ok('the board groups scalp, intraday and swing in that order', (await page.evaluate(() => [...document.querySelectorAll('#board .kindgroup')].map((g) => g.dataset.kind).join())) === 'scalp,intraday,swing');
-ok('the last run\'s four trades are on the board', board.map((c) => c.tk).join() === 'TSLA,NVDA,SOFI,AMD', board.map((c) => c.tk).join());
+// RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
+ok('the board groups scalp, intraday and swing in that order, then High risk', (await page.evaluate(() => [...document.querySelectorAll('#board .kindgroup')].map((g) => g.dataset.kind).join())) === 'scalp,intraday,swing,highrisk');
+ok('the last run\'s four trades and its high-risk one are on the board', board.map((c) => c.tk).join() === 'TSLA,NVDA,SOFI,AMD,SOUN', board.map((c) => c.tk).join());
 const nv = board.find((c) => c.tk === 'NVDA');
 // RE-PINNED 2026-09-24 (v7.10): how many agree moved from the Desk row to just under the chance (section P reads it there).
 ok('a trade reads every field he asked for', !!nv && ['Now', 'Entry', 'Amount', 'Hold', 'Stop', 'Targets', 'Risk', 'Reward', 'R:R'].every((k) => nv.cells[k]) && ['Catalyst', 'Out if'].every((k) => nv.why.includes(k)) && await page.evaluate(() => /^\d of 5 agree$/.test(document.querySelector('#board .rec .odds .agree')?.textContent.trim() || '')), JSON.stringify(nv?.cells));
@@ -106,7 +107,8 @@ ok('every trade on the board offers YES and NO and nothing else', board.every((c
 // RE-PINNED 2026-09-24 (v7.8): ADD/TRIM sits between PROFIT and LOSS.
 ok('the one he took is lit, electric yellow, with PROFIT, ADD/TRIM and LOSS', active.length === 1 && active[0].tk === 'PLTR' && active[0].active && active[0].acts.join() === 'profit,scale,loss' && active[0].border === 'rgb(244, 255, 31)', JSON.stringify(active.map((c) => [c.tk, c.border])));
 ok('the tab carries the count of taken trades', (await page.evaluate(() => document.getElementById('bar-badge').textContent)) === '1');
-ok('the line under the button says when the last run was', /^Last run .+ · 4 trades$/.test(await page.evaluate(() => document.getElementById('run-line').textContent.trim())));
+// RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
+ok('the line under the button says when the last run was', /^Last run .+ · 5 trades$/.test(await page.evaluate(() => document.getElementById('run-line').textContent.trim())));
 ok('the sub line shows the balance and the 3% rule', /Balance \$2,380\.00 · risk 3% a trade/.test(await page.evaluate(() => document.getElementById('trades-sub').textContent)));
 await shot('C-board');
 
@@ -119,14 +121,16 @@ ok('one tap starts it with no confirmation and the button goes down', !!started,
 const researching = await until(() => /of 5 back/.test(document.getElementById('run-line').textContent) && document.querySelectorAll('#run-line .agents i').length === 5 && document.getElementById('run-line').textContent, 12000);
 ok('the line counts the researchers back, with five dots', !!researching, researching || '');
 const landed = await until(() => !document.getElementById('run').disabled && /Last run/.test(document.getElementById('run-line').textContent) && document.querySelector('#toasts .toast')?.textContent, 20000);
-ok('the run lands on its own and says how many trades', /The desk is in: 3 trades\./.test(landed || ''), landed || '');
+// RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
+ok('the run lands on its own and says how many trades, one of them high risk', /The desk is in: 4 trades, one of them high risk\./.test(landed || ''), landed || '');
 await page.waitForTimeout(2200);
 const bar = await page.evaluate(() => { clearInterval(window.__barTick); return { seen: window.__bar.filter((v) => v != null), hiddenNow: document.getElementById('runbar').hidden }; });
 const shown = bar.seen;
 const beforeFull = shown.slice(0, Math.max(0, shown.indexOf(100)));
 ok('the bar shows while the run goes, only ever moves forward, stays under 100 until the trades land, reads 100 when they do, and then goes', shown.length > 5 && shown.every((v, i) => i === 0 || v >= shown[i - 1]) && beforeFull.length > 3 && beforeFull.every((v) => v < 100) && beforeFull.some((v) => v >= 8 && v < 72) && shown.includes(100) && bar.hiddenNow, JSON.stringify({ n: shown.length, first: shown.slice(0, 4), last: shown.slice(-4), hidden: bar.hiddenNow }));
 const fresh = await cards('#board .rec');
-ok('the board is the fresh run\'s trades and nothing from the last one', fresh.map((c) => c.tk).join() === 'AMD,QQQ,MU', fresh.map((c) => c.tk).join());
+// RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
+ok('the board is the fresh run\'s trades and nothing from the last one', fresh.map((c) => c.tk).join() === 'AMD,QQQ,MU,RKLB', fresh.map((c) => c.tk).join());
 ok('the desk\'s one line on the tape is shown', /Semis are leading/.test(await page.evaluate(() => document.getElementById('deskread-t').textContent)));
 ok('the taken trade stays lit through a run', (await cards('#active .rec')).map((c) => c.tk).join() === 'PLTR');
 await shot('D-landed');
@@ -289,7 +293,8 @@ const passed = await until(() => ![...document.querySelectorAll('#board .rec')].
 ok('NO takes it off the board and says when it can come back', /^Passed on AMD\. It comes back only if more than 3 of 5 agree\.$/.test(passed || ''), passed || '');
 await runAgain();
 const afterPass = await boardTks();
-ok('the next run leaves the AMD scalp off the board, and the others come', afterPass === 'MU,QQQ', afterPass);
+// RE-PINNED 2026-09-25 (v7.17): each run carries its one high-risk trade in its own section after the kinds.
+ok('the next run leaves the AMD scalp off the board, and the others come', afterPass === 'MU,QQQ,RKLB', afterPass);
 await page.evaluate(() => [...document.querySelectorAll('#board .rec')].find((c) => c.querySelector('.tk')?.textContent.trim() === 'QQQ')?.querySelector('[data-act="take"]')?.click());
 await until(() => [...document.querySelectorAll('#active .rec')].some((c) => c.querySelector('.tk').textContent.trim() === 'QQQ'), 4000);
 await runAgain();
@@ -463,6 +468,41 @@ ok('the Secret is nowhere on the page once saved', !leak);
 await shot('Q-settings');
 await page.evaluate(() => document.querySelector('.settings [data-x]')?.click());
 await page.waitForTimeout(300);
+
+console.log('\n--- R. one high-risk trade, in its own section, sized to 10% ---');
+// Eric, 2026-09-25: "Add exactly one stock per turn for high risk high reward. Usually options or high entry
+// positions on lower cap stocks that exceed my 3% limit." He chose a 10% cap and a 40% bar.
+await page.evaluate(() => localStorage.removeItem('pa-demo-store'));
+await page.goto(DESK, { waitUntil: 'networkidle' });
+await page.waitForTimeout(1500);
+const hrBoard = await page.evaluate(() => {
+  const secs = [...document.querySelectorAll('#board .kindgroup')].map((g) => ({ kind: g.dataset.kind, head: g.querySelector('.kindhead')?.childNodes[0]?.textContent.trim(), n: g.querySelectorAll('.rec').length }));
+  const c = document.querySelector('#board .kindgroup[data-kind="highrisk"] .rec');
+  const cells = c ? Object.fromEntries([...c.querySelectorAll('.cell')].map((x) => [x.querySelector('.k').textContent.trim(), x.querySelector('.v').textContent.trim()])) : {};
+  return {
+    secs, tk: c?.querySelector('.tk')?.textContent.trim(), tag: c?.querySelector('.hitag')?.textContent.trim(),
+    note: c?.querySelector('.deal-note.risk')?.textContent.trim(), risk: cells.Risk || '',
+    others: [...document.querySelectorAll('#board .kindgroup:not([data-kind="highrisk"]) .rec .hitag')].length,
+    wide: document.documentElement.scrollWidth > window.innerWidth + 1,
+  };
+});
+const riskDollars = Number(String(hrBoard.risk).replace(/[$,]/g, ''));
+ok('the high-risk trade sits alone in its own High risk section, last, and no other card carries the tag', hrBoard.secs.length >= 2 && hrBoard.secs[hrBoard.secs.length - 1].kind === 'highrisk' && hrBoard.secs[hrBoard.secs.length - 1].head === 'High risk' && hrBoard.secs[hrBoard.secs.length - 1].n === 1 && hrBoard.tk === 'SOUN' && hrBoard.others === 0, JSON.stringify(hrBoard));
+ok('its card says High risk and that it is sized up to 10% of the balance', hrBoard.tag === 'High risk' && /^High risk, high reward\. Sized to risk up to 10% of your balance, above your usual rule/.test(hrBoard.note || ''), JSON.stringify(hrBoard));
+ok('its risk goes past the 3% rule ($71.40 on $2,380) and stays inside 10% ($238)', riskDollars > 71.4 && riskDollars <= 238, hrBoard.risk);
+await page.evaluate(() => document.querySelector('#board .kindgroup[data-kind="highrisk"]')?.scrollIntoView({ block: 'start' }));
+await page.waitForTimeout(300);
+await shot('R-highrisk');
+await page.evaluate(() => document.getElementById('cog').click());
+await page.waitForTimeout(400);
+const riskLine = await page.evaluate(() => document.getElementById('risk-sub')?.textContent.trim() || '');
+ok('Settings says the one high-risk trade may risk up to 10%, in dollars', /The one high-risk trade a run may risk up to 10%, \$238\.00\.$/.test(riskLine), riskLine);
+await page.evaluate(() => document.querySelector('.settings [data-x]')?.click());
+await page.waitForTimeout(300);
+await page.click('#run');
+const hrToast = await until(() => !document.getElementById('run').disabled && [...document.querySelectorAll('#toasts .toast')].map((t) => t.textContent).find((t) => /The desk is in/.test(t)), 20000);
+const hrFresh = await page.evaluate(() => [...document.querySelectorAll('#board .kindgroup[data-kind="highrisk"] .rec .tk')].map((x) => x.textContent.trim()));
+ok('a run lands with its one high-risk trade named in the toast and in the section', /^The desk is in: \d+ trades, one of them high risk\./.test(hrToast || '') && JSON.stringify(hrFresh) === '["RKLB"]', JSON.stringify({ hrToast, hrFresh }));
 
 console.log('\n--- J. reduced motion keeps the moment still ---');
 const still = await ctx.newPage();

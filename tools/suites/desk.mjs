@@ -99,6 +99,7 @@ function load(deps) {
     isTradingDay: TM.isTradingDay, isMarketOpen: TM.isMarketOpen, swingLastDay: TM.swingLastDay, nextDateKey: TM.nextDateKey,
     EARLY_CLOSE_MIN: TM.EARLY_CLOSE_MIN, MARKET_CLOSE_MIN: TM.MARKET_CLOSE_MIN, MARKET_OPEN_MIN: TM.MARKET_OPEN_MIN,
     positionKey: TM.positionKey, screenTrades: TM.screenTrades, GLP1_CHAIN: TM.GLP1_CHAIN,
+    HIGH_RISK_PCT: TM.HIGH_RISK_PCT, HIGH_RISK_FLOOR: TM.HIGH_RISK_FLOOR,
     // The 15-minute charts (v7.15). A check that gives the settings Alpaca's pair also fakes fetchBars.
     resolveBars: TD.resolveBars, fetchBars: TD.fetchBars, chartsOf: TD.chartsOf, chartsBlock: TD.chartsBlock, chartLine: TD.chartLine, BARS_MAX_SYMBOLS: TD.BARS_MAX_SYMBOLS,
   };
@@ -747,7 +748,9 @@ const SPARE = 6;
     research: { runId: 'run_x', market: 'SPY 500', live: heldIds.map((id, i) => ({ ref: `E${i + 1}`, id, ticker: HELD[id].ticker })), r1: { status: 'ok', text: REPORT(1) + verdicts }, r2: { status: 'ok', text: REPORT(2) + verdicts }, r3: { status: 'ok', text: REPORT(3) + verdicts }, r4: { status: 'ok', text: REPORT(4) + verdicts }, r5: { status: 'ok', text: REPORT(5) + verdicts } },
     plays: { ...HELD, ...Object.fromEntries(prevIds.map((id) => [id, { ticker: 'OLD', status: 'open', runId: 'prev' }])) },
   });
-  const dOut = await load(D.deps).executeRun(env, deskRun, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: SIX })) }) }, D.w), quoteCached: quoteCounted(D), fetchBars: barsCounted(D) } });
+  // RE-PINNED 2026-09-25 (v7.17): the worst desk answer carries the high-risk trade as well, a stock, so
+  // seven are priced and filed.
+  const dOut = await load(D.deps).executeRun(env, deskRun, { deadlineAt: WED_10 + 12.5 * 60_000, deps: { liveTurn: turns({ desk: () => ({ text: JSON.stringify(DESK_OUT({ trades: SIX, highRisk: [TRADE({ ticker: 'SOUN', entryLow: 6.1, entryHigh: 6.25, stop: 5.45, targets: [7.4], chanceLow: 42, chanceHigh: 49 })] })) }) }, D.w), quoteCached: quoteCounted(D), fetchBars: barsCounted(D) } });
   restore();
   const room = DR.CALL_CAP - OUTSIDE - SPARE;
   const recs = [...D.docs.keys()].filter((k) => k.startsWith(`${TD.PLAYS}/rec_`));
@@ -763,10 +766,12 @@ const SPARE = 6;
   //   FAIL  D24 every firing fits inside the fifty calls ...
   // NEGATIVE CONTROL (run 2026-09-24, v7.15): the research firing's charts asked one ticker at a time (`Promise.all(chartSyms.map((t) => bars(barsKey, [t], t0)))`) made this read
   //   FAIL  D24 every firing fits inside the fifty calls ...
-  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key, twelve trades he holds to show and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices six trades, files them in one write, re-checks twelve he holds in one read and one write, retires six old ideas in one read and one write, and pushes`,
+  // NEGATIVE CONTROL (run 2026-09-25, v7.17): checkDesk's high-risk trade never kept (`const r = null;`) made this read
+  //   FAIL  D24 every firing fits inside the fifty calls ...
+  check(`D24 every firing fits inside the fifty calls an invocation gets, counted at its worst with ${OUTSIDE} spent before the run and ${SPARE} kept spare: the research firing with a market key, twelve trades he holds to show and all five back, the research firing whose five are all refused and whose 7:00 push goes out, and the desk firing that prices seven trades (the six and the high-risk one), files them in one write, re-checks twelve he holds in one read and one write, retires six old ideas in one read and one write, and pushes`,
     rOut.handedOff === true && R.w.calls <= room && R.w.batches.filter((b) => b.get).length === 1
     && xOut.ok === false && X.w.pushes.length === 1 && X.w.calls <= room
-    && dOut.ok === true && recs.length === 6 && D.w.calls <= room
+    && dOut.ok === true && recs.length === 7 && D.w.calls <= room
     && D.w.batches.filter((b) => b.write).length === 3 && D.w.batches.filter((b) => b.get).length === 2
     // RE-PINNED 2026-09-24 (v7.12): nothing leaves his list; the ones all five are against are SELL.
     && heldIds.every((id, i) => D.docs.get(`${TD.PLAYS}/${id}`).data.status === 'took' && D.docs.get(`${TD.PLAYS}/${id}`).data.verdict?.call === (i % 2 ? 'sell' : 'hold'))
@@ -1180,6 +1185,43 @@ const SPARE = 6;
     && /When the message carries 15-minute charts, read VWAP, the 9, 20 and 50 EMAs and the MACD from them rather than searching/.test(DR.LENSES[0].beat)
     && /The 15-minute charts, when the message has them, are worked out from real bars\. For a scalp or an intraday trade, set the entry and the stop against VWAP and the 9, 20 and 50 EMAs/.test(DR.deskSystem('cash')),
     JSON.stringify({ asked: on.asked.map((a) => a.length), off: off.st.desk.charts, nokey: nokey.asked.length, recs: on.recs.map((r) => [r.ticker, r.chart?.line]) }));
+}
+
+{
+  // ---- D37: one high-risk, high-reward trade a run (2026-09-25, v7.17) --------------------------------
+  // Eric: "Add exactly one stock per turn for high risk high reward. Usually options or high entry positions
+  // on lower cap stocks that exceed my 3% limit." He chose a 10% cap on its risk and a 40% bar on its chance.
+  const HR = (over = {}) => TRADE({ ticker: 'RKLB', horizon: 'swing', instrument: 'call', strike: 30, expiry: '2026-10-02', holdMinutes: null, holdDays: 3, entryLow: 1.6, entryHigh: 1.75, stop: 1.1, targets: [2.8, 3.6], chanceLow: 42, chanceHigh: 50, lastPrice: 28.9, setup: 'Coiled under 30 into the launch window.', ...over });
+  const SIXT = [
+    TRADE({ ticker: 'NVDA', horizon: 'scalp', holdMinutes: 8 }), TRADE({ ticker: 'AMD', horizon: 'scalp', holdMinutes: 8 }),
+    TRADE({ ticker: 'TSLA' }), TRADE({ ticker: 'META' }),
+    TRADE({ ticker: 'XLE', horizon: 'swing', holdMinutes: null, holdDays: 2 }), TRADE({ ticker: 'XLF', horizon: 'swing', holdMinutes: null, holdDays: 2 }),
+  ];
+  const c = DR.checkDesk({ trades: SIXT, highRisk: [HR({ ticker: 'SOUN', chanceLow: 39, chanceHigh: 47 }), HR({ ticker: 'TSLA', instrument: 'stock', strike: null, expiry: null, horizon: 'intraday', holdMinutes: 120, holdDays: null, entryLow: 247.5, entryHigh: 248, stop: 245.8, targets: [251] }), HR(), HR({ ticker: 'IONQ' })] }, { accountType: 'cash', todayKey: '2026-09-24' });
+  const hr = c.trades.filter((t) => t.highRisk);
+  // The same 42% as an ordinary trade is under his bar; the same numbers as the high-risk one pass.
+  const plain = DR.checkDesk({ trades: [HR()] }, { accountType: 'cash', todayKey: '2026-09-24' });
+  const edge = DR.checkDesk({ trades: [], highRisk: [HR({ chanceLow: 40, chanceHigh: 44 })] }, { accountType: 'cash', todayKey: '2026-09-24' });
+  const S = DR.DESK_SCHEMA;
+  // A run: the high-risk trade is filed flagged, priced like any other, and named in the push.
+  at(WED_10);
+  const r = await oneRun({ turns: { desk: () => ({ text: JSON.stringify(DESK_OUT({ highRisk: [HR()] })) }) } });
+  const filed = [...r.docs.entries()].filter(([pth]) => pth.startsWith(`${TD.PLAYS}/rec_`)).map(([, v]) => v.data);
+  const push = r.w.pushes.map((x) => x.body).join(' | ');
+  // NEGATIVE CONTROL (run 2026-09-25): checkDesk's `|| trades.some((x) => x.highRisk)` dropped (so a second high-risk trade is kept) made this read
+  //   FAIL  D37 one high-risk, high-reward trade a run ...
+  check('D37 one high-risk, high-reward trade a run: the desk\'s answer has its own highRisk list of the same shape; one under 40% is dropped, one on a position already listed is dropped, the first that clears 40% is kept flagged and a second is dropped; it rides beside a full six rather than in their place; at exactly 40 it passes, while the same 42% as an ordinary trade is under his bar; both briefs ask for it, the desk for exactly one, with its 10% cap and 40% bar; and in a run it is filed flagged and named in the push with its chance',
+    S.required.includes('highRisk') && S.properties.highRisk.type === 'array' && S.properties.highRisk.items === S.properties.trades.items
+    && c.trades.length === 7 && hr.length === 1 && hr[0].ticker === 'RKLB' && hr[0].instrument === 'call' && c.trades.slice(0, 6).every((t) => !('highRisk' in t)) && c.dropped === 3
+    && plain.trades.length === 0 && edge.trades.length === 1 && edge.trades[0].highRisk === true
+    && TM.HIGH_RISK_PCT === 10 && TM.HIGH_RISK_FLOOR === 40
+    && /Your one best high-risk, high-reward idea, if your beat has one, marked High risk: yes\. Usually an option, or a lower-cap stock/.test(DR.researchSystem('cash')) && /an honest chance of at least 40%/.test(DR.researchSystem('cash'))
+    && /put exactly one trade in highRisk on every run\./.test(DR.deskSystem('cash')) && /It may risk up to 10% of the account at its stop instead of his usual rule, and it needs an honest chanceLow of at least 40\./.test(DR.deskSystem('cash'))
+    && /Leave highRisk empty only when nothing honest clears 40%/.test(DR.deskSystem('cash')) && /\(10% for the high-risk trade\)/.test(DR.deskSystem('cash'))
+    && /fields read, none, trades, highRisk, news and holdings/.test(SRC)
+    && filed.filter((d) => d.highRisk === true).length === 1 && filed.find((d) => d.highRisk).ticker === 'RKLB' && filed.filter((d) => !d.highRisk).length === 2
+    && /High risk: RKLB call, 42 to 50%\./.test(push),
+    JSON.stringify({ kept: c.trades.map((t) => `${t.ticker}${t.highRisk ? '*' : ''}`), dropped: c.dropped, plain: plain.trades.length, edge: edge.trades.length, filed: filed.map((d) => `${d.ticker}${d.highRisk ? '*' : ''}`), push }));
 }
 
 // THE COUNTER IS COUNTED LAST (the rule from trade.mjs, 2026-09-22): every check above is counted.

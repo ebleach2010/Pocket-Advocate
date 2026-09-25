@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.16';
+export const VERSION = '7.17';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.16';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE HIGH-RISK TRADE (Eric, 2026-09-25: "Add exactly one stock per turn
+    // for high risk high reward."). Admin only.
+    version: '7.17',
+    quiet: true,
+    client: [],
+    admin: [
+      'Every run now adds one high-risk, high-reward trade, in its own High risk section under the others. Usually an option, or a lower-cap stock.',
+      'It is sized to risk up to 10% of your balance instead of your 3% rule, and it needs a 40% chance instead of 50%. Some runs will have none.',
+    ],
+  },
   {
     // SIGN-IN WAITS ON GOOGLE (Eric, 2026-09-24, 2:03 AM: the Clients page on
     // "Stuck on: checking your sign-in"). Admin only.

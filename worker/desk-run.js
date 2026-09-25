@@ -62,7 +62,7 @@ import {
   marketSnapshot, quoteCached, rid, realDate,
   resolveBars, fetchBars, chartsOf, chartsBlock, chartLine, BARS_MAX_SYMBOLS,
 } from './trade-desk.js';
-import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades, GLP1_CHAIN } from '../public/js/trade-math.js';
+import { isTradingDay, isMarketOpen, swingLastDay, nextDateKey, EARLY_CLOSE_MIN, MARKET_CLOSE_MIN, MARKET_OPEN_MIN, positionKey, screenTrades, GLP1_CHAIN, HIGH_RISK_PCT, HIGH_RISK_FLOOR } from '../public/js/trade-math.js';
 
 // ---- the settings of a run ---------------------------------------------------
 // "Use Fable unless I explicitly tell you otherwise." Every one of the six
@@ -258,6 +258,7 @@ export function researchSystem(accountType) {
 What the desk needs from you:
 - The strongest opportunities your beat turns up right now, across scalps (held 1 to 10 minutes), intraday trades (held 1 to 8 hours and flat by the close) and swing trades (held up to 3 trading days and never over a weekend). Bring every candidate you honestly rate above ${CHANCE_FLOOR}% to reach its first target before its stop, the low end of your range, in every horizon your beat covers and in stocks and options alike: he sees every trade that clears that bar. None is still the right answer for a horizon where nothing clears it.
 - For every candidate: the ticker, long or short, scalp, intraday or swing, the last price with its time and where it came from, an entry zone, a stop, one or two targets, the expected hold, the setup in one sentence, the catalyst, what would invalidate it, and your honest chance, as a range such as 55 to 62, that it reaches the first target before the stop.
+- Your one best high-risk, high-reward idea, if your beat has one, marked High risk: yes. Usually an option, or a lower-cap stock with room to run whose sensible size would risk more than his usual rule. It still needs an honest chance of at least ${HIGH_RISK_FLOOR}% to reach its first target before its stop, and everything else a candidate needs.
 - The names you looked at and rejected, one line each, with the reason. The desk uses these to settle disagreements.
 - Anything outside your beat that would materially change a trade, such as a halt, an offering, or a macro release in the next hour.
 
@@ -305,7 +306,9 @@ Limits:
 - Options only when clearly better than the stock and liquid. For an option, entry, stop and targets are premium prices per share, lastPrice is the premium, and strike and expiry (YYYY-MM-DD) name the contract.
 - For a long, the stop is below the entry zone and the targets above it; for a short stock, the reverse.
 
-Sizing: allocPct is the share of his account you would put in this trade, from 1 to 50. The app turns it into dollars and shares from his balance and caps it so a stopped-out trade costs no more than ${riskPct}% of the account, so you do not do that arithmetic. Set stops where the trade is actually wrong, not where the size looks good.
+The high-risk trade (Eric: "Add exactly one stock per turn for high risk high reward. Usually options or high entry positions on lower cap stocks that exceed my 3% limit."): put exactly one trade in highRisk on every run. It is the best high-risk, high-reward trade the reports support: usually an option, or a lower-cap stock with room to run. It may risk up to ${HIGH_RISK_PCT}% of the account at its stop instead of his usual rule, and it needs an honest chanceLow of at least ${HIGH_RISK_FLOOR}. It is not one of the trades above, never the same position as one of them, and it does not count toward their limits. Leave highRisk empty only when nothing honest clears ${HIGH_RISK_FLOOR}%, and never raise a number to clear it.
+
+Sizing: allocPct is the share of his account you would put in this trade, from 1 to 50. The app turns it into dollars and shares from his balance and caps it so a stopped-out trade costs no more than ${riskPct}% of the account (${HIGH_RISK_PCT}% for the high-risk trade), so you do not do that arithmetic. Set stops where the trade is actually wrong, not where the size looks good.
 
 What he reads has to fit on a phone card at a glance. setup is one sentence under 25 words, catalyst under 15 words, invalidation under 20 words. Plain English with no jargon he would have to decode, and never an em dash or an en dash. chanceLow and chanceHigh are your honest range, in percent, that the first target is reached before the stop. backers are the researchers, by number 1 to 5, who independently brought or supported the trade, and doubters are the ones who rejected it or argued against it; a researcher is in one list or neither, never both. agreement is how many backers there are.
 
@@ -319,47 +322,47 @@ news is up to ${MAX_NEWS} items that matter for trading today, each with the tic
 const NUM = { type: 'number' };
 const NULL_NUM = { anyOf: [{ type: 'number' }, { type: 'null' }] };
 const NULL_STR = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+const TRADE_ITEM = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['ticker', 'side', 'horizon', 'instrument', 'lastPrice', 'entryLow', 'entryHigh', 'stop', 'targets',
+    'holdMinutes', 'holdDays', 'allocPct', 'chanceLow', 'chanceHigh', 'setup', 'catalyst', 'invalidation',
+    'strike', 'expiry', 'agreement', 'backers', 'doubters'],
+  properties: {
+    ticker: { type: 'string' },
+    side: { type: 'string', enum: ['long', 'short'] },
+    horizon: { type: 'string', enum: ['scalp', 'intraday', 'swing'] },
+    instrument: { type: 'string', enum: ['stock', 'call', 'put'] },
+    lastPrice: NUM,
+    entryLow: NUM,
+    entryHigh: NUM,
+    stop: NUM,
+    targets: { type: 'array', items: NUM },
+    holdMinutes: NULL_NUM,
+    holdDays: NULL_NUM,
+    allocPct: NUM,
+    chanceLow: { type: 'integer' },
+    chanceHigh: { type: 'integer' },
+    setup: { type: 'string' },
+    catalyst: { type: 'string' },
+    invalidation: { type: 'string' },
+    strike: NULL_NUM,
+    expiry: NULL_STR,
+    agreement: { type: 'integer' },
+    backers: { type: 'array', items: { type: 'integer' } },
+    doubters: { type: 'array', items: { type: 'integer' } },
+  },
+};
 export const DESK_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['read', 'none', 'trades', 'news', 'holdings'],
+  required: ['read', 'none', 'trades', 'highRisk', 'news', 'holdings'],
   properties: {
     read: { type: 'string' },
     none: { type: 'string' },
-    trades: {
-      type: 'array',
-      items: {
-        type: 'object',
-        additionalProperties: false,
-        required: ['ticker', 'side', 'horizon', 'instrument', 'lastPrice', 'entryLow', 'entryHigh', 'stop', 'targets',
-          'holdMinutes', 'holdDays', 'allocPct', 'chanceLow', 'chanceHigh', 'setup', 'catalyst', 'invalidation',
-          'strike', 'expiry', 'agreement', 'backers', 'doubters'],
-        properties: {
-          ticker: { type: 'string' },
-          side: { type: 'string', enum: ['long', 'short'] },
-          horizon: { type: 'string', enum: ['scalp', 'intraday', 'swing'] },
-          instrument: { type: 'string', enum: ['stock', 'call', 'put'] },
-          lastPrice: NUM,
-          entryLow: NUM,
-          entryHigh: NUM,
-          stop: NUM,
-          targets: { type: 'array', items: NUM },
-          holdMinutes: NULL_NUM,
-          holdDays: NULL_NUM,
-          allocPct: NUM,
-          chanceLow: { type: 'integer' },
-          chanceHigh: { type: 'integer' },
-          setup: { type: 'string' },
-          catalyst: { type: 'string' },
-          invalidation: { type: 'string' },
-          strike: NULL_NUM,
-          expiry: NULL_STR,
-          agreement: { type: 'integer' },
-          backers: { type: 'array', items: { type: 'integer' } },
-          doubters: { type: 'array', items: { type: 'integer' } },
-        },
-      },
-    },
+    trades: { type: 'array', items: TRADE_ITEM },
+    // The one high-risk trade (Eric, 2026-09-25): none, or one, in its own list.
+    highRisk: { type: 'array', items: TRADE_ITEM },
     holdings: {
       type: 'array',
       items: {
@@ -555,7 +558,7 @@ const clip = (s, n) => stripDashes(String(s || '')).replace(/\s+/g, ' ').trim().
  * that is not one, a short he cannot place, prices on the wrong side of the
  * entry, an option with no contract. Pure.
  */
-export function validRec(t, { accountType = 'cash', session = null, todayKey = null } = {}) {
+export function validRec(t, { accountType = 'cash', session = null, todayKey = null, highRisk = false } = {}) {
   if (!t || typeof t !== 'object') return null;
   const ticker = String(t.ticker || '').trim().toUpperCase();
   if (!TICKER_RE.test(ticker)) return null;
@@ -588,8 +591,9 @@ export function validRec(t, { accountType = 'cash', session = null, todayKey = n
   let cLo = Math.round(fin(t.chanceLow) ?? 0); let cHi = Math.round(fin(t.chanceHigh) ?? 0);
   if (cLo > cHi) [cLo, cHi] = [cHi, cLo];
   const chanceOk = cLo >= 1 && cHi <= 99;
-  // His bar: nothing at or below it reaches him, and a trade with no chance given cannot clear it.
-  if (!chanceOk || cLo <= CHANCE_FLOOR) return null;
+  // His bar: nothing at or below it reaches him, and a trade with no chance given cannot clear it. The
+  // high-risk trade has its own, lower one (Eric chose "Needs 40%+"): at least HIGH_RISK_FLOOR.
+  if (!chanceOk || (highRisk ? cLo < HIGH_RISK_FLOOR : cLo <= CHANCE_FLOOR)) return null;
   const hm = fin(t.holdMinutes); const hd = fin(t.holdDays);
   const setup = clip(t.setup, 220);
   if (!setup) return null;
@@ -603,6 +607,7 @@ export function validRec(t, { accountType = 'cash', session = null, todayKey = n
     profitLow: chanceOk ? cLo : null, profitHigh: chanceOk ? cHi : null,
     setup, catalyst: clip(t.catalyst, 140), invalidation: clip(t.invalidation, 180),
     strike, expiry, ...stanceOf(t),
+    ...(highRisk ? { highRisk: true } : {}),
   };
 }
 /**
@@ -634,6 +639,14 @@ export function checkDesk(out, ctx = {}) {
     const key = positionKey(r);
     if (seen.has(key) || perKind[r.horizon] >= MAX_PER_HORIZON || trades.length >= MAX_TRADES) { dropped++; continue; }
     seen.add(key); perKind[r.horizon]++;
+    trades.push(r);
+  }
+  // THE HIGH-RISK TRADE (Eric, 2026-09-25): exactly one at most, the first that clears its own bar and
+  // is not a position already on the list. It rides beside the six, never in their place.
+  for (const t of Array.isArray(out?.highRisk) ? out.highRisk : []) {
+    const r = validRec(t, { ...ctx, highRisk: true });
+    if (!r || seen.has(positionKey(r)) || trades.some((x) => x.highRisk)) { dropped++; continue; }
+    seen.add(positionKey(r));
     trades.push(r);
   }
   const news = (Array.isArray(out?.news) ? out.news : []).map((n) => ({
@@ -1015,7 +1028,7 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
     const deskBody = (structured) => ({
       model: DESK_MODEL,
       max_tokens: DESK_MAX_TOKENS,
-      system: [{ type: 'text', text: deskSystem(accountType, riskPctOf(settings)) + (structured ? '' : '\n\nReturn only one JSON object with the fields read, none, trades, news and holdings, and nothing else.') }],
+      system: [{ type: 'text', text: deskSystem(accountType, riskPctOf(settings)) + (structured ? '' : '\n\nReturn only one JSON object with the fields read, none, trades, highRisk, news and holdings, and nothing else.') }],
       messages: [{ role: 'user', content: [{ type: 'text', text: deskUser }] }],
       thinking: THINKING,
       output_config: structured ? { effort: DESK_EFFORT, format: { type: 'json_schema', schema: DESK_SCHEMA } } : { effort: DESK_EFFORT },
@@ -1134,6 +1147,9 @@ export async function executeRun(env, run, { deadlineAt = Date.now() + 12 * 60_0
         if (these.length) parts.push(`${c[0].toUpperCase()}${c.slice(1)} ${these.map((v) => `${v.ticker}${of(v)}`).join(', ')}.`);
       }
       if (n) parts.push(`${n} trade${n === 1 ? '' : 's'} ready. ${names}${n > 3 ? ' and more' : ''}.`);
+      // The high-risk trade is named on its own, with its chance, so it is never mistaken for the rest.
+      const hr = checked.trades.find((r) => r.highRisk);
+      if (hr) parts.push(`High risk: ${hr.ticker} ${hr.instrument === 'stock' ? hr.side : hr.instrument}, ${hr.profitLow} to ${hr.profitHigh}%.`);
       else if (run.trigger === 'morning' || !verdicts.length) parts.push(`${parts.length ? 'Nothing' : 'nothing'} worth taking yet.`);
       const body = `${run.trigger === 'morning' ? '7:00 desk: ' : ''}${parts.join(' ')}`;
       await push(env, env.ADMIN_UID, { title: 'PR 420', body, link: '/admin-desk.html', max: PUSH_MAX }).catch(() => {});

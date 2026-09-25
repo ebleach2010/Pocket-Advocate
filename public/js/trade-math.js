@@ -160,6 +160,16 @@ export const OPTION_MULT = 100;
 export const HORIZONS = ['scalp', 'intraday', 'swing'];
 export const HORIZON_MINUTES = { scalp: [1, 10], intraday: [60, 480], swing: [480, 4320] };
 export const HORIZON_WORDS = { scalp: 'Scalp', intraday: 'Intraday', swing: 'Swing' };
+/**
+ * THE HIGH-RISK TRADE (Eric, 2026-09-25: "Add exactly one stock per turn for high risk high reward.
+ * Usually options or high entry positions on lower cap stocks that exceed my 3% limit."). One a run,
+ * sized to risk up to this share of the balance instead of his rule, and let through at this chance
+ * (he chose both: "Up to 10%", "Needs 40%+"). His own rule still sizes every other trade.
+ */
+export const HIGH_RISK_PCT = 10;
+export const HIGH_RISK_FLOOR = 40;
+/** The share of the balance a trade may risk at its stop: the high-risk trade's own, else his rule. */
+export const riskPctFor = (rec, R) => (rec?.highRisk === true ? Math.max(HIGH_RISK_PCT, R.riskPct) : R.riskPct);
 /** The horizon a hold in minutes falls in: up to ten minutes is a scalp, up to eight hours intraday, beyond that swing. */
 export function horizonFor(holdMinutes) {
   const m = Number(holdMinutes);
@@ -493,7 +503,7 @@ export function recSizing({ rec, accountCents, rules }) {
   const out = {
     instrument: inst, entry, qty: null, shares: null, contracts: null, costCents: null,
     riskCents: null, rewardCents: null, reward2Cents: null, rr: null,
-    budgetCents: Math.round((A * R.riskPct) / 100), capped: false, overRule: false, unitRiskCents: null,
+    budgetCents: Math.round((A * riskPctFor(rec, R)) / 100), capped: false, overRule: false, unitRiskCents: null,
     allocCents: null, unitCostCents: null,
   };
   if (entry == null || entry <= 0 || !A) return out;
@@ -616,7 +626,7 @@ export function planAt({ rec, entry, qty, riskCents, amountCents = null, account
   const A = Math.max(0, Math.round(Number(accountCents) || 0));
   if (A) {
     const R = rulesOf({ rules: { riskPct: 3, ...(rules || {}) } });
-    out.budgetCents = Math.round((A * R.riskPct) / 100);
+    out.budgetCents = Math.round((A * riskPctFor(rec, R)) / 100);
     out.overRule = actualRisk > out.budgetCents;
   }
   return out;

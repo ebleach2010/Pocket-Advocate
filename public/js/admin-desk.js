@@ -10,7 +10,7 @@
 // The name is load-bearing: admin-desk.js matches the Worker's asset gate, so
 // this file is a 404 to anyone but him.
 
-import { recSizing, planFor, planAt, positionKey, HORIZON_WORDS, AGENTS, DESK_AGENT } from './trade-math.js';
+import { recSizing, planFor, planAt, positionKey, HORIZON_WORDS, AGENTS, DESK_AGENT, HIGH_RISK_PCT } from './trade-math.js';
 
 export const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 export const money = (cents, signed = false) => {
@@ -249,13 +249,14 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
   const scaled = mine && legs.length
     ? `${qtyText(mine)} at an average of ${price(mine.entry)} after ${[adds && `${adds} add${adds === 1 ? '' : 's'}`, trims && `${trims} trim${trims === 1 ? '' : 's'}`].filter(Boolean).join(' and ')}. `
     : '';
-  return `<article class="outlined rec${active ? ' active' : ''}${v?.call === 'sell' ? ' sell' : ''}" data-kind="${esc(r.horizon || 'intraday')}" data-rec="${esc(r.id)}">
+  return `<article class="outlined rec${active ? ' active' : ''}${v?.call === 'sell' ? ' sell' : ''}${r.highRisk ? ' highrisk' : ''}" data-kind="${esc(r.horizon || 'intraday')}" data-rec="${esc(r.id)}">
     ${verdictHtml}
     <div class="head">
       <span class="tk">${esc(r.ticker)}</span>
       <span class="side ${r.side === 'short' ? 'short' : 'long'}">${r.side === 'short' ? 'Short' : 'Long'}</span>
       <span class="kind">${esc(kind)}</span>
       ${r.adds && !active ? '<span class="addtag">Add</span>' : ''}
+      ${r.highRisk ? '<span class="hitag">High risk</span>' : ''}
       ${chance || agree ? `<span class="odds">${chance ? `<span class="k">Chance</span><span class="v">${chance}</span>` : ''}${agree ? `<span class="v agree">${esc(agree)}</span>` : ''}</span>` : ''}
     </div>
     ${active ? `<div class="live-tag">Active${r.tookAt ? ` since ${esc(clock(r.tookAt))}` : ''}</div>` : ''}
@@ -271,6 +272,7 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
       ${cell('R:R', sized && sz.rr != null ? esc(`1 : ${sz.rr}`) : '')}
     </div>
     ${mine ? `<p class="mine-note"><b>Your size.</b> ${esc(scaled)}${esc(deskPlan)}${esc(ruleNote)}</p>` : ''}
+    ${r.highRisk ? `<p class="deal-note risk"><b>High risk, high reward.</b> Sized to risk up to ${HIGH_RISK_PCT}% of your balance, above your usual rule, and its chance is lower than the others'.</p>` : ''}
     ${r.adds && !active ? `<p class="deal-note add"><b>You already hold ${esc(r.ticker)}.</b>${esc(addWhy)} Taking this adds to your position.</p>` : ''}
     ${r.reoffered && !active ? `<p class="deal-note back"><b>Back again.</b> You passed on this when ${esc(r.reoffered.was)} of 5 agreed. Now ${esc(r.reoffered.now)} of 5 do.</p>` : ''}
     ${vehicleText(r) ? `<p class="vehicle">${esc(vehicleText(r))}</p>` : ''}
@@ -293,11 +295,15 @@ export function recCardHtml(r, { accountCents, rules, balanceTyped = true, quote
 /** The three kinds, in his order, each with its own heading; a kind with nothing in it is left out. */
 export const KIND_ORDER = ['scalp', 'intraday', 'swing'];
 export function boardHtml(recs, ctx = {}) {
-  return KIND_ORDER.map((k) => {
-    const rows = recs.filter((r) => r.horizon === k);
+  const groups = KIND_ORDER.map((k) => {
+    const rows = recs.filter((r) => r.horizon === k && !r.highRisk);
     if (!rows.length) return '';
     return `<section class="kindgroup" data-kind="${k}"><h2 class="kindhead">${esc(HORIZON_WORDS[k])}<span class="n">${rows.length}</span></h2><div class="stack">${rows.map((r) => recCardHtml(r, ctx)).join('')}</div></section>`;
   }).join('');
+  // The high-risk trade (Eric, 2026-09-25) sits in its own section after the three kinds, so it is never
+  // read as one of them.
+  const bold = recs.filter((r) => r.highRisk);
+  return groups + (bold.length ? `<section class="kindgroup" data-kind="highrisk"><h2 class="kindhead">High risk<span class="n">${bold.length}</span></h2><div class="stack">${bold.map((r) => recCardHtml(r, ctx)).join('')}</div></section>` : '');
 }
 
 // ---- history ------------------------------------------------------------------------
@@ -324,7 +330,7 @@ export function historyRowHtml(r) {
   return `<li class="hist" data-kind="${esc(r.horizon)}" data-hist="${esc(r.id)}">
     <details><summary>
       <span class="when">${esc(dayShort(r.closedAt))}</span>
-      <span class="what"><b>${esc(r.ticker)}</b> ${r.side === 'short' ? 'Short' : 'Long'} · ${esc(HORIZON_WORDS[r.horizon] || 'Intraday')}</span>
+      <span class="what"><b>${esc(r.ticker)}</b> ${r.side === 'short' ? 'Short' : 'Long'} · ${esc(HORIZON_WORDS[r.horizon] || 'Intraday')}${r.highRisk ? ' · High risk' : ''}</span>
       ${tag}
     </summary>
     <div class="more">

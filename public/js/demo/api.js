@@ -1828,6 +1828,7 @@ export function demoApi(role, store) {
         // Who was for and against a new trade, by researcher number (v7.13).
         backers: Array.isArray(d.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
         chart: d.chart && typeof d.chart.line === 'string' && d.chart.line ? { line: d.chart.line.slice(0, 120), at: iso(d.chart.at) } : null,
+        highRisk: d.highRisk === true,
       });
       const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
       const runBlock = (run) => (run ? {
@@ -2131,6 +2132,9 @@ export function demoApi(role, store) {
             { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, backers: [2, 3, 4], doubters: [], lastPrice: 118.7, priceNow: 118.7,
               chart: { line: 'Above VWAP · EMAs stacked up · MACD just crossed up', at: new Date(now - 4 * 60_000) },
               setup: 'Beat on memory pricing before the open and is basing above the gap.', catalyst: 'Earnings beat and a raised outlook this morning.', invalidation: 'Filling the gap below 114.' },
+            // The run's one high-risk trade (v7.17): a lower-cap name, at its own lower bar and larger cap.
+            { horizon: 'swing', ticker: 'RKLB', side: 'long', instrument: 'call', strike: 30, expiry: expiry(9), entryLow: 1.6, entryHigh: 1.75, stop: 1.1, targets: [2.8, 3.6], holdDays: 3, allocPct: 15, profitLow: 42, profitHigh: 50, agreement: 2, backers: [1, 5], doubters: [3], lastPrice: 28.9, highRisk: true,
+              setup: 'Coiled under 30 for a week with call buying building into the launch window.', catalyst: 'Launch window opens Friday.', invalidation: 'Losing 27.50, the base of the coil.' },
             { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, backers: [1, 2, 5], doubters: [4], lastPrice: 168.4,
               setup: 'Pressing the day high at 169 with the supply news behind it.', catalyst: 'Supply agreement reported before the open.', invalidation: 'Losing 167.8, the morning low of the push.' },
           ];

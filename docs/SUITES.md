@@ -583,6 +583,18 @@ only the admin cookie and writes words and numbers to the flight recorder.
 defects.mjs, the Google wait (run on a virtual clock) and the no-hang check
 (re-pinned); drive-nohang.mjs C.
 
+**The high-risk trade (2026-09-25, v7.17).** Eric: "Add exactly one stock
+per turn for high risk high reward. Usually options or high entry positions
+on lower cap stocks that exceed my 3% limit." He chose a 10% cap on its
+risk and a 40% bar on its chance (trade-math.js `HIGH_RISK_PCT`,
+`HIGH_RISK_FLOOR`). The desk's answer has its own `highRisk` list; the
+checker keeps the first that clears 40% and is not a position already on
+the list, beside the six rather than in their place, and files it flagged.
+The card sizes it to 10% (`riskPctFor`), tags it, says so, and the board
+gives it its own section after the kinds; the push and the landing name it.
+desk.mjs D37 and D24 (re-pinned: seven priced, 26 of 38); trade.mjs T84 and
+T35 (re-pinned); drive-trade.mjs R.
+
 Three defects the drive caught, all fixed here: the demo mirror's POST gate
 sat above `positions` and `quote`, so both GETs answered 404 and the Trades
 page loaded nothing; the seed built its day keys in UTC while the desk's

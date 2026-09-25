@@ -1294,8 +1294,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   check('T35 the portal page and its module are gone and no admin page links them; the seven pages ask for the stylesheet at its new version; the audit proves the desk\'s page and three modules 404 to a stranger; the sideways drive walks the desk; the asset gate covers the desk\'s files and not the shared arithmetic; the demo mirrors the board, a run that walks its stages, YES, PROFIT and LOSS, History, News, the research behind its switch, the balance and the settings, refuses with the Worker\'s exact sentences, seeds the new board with his 3% rule, keeps its desk off the client half, and carries no log, reading, positions, stats or scan',
     !has('public/admin-trade.html') && !has('public/js/admin-trade.js')
     // RE-PINNED 2026-09-23 (v7.3): stat118, for the size cells he can tap; stat119 (2026-09-24, v7.5) for the run's bar;
-    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes; stat124 (2026-09-24, v7.14) for the vote folded under a tap; stat125 (2026-09-24, v7.15) for the 15-minute chart row.
-    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat125/.test(f(`public/${p}.html`)))
+    // stat120 (2026-09-24, v7.6) for NO, the Add chip and the back-again note; stat121 (2026-09-24, v7.8) for ADD/TRIM; stat122 (2026-09-24, v7.12) for HOLD and SELL; stat123 (2026-09-24, v7.13) for the votes; stat124 (2026-09-24, v7.14) for the vote folded under a tap; stat125 (2026-09-24, v7.15) for the 15-minute chart row; stat126 (2026-09-25, v7.17) for the high-risk trade.
+    && pages.every((p) => !/admin-trade/.test(f(`public/${p}.html`)) && /admin\.css\?v=stat126/.test(f(`public/${p}.html`)))
     && ['/js/admin-desk.js', '/js/admin-deskapp.js', '/js/admin-deskfx.js'].every((x) => AUDIT.includes(`'${x}'`))
     && /'\/admin-desk',/.test(AUDIT) && !/admin-trade/.test(AUDIT)
     && /'\/admin-desk\.html\?id=demo-case-trade&demo=admin'/.test(NOSIDE) && !/admin-trade/.test(NOSIDE)
@@ -1314,7 +1314,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && /const DEMO_NEWS = \[/.test(D) && /const DEMO_EARNINGS = \[/.test(D)
     && /\/\^trade\\\/\//.test(STORE)
     && /const TRADE_ID = 'demo-case-trade';/.test(SEED) && /set\(`cases\/\$\{TRADE_ID\}`, \{\n\s+self: true,\n\s+trade: true,/.test(SEED) && /clientName: 'PR 420',/.test(seedDesk)
-    && /riskPct: 3, debugResearch: false,/.test(seedDesk) && /ids: \['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4'\]/.test(seedDesk) && /activeIds: \['r-demo-5'\],/.test(seedDesk)
+    // RE-PINNED 2026-09-25 (v7.17): the seeded board carries the run's one high-risk trade, r-demo-6.
+    && /riskPct: 3, debugResearch: false,/.test(seedDesk) && /ids: \['r-demo-1', 'r-demo-2', 'r-demo-3', 'r-demo-4', 'r-demo-6'\]/.test(seedDesk) && /activeIds: \['r-demo-5'\],/.test(seedDesk)
     && /status: 'took', tookAt: hours\(0\.66\)/.test(seedDesk) && (seedDesk.match(/^\s+\['h\d', \d, '\w+', '[A-Z]+', '(profit|loss)',/gm) || []).length === 6
     && /set\('trade\/research', \{/.test(seedDesk) && (seedDesk.match(/source: 'typed'/g) || []).length === 1
     && !/TRADE_READING|chat\/t0|tradeStanding|const CLOSES|scanNote|scanStatus/.test(SEED)
@@ -1411,6 +1412,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry715 = (CL.match(/\{\n\s+\/\/ 15-MINUTE CHARTS \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-24 (v7.16): sign-in waits on Google, its own quiet entry.
   const entry716 = (CL.match(/\{\n\s+\/\/ SIGN-IN WAITS ON GOOGLE \(Eric, 2026-09-24[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-09-25 (v7.17): the high-risk trade, its own quiet entry.
+  const entry717 = (CL.match(/\{\n\s+\/\/ THE HIGH-RISK TRADE \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1491,8 +1494,13 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-24 (v7.16): both versions read 7.16 with the signin-wait tag; the 7.15 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-24, v7.16): 'carries on by itself' reworded to 'keeps going' in the 7.16 entry made this read
   //   FAIL  T36 both versions read 7.16 ...
-  check('T36 both versions read 7.16 with the new tag, the 4.7 through 7.16 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.16';/.test(CL) && /const VERSION = '7\.16';/.test(W) && /const BUILD_TAG = 'v2026-09-24-signin-wait';/.test(W)
+  // RE-PINNED 2026-09-25 (v7.17): both versions read 7.17 with the high-risk tag; the 7.16 entry keeps its words.
+  // NEGATIVE CONTROL (run 2026-09-25, v7.17): 'in its own High risk section' reworded to 'in a section of its own' in the 7.17 entry made this read
+  //   FAIL  T36 both versions read 7.17 ...
+  check('T36 both versions read 7.17 with the new tag, the 4.7 through 7.17 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.17';/.test(CL) && /const VERSION = '7\.17';/.test(W) && /const BUILD_TAG = 'v2026-09-25-high-risk';/.test(W)
+    && /version: '7\.17',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry717)
+    && /in its own High risk section/.test(entry717) && !DASH.test(entry717) && !HARD.some((re) => re.test(entry717))
     && /version: '7\.16',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry716)
     && /carries on by itself/.test(entry716) && !DASH.test(entry716) && !HARD.some((re) => re.test(entry716))
     && /version: '7\.15',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry715)
@@ -1574,7 +1582,7 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
     && (entry60.match(/^\s+'[^\n]+',$/gm) || []).length >= 5
     // The page itself: always dark, its own stylesheet token, the three modules it mounts.
     && /<html lang="en" data-scheme="calm" data-desk>/.test(PAGE)
-    && /admin\.css\?v=stat125/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
+    && /admin\.css\?v=stat126/.test(PAGE) && /nav-menu\.js/.test(PAGE) && /<title>PR 420<\/title>/.test(PAGE)
     && /js\/admin-deskapp\.js/.test(PAGE) && /js\/admin-presence\.js/.test(PAGE) && /js\/version-note\.js/.test(PAGE)
     && (PAGE.match(/<section class="page"/g) || []).length === 3
     && (PAGE.match(/<button data-page="/g) || []).length === 3 && /data-page="trades"[\s\S]*data-page="news"[\s\S]*data-page="history"/.test(PAGE)
@@ -2770,6 +2778,49 @@ const BA_HELD = { ticker: 'BA', side: 'long', horizon: 'swing', instrument: 'sto
     && (SEED.match(/chart: \{ line: '/g) || []).length === 3
     && ![card].some((h) => DASH.test(h)) && !DASH.test(APP.slice(APP.indexOf('THE 15-MINUTE CHARTS'), APP.indexOf('THE 15-MINUTE CHARTS') + 2500)),
     JSON.stringify({ fetches: good.w.fetches.length, check: good.out?.settings.barsCheck, refused: refused.out?.settings.barsCheck, half: half.threw?.message, row: row.chart, board: board.desk?.charts, card: card.slice(card.indexOf('<dl'), card.indexOf('<dl') + 220) }));
+}
+
+// ---- T84: the high-risk trade on the page (2026-09-25, v7.17) ----------------------------------------------
+// Eric: "Add exactly one stock per turn for high risk high reward. Usually options or high entry positions on
+// lower cap stocks that exceed my 3% limit." He chose "Up to 10%". The card sizes it to that cap instead of
+// his rule, says so, carries a High risk tag, and sits in its own section after the three kinds.
+{
+  const mod = await import('../../public/js/admin-desk.js');
+  const A = 238000;
+  const ctx = { accountCents: A, rules: { riskPct: 3 } };
+  const SOUN = { id: 'hr1', ticker: 'SOUN', side: 'long', horizon: 'intraday', instrument: 'stock', entryLow: 6.1, entryHigh: 6.25, stop: 5.45, targets: [7.4, 8.2], allocPct: 30, profitLow: 41, profitHigh: 49, status: 'open' };
+  const plain = math.recSizing({ rec: SOUN, accountCents: A, rules: { riskPct: 3 } });
+  const bold = math.recSizing({ rec: { ...SOUN, highRisk: true }, accountCents: A, rules: { riskPct: 3 } });
+  const his = math.planFor({ rec: { ...SOUN, highRisk: true }, amountCents: 60000, riskCents: 20000, accountCents: A, rules: { riskPct: 3 } });
+  const hisPlain = math.planFor({ rec: SOUN, amountCents: 60000, riskCents: 20000, accountCents: A, rules: { riskPct: 3 } });
+  const card = mod.recCardHtml({ ...SOUN, highRisk: true }, ctx);
+  const plainCard = mod.recCardHtml(SOUN, ctx);
+  const board = mod.boardHtml([{ ...SOUN, id: 'a', ticker: 'NVDA' }, { ...SOUN, highRisk: true }], ctx);
+  const hist = mod.historyRowHtml({ ...SOUN, highRisk: true, status: 'closed', result: 'profit', closedAt: '2026-09-25T18:00:00Z' });
+  const row = K.recRow('hr1', { ...SOUN, highRisk: true });
+  const rowPlain = K.recRow('r1', SOUN);
+  const APP = f('public/js/admin-deskapp.js');
+  const txt = (h) => h.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  // NEGATIVE CONTROL (run 2026-09-25): recSizing's budget put back to `(A * R.riskPct) / 100` made this read
+  //   FAIL  T84 the high-risk trade on the page ...
+  check('T84 the high-risk trade on the page: the same trade sizes to his 3% rule, $71.40, as an ordinary card and to 10%, $238, as the high-risk one, and his own size on it is judged against 10% too; its card carries a High risk tag and says it is sized up to 10% of his balance, above his usual rule, and an ordinary card neither; the board puts it in its own High risk section after the kinds and not in its kind; History marks it; the row carries the flag and an ordinary row does not; Settings says the high-risk cap in dollars; the landing toast names it; and the demo seeds one and files one each run',
+    plain.budgetCents === 7140 && bold.budgetCents === 23800 && bold.riskCents > plain.riskCents && bold.riskCents <= 23800 && plain.capped === true
+    && his.ok && his.budgetCents === 23800 && his.overRule === false && hisPlain.overRule === true
+    && /<span class="hitag">High risk<\/span>/.test(card) && /class="outlined rec highrisk"/.test(card)
+    && /High risk, high reward\. Sized to risk up to 10% of your balance, above your usual rule, and its chance is lower than the others'\./.test(txt(card))
+    && !/hitag|High risk, high reward/.test(plainCard)
+    && /<section class="kindgroup" data-kind="intraday"><h2 class="kindhead">Intraday<span class="n">1<\/span><\/h2>/.test(board)
+    && /<section class="kindgroup" data-kind="highrisk"><h2 class="kindhead">High risk<span class="n">1<\/span><\/h2>/.test(board)
+    && board.indexOf('data-kind="highrisk"') > board.indexOf('data-kind="intraday"') && (board.match(/data-rec="hr1"/g) || []).length === 1
+    && /SOUN<\/b> Long · Intraday · High risk/.test(hist)
+    && row.highRisk === true && rowPlain.highRisk === false
+    && /The one high-risk trade a run may risk up to \$\{HIGH_RISK_PCT\}%, <span class="num">\$\{money\(Math\.round\(\(b \* HIGH_RISK_PCT\) \/ 100\)\)\}<\/span>\./.test(APP)
+    && /freshRecs\.some\(\(r\) => r\.highRisk\) \? \(fresh === 1 \? ', and it is high risk' : ', one of them high risk'\) : ''/.test(APP)
+    && /html\[data-desk\]:root \[data-kind="highrisk"\] \{ --kind: var\(--red\);/.test(CSS)
+    && /highRisk: d\.highRisk === true,/.test(D) && /ticker: 'RKLB', side: 'long', instrument: 'call'[^\n]*highRisk: true,/.test(D)
+    && /REC\('r-demo-6', \{[\s\S]*?ticker: 'SOUN'[\s\S]*?highRisk: true,/.test(SEED)
+    && !DASH.test(card) && !DASH.test(board),
+    JSON.stringify({ plain: [plain.budgetCents, plain.riskCents], bold: [bold.budgetCents, bold.riskCents], his: [his.budgetCents, his.overRule, hisPlain.overRule], row: row.highRisk }));
 }
 
 // ---- T67: the board in one read (2026-09-23, v7.2) ----------------------------------------------

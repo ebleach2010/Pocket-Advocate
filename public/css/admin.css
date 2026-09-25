@@ -1710,6 +1710,8 @@ html[data-desk]:root .c-red { --c: var(--red); --c-rgb: var(--red-rgb); --c-core
 html[data-desk]:root [data-kind="scalp"] { --kind: var(--blue); --kind-rgb: var(--blue-rgb); --kind-core: var(--blue-core); }
 html[data-desk]:root [data-kind="intraday"] { --kind: var(--green); --kind-rgb: var(--green-rgb); --kind-core: var(--green-core); }
 html[data-desk]:root [data-kind="swing"] { --kind: var(--gold); --kind-rgb: var(--gold-rgb); --kind-core: var(--gold-core); }
+/* The high-risk trade (2026-09-25): its own section, in the desk's hot pink. */
+html[data-desk]:root [data-kind="highrisk"] { --kind: var(--red); --kind-rgb: var(--red-rgb); --kind-core: #FF8FA3; }
 /* ---- base ---- */
 html[data-desk]:root, html[data-desk]:root body { height: 100%; }
 html[data-desk]:root body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--body); font-size: 15px; line-height: 1.45; -webkit-font-smoothing: antialiased; overflow-x: hidden; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
@@ -2253,6 +2255,8 @@ html[data-desk]:root .rec .addtag { font-family: var(--display); font-weight: 70
 html[data-desk]:root .rec .deal-note { margin: 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
 html[data-desk]:root .rec .deal-note b { color: var(--ink); font-weight: 600; }
 html[data-desk]:root .rec .deal-note.back b { color: var(--gold); }
+html[data-desk]:root .rec .deal-note.risk b { color: #FF8FA3; }
+html[data-desk]:root .rec .hitag { font-family: var(--display); font-weight: 700; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; padding: 4px 8px; border-radius: 6px; line-height: 1; color: #1A0008; background: #FF8FA3; box-shadow: 0 0 8px rgba(var(--red-rgb),.55); }
 html[data-desk]:root .rec .mine-note b { color: var(--blue-core); font-weight: 600; }
 html[data-desk]:root .sheet .box { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); height: 48px; }
 html[data-desk]:root .sheet .box > span { font-family: var(--mono); font-size: 16px; color: var(--dim); }
