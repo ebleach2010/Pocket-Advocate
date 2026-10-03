@@ -575,13 +575,12 @@ function pausedNotice(c) {
         Every date on your case has stopped with it, so nothing is running
         down while I am away and you lose no time.${
         back ? ` I expect to pick it back up around <strong>${fmt.format(back)}</strong>.` : ''}</p>
-      <p class="dim small" style="margin:0 0 .5rem;">Your case page, your files
-        and your chat all stay open. Message me any time; I will read it when
-        I am back.</p>
+      <p class="dim small" style="margin:0 0 .5rem;">Chat, uploads and requests
+        are paused too, and open again when I am back. Your files stay here and
+        nothing is lost.</p>
       <p class="dim small" style="margin:0;"><strong>One thing does not
         pause.</strong> If your insurer has given you a deadline to appeal,
-        that clock is theirs and it keeps running. If one is close, tell me
-        and I will deal with it before anything else.</p>
+        that clock is theirs and it keeps running while this case is paused.</p>
     </div>`;
 }
 
@@ -813,6 +812,9 @@ function renderProgress(el, c) {
 // ---- Chat section (mounted once per case id; never re-rendered by refresh paths) ----
 function renderChat(el, c) {
   const closed = c.status === 'closed';
+  // A PAUSED CASE IS PAUSED EVERYWHERE (Eric, 2026-10-03: "I need every feature including chat paused during
+  // a paused case ... Placeholder text in the usual chat spot"). The composer gives way to one line.
+  const paused = !closed && !!c.hold?.pausedAt;
   // Chat opens one week before the booked call. Booking far out used to buy
   // the whole wait as free chat runway; now the wait is quiet, the next-call
   // list stays open, and $50 (the direct line price) opens chat immediately
@@ -820,7 +822,7 @@ function renderChat(el, c) {
   // chat abuse by booking two months in advance.")
   const startMs = c.appointment?.start ? toDate(c.appointment.start).getTime() : null;
   const justOpened = new URLSearchParams(location.search).get('chatopen') === '1';
-  const chatLocked = !closed && !c.chatUnlocked && !justOpened
+  const chatLocked = !closed && !paused && !c.chatUnlocked && !justOpened
     && startMs && (startMs - Date.now() > 7 * 86_400_000);
   const opensOn = startMs ? new Intl.DateTimeFormat('en-US', {
     month: 'long', day: 'numeric',
@@ -845,7 +847,7 @@ function renderChat(el, c) {
       <h3 style="margin:.1rem 0 .2rem;">🗓 For our next call</h3>
       <p class="dim small" style="margin:0 0 .5rem;">Anything you add here is captured, and we go through the list together on the call, where it gets real attention instead of a rushed reply.</p>
       <ul class="agenda-list" data-agenda-list></ul>
-      ${closed ? '' : `<form data-agenda-form style="display:flex; gap:.4rem; margin-top:.5rem;">
+      ${closed || paused ? '' : `<form data-agenda-form style="display:flex; gap:.4rem; margin-top:.5rem;">
         <input type="text" maxlength="500" placeholder="Add something for the call…" style="flex:1; min-width:0;">
         <button class="btn quiet" type="submit">Add</button>
       </form>
@@ -864,9 +866,10 @@ function renderChat(el, c) {
     user,
     myRole: 'client',
     saveUid: user.uid,
-    disabled: closed || chatLocked,
+    disabled: closed || paused || chatLocked,
     notice: closed
       ? 'This chat ended when the case closed. Your documents remain yours forever.'
+      : paused ? 'This case is paused.'
       : `Chat opens ${opensOn}, one week before our call. Your "For our next call" list below is always open, and I read it.`,
   });
   if (justOpened) history.replaceState(null, '', `/case.html?id=${c.id}`);
@@ -1002,10 +1005,12 @@ function paintAgenda(box, items) {
 // ---- Documents section ----
 function renderDocs(el, c) {
   const closed = c.status === 'closed';
+  const paused = !closed && !!c.hold?.pausedAt;
   el.innerHTML = `
     <h2 class="case-sec-h">Documents</h2>
     ${closed
       ? '<p class="dim small">This case is closed. Your documents stay here forever. Download or print any of them.</p>'
+      : paused ? '<p class="dim small">This case is paused. Your documents stay here; adding new ones opens again when the case does.</p>'
       : `<label class="dropzone" data-drop>
            Tap to add labs, imaging, or records<br>
            <span class="small">PDF · JPEG · PNG · HEIC · DICOM · ZIP, 25 MB max each</span>

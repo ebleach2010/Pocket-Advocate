@@ -1066,5 +1066,33 @@ ck('clock: all switches share one painter set, so no two can disagree',
     JSON.stringify({ voiceCalls, cron: (cron.match(MODEL) || [])[0] || null, sweep: (sweep.match(/errRetryDue|errorRetries/) || [])[0] || null }));
 }
 
+// ---- a paused case is paused everywhere (2026-10-03, v7.20) --------------------------------------------
+// Eric: "I need every feature including chat paused during a paused case. I'm getting messages from a client
+// and I'm fully out of remission. Placeholder text in the usual chat spot 'this case is paused'". The page
+// takes the composer, the upload box, the next-call list and the paid chat unlock away and says so; the
+// Worker refuses every client request that would ping him, start work or take money. He is never held.
+{
+  const CASE = readFileSync(`${R}/public/js/case.js`, 'utf8');
+  const PAGE = readFileSync(`${R}/public/js/chat-page.js`, 'utf8');
+  const gate = (W.match(/if \(request\.method === 'POST' && PAUSE_GATED\.has\(url\.pathname\)\) \{[\s\S]*?\n      \}\n/) || [''])[0];
+  const routes = ['/api/notify', '/api/agenda', '/api/uploaded', '/api/chat-unlock', '/api/extend', '/api/telehealth', '/api/upgrade', '/api/followup', '/api/review', '/api/authority'];
+  const setSrc = (W.match(/const PAUSE_GATED = new Set\(\[[\s\S]*?\]\);/) || [''])[0];
+  const helper = (W.match(/async function pausedForClient\(request, env, url\) \{[\s\S]*?\n\}\n/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-03): '/api/notify' taken out of PAUSE_GATED made this read
+  //   FAIL  a paused case is paused everywhere ...
+  ck('a paused case is paused everywhere: the chat shows "This case is paused." where the composer was, on the case page and the chat page; the upload box, the next-call add box and the paid chat unlock are gone; the notice no longer invites messages; and the Worker refuses, before any route runs, a client\'s message ping, next-call item, upload, purchase, request or review on a paused case, while never holding the admin',
+    gate && W.indexOf(gate) < routes.map((r) => W.indexOf(`url.pathname === '${r}'`)).reduce((a, b) => Math.min(a, b))
+    && /return json\(\{ error: 'This case is paused\.', paused: true \}, 409\);/.test(gate)
+    && routes.every((r) => setSrc.includes(`'${r}'`))
+    && /if \(!c \|\| !onHold\(c\.data\) \|\| c\.data\.status === 'closed'\) return false;/.test(helper) && /return profile\?\.data\?\.role !== 'admin';/.test(helper)
+    && /if \(url\.pathname === '\/api\/notify' && body\?\.kind !== 'case'\) return false;/.test(helper)
+    && /disabled: closed \|\| paused \|\| chatLocked,/.test(CASE) && /: paused \? 'This case is paused\.'/.test(CASE)
+    && /const chatLocked = !closed && !paused && /.test(CASE) && /\$\{closed \|\| paused \? '' : `<form data-agenda-form/.test(CASE)
+    && /: paused \? '<p class="dim small">This case is paused\./.test(CASE)
+    && !/Message me any time/.test(CASE)
+    && /disabled: t\.closed \|\| t\.paused,/.test(PAGE) && /t\.paused \? 'This case is paused\.' : ''/.test(PAGE),
+    JSON.stringify({ gate: gate.length, helper: helper.length }));
+}
+
 console.log(`\n${pass}/${pass + fail} passed`);
 if (fail) process.exit(1);

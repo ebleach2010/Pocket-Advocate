@@ -1420,6 +1420,8 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   const entry718 = (CL.match(/\{\n\s+\/\/ A WIDER DESK \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-09-25 (v7.19): parked, and nothing spends on its own, its own quiet entry.
   const entry719 = (CL.match(/\{\n\s+\/\/ PARKED, AND NOTHING SPENDS ON ITS OWN \(Eric, 2026-09-25[\s\S]*?\n  \},/) || [''])[0];
+  // RE-PINNED 2026-10-03 (v7.20): a paused case is paused everywhere, its own quiet entry.
+  const entry720 = (CL.match(/\{\n\s+\/\/ A PAUSED CASE IS PAUSED EVERYWHERE \(Eric, 2026-10-03[\s\S]*?\n  \},/) || [''])[0];
   const PAGE = f('public/admin-desk.html');
   const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model/i, /\bClaude\b/i, /Anthropic/i, /\bOpus\b/i, /\bFable\b/i, /\bthe model\b/i, /\ba model\b/i, /chatbot/i];
   // NEGATIVE CONTROL (run 2026-09-22, v6.12): 'one step below Update' reworded to 'one step under Update' in the 6.12 entry made this read
@@ -1509,8 +1511,11 @@ check('T33 the panel carries no desk at all: one flag in its signature, no Scan 
   // RE-PINNED 2026-09-25 (v7.19): both versions read 7.19 with the no-auto-spend tag; the 7.18 entry keeps its words.
   // NEGATIVE CONTROL (run 2026-09-25, v7.19): 'The 7:00 run is gone.' reworded to 'No more 7:00 run.' in the 7.19 entry made this read
   //   FAIL  T36 both versions read 7.19 ...
-  check('T36 both versions read 7.19 with the new tag, the 4.7 through 7.19 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
-    /export const VERSION = '7\.19';/.test(CL) && /const VERSION = '7\.19';/.test(W) && /const BUILD_TAG = 'v2026-09-25-no-auto-spend';/.test(W)
+  // RE-PINNED 2026-10-03 (v7.20): both versions read 7.20 with the pause-all tag; the 7.19 entry keeps its words.
+  check('T36 both versions read 7.20 with the new tag, the 4.7 through 7.20 entries are quiet and admin-only in the desk\'s words, the page is PR 420, stamped dark, three pages behind three tabs, and asks for the fonts, the stylesheet and the three modules, nothing in the version note or the sign-in module carries a word from the blindness list, and not one dash in the entries, the drive, the stylesheet or the demo\'s desk',
+    /export const VERSION = '7\.20';/.test(CL) && /const VERSION = '7\.20';/.test(W) && /const BUILD_TAG = 'v2026-10-03-pause-all';/.test(W)
+    && /version: '7\.20',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry720)
+    && /This case is paused\./.test(entry720) && !DASH.test(entry720) && !HARD.some((re) => re.test(entry720))
     && /version: '7\.19',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry719)
     && /The 7:00 run is gone\./.test(entry719) && !DASH.test(entry719) && !HARD.some((re) => re.test(entry719))
     && /version: '7\.18',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry718)

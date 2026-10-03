@@ -34,6 +34,8 @@ async function load() {
         label: c.status === 'closed' ? 'Case (closed)' : 'My case',
         parentPath: ['cases', d.id],
         closed: c.status === 'closed',
+        // A paused case's chat is paused too (Eric, 2026-10-03).
+        paused: c.status !== 'closed' && !!c.hold?.pausedAt,
         ts: c.lastMessage?.ts ? tsMs(c.lastMessage.ts) : tsMs(c.createdAt),
       });
     });
@@ -85,10 +87,10 @@ async function load() {
       user,
       myRole: 'client',
       saveUid: user.uid,
-      disabled: t.closed,
+      disabled: t.closed || t.paused,
       notice: t.closed
         ? 'This conversation is closed. Your history stays here; book again or subscribe to reach me.'
-        : '',
+        : t.paused ? 'This case is paused.' : '',
     });
   }
   open();

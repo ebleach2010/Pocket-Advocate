@@ -878,6 +878,15 @@ export default {
         return await handleClientAlert(request, env);
       if (url.pathname === '/api/admin/schedule' && request.method === 'POST')
         return await handleAdminSchedule(request, env);
+      // A PAUSED CASE IS PAUSED EVERYWHERE (Eric, 2026-10-03: "I need every feature including chat paused
+      // during a paused case. I'm getting messages from a client and I'm fully out of remission."). Every
+      // client request that would reach him, start work or take money is refused while the case is paused:
+      // no message pings, no next-call items, no uploads, no purchases, no requests. Reading is untouched,
+      // and so is everything he does himself.
+      if (request.method === 'POST' && PAUSE_GATED.has(url.pathname)) {
+        const held = await pausedForClient(request, env, url);
+        if (held) return json({ error: 'This case is paused.', paused: true }, 409);
+      }
       if (url.pathname === '/api/notify' && request.method === 'POST')
         return await handleNotify(request, env, ctx);
       if (url.pathname === '/api/chat/react' && request.method === 'POST')
@@ -2112,7 +2121,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-09-25-no-auto-spend';
+const BUILD_TAG = 'v2026-10-03-pause-all';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2120,7 +2129,7 @@ const BUILD_TAG = 'v2026-09-25-no-auto-spend';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.19';
+const VERSION = '7.20';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2400,6 +2409,27 @@ function heldMs(c) {
   return banked + Math.max(0, Number.isFinite(since) ? since : 0);
 }
 const onHold = (c) => !!c?.hold?.pausedAt;
+
+/** The client routes a paused case refuses (2026-10-03). */
+const PAUSE_GATED = new Set(['/api/notify', '/api/agenda', '/api/uploaded', '/api/chat-unlock', '/api/extend',
+  '/api/telehealth', '/api/upgrade', '/api/followup', '/api/review', '/api/authority']);
+/**
+ * True when this request is a client's, on a case that is paused. The case id is read from a copy of the
+ * body the way each route reads it (caseId, or id on the message ping, the next-call list and uploads), so
+ * the route itself still gets the untouched request. The admin is never held: pausing stops the client side.
+ */
+async function pausedForClient(request, env, url) {
+  const body = await request.clone().json().catch(() => ({}));
+  if (url.pathname === '/api/notify' && body?.kind !== 'case') return false;
+  const id = String(body?.caseId || body?.id || url.searchParams.get('caseId') || url.searchParams.get('id') || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return false;
+  const c = await getDoc(env, `cases/${id}`).catch(() => null);
+  if (!c || !onHold(c.data) || c.data.status === 'closed') return false;
+  const user = await requireUser(request, env).catch(() => null);
+  if (!user) return false;
+  const profile = await getDoc(env, `users/${user.uid}`).catch(() => null);
+  return profile?.data?.role !== 'admin';
+}
 
 // THERE IS NO APPEAL COUNT ANY MORE. The scope note used to promise two
 // letters and a constant here enforced it. Eric, 2026-08-28: "The

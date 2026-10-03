@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.19';
+export const VERSION = '7.20';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '7.19';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // A PAUSED CASE IS PAUSED EVERYWHERE (Eric, 2026-10-03: "I need every
+    // feature including chat paused during a paused case."). Admin only.
+    version: '7.20',
+    quiet: true,
+    client: [],
+    admin: [
+      'A paused case is paused everywhere: the client sees "This case is paused." where the chat box was, and cannot upload, add to the next-call list, buy anything or send you a ping until you unpause it.',
+    ],
+  },
   {
     // PARKED, AND NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420.
     // No scans unless I manually do it. No auto token burn anywhere.").
