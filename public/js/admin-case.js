@@ -215,11 +215,11 @@ async function load() {
     folder = null;
     return;
   }
-  // THE DESK LEFT THE FOLDER (2026-09-22). It is its own page now, so a desk
-  // opened at this address walks straight into it. replace, not assign, so
-  // Back still returns to the shelf rather than bouncing through here again.
+  // The retired trade desk's case (PR 420, gone 2026-10-04) has no page any
+  // more, so an old link to it goes back to the shelf. replace, not assign,
+  // so Back never bounces through here again.
   if (data.trade) {
-    location.replace(`/admin-desk.html?id=${encodeURIComponent(caseId)}`);
+    location.replace('/admin.html');
     return;
   }
   // Re-loads for the same case (after a milestone, an upload, a scheduling
@@ -937,10 +937,7 @@ async function paintCaseReview(pane) {
  * actually is. Diseases carry mechanism, treatment and outlook, because a
  * definition alone does not help him argue with a specialist.
  */
-const CATEGORY_ORDER = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Procedure', 'Anatomy', 'Concept', 'General',
-  // The trade desk's eight (2026-09-22). The Worker hands a desk only these
-  // and every other case none of them; the order is for the desk's page.
-  'Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
+const CATEGORY_ORDER = ['Condition', 'Symptom', 'Test or lab', 'Medication', 'Procedure', 'Anatomy', 'Concept', 'General'];
 
 let eduKey = null;
 /**

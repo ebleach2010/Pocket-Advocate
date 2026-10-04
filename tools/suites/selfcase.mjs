@@ -378,7 +378,9 @@ const DEMO = f('public/js/demo/api.js');
 check('S18 the shelf: his case on its own purple shelf, out of the three and out of the revenue line, or the purple button that opens one',
   // Re-pinned 2026-09-22 (v4.7): the trade desk is self too and sits on its
   // own green shelf, so his own shelf keeps only the medical cases.
-  /const mine = cases\.filter\(\(c\) => c\.self && !c\.trade && c\.status !== 'closed'\);/.test(ADMIN)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, and an old desk document is dropped
+  // before any shelf sees it, so his shelf takes every open case of his own again.
+  /const mine = cases\.filter\(\(c\) => c\.self && c\.status !== 'closed'\);/.test(ADMIN)
   && /const shelved = cases\.filter\(\(c\) => !c\.self\);/.test(ADMIN)
   && /const billed = shelved\.filter\(\(c\) => !c\.family\);/.test(ADMIN)
   && /const former = shelved\.filter/.test(ADMIN) && /const current = shelved\.filter/.test(ADMIN)
@@ -581,7 +583,8 @@ const between = (src, from, to) => {
 };
 const selfVoiceSrc = between(ADV, 'const SELF_VOICE = `', 'const voice = ()');
 // Re-pinned 2026-09-22 (v4.7): three-way, the trade desk's instructions first.
-const voiceFn = grab(ADV, /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.trade \? TRADE_INSTRUCTIONS : turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/);
+// RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, so it is two-way again.
+const voiceFn = grab(ADV, /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/);
 const selfAssessSrc = between(ADV, 'const SELF_ASSESSMENT = `', '/** Raw API errors are unreadable');
 // eslint-disable-next-line no-new-func
 const selfVoice = selfVoiceSrc ? new Function(`${selfVoiceSrc}; return SELF_VOICE;`)() : '';
@@ -597,7 +600,8 @@ check('S29 his own case reads on its own brief and its own assessment, whole, pi
   && (ADV.match(/\$\{VOICE\}/g) || []).length === 1
   // Re-pinned 2026-09-22 (v4.7): the desk's brief and contract come first in
   // the same ternary, so his own case's pair still stands whole behind it.
-  && /system: \[\{ type: 'text', text: trade \? `\$\{TRADE_INSTRUCTIONS\}\\n\\n\$\{TRADE_CONTRACT\}` : self \? `\$\{SELF_VOICE\}\\n\\n\$\{SELF_ASSESSMENT\}` : `\$\{VOICE\}/.test(ADV)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, and his own case's pair leads the ternary again.
+  && /system: \[\{ type: 'text', text: self \? `\$\{SELF_VOICE\}\\n\\n\$\{SELF_ASSESSMENT\}` : `\$\{VOICE\}/.test(ADV)
   && /const self = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV)
   && /style\.voice && !self \? `/.test(ADV),
   `voice() x${(ADV.match(/\$\{voice\(\)\}/g) || []).length}, VOICE x${(ADV.match(/\$\{VOICE\}/g) || []).length}`);
@@ -690,8 +694,9 @@ check('S34 the finish knows his own case from the flight, keeps the Unanswered l
   // Re-pinned 2026-09-03 (audit): a row he marked Got it is carried over the fresh list.
   // Re-pinned 2026-09-22 (v5.1): the trade desk asks him nothing, so both sites test it out first and
   // his own case keeps what it had. See trade.mjs T43.
-  && /\} else if \(ctx\.self\) \{\n[\s\S]{0,400}?un\.unanswered = \[\n\s+\.\.\.unansweredFromChat\(rows\)\.filter\(\(r\) => !done\.has\(flatText\(r\.ask\)\)\),/.test(finishSrc)
-  && /if \(ctx\.self && !ctx\.trade && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finishSrc)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted: the desk's arm before his is gone, so his is the first test.
+  && /\n  if \(ctx\.self\) \{\n[\s\S]{0,400}?un\.unanswered = \[\n\s+\.\.\.unansweredFromChat\(rows\)\.filter\(\(r\) => !done\.has\(flatText\(r\.ask\)\)\),/.test(finishSrc)
+  && /if \(ctx\.self && kind === 'case'\) \{\n\s+await askInChat\(env, id, harvestQuestions\(finalText\), rows\)/.test(finishSrc)
   && finishSrc.indexOf('await askInChat(') > finishSrc.indexOf("analysis: finalText, status: 'idle'"),
   JSON.stringify(unOut));
 
@@ -781,7 +786,8 @@ check('S37 the chat paints a question with a Reply, his answer with the question
   && /'Questions for you': '❓',/.test(PANEL) && /'Watch for': '🚨',/.test(PANEL)
   && /path === '\/api\/chat\/reply'/.test(DEMO)
   // Re-pinned 2026-09-22 (v5.1): the mirror asks on his own case and never on the desk.
-  && /if \(c\.self && !c\.trade && !asked\) \{[\s\S]*?role: 'question'/.test(DEMO));
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, the demo's desk with it.
+  && /if \(c\.self && !asked\) \{[\s\S]*?role: 'question'/.test(DEMO));
 
 const cssVersions = [...new Set(readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n))
   .map((n) => (f(`public/${n}`).match(/admin\.css\?v=([a-z0-9]+)/) || [])[1] || 'none'))];
@@ -936,7 +942,8 @@ check('S48 a refused id on a finished batch falls back and runs again instead of
   // still contains every line below it.
   && /if \(flight\.model && modelRefused\(\{ status: 400, message: String\(out\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollSrc)
   // Re-pinned 2026-09-22 (v4.7): the flight carries the desk's flag beside his.
-  && /effort: passEffort, auto, skipMedia, self, trade, model: turn\.model,/.test(runAnaSrc)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, and the desk's flag left the flight.
+  && /effort: passEffort, auto, skipMedia, self, model: turn\.model,/.test(runAnaSrc)
   && /ev: 'self-model-fallback', at: 'result'/.test(pollSrc)
   && /modelRefusedAt: new Date\(\), modelRefusedId: flight\.model,/.test(pollSrc)
   // Re-pinned 2026-09-13 (v4.5): markPending takes no options; every call is
@@ -1329,7 +1336,8 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && (ADV.match(/\$\{self \? priorCasesNote\(state\?\.data\) : ''\}/g) || []).length === 2
     // Re-pinned 2026-09-22 (v4.7): the trade desk reads an empty log too, so
     // its own exemption follows the briefs' on the same bail.
-    && /&& !\(turnPolicy\.getStore\(\)\?\.self && priorCasesNote\(state\?\.data\)\)\n(?:\s*\/\/[^\n]*\n)*\s+&& !turnPolicy\.getStore\(\)\?\.trade\) \{/.test(ADV)
+    // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, so the briefs' exemption closes the bail.
+    && /&& !\(turnPolicy\.getStore\(\)\?\.self && priorCasesNote\(state\?\.data\)\)\) \{/.test(ADV)
     && !/[—–]/.test(noteSrc));
 }
 

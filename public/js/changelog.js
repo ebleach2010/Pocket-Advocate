@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.20';
+export const VERSION = '7.21';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.20';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PR 420 DELETED (Eric, 2026-10-04: "Delete the trading desk folder and
+    // contents in code. I won't be using it."). Admin only.
+    version: '7.21',
+    quiet: true,
+    client: [],
+    admin: [
+      'PR 420 is gone. The trading desk, its page, its runs and its settings are deleted from the app.',
+      'The trading terms it saved no longer show in your dictionary or on any case.',
+    ],
+  },
   {
     // A PAUSED CASE IS PAUSED EVERYWHERE (Eric, 2026-10-03: "I need every
     // feature including chat paused during a paused case."). Admin only.

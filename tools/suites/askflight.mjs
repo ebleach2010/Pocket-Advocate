@@ -69,7 +69,8 @@ check('AF1 a question is built and submitted to the batch, never carried streame
   && !/await ask\(env,/.test(runQuestion) && !/onBeat/.test(runQuestion)
   && /const batchId = await submitTurnBatch\(env, turn, customId\);/.test(runQuestion)
   // Re-pinned 2026-09-22 (v4.7): the row carries the desk's flag beside his.
-  && /batch: \{ batchId, customId, submittedAt: new Date\(\), model: turn\.model, self, trade, override, pollFails: 0 \},/.test(runQuestion)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, and the desk's flag left the row with it.
+  && /batch: \{ batchId, customId, submittedAt: new Date\(\), model: turn\.model, self, override, pollFails: 0 \},/.test(runQuestion)
   && /\.\.\.\(attachment \? \{ fileRef: attachment \} : \{\}\),/.test(runQuestion)
   && /await patchDoc\(env, askQueuePath\(kind, id, qaId\), \{ kind, id, qaId, ask: true, at: new Date\(\) \},/.test(runQuestion)
   && /ev: 'ask-submit', kind, self, ms: Date\.now\(\) - t0/.test(runQuestion)
@@ -143,7 +144,9 @@ check('AF4 the finish reads the landed message as the live path did: the tool_us
   && /cleaned = await applyMastered\(env, cleaned\);\n\s+cleaned = await applyForgotten\(env, cleaned\);/.test(finishQuestion)
   && /if \(self\) \{[\s\S]*?sectionMatch\(cleaned, 'Stance'\)[\s\S]*?\} else \{\n\s+cleaned = await fileOverride\(env, cleaned\);/.test(finishQuestion)
   // Re-pinned 2026-09-22 (v5.0): the row carries `doc`, the document the desk filed (null off the desk), in the mask.
-  && /answer: cleaned, status: 'done', override, batch: null, doc: filed,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);\n\s+await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)[\s\S]*?await parkAct\(env, kind, id, acts\)[\s\S]*?await markPending\(env, kind, id\)/.test(finishQuestion)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted and nothing files a document from an answer, so
+  // `doc` is always null; it stays in the mask so a link an old desk answer left is cleared on a resend.
+  && /answer: cleaned, status: 'done', override, batch: null, doc: null,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);\n\s+await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)[\s\S]*?await parkAct\(env, kind, id, acts\)[\s\S]*?await markPending\(env, kind, id\)/.test(finishQuestion)
   && /answer: `Couldn't answer: \$\{friendly\(err\)\}`, status: 'error', batch: null,/.test(finishQuestion)
   && /if \(flight\.model && !row\.data\.resent\n\s+&& modelRefused\(\{ status: 400, message: String\(next\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollAsk)
   && /await patchDoc\(env, path, \{ batch: null, resent: true \}, \{ mask: \['batch', 'resent'\] \}\)/.test(pollAsk)

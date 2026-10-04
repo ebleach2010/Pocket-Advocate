@@ -1031,12 +1031,16 @@ ck('clock: all switches share one painter set, so no two can disagree',
   // counts and SPY's chart. Neither half of the pair is ever in it.
   // NEGATIVE CONTROL (run 2026-09-24, v7.15): `id: creds.id,` added to the probe's answer made this read
   //   FAIL  the bars probe never hands back the key ...
-  ck('the bars probe never hands back the key: behind the diagnostics key, one call for SPY and QQQ 15-minute bars through the runs\' own fetchBars, the answer is whether a key pair exists and where from, the status, the bar counts and SPY\'s chart, and neither half of the pair',
-    /const creds = resolveBars\(env, s\?\.data\);\n\s+if \(!creds\) return json\(\{ key: false \}\);/.test(probe)
-    && /const got = await fetchBars\(creds, \['SPY', 'QQQ'\], Date\.now\(\)\);/.test(probe)
-    && /source: env\.ALPACA_KEY_ID && env\.ALPACA_SECRET \? 'env' : 'settings'/.test(probe)
-    && !/creds\.(?:id|secret)|creds\b(?!\)|,)|alpacaKeyId|alpacaSecret|secret:/.test(probe.replace(/const creds = resolveBars\(env, s\?\.data\);|if \(!creds\)|fetchBars\(creds,/g, ''))
-    && W.indexOf("'bars-probe'") > W.indexOf("url.pathname === '/api/diag'") && W.indexOf("'bars-probe'") > W.indexOf("do') === 'limits'"),
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted (Eric: "Delete the trading desk folder and contents in
+  // code."), the probe and the chart feed with it. What this held, that no answer ever carries the market
+  // data key, holds now by there being nothing left to ask: no probe, no Worker file that reads either half
+  // of the pair, and no Worker route that reads the desk's settings where a pasted pair lived.
+  // NEGATIVE CONTROL (run 2026-10-04): `const k = env.ALPACA_SECRET;` added to the diag handler made this read
+  //   FAIL  the bars probe never hands back the key ...
+  const workerSrc = readdirSync(`${R}/worker`).filter((n) => n.endsWith('.js')).map((n) => readFileSync(`${R}/worker/${n}`, 'utf8')).join('\n');
+  ck('the bars probe never hands back the key: the probe is gone with PR 420, and no Worker file reads either half of the market data key or the desk settings where a pasted pair lived',
+    probe === '' && !/'bars-probe'/.test(W)
+    && !/ALPACA_KEY_ID|ALPACA_SECRET|FINNHUB_KEY|alpacaKeyId|alpacaSecret|finnhubKey|'trade\/settings'/.test(workerSrc),
     probe.slice(0, 200));
 }
 
@@ -1046,7 +1050,6 @@ ck('clock: all switches share one painter set, so no two can disagree',
 // carries work a tap queued (the desk run he started, a read, a question or a draft in flight). The sweep
 // rescues work he asked for that never finished, and never retries a read that failed.
 {
-  const DRUN = readFileSync(`${R}/worker/desk-run.js`, 'utf8');
   const cron = (W.match(/async scheduled\(event, env, ctx\) \{[\s\S]*?\n  \},\n/) || [''])[0];
   const sweep = (ADV.match(/async function sweepOne\(env, t\) \{[\s\S]*?\n\}\n/) || [''])[0];
   const MODEL = /maybeVoiceStudy|runStyleDistill|runDaySummary|runAnalysis\(|runQuestion\(|runDraft\(|runAppeal\(|runCallNotes\(|runCallDoc\(|pingModel|markPending|requestRun|maybeMorningRun|voiceStudyKickoff|unparkAdvisor/;
@@ -1055,13 +1058,17 @@ ck('clock: all switches share one painter set, so no two can disagree',
   //   FAIL  nothing spends on its own ...
   // NEGATIVE CONTROL (run 2026-09-25): the sweep's `errRetryDue` put back (a failed read retried on a half-hour clock) made this read
   //   FAIL  nothing spends on its own ...
+  // NEGATIVE CONTROL (run 2026-10-04, v7.21): `const ranDesk = false; if (!ranDesk)` put back around the drain made this read
+  //   FAIL  nothing spends on its own ...
   ck('nothing spends on its own (Eric: "No auto token burn anywhere."): the cron names no model job, no voice study, no desk clock and no re-queue, and runs only the drain of what he queued and the desk run he started; the voice study is reached only from his Run one now, which is not held back by the old switch; the sweep never retries a failed read; the engine has no morning run; and the Clients page offers Run one now and no nightly switch',
     cron.length > 500 && !MODEL.test(cron)
-    && /if \(!ranDesk\) await runQueuedAnalyses\(env, deadlineAt\);/.test(cron) && /: await maybeRunDesk\(env, \{ deadlineAt, doc: deskDoc \}\)/.test(cron)
+    // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, the desk run and its gate with it, so the drain of what
+    // he queued is the cron's one model job on every firing and nothing names the desk.
+    && /\n    await runQueuedAnalyses\(env, deadlineAt\);\n/.test(cron) && !/maybeRunDesk|peekDesk|deskDoc|ranDesk/.test(cron)
     && voiceCalls.length === 1 && /force: true/.test(voiceCalls[0])
     && /if \(!force && loop\.enabled === false\) return \{ ran: false, reason: 'switched off' \};/.test(ADV)
     && sweep.length > 200 && !/errRetryDue|errorRetries|errorRetryAt|error-retry/.test(sweep) && /if \(!stuckRunning && !owed && !carryOwed\) return;/.test(sweep)
-    && !/maybeMorningRun|MORNING_MIN/.test(DRUN)
+    && !/maybeMorningRun|MORNING_MIN/.test(readdirSync(`${R}/worker`).map((n) => readFileSync(`${R}/worker/${n}`, 'utf8')).join('\n'))
     && /id="voice-now">Run one now<\/button>/.test(readFileSync(`${R}/public/js/admin.js`, 'utf8')) && !/voice-toggle|Every night at/.test(readFileSync(`${R}/public/js/admin.js`, 'utf8')),
     JSON.stringify({ voiceCalls, cron: (cron.match(MODEL) || [])[0] || null, sweep: (sweep.match(/errRetryDue|errorRetries/) || [])[0] || null }));
 }

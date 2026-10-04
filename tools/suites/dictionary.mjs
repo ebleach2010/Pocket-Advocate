@@ -63,7 +63,9 @@ check('K1 every dictionary read walks every page: the dictionary route, the pane
   // how often, not how much.
   (W.match(/listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)/g) || []).length === 4
   && !/listDocs\(env, 'advisorKnowledge', \{ pageSize: \d+ \}\)/.test(W)
-  && /const rows = await listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\);\n  return json\(\{\n    terms: rows\.map/.test(W)
+  // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, and the dictionary page drops the trading terms it
+  // saved after the whole-dictionary read, so the read is wrapped in that filter.
+  && /const rows = \(await listDocs\(env, 'advisorKnowledge', \{ pageSize: 300, all: true \}\)\.catch\(\(\) => \[\]\)\)\n\s+\.filter\(\(r\) => !LEGACY_TRADE_CATEGORIES\.includes\(String\(r\.data\.category \|\| ''\)\)\);\n  return json\(\{\n    terms: rows\.map/.test(W)
   // Re-pinned again 2026-09-09 (v4.2): the catch moved OUT of the reader and
   // into slowRead, which answers the fallback and remembers nothing on a
   // failure, so a refused read is never held for a minute as an empty list.
@@ -129,7 +131,8 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:'"`])\/\/[^\n]*/gm, '$1')
     // Re-pinned 2026-09-22 (v4.7): the line is three-way now, the desk first.
-    .replace(/const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.trade \? TRADE_INSTRUCTIONS : turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/, '');
+    // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, so the line is two-way again.
+    .replace(/const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/, '');
   const heads = [...code.matchAll(/^(?:export )?(?:async )?function \w+\(/gm)].map((m) => m.index);
   const shadowed = [];
   for (let i = 0; i < heads.length; i++) {
@@ -143,7 +146,7 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
     /const hisVoice = myVoice\(rows\);/.test(ADV)
     && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && hisVoice\.length < 2500\)/.test(ADV)
     && /<his_voice>\\n\$\{hisVoice \|\| '\(nothing in this thread yet/.test(ADV)
-    && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.trade \? TRADE_INSTRUCTIONS : turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)
+    && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)
     && heads.length > 50 && shadowed.length === 0,
     shadowed.length ? `shadowed in: ${shadowed.join(', ')}` : `${heads.length} functions scanned`);
 }
@@ -210,7 +213,8 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
     && tm.length === 8 && tm.every(Boolean)
     // Re-pinned 2026-09-22 (v4.7): the desk is a teacher, so its reading
     // hands the harvester no material; every other case still does.
-    && /material: ctx\.trade \? null : personMaterial\(rows, qaRows\),\n\s+docNames: \[\.\.\.\(m\.included \|\| \[\]\), \.\.\.alreadyRead\],/.test(ADV)
+    // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, so every reading hands it material.
+    && /material: personMaterial\(rows, qaRows\),\n\s+docNames: \[\.\.\.\(m\.included \|\| \[\]\), \.\.\.alreadyRead\],/.test(ADV)
     && /material: personMaterial\(rows, qa, \[question, answer\]\),\n\s+docNames: attachment\?\.name \? \[attachment\.name\] : \[\],/.test(ADV)
     && /loadQa\(env, kind, id, \{ full: true \}\)\.catch\(\(\) => \[\]\),\n\s+\]\);\n\s+const p = state\?\.data \|\| \{\};/.test(ADV),
     JSON.stringify({ names, legacyNames, tm }));

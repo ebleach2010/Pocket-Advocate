@@ -21,8 +21,8 @@
 import { getDoc, patchDoc, queryDocs, batchCreate, batchDelete, listDocs } from './firestore.js';
 import { BUCKET, putFile, patchObjectMeta, listFiles, deleteFile } from './storage.js';
 import { markPending } from './advisor.js';
-// The PDF writer moved to a shared module (2026-09-22): the trade desk files
-// documents with it and the demo builds the same file in the browser.
+// The PDF writer is a shared module (2026-09-22): the demo builds the same
+// file in the browser.
 import { textPdf } from '../public/js/textpdf.js';
 
 export const JOE = {
@@ -489,10 +489,5 @@ export async function wipeCase(env, id, { adminUid } = {}) {
     if (prof?.data.selfCaseId === id)
       await patchDoc(env, `users/${adminUid}`, { selfCaseId: null }, { mask: ['selfCaseId'] }).catch(() => {});
   }
-  // The trade desk (2026-09-22): a deleted desk leaves the settings pointing
-  // at nothing, so the shelf's door comes back.
-  const desk = await getDoc(env, 'trade/settings').catch(() => null);
-  if (desk?.data.caseId === id)
-    await patchDoc(env, 'trade/settings', { caseId: null }, { mask: ['caseId'] }).catch(() => {});
   return { docs: deleted, files: files.length };
 }

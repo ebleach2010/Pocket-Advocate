@@ -9,11 +9,6 @@
 // UI, not AI: nothing in the demo calls a model.
 
 import { DEMO_CASE_ID } from './seed.js';
-// The Trade portal's arithmetic (2026-09-21): the same module the Worker uses, so the demo's numbers are the real numbers.
-// PR 420 (2026-09-23) took the positions, the calculator, the stats and the scan off the desk, so two are left.
-import { tradeMetrics, rulesOf, planFor, positionKey, screenTrades, scalePosition } from '../trade-math.js';
-// The desk makes a PDF (2026-09-22): the same writer the Worker files with, so the demo's document is a real one.
-import { textPdf } from '../textpdf.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
 // reaction the UI has no name for.
 import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
@@ -29,71 +24,9 @@ const FILING_CATEGORIES = ['report', 'callsummary', 'visitfollowup',
 
 /** A little delay, so states that only exist while something is in flight
  *  (the button disabling, the progress bar, "Reading…") are visible. */
-// The trade desk (2026-09-22): the eight categories the Worker keeps to the
-// desk, its standing line in the Worker's words (trade-desk.js
-// standingLine), and the block the panel gets on the desk's poll. Nothing
-// here reads a market.
-const TRADE_CATS = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
-const deskMoney = (c) => `$${(Number(c || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const deskToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date());
-const deskRows = (store, prefix) => [...store.docs.entries()].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => ({ id: k.slice(prefix.length), ...v }));
-function deskStanding(store) {
-  const s = store.docs.get('trade/settings') || {};
-  const rows = deskRows(store, 'trade/balances/items/').map((b) => ({ date: b.date || b.id, cents: b.cents, note: b.note || '' }));
-  const R = rulesOf(s);
-  const m = tradeMetrics(rows, { startedAt: s.startedAt || null, startCents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000, target: R.dayAimPct / 100 });
-  const text = m.days && m.entries.length
-    ? `${deskMoney(m.currentCents)} · ${m.days} trading day${m.days === 1 ? '' : 's'} · ${Math.abs(m.offTargetPoints).toFixed(2)} pts ${m.offTargetCents < 0 ? 'under' : 'over'} ${Math.round(R.dayAimPct * 100) / 100}% a day`
-    : `${deskMoney(m.currentCents)} · no entries yet`;
-  return { text, at: new Date() };
-}
-function deskRefreshStanding(store) {
-  const s = store.docs.get('trade/settings') || {};
-  if (!s.caseId) return null;
-  const st = deskStanding(store);
-  const meta = store.docs.get(`caseMeta/${s.caseId}`) || {};
-  store.docs.set(`caseMeta/${s.caseId}`, { ...meta, tradeStanding: st });
-  return st;
-}
-// PR 420 (2026-09-23): the folder's panel gets nothing from the desk but the
-// fact that it is the desk, as the Worker's tradePanelBlock.
-function deskPanelBlock(store) {
-  const s = store.docs.get('trade/settings') || {};
-  return { caseId: s.caseId || null, pr420: true };
-}
-
-// The live prices the demo's cards read (2026-09-22; PR 420 added the names
-// its runs file).
-const DEMO_QUOTES = {
-  NVDA: { ticker: 'NVDA', last: 651.2, chg: 2.8, chgPct: 0.43, open: 648.9, high: 653.8, low: 646.1, prevClose: 648.4 },
-  SPY: { ticker: 'SPY', last: 574.1, chg: 1.2, chgPct: 0.21, open: 573.2, high: 575.4, low: 572.4, prevClose: 572.9 },
-  TSLA: { ticker: 'TSLA', last: 409.8, chg: -2.3, chgPct: -0.56, open: 412.4, high: 413.1, low: 408.2, prevClose: 412.1 },
-  AAPL: { ticker: 'AAPL', last: 232.6, chg: 1.5, chgPct: 0.65, open: 231, high: 233.2, low: 230.6, prevClose: 231.1 },
-  AMD: { ticker: 'AMD', last: 168.4, chg: 1.1, chgPct: 0.66, open: 167.2, high: 169.1, low: 166.8, prevClose: 167.3 },
-  QQQ: { ticker: 'QQQ', last: 498.3, chg: 1.9, chgPct: 0.38, open: 496.8, high: 498.9, low: 495.7, prevClose: 496.4 },
-  HOOD: { ticker: 'HOOD', last: 98.3, chg: 3.9, chgPct: 4.13, open: 95.1, high: 98.9, low: 94.8, prevClose: 94.4 },
-  MU: { ticker: 'MU', last: 118.9, chg: 6.2, chgPct: 5.5, open: 117.5, high: 119.6, low: 116.9, prevClose: 112.7 },
-  SOFI: { ticker: 'SOFI', last: 15.62, chg: 0.31, chgPct: 2.02, open: 15.35, high: 15.7, low: 15.28, prevClose: 15.31 },
-  PLTR: { ticker: 'PLTR', last: 41.35, chg: 0.82, chgPct: 2.02, open: 40.6, high: 41.5, low: 40.4, prevClose: 40.53 },
-};
-// THE NEWS PAGE'S FIXTURES (2026-09-22, the desk as one app). Eight headlines
-// and three earnings chips, invented, in the shape the Worker's news route
-// returns so the page cannot tell the difference.
-const DEMO_NEWS = [
-  { headline: 'Fed minutes show a split on the pace of cuts into year end', source: 'Reuters', mins: 41, related: ['SPY', 'QQQ'], summary: 'Several officials wanted to hold; the market is pricing one cut by December.' },
-  { headline: 'Nvidia raises data center guidance at its developer conference', source: 'Bloomberg', mins: 130, related: ['NVDA'], summary: 'The guidance came at 07:00 Eastern and the stock gapped up at the open.' },
-  { headline: 'Tesla third quarter deliveries land below the street estimate', source: 'CNBC', mins: 200, related: ['TSLA'], summary: 'Deliveries were 4% under consensus; the shares opened down and rejected the day average twice.' },
-  { headline: 'AMD supply agreement reported ahead of the open', source: 'WSJ', mins: 260, related: ['AMD'], summary: 'A multi year supply deal reported before the bell; the base above the fifty day is holding.' },
-  { headline: 'Oil slips for a third day as inventories build', source: 'Reuters', mins: 320, related: [], summary: '' },
-  { headline: 'Ten year yield steady near 4.1% ahead of the auction', source: 'Bloomberg', mins: 410, related: [], summary: '' },
-  { headline: 'Micron reports after the close, memory pricing in focus', source: 'MarketWatch', mins: 480, related: ['MU'], summary: '' },
-  { headline: 'Retail sales revised higher for August', source: 'AP', mins: 900, related: [], summary: '' },
-];
-const DEMO_EARNINGS = [
-  { symbol: 'MU', hour: 'bmo', epsEstimate: 1.12, epsActual: 1.26, revenueEstimate: 7700000000, revenueActual: 7900000000, quarter: 4, year: 2026 },
-  { symbol: 'AMD', hour: 'bmo', epsEstimate: 0.92, epsActual: null, revenueEstimate: 6900000000, revenueActual: null, quarter: 3, year: 2026 },
-  { symbol: 'NKE', hour: 'amc', epsEstimate: 0.7, epsActual: null, revenueEstimate: 12100000000, revenueActual: null, quarter: 1, year: 2027 },
-];
+// The trading categories the retired desk saved (PR 420, gone 2026-10-04),
+// kept off every glossary as the Worker keeps them off.
+const LEGACY_TRADE_CATS = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
 const beat = (ms = 320) => new Promise((r) => setTimeout(r, ms));
 
 const ok = (body) => ({
@@ -626,7 +559,7 @@ export function demoApi(role, store) {
       // invented brief lands on the new case a few seconds later, the way
       // the Worker's drain would write a real one.
       const base = 'cases/demo-case-mine';
-      const own = [...store.docs.entries()].filter(([k, v]) => /^cases\/[^/]+$/.test(k) && v?.self && !v?.trade);
+      const own = [...store.docs.entries()].filter(([k, v]) => /^cases\/[^/]+$/.test(k) && v?.self);
       const now = new Date();
       const s = (v, n) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, n);
       let sources = [];
@@ -638,7 +571,6 @@ export function demoApi(role, store) {
         const oldKey = `cases/${body.caseId}`;
         const old = store.docs.get(oldKey);
         if (!old?.self) return fail(409, 'Only your own case continues into a next one.');
-        if (old.trade) return fail(409, 'The trade desk does not continue into a next case. Close it or delete it.');
         if (old.status === 'closed') return fail(409, 'That case is already closed.');
         const st = store.docs.get(`${oldKey}/advisor/state`) || {};
         const top = (st.differential || [])[0];
@@ -655,7 +587,6 @@ export function demoApi(role, store) {
         for (const pid of (Array.isArray(body.pullFrom) ? body.pullFrom : [])) {
           const c = store.docs.get(`cases/${pid}`);
           if (!c?.self) return fail(400, 'One of the cases to pull from is not one of your own.');
-          if (c.trade) return fail(400, 'The trade desk cannot be pulled from.');
           sources.push([`cases/${pid}`, c]);
         }
         const newest = sources[0]?.[1];
@@ -916,10 +847,6 @@ export function demoApi(role, store) {
       for (const k of [...store.docs.keys()]) {
         if (k === `cases/${id}` || k.startsWith(`cases/${id}/`) || k === `caseMeta/${id}`) { store.docs.delete(k); docs++; }
       }
-      // The trade desk (2026-09-22): a deleted desk leaves the settings
-      // pointing at nothing, so the shelf's door comes back.
-      const ts = store.docs.get('trade/settings');
-      if (ts?.caseId === id) store.docs.set('trade/settings', { ...ts, caseId: null });
       store.persist?.();
       return ok({ ok: true, docs, files: 0 });
     }
@@ -1745,461 +1672,6 @@ export function demoApi(role, store) {
       return ok({ url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&demo=1&chatopen=1` });
     }
 
-    // ---- PR 420, the trading desk (2026-09-23) ----------------------------------
-    // The desk's routes, mirrored with the Worker's own refusal sentences
-    // (worker/trade-desk.js SAY) and the shapes worker/trade.js answers with.
-    // A run walks the same stages production does, on a timer: queued, the
-    // five researchers coming back one by one, the desk deciding, then fresh
-    // trades on the board. Nothing here reaches a market or the Worker.
-    if (path.startsWith('/api/admin/trade/')) {
-      if (role !== 'admin') return fail(404, 'Not found');
-      const sub = path.slice('/api/admin/trade/'.length);
-      const SAY = {
-        notFound: 'Not found',
-        deskOpen: 'The trade desk is already open.',
-        badDate: 'Pick a date like 2026-09-21, not in the future.',
-        badCents: 'Enter the balance in dollars, 0 or more, under ten million.',
-        badKey: 'That key does not look like a Finnhub key.',
-        badBarsKey: 'Paste both halves from Alpaca: the Key ID and the Secret.',
-        badAccount: 'Account type is cash or margin.',
-        badWatchlist: 'Watchlist: up to 20 tickers, letters and dots only.',
-        badTicker: 'Ticker: letters and dots only, up to six.',
-        noDesk: 'The trade desk is not open.',
-        noQuoteKey: 'No market data key on file. Add it in Settings.',
-        quoteMany: 'Quotes: up to 10 tickers at a time.',
-        runStalled: 'The desk run stopped partway and did not recover. Tap RUN TRADING DESK to start a fresh one.',
-        noRec: 'That trade is not on the desk any more.',
-        notOpen: 'That trade is no longer open to take.',
-        notTaken: 'Tap YES on this trade before marking how it ended.',
-        badResult: 'Mark it PROFIT or LOSS.',
-        notAdjustable: 'That trade is closed, so its size can no longer change.',
-        notDeclinable: 'Only a new suggestion can be passed on.',
-        notScalable: 'Tap YES on this trade before adding to it or trimming it.',
-        scaledNoReset: 'You have added to or trimmed this trade, so the desk\'s plan no longer fits it. Change its size instead.',
-        badRisk: 'Risk per trade: 0.1 to 5 percent of the balance.',
-      };
-      const DEFAULT_WATCHLIST = ['NVDA', 'AMD', 'TSLA', 'PLTR', 'SOFI', 'HOOD', 'COIN', 'MARA', 'F', 'INTC', 'BAC'];
-      const TICKER_RE = /^[A-Z][A-Z.]{0,5}$/;
-      const ID_RE = /^[\w-]{1,40}$/;
-      const todayMT = deskToday();
-      const realDate = (k) => /^\d{4}-\d{2}-\d{2}$/.test(k) && new Date(`${k}T12:00:00Z`).toISOString().slice(0, 10) === k;
-      const settings = () => store.docs.get('trade/settings') || {};
-      const tstate = () => store.docs.get('trade/state') || {};
-      const keyOf = (s) => String(s.finnhubKey || '');
-      const riskOf = (s) => { const v = Number(s.riskPct); return Number.isFinite(v) && v >= 0.1 && v <= 5 ? v : 3; };
-      const pub = (s) => ({
-        accountType: s.accountType === 'margin' ? 'margin' : 'cash',
-        riskPct: riskOf(s),
-        pushOn: s.pushOn !== false,
-        debugResearch: s.debugResearch === true,
-        watchlist: Array.isArray(s.watchlist) && s.watchlist.length ? s.watchlist : DEFAULT_WATCHLIST,
-        hasKey: !!keyOf(s), keyTail: keyOf(s).slice(-4),
-        // The 15-minute charts' key pair (v7.15): on file or not, the Key ID's last four, what the check said.
-        hasBarsKey: !!(s.alpacaKeyId && s.alpacaSecret), barsKeyTail: s.alpacaKeyId && s.alpacaSecret ? String(s.alpacaKeyId).slice(-4) : '',
-        barsCheck: s.barsCheck && ['ok', 'nokey', 'refused', 'failed'].includes(s.barsCheck.status) ? { status: s.barsCheck.status, at: iso(s.barsCheck.at) } : null,
-      });
-      const iso = (v) => (v ? new Date(v).toISOString() : null);
-      const recRow = (id, d) => ({
-        id, ticker: d.ticker, side: d.side === 'short' ? 'short' : 'long',
-        horizon: ['scalp', 'intraday', 'swing'].includes(d.horizon) ? d.horizon : 'intraday',
-        instrument: ['stock', 'call', 'put'].includes(d.instrument) ? d.instrument : 'stock',
-        entryLow: d.entryLow ?? d.entry ?? null, entryHigh: d.entryHigh ?? d.entry ?? null, entry: d.entry ?? null,
-        stop: d.stop ?? null, targets: Array.isArray(d.targets) ? d.targets : [],
-        holdMinutes: d.holdMinutes ?? null, holdDays: d.holdDays ?? null, allocPct: d.allocPct ?? null,
-        profitLow: d.profitLow ?? null, profitHigh: d.profitHigh ?? null,
-        setup: d.setup || d.picture || '', catalyst: d.catalyst || '', invalidation: d.invalidation || d.watch || '',
-        strike: d.strike ?? null, expiry: d.expiry ?? null, agreement: d.agreement ?? null,
-        lastPrice: d.lastPrice ?? null, priceNow: d.priceNow ?? null, priceAt: iso(d.priceAt),
-        status: String(d.status || 'open'),
-        result: d.result === 'profit' || d.result === 'loss' ? d.result
-          : d.status === 'closed' && Number(d.outcomeCents) ? (Number(d.outcomeCents) > 0 ? 'profit' : 'loss') : null,
-        at: iso(d.at), tookAt: iso(d.tookAt), closedAt: iso(d.closedAt), expiresAt: iso(d.expiresAt), runId: d.runId || null,
-        mine: d.mine && Number(d.mine.amountCents) > 0 && Number(d.mine.riskCents) > 0 ? {
-          amountCents: Number(d.mine.amountCents), riskCents: Number(d.mine.riskCents), stop: d.mine.stop ?? null,
-          targets: Array.isArray(d.mine.targets) ? d.mine.targets : [], qty: d.mine.qty ?? null, costCents: d.mine.costCents ?? null, at: iso(d.mine.at),
-          entry: Number.isFinite(Number(d.mine.entry)) && Number(d.mine.entry) > 0 ? Number(d.mine.entry) : null,
-          legs: Array.isArray(d.mine.legs) ? d.mine.legs.slice(-20).map((l) => ({ kind: l.kind === 'trim' ? 'trim' : 'add', qty: Number(l.qty) || 0, price: Number(l.price) || 0, at: iso(l.at) })) : [],
-        } : null,
-        adds: d.adds === true,
-        reoffered: d.reoffered && Number.isFinite(Number(d.reoffered.was)) ? { was: Number(d.reoffered.was), now: Number(d.reoffered.now) || 0 } : null,
-        tookAgreement: Number.isFinite(Number(d.tookAgreement)) && d.tookAgreement !== null ? Number(d.tookAgreement) : null,
-        agreedAt: iso(d.agreedAt),
-        dropped: d.dropped ? { at: iso(d.dropped.at), runId: d.dropped.runId || null } : null,
-        verdict: d.verdict && ['hold', 'add', 'trim', 'sell'].includes(d.verdict.call) ? { call: d.verdict.call, why: String(d.verdict.why || ''), at: iso(d.verdict.at), runId: d.verdict.runId || null, votes: d.verdict?.votes && typeof d.verdict.votes === 'object' ? Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, ['hold', 'add', 'trim', 'sell'].includes(d.verdict.votes[n]) ? d.verdict.votes[n] : null])) : null } : null,
-        // Who was for and against a new trade, by researcher number (v7.13).
-        backers: Array.isArray(d.backers) ? d.backers.map(Number).filter((x) => x >= 1 && x <= 5) : [], doubters: Array.isArray(d.doubters) ? d.doubters.map(Number).filter((x) => x >= 1 && x <= 5) : [],
-        chart: d.chart && typeof d.chart.line === 'string' && d.chart.line ? { line: d.chart.line.slice(0, 120), at: iso(d.chart.at) } : null,
-        highRisk: d.highRisk === true,
-      });
-      const BUSY_RUN = ['queued', 'researching', 'decide', 'deciding'];
-      const runBlock = (run) => (run ? {
-        status: ['queued', 'researching', 'decide', 'deciding', 'error', 'idle'].includes(run.status) ? run.status : 'idle',
-        alive: BUSY_RUN.includes(run.status), trigger: run.trigger || 'manual',
-        queuedAt: iso(run.queuedAt), startedAt: iso(run.startedAt), finishedAt: iso(run.finishedAt),
-        decideAt: iso(run.decideAt), claimedAt: iso(run.claimedAt),
-        done: Number(run.done) || 0, of: 5,
-        count: Number.isFinite(Number(run.count)) ? Number(run.count) : null,
-        error: run.status === 'error' ? (run.error || SAY.runStalled) : null,
-      } : { status: 'idle', alive: false });
-      const balanceOf = (s) => {
-        const rows = deskRows(store, 'trade/balances/items/').sort((a, b) => String(b.date || b.id).localeCompare(String(a.date || a.id)));
-        const c = rows[0]?.cents;
-        if (Number.isFinite(Number(c))) return { cents: Math.round(Number(c)), date: rows[0].date || rows[0].id, typed: true };
-        return { cents: Number.isInteger(s.startCents) && s.startCents > 0 ? s.startCents : 200000, date: null, typed: false };
-      };
-      const readRec = (id) => (ID_RE.test(id) ? store.docs.get(`trade/plays/items/${id}`) || null : null);
-      const editActive = (fn) => {
-        const st = tstate();
-        store.docs.set('trade/state', { ...st, activeIds: fn(Array.isArray(st.activeIds) ? st.activeIds : []) });
-      };
-
-      if (sub === 'state' && init.method !== 'POST') {
-        const s = settings();
-        const st = tstate();
-        const now = Date.now();
-        const activeIds = Array.isArray(st.activeIds) ? st.activeIds : [];
-        const deskIds = Array.isArray(st.desk?.ids) ? st.desk.ids : [];
-        const ids = [...new Set([...activeIds, ...deskIds])];
-        const rows = ids.map((id) => { const d = readRec(id); return d ? recRow(id, d) : null; }).filter(Boolean);
-        const live = (r) => r.status === 'open' && (!r.expiresAt || new Date(r.expiresAt).getTime() > now);
-        return ok({
-          open: !!s.caseId, caseId: s.caseId || null,
-          settings: pub(s), balance: balanceOf(s), run: runBlock(st.run),
-          desk: st.desk ? {
-            at: iso(st.desk.at), trigger: st.desk.trigger || 'manual', read: st.desk.read || '', none: st.desk.none || '',
-            count: Number(st.desk.count) || 0, reports: Number(st.desk.reports) || 0,
-            charts: ['ok', 'nokey', 'refused', 'failed'].includes(st.desk.charts) ? st.desk.charts : null,
-            scanner: ['ok', 'nokey', 'refused', 'failed'].includes(st.desk.scanner) ? st.desk.scanner : null,
-            verdicts: Array.isArray(st.desk.verdicts) ? st.desk.verdicts.slice(0, 12).map((x) => ({ ticker: String(x?.ticker || ''), horizon: ['scalp', 'intraday', 'swing'].includes(x?.horizon) ? x.horizon : 'intraday', side: x?.side === 'short' ? 'short' : 'long', instrument: ['stock', 'call', 'put'].includes(x?.instrument) ? x.instrument : 'stock', call: ['hold', 'add', 'trim', 'sell'].includes(x?.call) ? x.call : 'hold', why: String(x?.why || ''), agree: Number.isInteger(x?.agree) ? x.agree : null })) : [],
-          } : null,
-          recs: rows.filter((r) => deskIds.includes(r.id) && live(r)),
-          active: rows.filter((r) => r.status === 'took').sort((a, b) => String(b.tookAt).localeCompare(String(a.tookAt))),
-          timedOut: rows.filter((r) => deskIds.includes(r.id) && r.status === 'open' && !live(r)).length,
-          // The demo's market is always open, so the live prices and the scalps always have something to show.
-          market: { today: todayMT, tradingDay: 'full', open: true, beforeOpen: false, closeAt: '14:00' },
-          now: new Date(now).toISOString(),
-        });
-      }
-      if (sub === 'history' && init.method !== 'POST') {
-        const plays = deskRows(store, 'trade/plays/items/').filter((r) => r.status === 'closed').map((r) => ({ ...recRow(r.id, r), source: 'desk' }));
-        const logged = deskRows(store, 'trade/positions/items/').filter((p) => p.status === 'closed').map((p) => {
-          const pnl = Number(p.pnlCents);
-          return {
-            ...recRow(p.id, { ...p, targets: p.target ? [p.target] : [], setup: p.note || p.structure || '' }),
-            status: 'closed', result: Number.isFinite(pnl) && pnl !== 0 ? (pnl > 0 ? 'profit' : 'loss') : null,
-            tookAt: iso(p.openedAt), source: 'logged',
-          };
-        });
-        const rows = [...plays, ...logged].sort((a, b) => String(b.closedAt || '').localeCompare(String(a.closedAt || ''))).slice(0, 200);
-        return ok({ rows, count: rows.length });
-      }
-      if (sub === 'news' && init.method !== 'POST') {
-        const s = settings();
-        const st = tstate();
-        const now = Date.now();
-        const ids = [...new Set([...(st.activeIds || []), ...(st.desk?.ids || [])])];
-        const tickers = [...new Set(ids.map(readRec).filter((d) => d && ['open', 'took'].includes(d.status)).map((d) => d.ticker))];
-        const base = {
-          hasKey: !!keyOf(s), asOf: new Date(now).toISOString(), today: todayMT, tradingDay: 'full', marketOpen: true, tickers,
-          desk: Array.isArray(st.desk?.news) ? st.desk.news : [], deskAt: iso(st.desk?.at),
-        };
-        if (!keyOf(s)) return ok({ ...base, headlines: [], earnings: [], throttled: false });
-        // The Worker's relevance rule, word for word (worker/trade.js relevantNews and relevantEarnings).
-        const MACRO_RE = /\b(fed|fomc|powell|rate (?:cut|hike|decision)s?|interest rates?|treasur(?:y|ies)|yields?|inflation|cpi|ppi|pce|jobs report|payrolls?|unemployment|jobless|gdp|recession|tariffs?|trade war|oil|opec|crude|shutdown|debt ceiling|stimulus|central bank|ecb|boj|volatility|vix|sell-?off|rally)\b/i;
-        const headlines = DEMO_NEWS.map((n) => {
-          const onDesk = tickers.filter((t) => (n.related || []).includes(t) || new RegExp(`\\b${t.replace('.', '\\.')}\\b`).test(n.headline));
-          return {
-            headline: n.headline, source: n.source, url: 'https://example.invalid/story',
-            at: new Date(now - n.mins * 60_000).toISOString(), summary: n.summary, related: n.related, onDesk,
-            score: onDesk.length ? 2 : MACRO_RE.test(`${n.headline} ${n.summary || ''}`) ? 1 : 0,
-          };
-        }).filter((n) => n.score > 0).sort((a, b) => b.score - a.score || b.at.localeCompare(a.at)).slice(0, 12).map(({ score, ...n }) => n);
-        const earnings = DEMO_EARNINGS.filter((e) => tickers.includes(e.symbol) || (e.revenueEstimate || 0) >= 5e9)
-          .sort((a, b) => Number(tickers.includes(b.symbol)) - Number(tickers.includes(a.symbol)) || (b.revenueEstimate || 0) - (a.revenueEstimate || 0))
-          .slice(0, 12).map((e) => ({ ...e, onDesk: tickers.includes(e.symbol) }));
-        return ok({ ...base, headlines, earnings, throttled: false });
-      }
-      if (sub === 'quote' && init.method !== 'POST') {
-        const s = settings();
-        if (!keyOf(s)) return fail(404, SAY.noQuoteKey);
-        const list = [...new Set(String(q.get('symbols') || '').split(/[\s,]+/).map((t) => t.toUpperCase().trim()).filter(Boolean))];
-        if (!list.length || list.length > 10) return fail(400, SAY.quoteMany);
-        if (!list.every((t) => TICKER_RE.test(t))) return fail(400, SAY.badTicker);
-        return ok({ quotes: list.map((t) => DEMO_QUOTES[t]).filter(Boolean), missing: list.filter((t) => !DEMO_QUOTES[t]), at: new Date().toISOString() });
-      }
-      if (sub === 'research' && init.method !== 'POST') {
-        if (settings().debugResearch !== true) return fail(404, SAY.notFound);
-        const d = store.docs.get('trade/research') || {};
-        // The five beats by the names the Worker's research route gives them (worker/desk-run.js LENSES).
-        const BEATS = ['Momentum and the tape', 'Catalysts', 'Macro and sectors', 'Swing structure', 'Options, volatility and risk'];
-        return ok({
-          runId: d.runId || null, at: iso(d.at),
-          reports: BEATS.map((beat, i) => { const r = d[`r${i + 1}`]; return { n: i + 1, beat, status: r?.status || 'missing', text: r?.text || '', err: r?.err || '', ms: Number(r?.ms) || null }; }),
-        });
-      }
-      if (init.method !== 'POST') return fail(404, SAY.notFound);
-      if (sub === 'open') {
-        // One open desk at a time, as the Worker: a second call is refused
-        // with the open one's id, and the shelf walks into it.
-        await beat(300);
-        const s = settings();
-        const cur = s.caseId ? store.docs.get(`cases/${s.caseId}`) : null;
-        if (cur && cur.status !== 'closed') return fail(409, SAY.deskOpen, { existing: s.caseId });
-        const desks = [...store.docs.keys()].filter((k) => /^cases\/demo-case-trade(-\d+)?$/.test(k)).length;
-        const id = desks ? `demo-case-trade-${desks + 1}` : 'demo-case-trade';
-        const now = new Date();
-        store.docs.set(`cases/${id}`, {
-          self: true, trade: true, clientUid: null, clientEmail: null, clientName: 'PR 420', clientDob: null,
-          clientTz: 'America/Boise', clientPhone: null, clientAddress: null, status: 'confirmed', createdAt: now,
-          bookingEmailSentAt: now, appointment: null,
-          publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
-          addOnFollowUp: false, forms: {}, files: [], reportDueAt: null, caseRateCents: 0, addonRateCents: 0,
-          fullAccess: true, fullAccessAt: now, fullAccessRateCents: 0, fullAccessMonths: 0, fullAccessByHand: true,
-          stripe: null, work: { seconds: 0, startedAt: null }, hold: null, priorCases: [], carriedDx: [],
-        });
-        store.docs.set(`cases/${id}/advisor/state`, { trade: true, status: 'idle', priorCases: [], carriedDx: [], handovers: [], handoverStatus: null });
-        store.docs.set('trade/settings', { ...s, caseId: id, openedAt: now, startedAt: s.startedAt || todayMT });
-        store.persist?.();
-        store.fire?.(`cases/${id}`);
-        return ok({ ok: true, id, created: true });
-      }
-      if (sub === 'balance') {
-        const date = body.date === undefined || body.date === '' ? todayMT : String(body.date).trim();
-        if (!realDate(date) || date > todayMT) return fail(400, SAY.badDate);
-        if (body.remove === true) {
-          store.docs.delete(`trade/balances/items/${date}`);
-          store.persist?.();
-          return ok({ ok: true, removed: date });
-        }
-        const cents = Number(body.cents);
-        if (!Number.isInteger(cents) || cents < 0 || cents >= 1e9) return fail(400, SAY.badCents);
-        store.docs.set(`trade/balances/items/${date}`, { date, at: new Date(), cents, note: '', source: 'typed' });
-        store.persist?.();
-        return ok({ ok: true, balance: { cents, date, typed: true } });
-      }
-      if (sub === 'settings') {
-        const s = settings();
-        const patch = {};
-        if (body.finnhubKey !== undefined) {
-          const key = String(body.finnhubKey || '').trim();
-          if (key && !/^[A-Za-z0-9_-]{16,64}$/.test(key)) return fail(400, SAY.badKey);
-          patch.finnhubKey = key;
-        }
-        // Alpaca's pair (v7.15). Nothing reaches Alpaca from the demo: a Key ID starting BAD stands in for
-        // one Alpaca turns down, so the sheet's refusal can be seen.
-        if (body.alpacaKeyId !== undefined || body.alpacaSecret !== undefined) {
-          const id = String(body.alpacaKeyId || '').trim();
-          const secret = String(body.alpacaSecret || '').trim();
-          if ((id || secret) && !(/^[A-Za-z0-9]{16,40}$/.test(id) && /^[A-Za-z0-9/+=_-]{20,100}$/.test(secret))) return fail(400, SAY.badBarsKey);
-          patch.alpacaKeyId = id; patch.alpacaSecret = secret;
-          patch.barsCheck = { status: !id ? 'nokey' : /^BAD/i.test(id) ? 'refused' : 'ok', at: new Date() };
-        }
-        if (body.accountType !== undefined) {
-          if (!['cash', 'margin'].includes(body.accountType)) return fail(400, SAY.badAccount);
-          patch.accountType = body.accountType;
-        }
-        if (body.riskPct !== undefined) {
-          const v = Number(body.riskPct);
-          if (!Number.isFinite(v) || v < 0.1 || v > 5) return fail(400, SAY.badRisk);
-          patch.riskPct = Math.round(v * 100) / 100;
-        }
-        if (body.watchlist !== undefined) {
-          const raw = Array.isArray(body.watchlist) ? body.watchlist : String(body.watchlist || '').split(/[\s,]+/);
-          const list = [...new Set(raw.map((t) => String(t || '').toUpperCase().trim()).filter(Boolean))];
-          if (list.length > 20 || !list.every((t) => TICKER_RE.test(t))) return fail(400, SAY.badWatchlist);
-          patch.watchlist = list.length ? list : DEFAULT_WATCHLIST;
-        }
-        if (body.pushOn !== undefined) patch.pushOn = body.pushOn === true;
-        if (body.debugResearch !== undefined) patch.debugResearch = body.debugResearch === true;
-        const next = { ...s, ...patch, updatedAt: new Date() };
-        store.docs.set('trade/settings', next);
-        store.persist?.();
-        return ok({ ok: true, settings: pub(next) });
-      }
-      if (sub === 'take') {
-        const id = String(body.id || '');
-        const d = readRec(id);
-        if (!d) return fail(404, SAY.noRec);
-        if (d.status === 'took') return ok({ ok: true, rec: recRow(id, d) });
-        if (d.status !== 'open') return fail(409, SAY.notOpen);
-        const next = { ...d, status: 'took', tookAt: new Date() };
-        store.docs.set(`trade/plays/items/${id}`, next);
-        editActive((ids) => [...new Set([id, ...ids])].slice(0, 20));
-        store.persist?.();
-        return ok({ ok: true, rec: recRow(id, next) });
-      }
-      if (sub === 'result') {
-        const id = String(body.id || '');
-        const result = String(body.result || '');
-        if (!['profit', 'loss'].includes(result)) return fail(400, SAY.badResult);
-        const d = readRec(id);
-        if (!d) return fail(404, SAY.noRec);
-        if (d.status === 'closed' && d.result === result) return ok({ ok: true, rec: recRow(id, d) });
-        if (d.status !== 'took') return fail(409, SAY.notTaken);
-        const next = { ...d, status: 'closed', result, closedAt: new Date() };
-        store.docs.set(`trade/plays/items/${id}`, next);
-        editActive((ids) => ids.filter((x) => x !== id));
-        store.persist?.();
-        return ok({ ok: true, rec: recRow(id, next) });
-      }
-      // NO (2026-09-24): the Worker's tradeDecline. The position is remembered with its agreement.
-      if (sub === 'decline') {
-        const id = String(body.id || '');
-        const d = readRec(id);
-        if (!d) return fail(404, SAY.noRec);
-        if (d.status !== 'open' && d.status !== 'declined') return fail(409, SAY.notDeclinable);
-        const key = positionKey(d);
-        const agreement = Math.max(0, Number(d.agreement) || 0);
-        const next = d.status === 'open' ? { ...d, status: 'declined', declinedAt: new Date() } : d;
-        store.docs.set(`trade/plays/items/${id}`, next);
-        const st = tstate();
-        store.docs.set('trade/state', { ...st, declined: { ...(st.declined || {}), [key]: { agreement, at: new Date(), recId: id } } });
-        store.persist?.();
-        return ok({ ok: true, rec: recRow(id, next), key, agreement });
-      }
-      // His own size (2026-09-23): the Worker's tradeAdjust, on the same planFor.
-      if (sub === 'adjust') {
-        const id = String(body.id || '');
-        const d = readRec(id);
-        if (!d) return fail(404, SAY.noRec);
-        if (d.status !== 'open' && d.status !== 'took') return fail(409, SAY.notAdjustable);
-        const legs = Array.isArray(d.mine?.legs) ? d.mine.legs : [];
-        if (legs.length && body.reset === true) return fail(409, SAY.scaledNoReset);
-        let mine = null;
-        if (body.reset !== true) {
-          const p = planFor({ rec: d, amountCents: body.amountCents, riskCents: body.riskCents, entry: legs.length ? d.mine.entry : null });
-          if (!p.ok) return fail(400, p.why);
-          mine = { amountCents: p.amountCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, at: new Date() };
-          if (legs.length) Object.assign(mine, { entry: d.mine.entry, legs });
-        }
-        const next = { ...d, mine };
-        store.docs.set(`trade/plays/items/${id}`, next);
-        store.persist?.();
-        return ok({ ok: true, rec: recRow(id, next) });
-      }
-      // ADD/TRIM (2026-09-24): the Worker's tradeScale, on the same scalePosition.
-      if (sub === 'scale') {
-        const id = String(body.id || '');
-        const d = readRec(id);
-        if (!d) return fail(404, SAY.noRec);
-        if (d.status !== 'took') return fail(409, SAY.notScalable);
-        const s = settings();
-        const bal = balanceOf(s);
-        const p = scalePosition({ rec: d, kind: body.kind, amountCents: body.amountCents, contracts: body.contracts, price: body.price,
-          riskCents: body.riskCents, accountCents: bal.typed ? bal.cents : 0, rules: { riskPct: riskOf(s) } });
-        if (!p.ok) return fail(400, p.why);
-        const legs = [...(Array.isArray(d.mine?.legs) ? d.mine.legs : []), { kind: p.kind, qty: p.changeQty, price: p.price, at: new Date() }].slice(-20);
-        const mine = { amountCents: p.costCents, riskCents: p.askedRiskCents, stop: p.stop, targets: p.targets, qty: p.qty, costCents: p.costCents, entry: p.entry, legs, at: new Date() };
-        const next = { ...d, mine };
-        store.docs.set(`trade/plays/items/${id}`, next);
-        store.persist?.();
-        return ok({ ok: true, rec: recRow(id, next) });
-      }
-      // RUN TRADING DESK: queued at once, answered at once, and the stages
-      // walk on a timer the way the cron walks them in production.
-      if (sub === 'run') {
-        const s0 = settings();
-        if (!s0.caseId) return fail(404, SAY.noDesk);
-        const st0 = tstate();
-        if (BUSY_RUN.includes(st0.run?.status)) return ok({ ok: true, already: true, run: runBlock(st0.run) });
-        const runId = `run-demo-${Date.now().toString(36)}`;
-        const put = (patch) => {
-          const st = tstate();
-          if (st.run?.id !== runId) return false;
-          store.docs.set('trade/state', { ...st, run: { ...st.run, ...patch } });
-          store.persist?.();
-          return true;
-        };
-        store.docs.set('trade/state', { ...st0, run: { id: runId, status: 'queued', trigger: 'manual', queuedAt: new Date(), done: 0, attempt: 0 } });
-        store.persist?.();
-        setTimeout(() => put({ status: 'researching', startedAt: new Date(), claimedAt: new Date(), done: 0 }), 900);
-        for (let n = 1; n <= 5; n++) setTimeout(() => put({ done: n }), 900 + n * 650);
-        // The handover and the desk's claim, as the cron does them a firing apart.
-        setTimeout(() => put({ status: 'decide', decideAt: new Date() }), 900 + 5 * 650 + 150);
-        setTimeout(() => put({ status: 'deciding', claimedAt: new Date() }), 900 + 5 * 650 + 700);
-        setTimeout(() => {
-          const st = tstate();
-          if (st.run?.id !== runId) return;
-          const now = Date.now();
-          // What the last run left open is expired, as the Worker's fileRecs does.
-          for (const id of st.desk?.ids || []) {
-            const d = readRec(id);
-            if (d && d.status === 'open') store.docs.set(`trade/plays/items/${id}`, { ...d, status: 'expired', expiredAt: new Date(now) });
-          }
-          const expiry = (days) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Boise' }).format(new Date(now + days * 86_400_000));
-          const FRESH = [
-            // A stock, not a fund (v7.18: "the trading desk gave me fucking qqq").
-            { horizon: 'intraday', ticker: 'HOOD', side: 'long', instrument: 'stock', entryLow: 97.6, entryHigh: 98.2, stop: 95.9, targets: [101.5, 104], holdMinutes: 180, allocPct: 30, profitLow: 55, profitHigh: 63, agreement: 4, backers: [1, 2, 3, 5], doubters: [4], lastPrice: 98.1, priceNow: 98.1,
-              chart: { line: 'Above VWAP · EMAs stacked up · MACD above signal', at: new Date(now - 4 * 60_000) },
-              setup: 'Broke the opening range and held it on the retest, with volume rising into the break.', catalyst: 'Top gainer on the scan after record September trading volumes.', invalidation: 'A close back under 96 on volume.' },
-            { horizon: 'swing', ticker: 'MU', side: 'long', instrument: 'stock', entryLow: 118.2, entryHigh: 119, stop: 113.9, targets: [126, 131], holdDays: 3, allocPct: 22, profitLow: 51, profitHigh: 60, agreement: 3, backers: [2, 3, 4], doubters: [], lastPrice: 118.7, priceNow: 118.7,
-              chart: { line: 'Above VWAP · EMAs stacked up · MACD just crossed up', at: new Date(now - 4 * 60_000) },
-              setup: 'Beat on memory pricing before the open and is basing above the gap.', catalyst: 'Earnings beat and a raised outlook this morning.', invalidation: 'Filling the gap below 114.' },
-            // The run's one high-risk trade (v7.17): a lower-cap name, at its own lower bar and larger cap.
-            { horizon: 'swing', ticker: 'RKLB', side: 'long', instrument: 'call', strike: 30, expiry: expiry(9), entryLow: 1.6, entryHigh: 1.75, stop: 1.1, targets: [2.8, 3.6], holdDays: 3, allocPct: 15, profitLow: 42, profitHigh: 50, agreement: 2, backers: [1, 5], doubters: [3], lastPrice: 28.9, highRisk: true,
-              setup: 'Coiled under 30 for a week with call buying building into the launch window.', catalyst: 'Launch window opens Friday.', invalidation: 'Losing 27.50, the base of the coil.' },
-            { horizon: 'scalp', ticker: 'AMD', side: 'long', instrument: 'call', strike: 170, expiry: expiry(2), entryLow: 2.05, entryHigh: 2.2, stop: 1.6, targets: [2.9, 3.4], holdMinutes: 15, allocPct: 12, profitLow: 52, profitHigh: 59, agreement: 3, backers: [1, 2, 5], doubters: [4], lastPrice: 168.4,
-              setup: 'Pressing the day high at 169 with the supply news behind it.', catalyst: 'Supply agreement reported before the open.', invalidation: 'Losing 167.8, the morning low of the push.' },
-          ];
-          // THE RE-CHECK, as the Worker's run does it (2026-09-24). The demo has no researchers, so their
-          // count is stood in for: a held position the run brings again takes that trade's count, and the
-          // demo's own table does the rest. The votes (v7.13) stand in for the five: that many say hold,
-          // the next says trim and the rest say sell, and SOFI at none of the five has all five saying sell,
-          // so a SELL can be seen; nothing leaves his list until he marks it.
-          const DEMO_BACKING = { PLTR: 3, SOFI: 0 };
-          const verdicts = [];
-          for (const hid of tstate().activeIds || []) {
-            const d = readRec(hid);
-            if (!d || d.status !== 'took') continue;
-            const again = FRESH.find((t) => positionKey(t) === positionKey(d));
-            const backs = again ? again.agreement : DEMO_BACKING[d.ticker];
-            if (backs == null) continue;
-            const votes = Object.fromEntries([1, 2, 3, 4, 5].map((n) => [n, backs === 0 ? 'sell' : n <= backs ? 'hold' : n === backs + 1 ? 'trim' : 'sell']));
-            const call = backs >= 3 ? 'hold' : 'sell';
-            const agree = Object.values(votes).filter((x) => x === call).length;
-            const why = backs === 0 ? 'None of the five back it any more.' : call === 'hold' ? 'Still holding its level with volume behind it.' : 'Lost the level it was built on.';
-            // Its 15-minute chart as of this run (v7.15): the demo's stands in for the bars.
-            const chart = { line: call === 'sell' ? 'Below VWAP · EMAs stacked down · MACD just crossed down' : 'Above VWAP · EMAs stacked up · MACD above signal', at: new Date(now - 4 * 60_000) };
-            store.docs.set(`trade/plays/items/${hid}`, { ...d, agreement: agree, agreedAt: new Date(now), agreedRunId: runId, tookAgreement: d.tookAgreement ?? d.agreement ?? null, verdict: { call, why, at: new Date(now), runId, votes }, chart });
-            verdicts.push({ ticker: d.ticker, horizon: d.horizon, side: d.side, instrument: d.instrument, call, why, agree });
-          }
-          verdicts.sort((a, b) => ({ sell: 0, trim: 1, add: 2, hold: 3 })[a.call] - ({ sell: 0, trim: 1, add: 2, hold: 3 })[b.call]);
-          // Screened as the Worker's desk firing screens them: against what he holds and what he passed on.
-          const held = (tstate().activeIds || []).map((x) => readRec(x)).filter((d) => d && d.status === 'took').map(positionKey);
-          const { keep } = screenTrades(FRESH, { held, declined: tstate().declined || {} });
-          const ids = [];
-          keep.forEach((t, i) => {
-            const id = `${runId}-${i + 1}`;
-            ids.push(id);
-            const hold = t.horizon === 'swing' ? 3 * 86_400_000 : t.horizon === 'scalp' ? 2 * 3600_000 : 4 * 3600_000;
-            store.docs.set(`trade/plays/items/${id}`, {
-              ...t, entry: Math.round(((t.entryLow + t.entryHigh) / 2) * 10000) / 10000, runId, slot: i + 1, caseId: s0.caseId,
-              at: new Date(now), priceAt: new Date(now), status: 'open', expiresAt: new Date(now + hold), tookAt: null, closedAt: null, result: null,
-            });
-          });
-          store.docs.set('trade/research', {
-            runId, at: new Date(now),
-            ...Object.fromEntries([1, 2, 3, 4, 5].map((n) => [`r${n}`, { status: 'ok', ms: 60_000 + n * 9000, text: `Report ${n}: the tape, the names worth a look and why, with levels.` }])),
-          });
-          store.docs.set('trade/state', {
-            ...tstate(),
-            run: { ...st.run, status: 'idle', finishedAt: new Date(now), count: ids.length, error: null, done: 5 },
-            desk: {
-              runId, at: new Date(now), trigger: 'manual', count: ids.length, reports: 5, ids, none: '', verdicts, charts: 'ok', scanner: 'ok',
-              read: 'Semis are leading and the index is holding its opening range on better volume than yesterday. Buy strength that holds a retest; skip anything extended.',
-              news: [
-                { headline: 'Micron beats on memory pricing and raises its outlook', why: 'Fuel for the whole chip group today, and the reason MU is on the board.', tickers: ['MU', 'NVDA'] },
-                { headline: 'Ten year yield steady ahead of the auction', why: 'A quiet bond market lets the morning trend run.', tickers: ['QQQ'] },
-              ],
-            },
-          });
-          store.persist?.();
-        }, 900 + 5 * 650 + 1500);
-        return ok({ ok: true, already: false, run: runBlock(tstate().run) });
-      }
-      return fail(404, SAY.notFound);
-    }
-
     // ---- the advisor, from a fixture -------------------------------------
     if (path === '/api/advisor/state') {
       // Whichever case is open, not always the first one: the Full Access
@@ -2208,9 +1680,6 @@ export function demoApi(role, store) {
       // page.
       const cid = q.get('id') || body.id || DEMO_CASE_ID;
       let state = store.docs.get(`cases/${cid}/advisor/state`) || {};
-      // The trade desk (2026-09-22): its own block, the trading half of the
-      // dictionary, and a desk answer to a desk question.
-      const isTrade = !!(state.trade || store.docs.get(`cases/${cid}`)?.trade);
       // A handover queued a few seconds ago lands now (2026-09-05): the
       // demo's stand-in for the Worker's drain writing the brief.
       if (state.handoverStatus === 'running' && Array.isArray(state.handoverPending)
@@ -2243,49 +1712,8 @@ export function demoApi(role, store) {
       for (const [p, d] of [...store.docs.entries()]) {
         if (!p.startsWith(qaPrefix) || d.status !== 'running') continue;
         if (Date.now() - new Date(d.at || 0).getTime() < 4000) continue;
-        let answer = 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.';
-        let doc = null;
-        if (isTrade) {
-          answer = d.file
-            ? 'Your positions are NVDA and SPY, both above their stops. NVDA is holding 650 on volume; the next level I would watch is 652, and a break of 648 ends it. SPY is drifting on light volume with 570 under it; nothing to do there until 573 or 570 breaks.'
-            : 'NVDA is holding above the opening range on twice its normal volume, so the long side is the side with the wind. The 650 to 655 call debit spread for this Friday costs about 2.10 and pays 5.00 at 655 by the close. The trade is invalidated on a break back below 648 on the stock. Chance of profit 55 to 62%. At 2 contracts the risk is $420, about 2% of the account.';
-          // A portfolio total on the screenshot becomes that day's balance
-          // unless he typed one, as the Worker's finishQuestion does it.
-          if (d.file) {
-            const today = deskToday();
-            const cur = store.docs.get(`trade/balances/items/${today}`);
-            if (!cur || cur.source === 'screenshot') {
-              store.docs.set(`trade/balances/items/${today}`, { date: today, at: new Date(), cents: 241000, note: 'from a screenshot', source: 'screenshot' });
-              deskRefreshStanding(store);
-              answer += `\n\nLogged $2,410.00 as the balance for ${today}.`;
-            } else {
-              answer += `\n\nYou typed a balance for ${today}, so the screenshot's total was not logged over it.`;
-            }
-          }
-          // THE DESK MAKES A PDF (2026-09-22): asked for a document, the demo
-          // builds a real one with the writer the Worker uses, files it where
-          // the Uploads page looks, and hangs the link under the answer. A data
-          // URL, so the file survives a reload; the first write to store.files
-          // from this mirror.
-          if (!d.file && /\b(pdf|document|sheet|playbook|checklist|write.?up|print)\b/i.test(d.question || '')) {
-            const lines = [
-              'Every entry has a stop before the order goes in.', '',
-              '# Sizing', '- Size to the stop, never to the target.', '- Options: the whole premium is the risk, so size as if it goes to zero.', '',
-              '# Adds and exits', '- No adds to a loser.', '- The 10:30 bar decides the morning: a setup that has not worked by then is closed.', '- A target hit is a sale, not a hold for more.', '',
-              '# Before the open', '- Check the spread on the options before the order.', '- Write the exit plan in the log before the entry.',
-            ];
-            const bytes = textPdf(lines, { title: 'Rules to hold', footer: `Trade desk · ${deskToday()} · Ideas, not orders. Every trade is your decision.` });
-            let bin = '';
-            for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
-            const url = `data:application/pdf;base64,${btoa(bin)}`;
-            const path = `cases/${cid}/report/${Date.now()}-Rules to hold.pdf`;
-            const at = new Date().toISOString();
-            store.files.set(path, { name: 'Rules to hold.pdf', type: 'application/pdf', size: bytes.length, at, url, persisted: true });
-            doc = { name: 'Rules to hold.pdf', path, url, size: bytes.length, at };
-            answer = 'Your rules to hold, on one page: every entry has a stop before the order goes in, size to the stop and never to the target, no adds to a loser, and the 10:30 bar decides the morning.\n\nFiled as Rules to hold.pdf on Uploads.';
-          }
-        }
-        store.docs.set(p, { ...d, status: 'done', batch: null, answer, ...(doc ? { doc } : {}) });
+        const answer = 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.';
+        store.docs.set(p, { ...d, status: 'done', batch: null, answer });
         store.persist?.();
       }
       const qaRows = [...store.docs.entries()]
@@ -2299,12 +1727,10 @@ export function demoApi(role, store) {
       return ok({
         state: panelState,
         qa: qaRows,
-        // The desk sees the trading half of the dictionary and every other
-        // case the medical half (2026-09-22), as the Worker filters it.
+        // The medical half of the dictionary only, as the Worker filters it.
         glossary: [...store.docs.entries()]
-          .filter(([p, d]) => p.startsWith('advisorKnowledge/') && TRADE_CATS.includes(d.category || 'General') === isTrade)
+          .filter(([p, d]) => p.startsWith('advisorKnowledge/') && !LEGACY_TRADE_CATS.includes(d.category || 'General'))
           .map(([p, d]) => ({ id: p.split('/').pop(), ...d, learned: !!d.learnedAt })),
-        trade: isTrade ? deskPanelBlock(store) : null,
         keyConfigured: true,
         notes: notes.html || '',
         notesUpdatedAt: notes.updatedAt || null,
@@ -2348,9 +1774,7 @@ export function demoApi(role, store) {
           // each, once (2026-09-03). Mirrors askInChat in the Worker.
           const c = store.docs.get(`cases/${cid}`) || {};
           const asked = [...store.docs.keys()].some((k) => k.startsWith(`cases/${cid}/chat/`) && store.docs.get(k)?.role === 'question');
-          // Never on the desk (Eric, 2026-09-22): the trade log is his to
-          // write in, so the reading puts nothing into it.
-          if (c.self && !c.trade && !asked) {
+          if (c.self && !asked) {
             const qs = [
               'What time did the tremor start today, and is it the right hand only?',
               'How many hours did you sleep last night, and did you wake with a headache?',
@@ -2619,11 +2043,10 @@ export function demoApi(role, store) {
     }
     if (path === '/api/advisor/covers') {
       const covers = { [DEMO_CASE_ID]: { text: 'Two years unexplained, bloods never actually seen', by: 'advisor', at: new Date() } };
-      // The trade desk's cover and its standing line (2026-09-22), from the
-      // mirror the Worker keeps on caseMeta.
+      // Every other cover, from the mirror the Worker keeps on caseMeta.
       for (const [k, v] of store.docs.entries()) {
         if (!k.startsWith('caseMeta/')) continue;
-        covers[k.slice('caseMeta/'.length)] = { text: v.workingDx?.text || '', by: v.workingDx?.by || 'advisor', at: { advisor: v.advisorAt || null }, tradeStanding: v.tradeStanding?.text || '' };
+        covers[k.slice('caseMeta/'.length)] = { text: v.workingDx?.text || '', by: v.workingDx?.by || 'advisor', at: { advisor: v.advisorAt || null } };
       }
       return ok({ covers });
     }

@@ -16,7 +16,6 @@
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
-//   GET/POST /api/admin/trade/*     the trade desk (2026-09-22): open, state, balance, settings, play (admin)
 //   POST   /api/admin/showcase-case  build the showcase case, Joe Bloe, invented end to end, or find the one that exists (admin)
 //   POST   /api/admin/delete-case    delete a case with nobody real behind it, his own or the showcase, whole (admin)
 //   POST   /api/admin/case-charge    approve a held case at the amount he sets (zero included) or decline it and release the hold (admin)
@@ -52,14 +51,8 @@ import { validateAction } from './advisor-acts.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
-  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel, diagLog,
+  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel, diagLog, LEGACY_TRADE_CATEGORIES,
 } from './advisor.js';
-// The trade desk (2026-09-21; a case file since 2026-09-22; PR 420 since
-// 2026-09-23): its routes, the six-agent run the cron hosts and its one
-// morning clock, and the leaf they all stand on.
-import { tradeRoute, TradeError, tradePanelBlock } from './trade.js';
-import { maybeRunDesk, peekDesk } from './desk-run.js';
-import { TRADE_CATEGORIES, SAY as TRADE_SAY, resolveBars, fetchBars, chartsOf, chartText } from './trade-desk.js';
 
 /**
  * The advisor's model turns, out of harm's way. A Workflow step has no wall
@@ -997,49 +990,7 @@ export default {
         // says how big, so the size a real records packet fails at can be
         // found without asking him to try it over and over. Nothing of his
         // is read, written or listed.
-        // WHY EVERY READ CAME BACK EMPTY (2026-09-09). Every call site in
-        // this Worker catches a Firestore failure and degrades to a default,
-        // which is right for a client's page and useless for finding out
-        // what is wrong: the diag itself went blank, cron and all. This asks
-        // the three questions in order, uncaught, and says what each one
-        // answered: can the service account get a token, can it read one
-        // document, can it write one. Touches diag/probe and nothing of his.
-        // THE DESK'S RUN, FROM OUTSIDE (PR 420, 2026-09-23). A run lives on
-        // trade/state and the research doc beside it, and nothing else reports
-        // it, so a stuck one would be invisible from anywhere but his phone.
-        // This says where the run is, how old its heartbeat is, how each of
-        // the five researchers did and what the desk filed. Read only: it
-        // writes nothing and taps nothing, and no report text rides it.
-        if (url.searchParams.get('do') === 'desk') {
-          const age = (v) => (v ? Math.round((Date.now() - new Date(v).getTime()) / 1000) : null);
-          const st = await getDoc(env, 'trade/state').catch(() => null);
-          const cfg = await getDoc(env, 'trade/settings').catch(() => null);
-          const d = st?.data || {};
-          const caseId = cfg?.data?.caseId || null;
-          const research = await getDoc(env, 'trade/research').catch(() => null);
-          const run = d.run || null;
-          const rd = research?.data || {};
-          return json({
-            caseId,
-            run: run ? {
-              id: run.id || null, status: run.status || null, trigger: run.trigger || null, phase: run.phase || null,
-              attempt: run.attempt || 0, done: run.done || 0, count: run.count ?? null, error: run.error || null,
-              queuedAgeS: age(run.queuedAt), startedAgeS: age(run.startedAt), beatAgeS: age(run.heartbeatAt), finishedAgeS: age(run.finishedAt),
-              ms: run.ms ?? null,
-            } : null,
-            research: rd.runId ? {
-              runId: rd.runId,
-              agents: [1, 2, 3, 4, 5].map((n) => {
-                const r = rd[`r${n}`];
-                return r ? { n, status: r.status || null, ms: r.ms ?? null, stop: r.stop || null, err: r.err || null, searches: r.usage?.searches ?? null, chars: r.text ? r.text.length : 0 } : { n, status: 'missing' };
-              }),
-            } : null,
-            desk: d.desk ? { runId: d.desk.runId || null, ageS: age(d.desk.at), count: d.desk.count ?? null, reports: d.desk.reports ?? null, news: (d.desk.news || []).length, ids: (d.desk.ids || []).length } : null,
-            active: Array.isArray(d.activeIds) ? d.activeIds.length : null,
-            morning: { day: d.morningDay || null, ageS: age(d.morningAt) },
-          });
-        }
-        // WHICH WALL A RUN HITS (2026-09-23). Every desk run today stopped
+        // WHICH WALL A RUN HITS (2026-09-23). Long runs stopped
         // writing partway with no error and no log line, which is what a
         // spent subrequest allowance or a CPU kill looks like from outside.
         // This measures both instead of guessing: `sub` reads one tiny
@@ -1063,24 +1014,13 @@ export default {
           }
           return json(out);
         }
-        // Does his market data key include 15-minute bars? (2026-09-24, before building the chart feed Eric
-        // asked for: "intraday 15min vwap, macd 3 EMA lines"). One call, SPY; the key never leaves.
-        if (url.searchParams.get('do') === 'bars-probe') {
-          // RE-AIMED 2026-09-24 (v7.15): Finnhub's answer is in (403, its free plan has no candles), and
-          // the charts come from Alpaca's free plan. One call for SPY and QQQ; the answer is whether a key
-          // pair exists and where from, Alpaca's status, the bar counts and SPY's chart as the agents read
-          // it. Neither half of the key ever rides.
-          const s = await getDoc(env, 'trade/settings').catch(() => null);
-          const creds = resolveBars(env, s?.data);
-          if (!creds) return json({ key: false });
-          const got = await fetchBars(creds, ['SPY', 'QQQ'], Date.now());
-          const charts = chartsOf(got);
-          return json({
-            key: true, source: env.ALPACA_KEY_ID && env.ALPACA_SECRET ? 'env' : 'settings', status: got.status, code: got.code ?? null,
-            bars: Object.fromEntries(Object.entries(got.bars || {}).map(([t, b]) => [t, Array.isArray(b) ? b.length : 0])),
-            spy: charts.SPY ? chartText('SPY', charts.SPY) : null,
-          });
-        }
+        // WHY EVERY READ CAME BACK EMPTY (2026-09-09). Every call site in
+        // this Worker catches a Firestore failure and degrades to a default,
+        // which is right for a client's page and useless for finding out
+        // what is wrong: the diag itself went blank, cron and all. This asks
+        // the three questions in order, uncaught, and says what each one
+        // answered: can the service account get a token, can it read one
+        // document, can it write one. Touches diag/probe and nothing of his.
         if (url.searchParams.get('do') === 'firestore-probe') {
           const out = {};
           for (const [name, run] of [
@@ -1198,13 +1138,6 @@ export default {
         return await handleCloseCase(request, env);
       if (url.pathname === '/api/admin/voice')
         return await handleVoiceLoop(request, env, ctx);
-      // The Trade portal (2026-09-21): one prefix, one gate, one dispatch.
-      // `ctx` rides too (2026-09-22, v6.13): the fast look runs its turn on
-      // his tap through ctx.waitUntil, so the button answers at once while
-      // the invocation stays alive for the run. handleVoiceLoop above is the
-      // same pattern.
-      if (url.pathname.startsWith('/api/admin/trade/'))
-        return await handleTrade(request, env, url, ctx);
       if (url.pathname === '/api/version' && request.method === 'GET') {
         // The reprice diag came off once the stored rate read 350000
         // (2026-08-29, marker "full 340000 -> 350000"). The HEARTBEAT
@@ -1400,14 +1333,6 @@ export default {
     // the ordinary retry path a couple of minutes before the platform wall.
     const deadlineAt = fired + 12.5 * 60_000;
     const minute = new Date(event.scheduledTime || fired).getUTCMinutes();
-    // THE DESK'S FIFTY CALLS (PR 420, 2026-09-23). An invocation may make
-    // fifty outside calls, measured in production, and every chore below
-    // spends some of them. So the firing looks first (one read, and the
-    // database token fetched once before anything runs beside it): when the
-    // desk has work, the per-minute chores wait for the next minute and the
-    // run gets the firing. Never on a quarter hour, which carries the
-    // medical sweeps.
-    const deskDoc = minute % 15 === 0 ? null : await peekDesk(env).catch(() => null);
     // Flight-recorder heartbeat: proof, readable from outside, that the cron
     // trigger itself is firing. One tiny masked write per minute.
     ctx.waitUntil(patchDoc(env, 'diag/cron', { lastFiredAt: new Date(), minute, watchdog: false },
@@ -1439,31 +1364,21 @@ export default {
 
     // NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420. No scans
     // unless I manually do it. No auto token burn anywhere."). This firing
-    // starts no model turn of its own: the desk's 7:00 run, the nightly voice
-    // study, the one-shot voice study and the one-shot re-queue of parked
-    // reads are gone, and the sweep no longer retries a read that failed.
-    // What is left here only carries work he started with a tap: a desk run
-    // through its two firings, a queued read, a question or a draft in flight.
-    // The two per-minute chores below skip a firing the desk is using
-    // (THE DESK'S FIFTY CALLS, above); each simply runs a minute later.
-    if (!deskDoc) {
-      // Un-gated, and for a plain reason: the first rung of the clock
-      // ladder is five minutes, so a quarter-hour gate could not deliver it.
-      // One document read on any firing where he is in the app or nothing is
-      // running, which is nearly all of them.
-      ctx.waitUntil(runWorkClockNudges(env));
-      // Un-gated too, and only until it finishes: this one shuts the books, and
-      // a quarter hour of the old behaviour after the deploy is a quarter hour
-      // in which somebody can buy a case he has said he cannot take.
-      ctx.waitUntil(closeBookingsAug2026(env));
-    }
-    // THE DESK BOOKS NOTHING HERE ANY MORE (Eric, 2026-09-22: "I manually
-    // update either scan individually. No automatic."). This used to claim
-    // one of three slots a trading day and book a reading on the desk's
-    // case. The clock is gone, the slots with it: the only thing that
-    // starts a desk turn is his tap on Scan or on Update, and the only
-    // thing this firing still does for the desk is collect a flight one of
-    // those taps put in the air, which the poll below does for every case.
+    // starts no model turn of its own: the nightly voice study, the one-shot
+    // voice study and the one-shot re-queue of parked reads are gone, and the
+    // sweep no longer retries a read that failed. What is left here only
+    // carries work he started with a tap: a queued read, a question or a
+    // draft in flight. (The trade desk and its run went with PR 420 on
+    // 2026-10-04.)
+    // Un-gated, and for a plain reason: the first rung of the clock
+    // ladder is five minutes, so a quarter-hour gate could not deliver it.
+    // One document read on any firing where he is in the app or nothing is
+    // running, which is nearly all of them.
+    ctx.waitUntil(runWorkClockNudges(env));
+    // Un-gated too, and only until it finishes: this one shuts the books, and
+    // a quarter hour of the old behaviour after the deploy is a quarter hour
+    // in which somebody can buy a case he has said he cannot take.
+    ctx.waitUntil(closeBookingsAug2026(env));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -1481,21 +1396,7 @@ export default {
     // belongs to the turn. The sweep runs on the quarter hours after it. The
     // quick jobs above stay on waitUntil: they finish in seconds, well inside
     // the post-event grace.
-    // PR 420 (2026-09-23): the six-agent desk run is the firing's one model
-    // job whenever one is queued, handed to the desk, or needs resuming. It
-    // runs HERE, awaited, because this invocation has fifteen minutes of wall
-    // time and a tap's background work is cancelled thirty seconds after the
-    // response. A firing that ran the desk leaves the case drain to the next
-    // minute, which is one minute away and runs in its own invocation.
-    // Never on a quarter hour (review, 2026-09-23): those firings carry the
-    // medical sweeps, and five research streams would hold five of the six
-    // connections an invocation may open. A queued run waits one minute.
-    // A firing that did desk work leaves the case drain to the next minute
-    // whatever it cost: what is left of its fifty calls is not enough to
-    // promise a case read (2026-09-23).
-    const ranDesk = !deskDoc ? false
-      : await maybeRunDesk(env, { deadlineAt, doc: deskDoc }).catch((err) => { console.error('desk run:', err?.stack || err); return false; });
-    if (!ranDesk) await runQueuedAnalyses(env, deadlineAt);
+    await runQueuedAnalyses(env, deadlineAt);
     if (minute % 5 === 0) {
       // The sweep reads every open case and subscription and each one's
       // advisor state, so it is the most expensive thing on this clock. It
@@ -2121,7 +2022,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-03-pause-all';
+const BUILD_TAG = 'v2026-10-04-desk-gone';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2129,7 +2030,7 @@ const BUILD_TAG = 'v2026-10-03-pause-all';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.20';
+const VERSION = '7.21';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -6543,19 +6444,12 @@ async function handleAdvisorState(request, env, url) {
   // it is stripped for the same reason: the panel reads callDocStatus and
   // callDocSources, never the request that produced them.
   const { readFiles, pendingMedia, callNotesReq, callDocReq, ...panelState } = state?.data || {};
-  // The trade desk (2026-09-22): its glossary is the trading half only, and
-  // the panel gets the desk's own block; every other case sees the medical
-  // half and no block. Read off the state, which the desk stamps when it
-  // opens, so this costs no extra read on a case that is not the desk.
-  const trade = !!state?.data.trade;
-  const terms = knowledge.filter((r) => TRADE_CATEGORIES.includes(String(r.data.category || '')) === trade);
-  // PR 420 (2026-09-23): the desk has no scan and no reading any more, so
-  // there is nothing in flight to bring home here; the block only says this
-  // case is the desk, and the folder hands it to the desk's own page.
-  const tradeBlock = trade ? await tradePanelBlock(env).catch(() => null) : null;
+  // The glossary is the medical half only. The trading terms the old desk
+  // saved (PR 420, retired 2026-10-04) stay in the dictionary and never
+  // reach a case.
+  const terms = knowledge.filter((r) => !LEGACY_TRADE_CATEGORIES.includes(String(r.data.category || '')));
   return json({
     state: panelState,
-    trade: tradeBlock,
     // The file reference a resend needs stays here; the panel never uses it.
     qa: qa.map(({ data: { fileRef, ...rest } }) => { void fileRef; return rest; }),
     glossary: terms.map((r) => ({
@@ -7794,8 +7688,6 @@ async function handleAdvisorCovers(request, env) {
     covers[r.id] = {
       text: dx?.text || '',
       by: dx?.by || 'advisor',
-      // The trade desk's line under its cover (2026-09-22).
-      tradeStanding: r.data.tradeStanding?.text || '',
       // What changed, and when. The shelf compares these against what Eric has
       // already looked at to decide which emoji a folder carries.
       at: {
@@ -7843,7 +7735,10 @@ async function handleDictionary(request, env) {
   // grew past that, and then every term past the three hundredth slug was
   // simply not on the page he was sent to. The painted terms come from the
   // reading itself, not from this list, so the two drifted apart silently.
-  const rows = await listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []);
+  // The trading terms the retired desk saved (PR 420, gone 2026-10-04) stay
+  // stored and off this page.
+  const rows = (await listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []))
+    .filter((r) => !LEGACY_TRADE_CATEGORIES.includes(String(r.data.category || '')));
   return json({
     terms: rows.map((r) => ({
       id: r.id,
@@ -8762,30 +8657,6 @@ async function requireAdmin(request, env) {
   return user;
 }
 
-/**
- * The trade desk's routes (2026-09-21; a case file since 2026-09-22), all
- * under one prefix and one gate: a stranger, a client and an unknown
- * sub-path get the same 404. The work lives in worker/trade.js; a
- * TradeError there is a status he sees, carrying what it has to say beside
- * the sentence (the open desk's id on a 409), and anything else is the
- * ordinary catch above this dispatch.
- */
-async function handleTrade(request, env, url, ctx) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
-  const sub = url.pathname.slice('/api/admin/trade/'.length);
-  const body = request.method === 'POST' ? await request.json().catch(() => ({})) : null;
-  // The query string rides too (2026-09-22): the quote route is a GET with
-  // the tickers he is actually in.
-  const query = Object.fromEntries(url.searchParams);
-  try {
-    return json(await tradeRoute(env, { sub, method: request.method, body, query, ctx }));
-  } catch (err) {
-    if (err instanceof TradeError) return json({ error: err.message, ...(err.extra || {}) }, err.status);
-    throw err;
-  }
-}
-
 function slotIdFor(start) {
   // "2026-07-20_16-00" — same shape the seed script used.
   return start.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 16);
@@ -9626,8 +9497,9 @@ async function pullFromOf(env, body) {
   for (const id of ids) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     if (!c?.data.self) return { error: 'One of the cases to pull from is not one of your own.', cases: [] };
-    // The trade desk is his own and is not a medical case (2026-09-22).
-    if (c.data.trade) return { error: TRADE_SAY.noPull, cases: [] };
+    // The retired trade desk's case (PR 420, gone 2026-10-04) is not a
+    // medical case and stays out of any pull.
+    if (c.data.trade) return { error: 'That case cannot be pulled from.', cases: [] };
     cases.push(c);
   }
   cases.sort((a, b) => new Date(b.data.createdAt || 0) - new Date(a.data.createdAt || 0));
@@ -9734,7 +9606,7 @@ async function handleSelfCaseNext(request, env) {
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
   if (!doc?.data.self) return json({ error: 'Only your own case continues into a next one.' }, 409);
-  if (doc.data.trade) return json({ error: TRADE_SAY.noNext }, 409);
+  if (doc.data.trade) return json({ error: 'That case does not continue into a next one.' }, 409);
   if (doc.data.status === 'closed') return json({ error: 'That case is already closed.' }, 409);
   const state = await getDoc(env, `cases/${caseId}/advisor/state`).catch(() => null);
   const top = (Array.isArray(state?.data.differential) ? state.data.differential : [])[0] || null;

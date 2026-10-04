@@ -421,7 +421,11 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     //   FAIL  CH7 the pages: ...
     // NEGATIVE CONTROL (run 2026-09-25, v7.17): admin-desk.html put back to stat125 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-desk'].every((p) => /admin\.css\?v=stat126/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted, admin-desk.html with it, and the six pages left
+    // move to stat127 for the stylesheet that lost the desk's rules.
+    // NEGATIVE CONTROL (run 2026-10-04, v7.21): admin.html put back to stat126 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin'].every((p) => /admin\.css\?v=stat127/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }
