@@ -92,7 +92,8 @@ await page.click('#fund-next');
 // to pick, and says when checks are mailed; the card number is typed into the street address.
 check('A8 then Step 5, Payment Information', await step(5) && /Never enter passwords, PINs, card numbers or bank details\./.test(await text(page))
   // RE-PINNED 2026-10-04 (v7.26): one payout, "Not monthly".
-  && /Payouts are mailed by Mercury Business Check on January 1, 2027\./.test(await text(page)) && !(await page.$('input[name="method"]')));
+  // RE-PINNED 2026-10-04 (v7.27): his sentence word for word, "January 1st, 2027".
+  && /Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027\./.test(await text(page)) && !(await page.$('input[name="method"]')));
 check('A10a a check in the mail asks for the name and the address and says Mercury, 7 to 10 business days', /Checks are sent from Mercury and take 7 to 10 business days to arrive\./.test(await text(page)) && !!(await page.$('#f-addr-zip')));
 await page.fill('#f-accountName', 'River Kowalski');
 await page.fill('#f-addr-line1', '4111 1111 1111 1111');

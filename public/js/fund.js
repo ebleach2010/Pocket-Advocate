@@ -221,7 +221,7 @@ function stepBody(n) {
     ${uploader('photo')}
     ${filesOf('photo').length ? check('photoPublicConsent', 'I agree this photo may be shown publicly on the community’s GoFundMe page.', form.photoPublicConsent) : ''}`;
   if (n === 5) return `
-    <p class="fund-measure">Payouts are mailed by Mercury Business Check on January 1, 2027. Where should yours go?</p>
+    <p class="fund-measure">Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027. Where should yours go?</p>
     <p class="fund-note">${esc(CHECK_NOTE)}</p>
     ${checkFields()}
     <div class="fund-note fund-warn">Never enter passwords, PINs, card numbers or bank details. We will never ask for them.</div>

@@ -552,7 +552,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     // distributions. With first payout November 1."
     && READ.includes('The fundraiser runs from now through Christmas Eve, December 24, 2026.')
     // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
-    && READ.includes('Verified applicants will receive payouts via Mercury Business Check on January 1, 2027.') && !READ.includes('November') && !/each month|monthly/i.test(READ)
+    // RE-PINNED 2026-10-04 (v7.27): his sentence word for word, "January 1st, 2027".
+    && READ.includes('Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027.') && !READ.includes('November') && !/each month|monthly/i.test(READ)
     // RE-PINNED 2026-10-04 (v7.26): Zazzle's cut and the help line in the words of Eric's post ("I receive
     // only a creator royalty/commission", "If you have questions or want to request a Zazzle design,
     // email me ... I'll respond within three business days.").
@@ -693,7 +694,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && sent.status === 200 && mine.method === 'check' && mine.address.city === 'Boise'
     && RULES.CHECK_NOTE === 'Checks are sent from Mercury and take 7 to 10 business days to arrive.'
     // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
-    && PAGE.includes('Payouts are mailed by Mercury Business Check on January 1, 2027. Where should yours go?')
+    // RE-PINNED 2026-10-04 (v7.27): his sentence word for word, "January 1st, 2027".
+    && PAGE.includes('Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027. Where should yours go?')
     && /Name to make the check out to/.test(PAGE) && !/name="method"|Check in the mail|PayPal|Venmo|Zelle/.test(PAGE)
     && /esc\(CHECK_NOTE\)/.test(PAGE) && !/tracking/i.test(PAGE + SRC + ADMINPAGE),
     JSON.stringify({ good, noZip, venmo }));
@@ -964,7 +966,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && at('2027-01-01T07:00:00Z') === null && at('2027-01-02T12:00:00Z') === null
     && RULES.payoutWords(RULES.PAYOUTS[0]) === 'January 1, 2027' && RULES.payoutWords(null) === ''
     && RULES.chaseLine(RULES.PAYOUTS[0].at) === 'If you do not receive your check by January 10, please email office@pocketadvocacy.com.'
-    && f('public/index.html').includes('on January 1, 2027.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE)
+    // RE-PINNED 2026-10-04 (v7.27): his sentence word for word, "January 1st, 2027".
+    && f('public/index.html').includes('on January 1st, 2027.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE)
     && !/November|each month|monthly/i.test(PAGE.replace(/^\s*\/\/.*$/gm, '')),
     JSON.stringify(['2026-10-04T18:00:00Z', '2026-11-02T12:00:00Z', '2027-01-01T06:59:59Z', '2027-01-01T07:00:00Z', '2027-01-02T12:00:00Z'].map(at)));
 }

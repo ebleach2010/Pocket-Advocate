@@ -86,9 +86,18 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry726 = (CL.match(/\{\n\s+\/\/ THE FUND'S TOTALS \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-04, v7.26): changelog.js's VERSION left at '7.25' made this read
   //   FAIL  R1 both versions read 7.26 with the new tag, the 7.26 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.26 with the new tag, the 7.26 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.26';/.test(CL) && /const VERSION = '7\.26';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-totals';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.26'
+  // RE-PINNED 2026-10-04 (v7.27): both versions read 7.27 with the fund-jan1st tag; the 7.27 entry carries
+  // his sentence word for word, and no fund entry says monthly payouts any more.
+  const entry727 = (CL.match(/\{\n\s+\/\/ JANUARY 1ST \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-04, v7.27): the 7.25 entry's monthly line put back made this read
+  //   FAIL  R1 both versions read 7.27 with the new tag, the 7.27 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.27 with the new tag, the 7.27 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.27';/.test(CL) && /const VERSION = '7\.27';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-jan1st';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.27'
+    && /version: '7\.27',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry727)
+    && entry727.includes('Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027.')
+    && !DASH.test(entry727) && !HARD.some((re) => re.test(entry727))
+    && !changelog.CHANGELOG.filter((e) => ['7.25', '7.26', '7.27'].includes(e.version)).some((e) => e.admin.some((l) => /Distributions are monthly|each month|November 1/.test(l)))
     && /version: '7\.26',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry726)
     && /Net GoFundMe proceeds so far/.test(entry726) && /Zazzle creator earnings being added/.test(entry726) && /The GoFundMe button is live/.test(entry726)
     && !DASH.test(entry726) && !HARD.some((re) => re.test(entry726))

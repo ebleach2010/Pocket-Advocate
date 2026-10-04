@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.26';
+export const VERSION = '7.27';
 
 /**
  * Newest first.
@@ -52,6 +52,19 @@ export const VERSION = '7.26';
  */
 export const CHANGELOG = [
   {
+    // JANUARY 1ST (Eric, 2026-10-04, again: "Verified applicants will receive
+    // payouts via Mercury Business Check on January 1st, 2027. Not monthly.").
+    // His sentence word for word, and the 7.25 notes no longer say monthly.
+    // Admin only.
+    version: '7.27',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your sentence is on the landing page and the form word for word: Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027.',
+      'The 7.25 notes no longer say monthly. Nothing anywhere says monthly payouts now.',
+    ],
+  },
+  {
     // THE FUND'S TOTALS (Eric, 2026-10-04: "I also need to input Net GoFundMe
     // proceeds so far, Zazzle creator earnings being added, Combined total in
     // the fund", with his Reddit post "in case there's anything here you
@@ -65,7 +78,7 @@ export const CHANGELOG = [
       'The Fund queue now takes the Net GoFundMe proceeds so far and the Zazzle creator earnings being added. The combined total, the approved recipients and each share so far follow.',
       'Each post tells every participant the totals and their share so far. One button copies the Friday post for Discord, and another copies the approved Discord usernames.',
       'Each participant shows their share so far, what was sent and what is still owed, and the check amount starts at what is owed.',
-      'The payout is one check, mailed January 1, 2027. Not monthly.',
+      'Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027. Not monthly.',
       'The GoFundMe button is live on the landing page.',
       'From your post: how it works, the Friday figures, the usernames published before payout, the optional photo, what stays private, emailing if a check has not come by the 10th, and a reply within three business days.',
     ],
@@ -84,8 +97,8 @@ export const CHANGELOG = [
       'Everything that is not the fund is parked in PR 1, the tab beside Fund: Clients, Calendar, Chats, Availability, Terms, the old landing and the old public pages. Nothing was deleted.',
       'The old public pages are hidden. Anyone else who opens one is sent to the fund page. Clients you already have can still sign in to their case and chat.',
       'Every new application sends you a notification and an email to pocketadvocate.eric@gmail.com, with no names in either. The Fund queue has a button to turn alerts on for your phone and one to send yourself a test.',
-      'The fundraiser runs through Christmas Eve, December 24. Distributions are monthly and by check only, mailed on the 1st: November 1, December 1 and January 1.',
-      'Post the pool total each month, and mark each check mailed with its check number.',
+      'The fundraiser runs through Christmas Eve, December 24. Payouts are by check only.',
+      'Mark each check mailed with its check number.',
     ],
   },
   {
