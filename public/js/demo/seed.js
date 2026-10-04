@@ -569,7 +569,7 @@ export function seed({ set, file }) {
     consents, submittedAt: days(2), createdAt: days(3), updatedAt: days(2),
     audit: [{ at: days(3), by: 'demo-fund-sam', act: 'started' }, { at: days(2), by: 'demo-fund-sam', act: 'submitted', from: 'draft', to: 'submitted' }],
   });
-  set('fundPayments/demo-fund-sam', { userId: 'demo-fund-sam', method: 'venmo', handle: '@sam-rivera', accountName: '', otherMethod: '', updatedAt: days(2) });
+  set('fundPayments/demo-fund-sam', { userId: 'demo-fund-sam', method: 'check', accountName: 'Sam Rivera', address: { line1: '88 Willow Ln', line2: 'Apt 3', city: 'Nampa', state: 'ID', zip: '83651' }, updatedAt: days(2) });
   set('fundApplications/demo-fund-jo', {
     userId: 'demo-fund-jo', verificationStatus: 'verified', step: 6, discordUsername: 'jo.wren', preferredName: 'Jo',
     legalName: 'Joanna Wren', email: '', applicantNote: '', discordMember: true, participationRequested: true, participationActive: true,
@@ -579,7 +579,7 @@ export function seed({ set, file }) {
     reverificationDueAt: new Date(days(38).getTime() + 182 * 86_400_000), createdAt: days(41), updatedAt: days(38),
     audit: [{ at: days(40), by: 'demo-fund-jo', act: 'submitted', from: 'draft', to: 'submitted' }, { at: days(38), by: 'demo-admin', act: 'verify', from: 'under_review', to: 'verified' }],
   });
-  set('fundPayments/demo-fund-jo', { userId: 'demo-fund-jo', method: 'check', handle: '', accountName: 'Joanna Wren', otherMethod: '', address: { line1: '412 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' }, updatedAt: days(40) });
+  set('fundPayments/demo-fund-jo', { userId: 'demo-fund-jo', method: 'check', accountName: 'Joanna Wren', address: { line1: '412 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' }, updatedAt: days(40) });
 }
 
 export const DEMO_CASE_ID = CASE_ID;

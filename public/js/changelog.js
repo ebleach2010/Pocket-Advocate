@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.24';
+export const VERSION = '7.25';
 
 /**
  * Newest first.
@@ -51,6 +51,24 @@ export const VERSION = '7.24';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE FUND IS HOME (Eric, 2026-10-04: "I want everything but information
+    // about the fundraiser and applicants HIDDEN in a parked PR 1. And be sure
+    // I receive notifications for applications." Then: "Fundraiser runs
+    // through Christmas Eve with monthly payout distributions. With first
+    // payout November 1. Also, payout should be check only."). Admin only.
+    version: '7.25',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your home is now the Fund queue. Signing in and the Home Screen icon both open it.',
+      'Everything that is not the fund is parked in PR 1, the tab beside Fund: Clients, Calendar, Chats, Availability, Terms, the old landing and the old public pages. Nothing was deleted.',
+      'The old public pages are hidden. Anyone else who opens one is sent to the fund page. Clients you already have can still sign in to their case and chat.',
+      'Every new application sends you a notification and an email to pocketadvocate.eric@gmail.com, with no names in either. The Fund queue has a button to turn alerts on for your phone and one to send yourself a test.',
+      'The fundraiser runs through Christmas Eve, December 24. Distributions are monthly and by check only, mailed on the 1st: November 1, December 1 and January 1.',
+      'Post the pool total each month, and mark each check mailed with its check number.',
+    ],
+  },
   {
     // THE FUND, PAID OUT (Eric, 2026-10-04: the Discord, a blurb of why,
     // approve or deny with the reason emailed, check in the mail, the weekly

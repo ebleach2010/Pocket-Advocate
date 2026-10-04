@@ -17,7 +17,7 @@
 import { requireUser } from './auth.js';
 import { auth, signOut } from './firebase.js';
 import { enablePush, pushSupported, pushInstalled } from './push.js';
-import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, METHOD_WORDS } from './fund-rules.js';
+import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, nextPayout, payoutWords } from './fund-rules.js';
 
 const HELP = 'office@pocketadvocacy.com';
 const box = document.getElementById('fund');
@@ -38,7 +38,6 @@ const CONSENTS = [
   ['reviewerView', 'I consent to authorized reviewers viewing the information and documents I submitted for the limited purpose of determining eligibility.'],
   ['formula', 'I understand that, if approved and actively participating, I will receive distributions according to the same published distribution formula used for other verified participants.'],
 ];
-const METHODS = [['paypal', 'PayPal'], ['venmo', 'Venmo'], ['zelle', 'Zelle'], ['check', 'Check in the mail'], ['bank', 'Bank transfer'], ['other', 'Other']];
 const ID_REDACT = 'You may redact information we do not need, including your address, ID number, date of birth, and other unrelated personal information. We primarily need enough information to reasonably confirm that the application belongs to a real person.';
 const MED_REDACT = 'You may redact diagnoses, medications, test results, account numbers, dates of birth, and unrelated medical information. We only need enough information to reasonably verify eligibility.';
 const NOTE_LABEL = 'Anything you’d like the reviewer to know about your documentation?';
@@ -59,7 +58,7 @@ const form = {
   discordUsername: '', preferredName: '', legalName: '', email: '', applicantNote: '', needStatement: '',
   discordMember: false, participationRequested: null, photoPublicConsent: false,
   consents: Object.fromEntries(CONSENTS.map(([k]) => [k, false])),
-  payment: { method: null, handle: '', accountName: '', otherMethod: '', address: { line1: '', line2: '', city: '', state: '', zip: '' } },
+  payment: { method: 'check', accountName: '', address: { line1: '', line2: '', city: '', state: '', zip: '' } },
 };
 
 const user = await requireUser();
@@ -170,23 +169,16 @@ function uploader(kind) {
     <p class="fund-saved" data-upmsg="${kind}" aria-live="polite"></p>`;
 }
 
-function methodFields() {
+// Eric, 2026-10-04: "payout should be check only." The step asks for where
+// to mail it and nothing else.
+function checkFields() {
   const p = form.payment;
-  if (p.method === 'paypal') return field('handle', 'PayPal email or @username', { value: p.handle });
-  if (p.method === 'venmo') return field('handle', 'Venmo @username', { value: p.handle, max: 60 });
-  if (p.method === 'zelle') return field('handle', 'The email or phone number your Zelle uses', { value: p.handle });
-  if (p.method === 'bank') return field('accountName', 'Name on the account', { value: p.accountName, hint: 'We will arrange the account details with you privately when a distribution is ready. Please do not enter account or routing numbers here.' });
-  if (p.method === 'check') {
-    const a = p.address || {};
-    return `<p class="fund-note">${esc(CHECK_NOTE)}</p>`
-      + field('accountName', 'Name to make the check out to', { value: p.accountName })
-      + field('addr-line1', 'Street address', { value: a.line1 })
-      + field('addr-line2', 'Apartment, suite or unit', { value: a.line2, optional: true })
-      + field('addr-city', 'City', { value: a.city, max: 80 })
-      + `<div class="fund-two">${field('addr-state', 'State', { value: a.state, max: 2, hint: 'Two letters, like ID.' })}${field('addr-zip', 'ZIP code', { value: a.zip, max: 10 })}</div>`;
-  }
-  if (p.method === 'other') return field('otherMethod', 'Which service?', { value: p.otherMethod, max: 60 }) + field('handle', 'Your username or address on that service', { value: p.handle });
-  return '';
+  const a = p.address || {};
+  return field('accountName', 'Name to make the check out to', { value: p.accountName })
+    + field('addr-line1', 'Street address', { value: a.line1 })
+    + field('addr-line2', 'Apartment, suite or unit', { value: a.line2, optional: true })
+    + field('addr-city', 'City', { value: a.city, max: 80 })
+    + `<div class="fund-two">${field('addr-state', 'State', { value: a.state, max: 2, hint: 'Two letters, like ID.' })}${field('addr-zip', 'ZIP code', { value: a.zip, max: 10 })}</div>`;
 }
 
 function stepBody(n) {
@@ -227,15 +219,14 @@ function stepBody(n) {
     ${uploader('photo')}
     ${filesOf('photo').length ? check('photoPublicConsent', 'I agree this photo may be shown publicly on the community’s GoFundMe page.', form.photoPublicConsent) : ''}`;
   if (n === 5) return `
-    <p class="fund-measure">How would you like to receive distributions?</p>
-    <div class="fund-choices">${METHODS.map(([v, w]) => `
-      <label class="fund-choice"><input type="radio" name="method" value="${v}"${form.payment.method === v ? ' checked' : ''}>${w}</label>`).join('')}
-    </div>
-    <div id="method-fields">${methodFields()}</div>
-    <div class="fund-note fund-warn">Never enter passwords, PINs, card numbers or bank login details. We will never ask for them.</div>
+    <p class="fund-measure">Distributions are mailed by check on the 1st of each month, starting November 1. Where should yours go?</p>
+    <p class="fund-note">${esc(CHECK_NOTE)}</p>
+    ${checkFields()}
+    <div class="fund-note fund-warn">Never enter passwords, PINs, card numbers or bank details. We will never ask for them.</div>
     <p class="fund-hint">Only authorized fund reviewers can see this.</p>`;
   const meds = filesOf('medical').length;
-  const method = METHODS.find(([v]) => v === form.payment.method)?.[1] || 'not chosen';
+  const a = form.payment.address || {};
+  const mailTo = form.payment.accountName && a.line1 ? `Check to ${a.city || 'your address'}` : 'mailing address not added yet';
   return `
     <p class="fund-measure">Here is what you are sending. Tap Edit to change anything.</p>
     <ul class="fund-summary">
@@ -243,7 +234,7 @@ function stepBody(n) {
       <li><span>ID document${filesOf('id').length ? ' ✓' : ': not added yet'}</span><button type="button" data-go="2">Edit</button></li>
       <li><span>${meds ? `${meds} medical document${meds === 1 ? '' : 's'} ✓` : 'Medical documents: not added yet'}</span><button type="button" data-go="3">Edit</button></li>
       <li><span>Receiving distributions: ${form.participationRequested === true ? 'Yes' : form.participationRequested === false ? 'No' : 'not answered yet'}</span><button type="button" data-go="4">Edit</button></li>
-      ${form.participationRequested === true ? `<li><span>Payment: ${esc(method)}</span><button type="button" data-go="5">Edit</button></li>` : ''}
+      ${form.participationRequested === true ? `<li><span>Payment: ${esc(mailTo)}</span><button type="button" data-go="5">Edit</button></li>` : ''}
     </ul>
     ${CONSENTS.map(([k, w]) => check(`consent:${k}`, w, form.consents[k])).join('')}`;
 }
@@ -287,13 +278,6 @@ function wire() {
     form.participationRequested = el.value === 'yes';
     dirty = true;
   }));
-  box.querySelectorAll('input[name=method]').forEach((el) => el.addEventListener('change', () => {
-    form.payment.method = el.value;
-    dirty = true;
-    const slot = box.querySelector('#method-fields');
-    slot.innerHTML = methodFields();
-    slot.querySelectorAll('[data-k]').forEach((x) => x.addEventListener('input', () => setField(x)));
-  }));
   box.querySelectorAll('[data-file]').forEach((el) => el.addEventListener('change', () => upload(el.dataset.file, [...el.files])));
   box.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => removeFile(el.dataset.remove, el.dataset.id, el)));
   box.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => go(Number(el.dataset.go))));
@@ -305,7 +289,7 @@ function wire() {
 function setField(el) {
   const k = el.dataset.k;
   if (k.startsWith('addr-')) form.payment.address[k.slice(5)] = el.value;
-  else if (['handle', 'accountName', 'otherMethod'].includes(k)) form.payment[k] = el.value;
+  else if (k === 'accountName') form.payment.accountName = el.value;
   else form[k] = el.value;
   const count = box.querySelector(`[data-count="${k}"]`);
   if (count) count.textContent = `${Number(el.maxLength) - el.value.length} characters left`;
@@ -346,19 +330,12 @@ function gapOf(n) {
   }
   if (n === 5) {
     const p = form.payment;
-    if (!p.method) return ['Choose how you would like to receive distributions.'];
-    if (p.method === 'bank' && !p.accountName.trim()) return ['Add the name on the bank account.', 'accountName'];
-    if (p.method === 'check') {
-      const a = p.address;
-      if (!p.accountName.trim()) return ['Add the name the check should be made out to.', 'accountName'];
-      if (!a.line1.trim()) return ['Add the street address the check should be mailed to.', 'addr-line1'];
-      if (!a.city.trim()) return ['Add the city.', 'addr-city'];
-      if (!/^[A-Za-z]{2}$/.test(a.state.trim())) return ['Add the two-letter state, like ID.', 'addr-state'];
-      if (!/^\d{5}(-\d{4})?$/.test(a.zip.trim())) return ['Add the five-digit ZIP code.', 'addr-zip'];
-      return '';
-    }
-    if (p.method === 'other' && !p.otherMethod.trim()) return ['Say which service you use.', 'otherMethod'];
-    if (p.method !== 'bank' && p.method !== 'check' && !p.handle.trim()) return ['Add the details for that payment method.', 'handle'];
+    const a = p.address;
+    if (!p.accountName.trim()) return ['Add the name the check should be made out to.', 'accountName'];
+    if (!a.line1.trim()) return ['Add the street address the check should be mailed to.', 'addr-line1'];
+    if (!a.city.trim()) return ['Add the city.', 'addr-city'];
+    if (!/^[A-Za-z]{2}$/.test(a.state.trim())) return ['Add the two-letter state, like ID.', 'addr-state'];
+    if (!/^\d{5}(-\d{4})?$/.test(a.zip.trim())) return ['Add the five-digit ZIP code.', 'addr-zip'];
   }
   if (n === 6 && !CONSENTS.every(([k]) => form.consents[k])) return ['Tick all five statements.'];
   return '';
@@ -371,7 +348,8 @@ function draftBody(nextAt) {
     participationRequested: form.participationRequested, photoPublicConsent: form.photoPublicConsent,
     consents: form.consents, step: nextAt,
   };
-  if (form.payment.method) body.payment = form.payment;
+  const p = form.payment;
+  if (p.accountName || Object.values(p.address).some((v) => String(v || '').trim())) body.payment = { method: 'check', accountName: p.accountName, address: p.address };
   return body;
 }
 
@@ -519,22 +497,26 @@ function renderStatus() {
     </dl>
     <p class="fund-hint" style="margin-top:14px">Verification confirms eligibility only. It is not a medical opinion.</p>`;
   // Eric, 2026-10-04: "I will update the amount in the donation pool weekly
-  // so each participant can see their active share."
+  // so each participant can see their active share." Then, the same day:
+  // "monthly payout distributions. With first payout November 1."
+  const next = nextPayout();
+  const nextLine = next ? `<dt>Next check</dt><dd>${esc(payoutWords(next))}</dd>` : '';
   const share = s === 'verified' && app.participationActive ? (app.pool ? `
     <div class="fund-card fund-share">
-      <h2>This week</h2>
+      <h2>This month</h2>
       <dl class="fund-facts">
         <dt>Donation pool</dt><dd>${dollars(app.pool.totalCents)}</dd>
         <dt>Your share</dt><dd>${dollars(app.pool.shareCents)}</dd>
+        ${nextLine}
       </dl>
       <p class="fund-hint" style="margin-top:12px">Updated ${dateWords(app.pool.asOf)}. The pool is shared equally among everyone taking part.</p>
     </div>` : `
-    <div class="fund-card fund-share"><h2>This week</h2><p class="fund-hint">The pool total and your share show here once the week's total is posted.</p></div>`) : '';
+    <div class="fund-card fund-share"><h2>This month</h2>${nextLine ? `<dl class="fund-facts">${nextLine}</dl>` : ''}<p class="fund-hint">The pool total and your share show here once the month's total is posted.</p></div>`) : '';
   const sent = (app.payouts || []).length ? `
     <div class="fund-card">
       <h2>Sent to you</h2>
       <ul class="fund-sent">${app.payouts.map((x) => `
-        <li><strong>${dollars(x.amountCents)}</strong> by ${esc(METHOD_WORDS[x.method] || 'payment')} on ${dateWords(x.at)}<br><span class="fund-dim fund-small">ID #${esc(x.ref)}${x.method === 'check' ? `. ${esc(CHECK_NOTE)}` : ''}</span></li>`).join('')}
+        <li><strong>${dollars(x.amountCents)}</strong> check mailed ${dateWords(x.at)}<br><span class="fund-dim fund-small">Check #${esc(x.ref)}. ${esc(CHECK_NOTE)}</span></li>`).join('')}
       </ul>
     </div>` : '';
   if (s === 'not_verified') body = `
@@ -554,7 +536,7 @@ function renderStatus() {
 // Eric, 2026-10-04: "There should still be instructions for how to add to
 // Home Screen, and they will receive notifications about their verification
 // status, weekly donation pool total and their split, and any marks that
-// they've been sent their money." On iPhone a notification needs the Home
+// they've been sent their money." The pool went monthly the same day. On iPhone a notification needs the Home
 // Screen icon, so the steps come first; whoever never turns them on gets the
 // same news by email.
 
@@ -566,7 +548,7 @@ function notifyCard() {
   return `
     <div class="fund-card fund-notify">
       <h2>Get updates on your phone</h2>
-      <p class="fund-hint">Your verification status, each week's pool and your share, and a note when your money has been sent, with its ID number.</p>
+      <p class="fund-hint">Your verification status, each month's pool and your share, and a note when your check is mailed, with its check number.</p>
       ${pushInstalled() ? '' : `
       <p class="fund-label">Add this page to your Home Screen</p>
       <p class="fund-small"><strong>iPhone:</strong> open this page in Safari, tap Share (the square with an arrow), then <strong>Add to Home Screen</strong>, and open it from the new icon.</p>

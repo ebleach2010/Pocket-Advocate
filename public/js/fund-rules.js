@@ -8,11 +8,24 @@
 export const FUND_STATUSES = ['draft', 'submitted', 'under_review', 'more_info', 'verified', 'not_verified', 'inactive'];
 // The applicant can change what they sent only while it is theirs to change.
 export const EDITABLE = new Set(['draft', 'more_info']);
-export const PAYMENT_METHODS = ['paypal', 'venmo', 'zelle', 'bank', 'check', 'other'];
-// Eric, 2026-10-04: "They may also opt for check in the mail. If so, it
-// creates a field for their address." And: "No tracking number. Payout via
-// check will come from Mercury banking and take 7-10 business days to arrive."
+// Eric, 2026-10-04: "payout should be check only." Mailed to the address they
+// give: "No tracking number. Payout via check will come from Mercury banking
+// and take 7-10 business days to arrive."
+export const PAYMENT_METHODS = ['check'];
+export const CHECK_ONLY_REFUSAL = 'Distributions are mailed by check only.';
 export const CHECK_NOTE = 'Checks are sent from Mercury and take 7 to 10 business days to arrive.';
+// Eric, 2026-10-04: "Fundraiser runs through Christmas Eve with monthly payout
+// distributions. With first payout November 1." The last check, on January 1,
+// carries what came in through Christmas Eve. Each date counts until midnight
+// Mountain that morning (MDT on November 1, before the clocks go back; MST
+// after).
+export const PAYOUTS = [
+  { date: '2026-11-01', at: Date.UTC(2026, 10, 1, 6) },
+  { date: '2026-12-01', at: Date.UTC(2026, 11, 1, 7) },
+  { date: '2027-01-01', at: Date.UTC(2027, 0, 1, 7) },
+];
+export const nextPayout = (now = Date.now()) => PAYOUTS.find((p) => now < p.at) || null;
+export const payoutWords = (p) => (p ? new Date(`${p.date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '');
 // Eric, 2026-10-04: "They must be a discord member."
 export const DISCORD_INVITE = 'https://discord.gg/YZXYQFjUGa';
 // Eric, 2026-10-04: "a short blurb from them for why they are in need. Max 1500 characters."
@@ -39,7 +52,7 @@ export const KINDS = { id: 'identity', medical: 'medical', photo: 'photo' };
 export const TEXT_LIMITS = {
   discordUsername: 64, preferredName: 80, legalName: 120, email: 200, applicantNote: 2000, needStatement: NEED_MAX,
 };
-export const PAYMENT_LIMITS = { handle: 120, accountName: 120, otherMethod: 60 };
+export const PAYMENT_LIMITS = { accountName: 120 };
 export const ADDRESS_LIMITS = { line1: 120, line2: 120, city: 80, state: 2, zip: 10 };
 
 /** Six months on, same day of the month where the month has it. */
@@ -67,79 +80,44 @@ function luhn(digits) {
 }
 
 /**
- * True when a payment field holds something we must never keep: a card
- * number, a bank account or routing number, a password or a PIN.
- * A Zelle phone number is the one long run of digits allowed.
+ * True when a check field holds something we must never keep: a card
+ * number or a password. A street address is numbers and words by nature (a
+ * ZIP+4, a "Pin Oak Drive"), so nothing else in it is refused; a name gets
+ * the account-number words and long runs of digits refused as well.
  */
-export function looksSensitive(value, { phoneOk = false, address = false } = {}) {
+export function looksSensitive(value, { address = false } = {}) {
   const s = String(value || '');
-  // A street address is numbers and words by nature (a ZIP+4, a "Pin Oak
-  // Drive"), so it is held only to the card-number and password tests.
-  if (address) {
-    if (/\b(pass ?word|passcode)\b/i.test(s)) return true;
-    return (s.match(/\d[\d\s-]{11,}\d/g) || []).some((run) => { const d = run.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); });
-  }
-  if (/\b(pass ?word|passcode|pin|ssn|social security|routing|account (?:number|no\.?|#))\b/i.test(s)) return true;
-  const runs = s.match(/\d[\d\s().+-]{6,}\d/g) || [];
-  for (const run of runs) {
-    const digits = run.replace(/\D/g, '');
-    if (digits.length >= 13 && digits.length <= 19 && luhn(digits)) return true;
-    const phone = phoneOk && (digits.length === 10 || (digits.length === 11 && digits[0] === '1'));
-    if (digits.length >= 8 && !phone) return true;
-  }
-  return false;
+  if (/\b(pass ?word|passcode)\b/i.test(s)) return true;
+  if ((s.match(/\d[\d\s-]{11,}\d/g) || []).some((run) => { const d = run.replace(/\D/g, ''); return d.length >= 13 && d.length <= 19 && luhn(d); })) return true;
+  if (address) return false;
+  if (/\b(pin|ssn|social security|routing|account (?:number|no\.?|#))\b/i.test(s)) return true;
+  return (s.match(/\d[\d\s().+-]{6,}\d/g) || []).some((run) => run.replace(/\D/g, '').length >= 8);
 }
 
-export const SENSITIVE_REFUSAL = 'Please leave out passwords, PINs, card numbers and bank account or routing numbers. We only need the details asked for here.';
+export const SENSITIVE_REFUSAL = 'Please leave out passwords, PINs, card numbers and bank account or routing numbers. We only need the name and address for the check.';
 
-/** The payment details as stored, or an error sentence. */
+/** The check details as stored, or an error sentence. Nothing but a check. */
 export function cleanPayment(raw) {
-  const method = PAYMENT_METHODS.includes(raw?.method) ? raw.method : null;
+  if (raw?.method && raw.method !== 'check') return { error: CHECK_ONLY_REFUSAL };
+  const a = raw?.address || {};
   const out = {
-    method,
-    handle: clean(raw?.handle, PAYMENT_LIMITS.handle),
+    method: 'check',
     accountName: clean(raw?.accountName, PAYMENT_LIMITS.accountName),
-    otherMethod: clean(raw?.otherMethod, PAYMENT_LIMITS.otherMethod),
-    address: null,
+    address: Object.fromEntries(Object.entries(ADDRESS_LIMITS).map(([k, max]) => [k, clean(a[k], max)])),
   };
-  // Only the fields the method uses are kept; anything else is dropped. The
-  // name on the account (bank) and the name on the check share one field.
-  if (method === 'bank' || method === 'check') out.handle = '';
-  if (method !== 'bank' && method !== 'check') out.accountName = '';
-  if (method !== 'other') out.otherMethod = '';
-  if (method === 'check') {
-    const a = raw?.address || {};
-    out.address = Object.fromEntries(Object.entries(ADDRESS_LIMITS).map(([k, max]) => [k, clean(a[k], max)]));
-    out.address.state = out.address.state.toUpperCase();
-    if (Object.values(out.address).some((v) => looksSensitive(v, { address: true }))) return { error: SENSITIVE_REFUSAL };
-  }
-  for (const k of ['handle', 'accountName', 'otherMethod'])
-    if (looksSensitive(out[k], { phoneOk: k === 'handle' && method === 'zelle' })) return { error: SENSITIVE_REFUSAL };
+  out.address.state = out.address.state.toUpperCase();
+  if (looksSensitive(out.accountName) || Object.values(out.address).some((v) => looksSensitive(v, { address: true }))) return { error: SENSITIVE_REFUSAL };
   return { payment: out };
 }
 
-/** What a complete payment answer needs, per method. '' when complete. */
+/** What a complete check answer needs. '' when complete. */
 export function paymentGap(p) {
-  if (!p?.method) return 'Choose how you would like to receive distributions.';
-  if (p.method === 'bank') return p.accountName ? '' : 'Add the name on the bank account.';
-  if (p.method === 'check') {
-    const a = p.address || {};
-    if (!p.accountName) return 'Add the name the check should be made out to.';
-    if (!a.line1 || !a.city) return 'Add the street address and city the check should be mailed to.';
-    if (!/^[A-Z]{2}$/.test(a.state || '')) return 'Add the two-letter state, like ID.';
-    if (!/^\d{5}(-\d{4})?$/.test(a.zip || '')) return 'Add the five-digit ZIP code.';
-    return '';
-  }
-  if (p.method === 'other' && !p.otherMethod) return 'Say which service you use.';
-  if (!p.handle) {
-    return {
-      paypal: 'Add your PayPal email or @username.',
-      venmo: 'Add your Venmo @username.',
-      zelle: 'Add the email or phone number your Zelle uses.',
-      other: 'Add your username or the address that service uses.',
-    }[p.method];
-  }
-  if (p.method === 'venmo' && !/^@?[\w-]{3,40}$/.test(p.handle)) return 'A Venmo username is letters, numbers, dashes or underscores, like @your-name.';
+  if (p?.method !== 'check') return 'Add the name and mailing address for your check.';
+  const a = p.address || {};
+  if (!p.accountName) return 'Add the name the check should be made out to.';
+  if (!a.line1 || !a.city) return 'Add the street address and city the check should be mailed to.';
+  if (!/^[A-Z]{2}$/.test(a.state || '')) return 'Add the two-letter state, like ID.';
+  if (!/^\d{5}(-\d{4})?$/.test(a.zip || '')) return 'Add the five-digit ZIP code.';
   return '';
 }
 
@@ -213,7 +191,7 @@ export function applicantView(app, payment) {
     // The reviewer's message reaches them only where it asks something of
     // them or explains a decision. The internal note never does.
     applicantMessage: status === 'more_info' || status === 'not_verified' ? app.applicantMessage || '' : '',
-    payment: payment ? { method: payment.method || null, handle: payment.handle || '', accountName: payment.accountName || '', otherMethod: payment.otherMethod || '', address: payment.address || null } : null,
+    payment: payment ? { method: payment.method || null, accountName: payment.accountName || '', address: payment.address || null } : null,
     // What was sent to them and how, newest first; never who marked it.
     payouts: (Array.isArray(app.payouts) ? app.payouts : []).map((x) => ({ at: x.at, amountCents: x.amountCents, method: x.method, ref: x.ref })).reverse(),
   };
@@ -231,7 +209,14 @@ export const shareOf = (totalCents, count) => (count > 0 && totalCents > 0 ? Mat
 
 export const dollars = (cents) => `$${(Math.max(0, Number(cents) || 0) / 100).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-export const METHOD_WORDS = { paypal: 'PayPal', venmo: 'Venmo', zelle: 'Zelle', bank: 'bank transfer', check: 'check', other: 'other' };
+export const METHOD_WORDS = { check: 'check' };
+
+/** One line for where a check goes: the name and the mailing address. */
+export function checkTo(p) {
+  if (p?.method !== 'check') return 'no mailing address yet';
+  const a = p.address || {};
+  return `Check to ${p.accountName}, ${[a.line1, a.line2].filter(Boolean).join(', ')}, ${a.city}, ${a.state} ${a.zip}`;
+}
 
 /** What the reviewer sees: everything but storage paths. */
 export function reviewerView(uid, app, payment) {

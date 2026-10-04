@@ -107,11 +107,13 @@ const PNG = () => new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
 const up = (w, uid, kind, bytes = PDF(), type = 'application/pdf', extra = {}) => call(w, uid, `/api/fund/upload?kind=${kind}`, { method: 'POST', bytes, type, ...extra });
 // RE-PINNED 2026-10-04 (v7.24): a complete application carries the short reason they are in need
 // (Eric: "a short blurb from them for why they are in need. Max 1500 characters.").
+// RE-PINNED 2026-10-04 (v7.25): the payment is a check to a mailing address (Eric: "payout should
+// be check only").
 const FULL = {
   discordUsername: 'ann_d', preferredName: 'Ann', legalName: 'Ann Doe', discordMember: true, participationRequested: true,
   needStatement: 'I stopped working this spring and the copays take what is left.',
   consents: { accurate: true, noGuarantee: true, notMedical: true, reviewerView: true, formula: true },
-  payment: { method: 'venmo', handle: '@ann-d' },
+  payment: { method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' } },
 };
 async function readyToSubmit(w, uid = 'ann', extra = {}) {
   await call(w, uid, '/api/fund/draft', { method: 'POST', json: { ...FULL, ...extra } });
@@ -177,7 +179,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 {
   const gaps = (a, p) => RULES.submitGaps(a, p).map((g) => g.step);
   const full = { discordUsername: 'a', preferredName: 'A', legalName: 'A B', identityDocument: { id: 'x' }, medicalDocuments: [{ id: 'y' }], needStatement: 'Rent.', discordMember: true, participationRequested: true, consents: FULL.consents };
-  const pay = { method: 'venmo', handle: '@a-b' };
+  const pay = { method: 'check', accountName: 'A B', address: { line1: '1 Main St', line2: '', city: 'Boise', state: 'ID', zip: '83702' } }; // RE-PINNED 2026-10-04 (v7.25): check only
   const one = (k, v) => gaps({ ...full, [k]: v }, pay);
   const w = world();
   await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { ...FULL, legalName: '' } });
@@ -388,29 +390,42 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // ---- F11: payment details -------------------------------------------------------
 // NEGATIVE CONTROL (run 2026-10-04): looksSensitive's Luhn line removed and the 8-digit rule raised to 20 made this read
 //   FAIL  F11 payment details live apart and hold only what the method needs: they sit in fundPayments and never on the application, a card number, a routing number or a password is refused with nothing stored, a Zelle phone number is fine, a bank transfer keeps only the name on the account, and someone who wants no distributions has theirs deleted when they submit
+// RE-PINNED 2026-10-04 (v7.25): check only (Eric: "payout should be check only"). PayPal, Venmo, Zelle,
+// bank and other are refused with one sentence and nothing stored; the guard on the name and the
+// address still holds; nothing but the name and the address is kept.
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): cleanPayment's `if (raw?.method && raw.method !== 'check') return ...` removed made this read
+//   FAIL  F11 payment details live apart and are a check only: they sit in fundPayments and never on the application, PayPal, Venmo, Zelle, a bank transfer and any other method are refused with one sentence and nothing stored, a card number, a routing number, an account number or a password is refused with nothing stored, nothing but the name and the address is kept, and someone who wants no distributions has theirs deleted when they submit
 {
   const w = world();
-  await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { ...FULL, payment: { method: 'paypal', handle: 'pay.ann@example.test' } } });
+  await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: FULL });
   const stored = w.docs.get('fundPayments/ann')?.data;
   const onApp = JSON.stringify(app(w));
-  const card = await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { payment: { method: 'paypal', handle: '4111 1111 1111 1111' } } });
-  const routing = await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { payment: { method: 'other', otherMethod: 'Cash App', handle: 'routing 021000021' } } });
-  const pw = await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { payment: { method: 'other', otherMethod: 'Cash App', handle: '$ann password hunter2' } } });
-  const acct = await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { payment: { method: 'bank', accountName: 'Ann Doe 123456789' } } });
+  const others = [];
+  for (const m of ['paypal', 'venmo', 'zelle', 'bank', 'other']) others.push(await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { payment: { method: m, handle: '@ann-d', accountName: 'Ann Doe' } } }));
+  const addr = FULL.payment.address;
+  const bad = [];
+  for (const p of [
+    { accountName: 'Ann 4111 1111 1111 1111', address: addr },
+    { accountName: 'Ann routing 021000021', address: addr },
+    { accountName: 'Ann Doe 123456789', address: addr },
+    { accountName: 'Ann Doe', address: { ...addr, line2: 'password hunter2' } },
+    { accountName: 'Ann Doe', address: { ...addr, line1: '4111 1111 1111 1111' } },
+  ]) bad.push(await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { payment: { method: 'check', ...p } } }));
   const after = w.docs.get('fundPayments/ann')?.data;
-  const zelle = RULES.cleanPayment({ method: 'zelle', handle: '(555) 123-4567' });
-  const bank = RULES.cleanPayment({ method: 'bank', accountName: 'Ann Doe', handle: 'x', otherMethod: 'y' });
+  const lean = RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', handle: '@x', otherMethod: 'y', email: 'a@b.test', address: { ...addr, country: 'US' } }).payment;
   const w2 = world();
   await readyToSubmit(w2, 'ann');
   await call(w2, 'ann', '/api/fund/draft', { method: 'POST', json: { participationRequested: false } });
   await call(w2, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
-  check('F11 payment details live apart and hold only what the method needs: they sit in fundPayments and never on the application, a card number, a routing number or a password is refused with nothing stored, a Zelle phone number is fine, a bank transfer keeps only the name on the account, and someone who wants no distributions has theirs deleted when they submit',
-    stored?.method === 'paypal' && stored.handle === 'pay.ann@example.test' && !/paypal|pay\.ann@example\.test|"payment"/.test(onApp)
-    && [card, routing, pw, acct].every((r) => r.status === 400 && r.out.error === RULES.SENSITIVE_REFUSAL)
-    && after.handle === 'pay.ann@example.test'
-    && zelle.payment?.handle === '(555) 123-4567' && bank.payment?.accountName === 'Ann Doe' && bank.payment.handle === '' && bank.payment.otherMethod === ''
+  check('F11 payment details live apart and are a check only: they sit in fundPayments and never on the application, PayPal, Venmo, Zelle, a bank transfer and any other method are refused with one sentence and nothing stored, a card number, a routing number, an account number or a password is refused with nothing stored, nothing but the name and the address is kept, and someone who wants no distributions has theirs deleted when they submit',
+    stored?.method === 'check' && stored.accountName === 'Ann Doe' && stored.address?.line1 === '12 Pin Oak Dr' && !/Pin Oak|"payment"/.test(onApp)
+    && RULES.PAYMENT_METHODS.join() === 'check'
+    && others.every((r) => r.status === 400 && r.out.error === RULES.CHECK_ONLY_REFUSAL && r.out.error === 'Distributions are mailed by check only.')
+    && bad.every((r) => r.status === 400 && r.out.error === RULES.SENSITIVE_REFUSAL)
+    && JSON.stringify(after) === JSON.stringify(stored)
+    && Object.keys(lean).sort().join() === 'accountName,address,method' && Object.keys(lean.address).sort().join() === 'city,line1,line2,state,zip'
     && app(w2).verificationStatus === 'submitted' && !w2.docs.has('fundPayments/ann'),
-    JSON.stringify({ card: card.status, routing: routing.status, pw: pw.status, acct: acct.status, zelle }));
+    JSON.stringify({ others: others.map((r) => r.status), bad: bad.map((r) => r.status), lean }));
 }
 
 // ---- F12: the GoFundMe photo ----------------------------------------------------
@@ -533,13 +548,17 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     /<title>Community Assistance Fund<\/title>/.test(IDX) && /<h1>Community Assistance Fund<\/h1>/.test(IDX)
     && READ.includes('Members of our community experiencing significant illness or disability may apply to become verified participants in our community assistance fund. Verification exists to protect members and donors while requiring as little sensitive information as possible.')
     && /<a class="fund-btn fl-apply" href="\/fund\.html">Apply for Verification<\/a>/.test(IDX)
-    && READ.includes('The fundraiser runs from now through November 2, 2026.')
+    // RE-PINNED 2026-10-04 (v7.25): Eric, "Fundraiser runs through Christmas Eve with monthly payout
+    // distributions. With first payout November 1."
+    && READ.includes('The fundraiser runs from now through Christmas Eve, December 24, 2026.')
+    && READ.includes('Distributions are mailed by check on the 1st of each month, starting November 1.') && !READ.includes('November 2')
     && READ.includes('Zazzle keeps a share of each sale, so giving directly on GoFundMe sends more to the fund.')
     && /Need help\? Email <a href="mailto:office@pocketadvocacy\.com">office@pocketadvocacy\.com<\/a>/.test(IDX)
-    && /<a href="\/signin\.html">Existing clients: sign in<\/a>/.test(IDX)
+    // RE-PINNED 2026-10-04 (v7.25): Book is parked, so the client's sign-in lands on their case.
+    && /<a href="\/signin\.html\?to=%2Fcase\.html">Existing clients: sign in<\/a>/.test(IDX)
     // RE-PINNED 2026-10-04 (v7.24): Eric, "They should also be linked to the discord", so the Discord
     // invite is the one door added.
-    && links.join() === ['/fund.html', '/signin.html', 'https://discord.gg/YZXYQFjUGa', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com'].sort().join()
+    && links.join() === ['/fund.html', '/signin.html?to=%2Fcase.html', 'https://discord.gg/YZXYQFjUGa', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com'].sort().join()
     && READ.includes('Applicants must be members of our Discord community.')
     && !/\$\d|maintenance\.js|book\.html|services\.html|fit\.html|nav class="tabs"/.test(IDX) && /src="\/js\/fund-landing\.js"/.test(IDX)
     && !DASH.test(IDX) && !HARD.some((re) => re.test(IDX)) && !HARD.some((re) => re.test(f('public/js/fund-landing.js'))) && !DASH.test(f('public/js/fund-landing.js')),
@@ -552,6 +571,10 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // end of November 2 in Mountain time, against a fake page, with the link empty and with one set.
 // NEGATIVE CONTROL (run 2026-10-04): FUNDRAISER_ENDS_AT moved to `Date.UTC(2026, 10, 3, 0, 0, 0)` (midnight UTC, the evening of Nov 2 in Mountain time) made this read
 //   FAIL  F18 the ways to give follow the clock: at 11:59 pm Mountain on November 2 the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended November 2 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open
+// RE-PINNED 2026-10-04 (v7.25): Eric, "Fundraiser runs through Christmas Eve". The end is midnight
+// Mountain going into December 25, 07:00 UTC (standard time by then).
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): FUNDRAISER_ENDS_AT moved to `Date.UTC(2026, 11, 25, 0, 0, 0)` (midnight UTC, the evening of Dec 24 in Mountain time) made this read
+//   FAIL  F18 the ways to give follow the clock: at 11:59 pm Mountain on Christmas Eve the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended December 24 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open
 {
   const FL = f('public/js/fund-landing.js');
   const load = (url) => new Function(`${FL.replace(/^export /gm, '').replace("const GOFUNDME_URL = '';", `const GOFUNDME_URL = ${JSON.stringify(url)};`).replace(/if \(typeof document !== 'undefined'\) paintSupport\(document\);/, '')}\nreturn { paintSupport, FUNDRAISER_ENDS_AT, ENDED_LINE };`)();
@@ -562,19 +585,19 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   };
   const noLink = load('');
   const before = page();
-  const beforeState = noLink.paintSupport(before.root, Date.parse('2026-11-03T06:59:59Z'));
+  const beforeState = noLink.paintSupport(before.root, Date.parse('2026-12-25T06:59:59Z'));
   const after = page();
-  const afterState = noLink.paintSupport(after.root, Date.parse('2026-11-03T07:00:00Z'));
+  const afterState = noLink.paintSupport(after.root, Date.parse('2026-12-25T07:00:00Z'));
   const withLink = load('https://www.gofundme.com/f/example');
   const linked = page();
   const linkedState = withLink.paintSupport(linked.root, Date.parse('2026-10-10T18:00:00Z'));
   const IDX = f('public/index.html');
   const support = IDX.slice(IDX.indexOf('data-support'), IDX.indexOf('</section>', IDX.indexOf('data-support')));
-  check('F18 the ways to give follow the clock: at 11:59 pm Mountain on November 2 the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended November 2 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open',
+  check('F18 the ways to give follow the clock: at 11:59 pm Mountain on Christmas Eve the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended December 24 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open',
     /export const GOFUNDME_URL = '';/.test(FL) && /export const ZAZZLE_URL = 'https:\/\/www\.zazzle\.com\/store\/rooftop_and_reed';/.test(FL)
-    && noLink.FUNDRAISER_ENDS_AT === Date.parse('2026-11-03T07:00:00Z')
+    && noLink.FUNDRAISER_ENDS_AT === Date.parse('2026-12-25T07:00:00Z')
     && beforeState === 'open-no-link' && before.box.innerHTML === 'ORIGINAL' && before.slot.hidden === true && before.slot.innerHTML === ''
-    && afterState === 'ended' && after.box.innerHTML === '<h2>Support the fund</h2><p>This fundraiser ended November 2.</p>'
+    && afterState === 'ended' && after.box.innerHTML === '<h2>Support the fund</h2><p>This fundraiser ended December 24.</p>'
     && linkedState === 'open' && linked.slot.hidden === false && /href="https:\/\/www\.gofundme\.com\/f\/example"/.test(linked.slot.innerHTML) && /Give on GoFundMe/.test(linked.slot.innerHTML) && /Recommended/.test(linked.slot.innerHTML)
     && /<p class="fl-give-row" data-gofundme hidden><\/p>/.test(support) && !/fund\.html/.test(support),
     JSON.stringify({ beforeState, afterState, linkedState }));
@@ -586,17 +609,30 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // gated pages and in the sideways drive.
 // NEGATIVE CONTROL (run 2026-10-04): the admin-device redirect pasted back into admin-pr1.html made this read
 //   FAIL  F19 PR 1 is the old landing, parked: word for word but for its name, the noindex and the redirect it no longer has; behind the admin gate; linked from the Clients page; named in the audit's gated pages and measured by the sideways drive
+// RE-PINNED 2026-10-04 (v7.25): Eric, "I want everything but information about the fundraiser and
+// applicants HIDDEN in a parked PR 1". admin-pr1.html is the hub now and the old landing moved to
+// admin-pr1-landing.html; the door to PR 1 is a tab in the nav, so the Clients page button is gone.
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): the Book door taken out of the hub made this read
+//   FAIL  F19 PR 1 is the hub and the old landing sits inside it: the hub lists every parked page and the advocacy app, noindex, on the admin sheet; the old landing is word for word at its new path but for its name, the noindex and the redirect it no longer has; both behind the admin gate; both named in the audit's gated pages and measured by the sideways drive
 {
   const PR1 = f('public/admin-pr1.html');
+  const LAND = f('public/admin-pr1-landing.html');
   const gate = (W.match(/const ADMIN_ASSET =\n\s+(\/.*\/);/) || [])[1];
   const RE = gate ? new Function(`return ${gate}`)() : /$^/;
-  check('F19 PR 1 is the old landing, parked: word for word but for its name, the noindex and the redirect it no longer has; behind the admin gate; linked from the Clients page; named in the audit\'s gated pages and measured by the sideways drive',
-    /<title>PR 1 · Pocket Advocate<\/title>/.test(PR1) && /<meta name="robots" content="noindex">/.test(PR1) && !/pa-admin-device|location\.replace/.test(PR1)
-    && /<h2>Ready when you are\.<\/h2>/.test(PR1) && /src="\/js\/maintenance\.js"/.test(PR1) && /class="land-sec hero"/.test(PR1)
-    && RE.test('/admin-pr1.html') && RE.test('/admin-pr1')
-    && /<a class="btn quiet" href="\/admin-pr1\.html">PR 1 \(the parked landing\)<\/a>/.test(f('public/js/admin.js'))
-    && /'\/admin-pr1',/.test(f('tools/blindness-audit.mjs')) && /'\/admin-pr1\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')),
-    `${PR1.length} bytes`);
+  const doors = [...PR1.matchAll(/<li><a class="btn" href="([^"]+)">/g)].map((m) => m[1]);
+  const want = ['/admin.html', '/admin-calendar.html', '/admin-chats.html', '/admin-availability.html', '/admin-dictionary.html',
+    '/admin-pr1-landing.html', '/services.html', '/about.html', '/advocate.html', '/book.html', '/fit.html', '/faq.html', '/reviews.html', '/stats.html', '/contact.html', '/subscribe.html'];
+  check('F19 PR 1 is the hub and the old landing sits inside it: the hub lists every parked page and the advocacy app, noindex, on the admin sheet; the old landing is word for word at its new path but for its name, the noindex and the redirect it no longer has; both behind the admin gate; both named in the audit\'s gated pages and measured by the sideways drive',
+    /<title>PR 1 · Pocket Advocate<\/title>/.test(PR1) && /<meta name="robots" content="noindex">/.test(PR1) && /admin\.css\?v=stat130/.test(PR1)
+    && PR1.includes('Parked. Everything that is not the fund. Nothing was deleted.') && want.every((d) => doors.includes(d)) && doors.length === want.length
+    && /<a href="\/admin-pr1\.html" class="active">PR 1<\/a>/.test(PR1) && !DASH.test(PR1)
+    && /<title>Old landing · PR 1 · Pocket Advocate<\/title>/.test(LAND) && /<meta name="robots" content="noindex">/.test(LAND) && !/pa-admin-device|location\.replace/.test(LAND)
+    && /<h2>Ready when you are\.<\/h2>/.test(LAND) && /src="\/js\/maintenance\.js"/.test(LAND) && /class="land-sec hero"/.test(LAND)
+    && ['/admin-pr1.html', '/admin-pr1', '/admin-pr1-landing.html', '/admin-pr1-landing'].every((p) => RE.test(p))
+    && !/admin-pr1\.html|admin-fund\.html/.test(f('public/js/admin.js'))
+    && /'\/admin-pr1',/.test(f('tools/blindness-audit.mjs')) && /'\/admin-pr1-landing',/.test(f('tools/blindness-audit.mjs'))
+    && /'\/admin-pr1\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')) && /'\/admin-pr1-landing\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')),
+    JSON.stringify({ doors: doors.length, land: LAND.length }));
 }
 
 // ---- F20: why they are in need (2026-10-04, v7.24) ----------------------------
@@ -627,22 +663,30 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // tracking number. Payout via check will come from Mercury banking and take 7-10 business days to arrive."
 // NEGATIVE CONTROL (run 2026-10-04): `if (method === 'check') {` widened to `if (method === 'check' || true) {` in cleanPayment made this read
 //   FAIL  F21 a check in the mail keeps the name and the mailing address and nothing it does not need: the state is two capital letters, a ZIP+4 and a street called Pin Oak are fine, a card number in the address is refused, a missing ZIP is asked for, every other method keeps no address, and the page says checks come from Mercury in 7 to 10 business days with no tracking number
+// RE-PINNED 2026-10-04 (v7.25): check only, so there is no method to choose and no other method keeps
+// anything; the page asks for the check's name and address straight away.
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): `out.address.state = out.address.state.toUpperCase();` removed from cleanPayment made this read
+//   FAIL  F21 a check in the mail keeps the name and the mailing address and nothing it does not need: the state is two capital letters, a ZIP+4 and a street called Pin Oak are fine, a card number in the address is refused, a missing ZIP is asked for, every other method is refused, and the page asks for the check straight away, mailed on the 1st of each month from November 1, from Mercury in 7 to 10 business days with no tracking number
 {
   const good = RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', handle: '@x', address: { line1: '12 Pin Oak Dr', line2: 'Apt 4', city: 'Boise', state: 'id', zip: '83702-1234' } });
   const noZip = RULES.paymentGap(RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', city: 'Boise', state: 'ID', zip: '' } }).payment);
   const card = RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', address: { line1: '4111 1111 1111 1111', city: 'Boise', state: 'ID', zip: '83702' } });
   const venmo = RULES.cleanPayment({ method: 'venmo', handle: '@ann-d', address: { line1: '12 Pin Oak Dr' } });
+  const unsaid = RULES.cleanPayment({ accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', city: 'Boise', state: 'ID', zip: '83702' } });
   const w = world();
   await readyToSubmit(w, 'ann', { payment: { method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', city: 'Boise', state: 'ID', zip: '83702' } } });
   const sent = await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
   const mine = sent.out.application.payment;
-  check('F21 a check in the mail keeps the name and the mailing address and nothing it does not need: the state is two capital letters, a ZIP+4 and a street called Pin Oak are fine, a card number in the address is refused, a missing ZIP is asked for, every other method keeps no address, and the page says checks come from Mercury in 7 to 10 business days with no tracking number',
-    good.payment?.address?.state === 'ID' && good.payment.address.zip === '83702-1234' && good.payment.address.line1 === '12 Pin Oak Dr' && good.payment.handle === '' && RULES.paymentGap(good.payment) === ''
-    && noZip === 'Add the five-digit ZIP code.' && card.error === RULES.SENSITIVE_REFUSAL && venmo.payment.address === null
+  check('F21 a check in the mail keeps the name and the mailing address and nothing it does not need: the state is two capital letters, a ZIP+4 and a street called Pin Oak are fine, a card number in the address is refused, a missing ZIP is asked for, every other method is refused, and the page asks for the check straight away, mailed on the 1st of each month from November 1, from Mercury in 7 to 10 business days with no tracking number',
+    good.payment?.address?.state === 'ID' && good.payment.address.zip === '83702-1234' && good.payment.address.line1 === '12 Pin Oak Dr' && !('handle' in good.payment) && RULES.paymentGap(good.payment) === ''
+    && noZip === 'Add the five-digit ZIP code.' && card.error === RULES.SENSITIVE_REFUSAL && venmo.error === RULES.CHECK_ONLY_REFUSAL && !venmo.payment
+    && unsaid.payment?.method === 'check'
     && sent.status === 200 && mine.method === 'check' && mine.address.city === 'Boise'
     && RULES.CHECK_NOTE === 'Checks are sent from Mercury and take 7 to 10 business days to arrive.'
-    && /\['check', 'Check in the mail'\]/.test(PAGE) && /esc\(CHECK_NOTE\)/.test(PAGE) && !/tracking/i.test(PAGE + SRC + ADMINPAGE),
-    JSON.stringify({ good, noZip, venmo: venmo.payment }));
+    && PAGE.includes('Distributions are mailed by check on the 1st of each month, starting November 1. Where should yours go?')
+    && /Name to make the check out to/.test(PAGE) && !/name="method"|Check in the mail|PayPal|Venmo|Zelle/.test(PAGE)
+    && /esc\(CHECK_NOTE\)/.test(PAGE) && !/tracking/i.test(PAGE + SRC + ADMINPAGE),
+    JSON.stringify({ good, noZip, venmo }));
 }
 
 // ---- F22: the weekly pool and each share (2026-10-04, v7.24) ---------------------
@@ -652,6 +696,10 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // they turned that on and otherwise by email, a few at a time from the cron.
 // NEGATIVE CONTROL (run 2026-10-04): isActiveParticipant's `&& !reviewerUids.includes(uid)` removed made this read
 //   FAIL  F22 the weekly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email
+// RE-PINNED 2026-10-04 (v7.25): Eric, "monthly payout distributions. With first payout November 1."
+// The notice says this month's pool and when the checks go out.
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): `next ? `Checks are mailed on ${payoutWords(next)}.` : ''` changed to `''` in drainFundNotices made this read
+//   FAIL  F22 the monthly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email, with the date the checks are mailed
 {
   const w = world();
   const verified = (uid, extra = {}) => w.setDoc(`fundApplications/${uid}`, { userId: uid, verificationStatus: 'verified', participationRequested: true, participationActive: true, preferredName: uid, accountEmail: `${uid}@example.test`, audit: [], ...extra });
@@ -667,14 +715,18 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const again = await w.api.drainFundNotices(env);
   const annPush = w.pushes.find((x) => x.uid === 'ann');
   const bobMail = w.emails.find((x) => x.to === 'bob@example.test');
-  check('F22 the weekly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email',
+  const nextLine = RULES.nextPayout() ? `Checks are mailed on ${RULES.payoutWords(RULES.nextPayout())}.` : '';
+  check('F22 the monthly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email, with the date the checks are mailed',
     asAnn.status === 404 && bad.status === 400 && posted.status === 200
     && poolDoc.activeCount === 2 && poolDoc.shareCents === 50000 && poolDoc.totalCents === 100001 && poolDoc.history.length === 1
     && posted.out.participants.map((r) => r.uid).sort().join() === 'ann,bob'
     && annSees?.totalCents === 100001 && annSees.shareCents === 50000 && cySees === undefined
     && told === 2 && again === 0 && w.docs.get('fundPool/current').data.pending.length === 0
-    && annPush?.body === "This week's pool is $1,000.01. Your share is $500.00." && !w.emails.some((x) => x.to === 'ann@example.test')
-    && /Your share is \$500\.00\./.test(bobMail?.html || '') && !w.pushes.some((x) => x.uid === 'eric' || x.uid === 'cy'),
+    && annPush?.body === "This month's pool is $1,000.01. Your share is $500.00." && !w.emails.some((x) => x.to === 'ann@example.test')
+    && /Your share is \$500\.00\./.test(bobMail?.html || '') && (bobMail?.html || '').includes(nextLine) && !!nextLine
+    && /This month&#39;s Community Assistance Fund pool|This month's Community Assistance Fund pool/.test(bobMail?.subject || '')
+    && /You will get another note when your check is in the mail\./.test(bobMail?.html || '')
+    && !w.pushes.some((x) => x.uid === 'eric' || x.uid === 'cy'),
     JSON.stringify({ pool: { n: poolDoc.activeCount, share: poolDoc.shareCents }, told, again }));
 }
 
@@ -684,29 +736,36 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // reviewer, and never without the ID number.
 // NEGATIVE CONTROL (run 2026-10-04): handlePayout's `if (ref.length < 2) return ...` removed made this read
 //   FAIL  F23 money is marked sent with its ID number and the participant is told: the payout is on their status with the amount, the method and the ID and never who marked it, it is in the history, a check says Mercury and 7 to 10 business days, and a reviewer, someone not taking part or a mark with no ID is refused
+// RE-PINNED 2026-10-04 (v7.25): check only, so every payout is a check with its check number, and
+// someone without a mailing address on file (an old Venmo record) cannot be marked paid.
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): handlePayout's `if (pay?.method !== 'check') return ...` removed made this read
+//   FAIL  F23 a check is marked mailed with its check number and the participant is told: the payout is on their status with the amount and the check number and never who marked it, it is in the history, the notice says Mercury and 7 to 10 business days, and a reviewer, someone not taking part, someone with no mailing address or a mark with no check number is refused
 {
   const w = world();
   const verified = (uid, extra = {}) => w.setDoc(`fundApplications/${uid}`, { userId: uid, verificationStatus: 'verified', participationRequested: true, participationActive: true, accountEmail: `${uid}@example.test`, audit: [], ...extra });
-  verified('ann'); verified('bob'); verified('cy', { participationActive: false }); verified('eric');
-  w.setDoc('fundPayments/ann', { method: 'venmo', handle: '@ann-d' });
+  verified('ann'); verified('bob'); verified('cy', { participationActive: false }); verified('eric'); verified('dee');
+  w.setDoc('fundPayments/ann', { method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' } });
+  w.setDoc('fundPayments/dee', { method: 'venmo', handle: '@dee' });
   w.setDoc('fundPayments/bob', { method: 'check', accountName: 'Bob B', address: { line1: '1 Main St', line2: '', city: 'Boise', state: 'ID', zip: '83702' } });
   w.setDoc('users/ann', { role: 'client', pushSubs: [{ endpoint: 'https://push.example/a' }] });
-  const paid = await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 50000, ref: 'VX-1042' } });
-  const checkPaid = await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'bob', amountCents: 50000, ref: '1042' } });
+  const paid = await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 50000, ref: '1042' } });
+  const checkPaid = await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'bob', amountCents: 50000, ref: '2001' } });
   const refused = await Promise.all([
     call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'eric', amountCents: 100, ref: 'X1' } }),
     call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'cy', amountCents: 100, ref: 'X1' } }),
     call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 100, ref: '' } }),
     call(w, 'ann', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 100, ref: 'X1' } }),
+    call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'dee', amountCents: 100, ref: 'X1' } }),
   ]);
   const annSees = (await call(w, 'ann', '/api/fund/me')).out.application.payouts;
   const bobMail = w.emails.find((x) => x.to === 'bob@example.test');
-  check('F23 money is marked sent with its ID number and the participant is told: the payout is on their status with the amount, the method and the ID and never who marked it, it is in the history, a check says Mercury and 7 to 10 business days, and a reviewer, someone not taking part or a mark with no ID is refused',
-    paid.status === 200 && checkPaid.status === 200 && refused.map((r) => r.status).join() === '403,409,400,404'
-    && annSees.length === 1 && annSees[0].amountCents === 50000 && annSees[0].method === 'venmo' && annSees[0].ref === 'VX-1042' && !('by' in annSees[0])
-    && app(w).audit.some((r) => r.act === 'payout-sent' && /ID #VX-1042/.test(r.msg))
-    && w.pushes.some((x) => x.uid === 'ann' && x.body === 'Your $500.00 share was sent by Venmo. ID #VX-1042.')
-    && bobMail?.subject === 'Your Community Assistance Fund check is in the mail' && /Checks are sent from Mercury and take 7 to 10 business days to arrive\./.test(bobMail.html) && /ID #1042/.test(bobMail.html),
+  check('F23 a check is marked mailed with its check number and the participant is told: the payout is on their status with the amount and the check number and never who marked it, it is in the history, the notice says Mercury and 7 to 10 business days, and a reviewer, someone not taking part, someone with no mailing address or a mark with no check number is refused',
+    paid.status === 200 && checkPaid.status === 200 && refused.map((r) => r.status).join() === '403,409,400,404,409'
+    && refused[4].out.error === 'There is no mailing address on file for them yet.' && refused[2].out.error === 'Add the check number.'
+    && annSees.length === 1 && annSees[0].amountCents === 50000 && annSees[0].method === 'check' && annSees[0].ref === '1042' && !('by' in annSees[0])
+    && app(w).audit.some((r) => r.act === 'payout-sent' && r.msg === '$500.00 check mailed, Check #1042')
+    && w.pushes.some((x) => x.uid === 'ann' && x.body === 'Your $500.00 check was mailed. Check #1042. Allow 7 to 10 business days.')
+    && bobMail?.subject === 'Your Community Assistance Fund check is in the mail' && /Checks are sent from Mercury and take 7 to 10 business days to arrive\./.test(bobMail.html) && /Check #2001/.test(bobMail.html) && !/ID #/.test(bobMail.html),
     JSON.stringify({ refused: refused.map((r) => r.status), annSees }));
 }
 
@@ -730,17 +789,149 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // still be instructions for how to add to Home Screen, and they will receive notifications".
 // NEGATIVE CONTROL (run 2026-10-04): the Android line taken out of the notification card made this read
 //   FAIL  F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, the share and what was sent on the status page, and the queue's pool total and Mark sent with a required ID
+// RE-PINNED 2026-10-04 (v7.25): monthly and check only; the payout reads "Check #" where it read "ID #".
+// NEGATIVE CONTROL (run 2026-10-04, v7.25): the status page's `${nextLine}` taken out of the share card made this read
+//   FAIL  F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, this month's share, the next check date and each check mailed with its number on the status page, and the queue's monthly pool total and Mark mailed with a required check number
 {
-  check('F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, the share and what was sent on the status page, and the queue\'s pool total and Mark sent with a required ID',
+  check('F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, this month\'s share, the next check date and each check mailed with its number on the status page, and the queue\'s monthly pool total and Mark mailed with a required check number',
     RULES.DISCORD_INVITE === 'https://discord.gg/YZXYQFjUGa' && /Not a member yet\? <a href="\$\{DISCORD_INVITE\}" target="_blank" rel="noopener">Join the Discord<\/a>/.test(PAGE)
     && /<strong>iPhone:<\/strong> open this page in Safari/.test(PAGE) && /<strong>Android:<\/strong> open this page in Chrome/.test(PAGE)
-    && /import \{ enablePush, pushSupported, pushInstalled \} from '\.\/push\.js';/.test(PAGE) && /Without notifications, the same updates come to your email\./.test(PAGE)
-    && /<dt>Your share<\/dt><dd>\$\{dollars\(app\.pool\.shareCents\)\}<\/dd>/.test(PAGE) && /ID #\$\{esc\(x\.ref\)\}/.test(PAGE)
+    && /import \{ enablePush, pushSupported, pushInstalled \} from '\.\/push\.js';/.test(PAGE) && /each month's pool and your share, and a note when your check is mailed, with its check number/.test(PAGE) && /Without notifications, the same updates come to your email\./.test(PAGE)
+    && /<dt>Your share<\/dt><dd>\$\{dollars\(app\.pool\.shareCents\)\}<\/dd>\n\s+\$\{nextLine\}/.test(PAGE) && /<h2>This month<\/h2>/.test(PAGE) && !/This week/.test(PAGE)
+    && /<dt>Next check<\/dt><dd>\$\{esc\(payoutWords\(next\)\)\}<\/dd>/.test(PAGE) && /check mailed \$\{dateWords\(x\.at\)\}/.test(PAGE) && /Check #\$\{esc\(x\.ref\)\}/.test(PAGE) && !/ID #/.test(PAGE)
     && /'\/api\/admin\/fund\/pool', \{ method: 'POST', body: \{ totalCents: cents \} \}/.test(ADMINPAGE)
     && /'\/api\/admin\/fund\/payout', \{ method: 'POST', body: \{ uid: li\.dataset\.uid, amountCents: cents, ref \} \}/.test(ADMINPAGE)
-    && /if \(ref\.length < 2\) \{ said\.textContent = 'Add the payment ID number\.'/.test(ADMINPAGE)
+    && /if \(ref\.length < 2\) \{ said\.textContent = 'Add the check number\.'/.test(ADMINPAGE)
+    && /<dt>This month<\/dt>/.test(ADMINPAGE) && /This month's pool total, in dollars/.test(ADMINPAGE) && /placeholder="Check #"/.test(ADMINPAGE) && !/ID #|This week/.test(ADMINPAGE)
     && !HARD.some((re) => re.test(f('public/js/push.js'))),
     'pins');
+}
+
+// ---- F26: his home is the fund (2026-10-04, v7.25) -------------------------------
+// Eric: "I want everything but information about the fundraiser and applicants HIDDEN in a parked
+// PR 1." Signing in takes him to the Fund queue, his device's landing goes there too, the queue's nav
+// is the Fund and PR 1 and nothing else, and every parked admin page carries both so he can always get
+// home. The client's own pages link to nothing that is parked.
+// NEGATIVE CONTROL (run 2026-10-04): the password door's `location.href = '/admin-fund.html';` put back to '/admin.html' made this read
+//   FAIL  F26 his home is the fund: both admin doors on the sign-in page go to the Fund queue, sign-in otherwise defaults to the fund page, his device's landing goes to the queue, the queue's nav is the Fund and PR 1 alone, every parked admin page leads with both, the queue keeps his alerts registered, and the client's own pages link to nothing parked
+{
+  const SIGNIN = f('public/signin.html');
+  const AF = f('public/admin-fund.html');
+  const tabs = (html) => [...(html.match(/<nav class="tabs">([\s\S]*?)<\/nav>/) || ['', ''])[1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
+  const parkedAdmin = ['admin', 'admin-case', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary'];
+  const PARKED = /href="\/(about|advocate|book|contact|faq|fit|reviews|services|stats|subscribe)(\.html)?["#?]/;
+  const clientPages = ['signin', 'case', 'chat', 'subscription', 'return', 'fund', 'index'];
+  check('F26 his home is the fund: both admin doors on the sign-in page go to the Fund queue, sign-in otherwise defaults to the fund page, his device\'s landing goes to the queue, the queue\'s nav is the Fund and PR 1 alone, every parked admin page leads with both, the queue keeps his alerts registered, and the client\'s own pages link to nothing parked',
+    (SIGNIN.match(/location\.href = '\/admin-fund\.html';/g) || []).length === 2 && !/location\.href = '\/admin\.html'/.test(SIGNIN)
+    && /const returnTo = params\.get\('to'\) \|\| '\/fund\.html';/.test(SIGNIN)
+    && /location\.replace\('\/signin\.html\?to=%2Fadmin-fund\.html'\);/.test(f('public/index.html'))
+    && tabs(AF).join() === '/admin-fund.html,/admin-pr1.html' && /<a href="\/admin-fund\.html" class="active">🤝 Fund<\/a>/.test(AF)
+    && parkedAdmin.every((n) => tabs(f(`public/${n}.html`)).slice(0, 2).join() === '/admin-fund.html,/admin-pr1.html')
+    && /initPushPrompt\(user, null\)/.test(ADMINPAGE)
+    && clientPages.every((n) => !PARKED.test(f(`public/${n}.html`))),
+    JSON.stringify({ fundTabs: tabs(AF), adminTabs: tabs(f('public/admin.html')) }));
+}
+
+// ---- F27: the old public pages are hidden (2026-10-04, v7.25) ----------------------
+// Eric chose "Hide them too": anyone who opens Services, About, Book, the FAQ and the rest is sent to
+// the fund page; he still opens them from PR 1. The gate's regex is lifted out of the Worker and RUN,
+// and so is the gate itself, against a stranger, against him, and against the admin demo.
+// NEGATIVE CONTROL (run 2026-10-04): `|services` taken out of PARKED_PUBLIC made this read
+//   FAIL  F27 the old public pages are hidden: all ten in both spellings are behind the gate and the client's own pages, the fund and the admin pages are not; the gate sits before the admin gate, sends a stranger to the fund page with a 302 and serves him the page privately; the three inline redirects are gone; the audit lists all ten as parked and none as a client page
+{
+  const lit = (W.match(/const PARKED_PUBLIC = (\/.*\/);/) || [])[1];
+  const RE = lit ? new Function(`return ${lit}`)() : /$^/;
+  const TEN = ['about', 'advocate', 'book', 'contact', 'faq', 'fit', 'reviews', 'services', 'stats', 'subscribe'];
+  const inside = TEN.flatMap((n) => [`/${n}`, `/${n}.html`, `/${n}/`]);
+  const outside = ['/', '/index.html', '/fund', '/fund.html', '/case', '/case.html', '/chat.html', '/signin', '/signin.html', '/subscription.html', '/return.html',
+    '/admin-fund', '/admin-pr1.html', '/admin-pr1-landing.html', '/js/book.js', '/css/site.css', '/booking', '/servicesx.html'];
+  const at = W.indexOf('    if (PARKED_PUBLIC.test(assetPath)) {');
+  const block = at > 0 ? W.slice(at, W.indexOf('\n    }\n', at) + 6) : '';
+  const gateRun = new Function('assetPath', 'demo', 'request', 'env', 'url', 'adminCookieUid', 'demoCookie', 'PARKED_PUBLIC',
+    `return (async () => { ${block} return null; })();`);
+  const env2 = { ASSETS: { fetch: async () => new Response('<h1>Services</h1>', { headers: { 'cache-control': 'public, max-age=3600' } }) } };
+  const u = new URL('https://thepocketadvocates.com/services.html');
+  const stranger = await gateRun('/services.html', '', {}, env2, u, async () => null, () => 'pa_demo=x', RE);
+  const him = await gateRun('/services.html', '', {}, env2, u, async () => 'eric', () => 'pa_demo=x', RE);
+  const demoAdmin = await gateRun('/services.html', 'admin', {}, env2, new URL('http://127.0.0.1:9377/services.html?demo=admin'), async () => null, () => 'pa_demo=admin', RE);
+  const AUDIT = f('tools/blindness-audit.mjs');
+  const parkedList = (AUDIT.match(/const PARKED_PAGES = \[([\s\S]*?)\];/) || [])[1] || '';
+  const clientList = (AUDIT.match(/const CLIENT_PAGES = \[([\s\S]*?)\];/) || [])[1] || '';
+  check('F27 the old public pages are hidden: all ten in both spellings are behind the gate and the client\'s own pages, the fund and the admin pages are not; the gate sits before the admin gate, sends a stranger to the fund page with a 302 and serves him the page privately; the three inline redirects are gone; the audit lists all ten as parked and none as a client page',
+    inside.every((p) => RE.test(p)) && !outside.some((p) => RE.test(p))
+    && at > 0 && at < W.indexOf('    if (ADMIN_ASSET.test(assetPath)) {\n      const isPage') && at > W.indexOf('if ((ADMIN_ASSET.test(assetPath) || DEMO_ASSET.test(assetPath)) && demo) {')
+    && stranger?.status === 302 && stranger.headers.get('location') === 'https://thepocketadvocates.com/'
+    && him?.status === 200 && him.headers.get('cache-control') === 'private, no-store' && him.headers.get('vary') === 'Cookie'
+    && demoAdmin?.status === 200 && /pa_demo=admin/.test(demoAdmin.headers.get('set-cookie') || '')
+    && ['contact', 'faq', 'services'].every((n) => !/pa-admin-device|location\.replace/.test(f(`public/${n}.html`)))
+    && TEN.every((n) => parkedList.includes(`'/${n}'`) && !clientList.includes(`'/${n}'`)),
+    JSON.stringify({ lit: !!lit, stranger: stranger?.status, him: him?.status, demoAdmin: demoAdmin?.status }));
+}
+
+// ---- F28: sure alerts for applications (2026-10-04, v7.25) -------------------------
+// Eric: "be sure I receive notifications for applications." Every submit and resubmit pushes to his
+// devices and emails pocketadvocate.eric@gmail.com as the backup, neither with a name or a detail;
+// the test button proves both arrive and says how many devices have alerts on; only a reviewer can
+// press it.
+// NEGATIVE CONTROL (run 2026-10-04): alertReviewer's `if (env.ADMIN_EMAIL) {` changed to `if (false) {` made this read
+//   FAIL  F28 sure alerts: a submit and a resubmit each push to him and email his address, with no name or detail in either; the test alert is a reviewer's alone, reaches every device he turned alerts on for and his email, and says how many devices; the queue's card turns alerts on for the device and sends the test, and the demo answers it
+{
+  const envA = { ADMIN_UID: 'eric', ADMIN_EMAIL: 'eric.alerts@example.test' };
+  const callA = async (w, e, uid, path, opts) => {
+    const r = req(uid, path, opts);
+    const res = await w.api.handleFund(r, e, r._url, null);
+    let out = null;
+    try { out = await res.clone().json(); } catch { out = null; }
+    return { status: res.status, out };
+  };
+  const w = world();
+  for (const [p, opts] of [['/api/fund/draft', { method: 'POST', json: { ...FULL, applicantNote: 'Ann from Boise' } }]]) await callA(w, envA, 'ann', p, opts);
+  await up(w, 'ann', 'id');
+  await up(w, 'ann', 'medical');
+  const sent = await callA(w, envA, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const first = { pushes: w.pushes.filter((x) => x.uid === 'eric'), mails: w.emails.filter((x) => x.to === envA.ADMIN_EMAIL) };
+  await callA(w, envA, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'request_info', message: 'Please add a clearer ID.' } });
+  await callA(w, envA, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const second = { pushes: w.pushes.filter((x) => x.uid === 'eric'), mails: w.emails.filter((x) => x.to === envA.ADMIN_EMAIL) };
+  const leaked = JSON.stringify([...second.pushes, ...second.mails]);
+  const asAnn = await callA(w, envA, 'ann', '/api/admin/fund/test-alert', { method: 'POST', json: {} });
+  w.setDoc('users/eric', { role: 'admin', pushSubs: [{ endpoint: 'https://push.example/e1' }, { endpoint: 'https://push.example/e2' }] });
+  const test = await callA(w, envA, 'eric', '/api/admin/fund/test-alert', { method: 'POST', json: {} });
+  const testMail = w.emails.filter((x) => x.to === envA.ADMIN_EMAIL).slice(-1)[0];
+  const noMail = await callA(w, { ADMIN_UID: 'eric' }, 'eric', '/api/admin/fund/test-alert', { method: 'POST', json: {} });
+  const DEMO_T = /path === '\/api\/admin\/fund\/test-alert'/.test(DEMO);
+  check('F28 sure alerts: a submit and a resubmit each push to him and email his address, with no name or detail in either; the test alert is a reviewer\'s alone, reaches every device he turned alerts on for and his email, and says how many devices; the queue\'s card turns alerts on for the device and sends the test, and the demo answers it',
+    sent.status === 200 && first.pushes.length === 1 && first.mails.length === 1
+    && first.pushes[0].title === 'New fund application' && first.pushes[0].link === '/admin-fund.html'
+    && first.mails[0].subject === 'New Community Assistance Fund application' && first.mails[0].html.includes('A new application is waiting in your Fund queue.') && first.mails[0].html.includes('https://thepocketadvocates.com/admin-fund.html')
+    && second.pushes.length === 2 && second.pushes[1].title === 'Updated fund application' && second.mails.length === 2 && second.mails[1].subject === 'Updated Community Assistance Fund application'
+    && !/Ann|ann_d|Doe|Boise|Pin Oak|copays|ID\./.test(leaked)
+    && asAnn.status === 404 && test.status === 200 && test.out.devices === 2 && test.out.emailed === true
+    && w.pushes.slice(-2)[0]?.title === 'Test alert' && testMail?.subject === 'Test alert: Community Assistance Fund'
+    && noMail.out.emailed === false && noMail.out.devices === 2
+    && /p === '\/api\/admin\/fund\/test-alert' && request\.method === 'POST'/.test(SRC) && /env\.ADMIN_EMAIL/.test(SRC)
+    && /"ADMIN_EMAIL": "pocketadvocate\.eric@gmail\.com"/.test(f('wrangler.jsonc'))
+    && /enablePush\(user\)/.test(ADMINPAGE) && /'\/api\/admin\/fund\/test-alert'/.test(ADMINPAGE) && /Send me a test alert/.test(ADMINPAGE)
+    && /Turn on alerts on this device/.test(ADMINPAGE) && /Home Screen icon/.test(ADMINPAGE) && /initPushPrompt\(user, null\)/.test(ADMINPAGE)
+    && DEMO_T && !DASH.test(ADMINPAGE),
+    JSON.stringify({ first: [first.pushes.length, first.mails.length], second: [second.pushes.length, second.mails.length], asAnn: asAnn.status, test: test.out, noMail: noMail.out }));
+}
+
+// ---- F29: the payout dates (2026-10-04, v7.25) --------------------------------------
+// Eric: "monthly payout distributions. With first payout November 1." Christmas Eve ends the
+// fundraiser, so the last check goes out January 1. RUN at fixed instants: early October, either side
+// of midnight Mountain going into November 1, early December and early January.
+// NEGATIVE CONTROL (run 2026-10-04): the first payout's `at` moved to `Date.UTC(2026, 10, 1, 0)` (midnight UTC, the evening of Oct 31 in Mountain time) made this read
+//   FAIL  F29 the checks go out on the 1st of November, December and January: the next check is November 1 until midnight Mountain begins it, then December 1, then January 1, then none; the words read like a date, and the landing and the status page say the same
+{
+  const at = (iso) => RULES.nextPayout(Date.parse(iso))?.date || null;
+  check('F29 the checks go out on the 1st of November, December and January: the next check is November 1 until midnight Mountain begins it, then December 1, then January 1, then none; the words read like a date, and the landing and the status page say the same',
+    RULES.PAYOUTS.map((p) => p.date).join() === '2026-11-01,2026-12-01,2027-01-01'
+    && at('2026-10-04T18:00:00Z') === '2026-11-01' && at('2026-11-01T05:59:59Z') === '2026-11-01' && at('2026-11-01T06:01:00Z') === '2026-12-01'
+    && at('2026-12-02T12:00:00Z') === '2027-01-01' && at('2027-01-02T12:00:00Z') === null
+    && RULES.payoutWords(RULES.PAYOUTS[0]) === 'November 1, 2026' && RULES.payoutWords(RULES.PAYOUTS[2]) === 'January 1, 2027' && RULES.payoutWords(null) === ''
+    && f('public/index.html').includes('starting November 1.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE),
+    JSON.stringify(['2026-10-04T18:00:00Z', '2026-11-01T05:59:59Z', '2026-11-01T06:01:00Z', '2026-12-02T12:00:00Z', '2027-01-02T12:00:00Z'].map(at)));
 }
 
 const failed = results.filter((r) => !r.pass);

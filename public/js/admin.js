@@ -438,9 +438,7 @@ async function load() {
     : '')
     + `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
         <button type="button" class="btn self-open" data-open-door="family">Open a family case</button>
-        ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}
-        <a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a>
-        <a class="btn quiet" href="/admin-pr1.html">PR 1 (the parked landing)</a></div>
+        ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}</div>
       ${person('self', false, pullPicker)}${person('family', true)}`;
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,

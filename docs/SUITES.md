@@ -266,6 +266,30 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The fund is home, everything else parked in PR 1 (2026-10-04, v7.25)
+
+Eric: "I want everything but information about the fundraiser and applicants
+HIDDEN in a parked PR 1. And be sure I receive notifications for
+applications." Then: "Fundraiser runs through Christmas Eve with monthly
+payout distributions. With first payout November 1. Also, payout should be
+check only." His sign-in and his device's landing open the Fund queue, whose
+nav is Fund and PR 1. `admin-pr1.html` is the hub; the old landing moved to
+`admin-pr1-landing.html`. The ten old public pages (`PARKED_PUBLIC` in
+`worker/index.js`) send anyone but him to `/` with a 302. Every submit pushes
+to him and emails `ADMIN_EMAIL`, and `POST /api/admin/fund/test-alert` proves
+both. Payout dates are `PAYOUTS` in `fund-rules.js` (Nov 1, Dec 1, Jan 1).
+
+`fund.mjs` F11, F17 to F19, F21 to F23 and F25 are re-pinned to check only,
+Christmas Eve, monthly and the hub; F26 his home, F27 the parked gate (its
+regex and the gate itself RUN), F28 the alerts (submit, resubmit, the test
+route), F29 the payout dates RUN at fixed instants (29 checks). The old-landing
+pins in landing, checkins, defects, fitcall, maintenance, selfcase and stats
+read `admin-pr1-landing.html`. The audit crawls the parked pages through the
+admin demo and asserts the 302 for a stranger in both spellings.
+`drive-fund.mjs` adds the alerts card, the hub and a client sent from
+`/services.html` to the fund page (32 checks); `drive-landing.mjs` opens the
+parked landing.
+
 ### The fund, paid out (2026-10-04, v7.24)
 
 Eric's next list: the Discord invite and membership, a required reason they

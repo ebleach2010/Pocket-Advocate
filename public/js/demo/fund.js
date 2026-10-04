@@ -11,7 +11,7 @@ import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
   FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView,
-  isActiveParticipant, shareOf, METHOD_WORDS,
+  isActiveParticipant, shareOf, checkTo, dollars,
 } from '../fund-rules.js';
 import { textPdf } from '../textpdf.js';
 
@@ -49,9 +49,9 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
         const uid = k.split('/')[1];
         const pay = payOf(uid);
         const last = (a.payouts || []).slice(-1)[0] || null;
-        const payTo = !pay?.method ? 'no payment details yet' : pay.method === 'check'
-          ? `Check to ${pay.accountName}, ${pay.address?.line1}, ${pay.address?.city}, ${pay.address?.state} ${pay.address?.zip}` : `${METHOD_WORDS[pay.method]}: ${pay.handle || pay.accountName}`;
-        return { uid, preferredName: a.preferredName || '', method: pay?.method || null, payTo, lastPayout: last, paidThisRound: !!last && since > 0 && new Date(last.at).getTime() >= since };
+        // Check only, as in the Worker.
+        const payTo = checkTo(pay);
+        return { uid, preferredName: a.preferredName || '', method: pay?.method === 'check' ? 'check' : null, payTo, lastPayout: last, paidThisRound: !!last && since > 0 && new Date(last.at).getTime() >= since };
       }),
     };
   };
@@ -73,11 +73,17 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
       const ref = clean(body.ref, 60);
       if (REVIEWERS.includes(uid)) return res(403, { error: 'Reviewers are not paid from the fund.' });
       if (!Number.isInteger(amountCents) || amountCents <= 0) return res(400, { error: 'Enter the amount sent, like 124.00.' });
-      if (ref.length < 2) return res(400, { error: 'Add the ID number of the payment.' });
+      if (ref.length < 2) return res(400, { error: 'Add the check number.' });
       if (!a || !isActiveParticipant(uid, a, REVIEWERS)) return res(409, { error: 'Only a verified participant who is taking part can be paid.' });
-      const m = payOf(uid)?.method || 'other';
-      put(appPath(uid), { ...a, payouts: [...(a.payouts || []), { at: now(), amountCents, method: m, ref, by: me }], audit: audit(a, row(me, 'payout-sent', '', '', { msg: `ID #${ref}` })) });
+      if (payOf(uid)?.method !== 'check') return res(409, { error: 'There is no mailing address on file for them yet.' });
+      put(appPath(uid), { ...a, payouts: [...(a.payouts || []), { at: now(), amountCents, method: 'check', ref, by: me }], audit: audit(a, row(me, 'payout-sent', '', '', { msg: `${dollars(amountCents)} check mailed, Check #${ref}` })) });
       return res(200, { ok: true });
+    }
+    // The test alert: the demo has no inbox and no push service, so it says
+    // what the Worker would, counting this device if it allows alerts.
+    if (path === '/api/admin/fund/test-alert') {
+      const devices = typeof Notification !== 'undefined' && Notification.permission === 'granted' ? 1 : 0;
+      return res(200, { ok: true, devices, emailed: true });
     }
     if (path === '/api/admin/fund/list') {
       const apps = [...store.docs.entries()].filter(([k]) => /^fundApplications\/[^/]+$/.test(k)).map(([k, a]) => {

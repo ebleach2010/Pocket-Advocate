@@ -17,13 +17,14 @@
 //   POST   /api/fund/draft          save and resume: their own fields and payment details, only while it is theirs to change
 //   POST   /api/fund/upload?kind=   one ID, medical or photo file, raw body, type and size checked, stored Worker-only
 //   POST   /api/fund/remove         take one of their own files back off
-//   POST   /api/fund/submit         send for verification; the reviewer gets a push with no details
+//   POST   /api/fund/submit         send for verification; the reviewer gets a push and an email, with no details
 //   GET    /api/admin/fund/list     the reviewer's queue (reviewer only)
 //   GET    /api/admin/fund/view     one application, logged in its audit history (reviewer only)
 //   GET    /api/admin/fund/file     one of its files' bytes, never a storage URL, logged (reviewer only)
 //   POST   /api/admin/fund/act      verify, reverify, request information, decline, inactive, note; never one's own verification (reviewer only)
-//   GET/POST /api/admin/fund/pool    the weekly pool: who shares it and how to pay them; set the total and queue each participant's notice (reviewer only)
-//   POST   /api/admin/fund/payout   mark one participant's share sent, with its ID number; they are told (reviewer only)
+//   GET/POST /api/admin/fund/pool    the monthly pool: who shares it and where their check goes; set the total and queue each participant's notice (reviewer only)
+//   POST   /api/admin/fund/payout   mark one participant's check mailed, with its check number; they are told (reviewer only)
+//   POST   /api/admin/fund/test-alert  a test push and email to Eric, to prove application alerts reach him (reviewer only)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
@@ -644,6 +645,16 @@ const ADMIN_ASSET =
  * this is the second of two independent gates rather than the only one.
  */
 const DEMO_ASSET = /^\/js\/demo\//;
+
+/**
+ * The old public site, parked in PR 1 (Eric, 2026-10-04: "I want everything
+ * but information about the fundraiser and applicants HIDDEN in a parked
+ * PR 1"). He still opens these from PR 1; everyone else is sent to the fund
+ * page. Both spellings and a trailing slash, as with the admin gate. The
+ * client's own pages (sign-in, case, chat, subscription, return) and the fund
+ * pages are not in it.
+ */
+const PARKED_PUBLIC = /^\/(about|advocate|book|contact|faq|fit|reviews|services|stats|subscribe)(\.html)?\/?$/;
 
 /**
  * The path the ASSET SERVER will resolve, not the one in the request line.
@@ -1289,6 +1300,19 @@ export default {
       out.headers.set('cache-control', 'private, no-store');
       out.headers.set('vary', 'Cookie');
       out.headers.append('set-cookie', demoCookie(demo));
+      return out;
+    }
+
+    // The old public pages, parked. A redirect rather than the 404: these were
+    // public pages, so saying where the front door is now confirms nothing.
+    if (PARKED_PUBLIC.test(assetPath)) {
+      const his = demo === 'admin' || !!(await adminCookieUid(request, env).catch(() => null));
+      if (!his) return Response.redirect(new URL('/', url).toString(), 302);
+      const res = await env.ASSETS.fetch(request);
+      const out = new Response(res.body, res);
+      out.headers.set('cache-control', 'private, no-store');
+      out.headers.set('vary', 'Cookie');
+      if (demo && url.searchParams.get('demo')) out.headers.append('set-cookie', demoCookie(demo));
       return out;
     }
 
@@ -2042,7 +2066,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-04-fund-payouts';
+const BUILD_TAG = 'v2026-10-04-fund-home';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2050,7 +2074,7 @@ const BUILD_TAG = 'v2026-10-04-fund-payouts';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.24';
+const VERSION = '7.25';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

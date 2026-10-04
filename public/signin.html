@@ -38,12 +38,6 @@
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
     <nav class="tabs">
-      <a href="/book.html">Book</a>
-      <a href="/services.html">Services</a>
-      <a href="/about.html">About</a>
-      <a href="/faq.html">Questions</a>
-      <a href="/reviews.html">Reviews</a>
-      <a href="/contact.html">Contact</a>
       <span data-nav-auth></span>
     </nav>
   </div>
@@ -140,7 +134,8 @@
 
   hydrateNav();
   const params = new URLSearchParams(location.search);
-  const returnTo = params.get('to') || '/book.html';
+  // Book is parked in PR 1 now (2026-10-04); the fund page is the front door.
+  const returnTo = params.get('to') || '/fund.html';
   const errEl = document.getElementById('error');
   const codeErr = document.getElementById('code-error');
   let pendingEmail = '';
@@ -216,7 +211,7 @@
       // Starts the weekly re-login clock (enforced in auth.js).
       localStorage.setItem('pa-admin-since', String(Date.now()));
       await signInWithCustomToken(auth, out.token);
-      location.href = '/admin.html';
+      location.href = '/admin-fund.html';
       return true;
     } catch {
       return false;
@@ -332,7 +327,7 @@
       // Starts the weekly re-login clock (enforced in auth.js).
       localStorage.setItem('pa-admin-since', String(Date.now()));
       await signInWithCustomToken(auth, out.token);
-      location.href = '/admin.html';
+      location.href = '/admin-fund.html';
     } catch (err) {
       passErr.textContent = err.message;
       passErr.hidden = false;

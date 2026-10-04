@@ -791,7 +791,9 @@ check('S37 the chat paints a question with a Reply, his answer with the question
 
 // RE-PINNED 2026-10-04 (v7.23): admin-pr1.html is the parked public landing behind the admin gate, on
 // the landing's own sheets, so it is not one of the pages that wear the admin sheet.
-const cssVersions = [...new Set(readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n) && n !== 'admin-pr1.html')
+// RE-PINNED 2026-10-04 (v7.25): the parked landing moved to admin-pr1-landing.html, and admin-pr1.html
+// is the PR 1 hub, which wears the admin sheet like every other admin page.
+const cssVersions = [...new Set(readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n) && n !== 'admin-pr1-landing.html')
   .map((n) => (f(`public/${n}`).match(/admin\.css\?v=([a-z0-9]+)/) || [])[1] || 'none'))];
 // NEGATIVE CONTROL (run 2026-09-03): .reply-strip renamed in admin.css made this read
 //   FAIL  S38 the question, the quote, the Reply and the strip are styled on the admin sheet, and every admin page asks for the same new copy of it  -- st...

@@ -485,12 +485,16 @@ check('F5 fit.js lists fit slots and only fit slots',
   const assets = audit.match(/const ADMIN_ASSETS = \[([\s\S]*?)\];/)?.[1] || '';
   // NEGATIVE CONTROL (run 2026-09-02): removing '/fit' from CLIENT_PAGES made this read
   //   FAIL  F7 the audit crawls /fit as a client page and gates admin-fit.js
+  // RE-PINNED 2026-10-04 (v7.25): the free call is parked in PR 1, so the audit crawls /fit among the
+  // parked pages (through the admin demo) and asserts a stranger is sent to the fund page from it.
+  const parked = audit.match(/const PARKED_PAGES = \[([\s\S]*?)\];/)?.[1] || '';
   check('F7 the audit crawls /fit as a client page and gates admin-fit.js',
-    /'\/fit'/.test(pages) && /'\/js\/admin-fit\.js'/.test(assets));
+    (/'\/fit'/.test(pages) || /'\/fit'/.test(parked)) && /'\/js\/admin-fit\.js'/.test(assets));
 }
 {
   // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
-  const idx = f('public/admin-pr1.html');
+  // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
+  const idx = f('public/admin-pr1-landing.html');
   const hero = idx.slice(idx.indexOf('<section class="land-sec hero">'), idx.indexOf('</section>'));
   const acts = [...hero.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
   // NEGATIVE CONTROL (run 2026-09-02): swapping the two hero anchors made this read

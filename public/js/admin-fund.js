@@ -9,10 +9,14 @@
 // refuses them there whatever this page does.
 
 import { requireAdmin, hydrateNav } from './auth.js';
-import { dollars, CHECK_NOTE } from './fund-rules.js';
+import { dollars, CHECK_NOTE, checkTo } from './fund-rules.js';
+import { enablePush, pushSupported, pushInstalled, initPushPrompt } from './push.js';
 
 hydrateNav();
 const user = await requireAdmin();
+// This is his home page now, so it keeps his push subscription fresh: when
+// alerts are already allowed on this device, quietly re-register it.
+if (user) initPushPrompt(user, null).catch(() => {});
 const el = document.getElementById('fq');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -48,10 +52,9 @@ const HISTORY_WORDS = {
   viewed: 'Opened the application', 'review-started': 'Review started',
   'opened-id': 'Opened the ID document', 'opened-medical': 'Opened a medical document', 'opened-photo': 'Opened the photo',
   verify: 'Verified', reverify: 'Reverified', request_info: 'Asked for more information', decline: 'Declined verification',
-  inactive: 'Marked inactive', 'note-saved': 'Saved the internal note', 'payout-sent': 'Marked money sent',
+  inactive: 'Marked inactive', 'note-saved': 'Saved the internal note', 'payout-sent': 'Marked a check mailed',
 };
 const TYPE_WORDS = { 'application/pdf': 'PDF', 'image/jpeg': 'JPG', 'image/png': 'PNG', 'image/heic': 'HEIC', 'image/heif': 'HEIF', 'image/webp': 'WEBP' };
-const METHOD_WORDS = { paypal: 'PayPal', venmo: 'Venmo', zelle: 'Zelle', bank: 'Bank transfer', check: 'Check', other: 'Other' };
 const toCents = (v) => { const n = Number(String(v || '').replace(/[$,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
 const when = (v) => (v ? new Date(v).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 const day = (v) => (v ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
@@ -99,6 +102,7 @@ async function list() {
   const shown = rows.filter((r) => pick[2](r.verificationStatus))
     .sort((x, y) => (filter === 'waiting' ? at(x) - at(y) : at(y) - at(x)));
   el.innerHTML = `
+    <div id="fq-alerts"></div>
     <div id="fq-pool"><p class="dim small">Loading the pool…</p></div>
     <h2 class="fq-sub">Applications</h2>
     <div class="fq-chips" role="tablist">${FILTERS.map(([k, w, fn]) => `
@@ -112,11 +116,55 @@ async function list() {
         ${r.reverificationOverdue ? '<span class="fq-flag due">reverification due</span>' : ''}
       </a></li>`).join('')}</ul>` : '<p class="dim">Nothing here.</p>'}`;
   el.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.f; list(); }));
+  alerts();
   pool();
 }
 
-// ---- the weekly pool (Eric, 2026-10-04: "I will update the amount in the
-// donation pool weekly so each participant can see their active share.") ----
+// ---- application alerts (Eric, 2026-10-04: "be sure I receive notifications
+// for applications"). Every submit pushes to each device he turned alerts on
+// for and emails him as well; this card turns the push on for this device
+// and proves both arrive. ----
+function alerts(said = '') {
+  const box = el.querySelector('#fq-alerts');
+  if (!box) return;
+  const on = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const canAsk = pushSupported() && !on && (typeof Notification === 'undefined' || Notification.permission !== 'denied');
+  const iosNoIcon = /iPhone|iPad|iPod/.test(navigator.userAgent || '') && !pushInstalled();
+  box.innerHTML = `
+    <section class="fq-alerts">
+      <h2>Application alerts</h2>
+      <p class="dim small">Every new application sends a notification to your phone and an email to your inbox. Neither shows a name.</p>
+      ${on ? '<p class="small ok">\u2713 On for this device.</p>'
+        : canAsk ? '<p class="row"><button type="button" class="btn glow" id="fq-push">Turn on alerts on this device</button></p>'
+          : `<p class="small">${iosNoIcon ? 'On iPhone, open this page from your Home Screen icon to turn alerts on.' : 'This browser cannot show alerts. The email still comes.'}</p>`}
+      <p class="row"><button type="button" class="btn" id="fq-test">Send me a test alert</button> <span class="small" id="fq-alert-said" role="status">${esc(said)}</span></p>
+    </section>`;
+  box.querySelector('#fq-push')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    const out = await enablePush(user).catch((err) => ({ ok: false, error: err.message }));
+    alerts(out.ok ? 'Alerts are on for this device.' : out.error || 'Alerts could not be turned on.');
+  });
+  box.querySelector('#fq-test').addEventListener('click', async (e) => {
+    const out = box.querySelector('#fq-alert-said');
+    e.currentTarget.disabled = true;
+    out.textContent = 'Sending…';
+    try { out.textContent = testWords(await api('/api/admin/fund/test-alert', { method: 'POST', body: {} })); }
+    catch (err) { out.textContent = `The test did not go: ${err.message}`; }
+    e.currentTarget.disabled = false;
+  });
+}
+
+function testWords({ devices = 0, emailed = false }) {
+  const where = `${devices} device${devices === 1 ? '' : 's'}`;
+  if (devices && emailed) return `Sent to ${where} and your email.`;
+  if (devices) return `Sent to ${where}. The email did not go.`;
+  if (emailed) return 'Sent to your email. No device has alerts on yet, so turn them on above.';
+  return 'Nothing went out: no device has alerts on, and the email did not go.';
+}
+
+// ---- the monthly pool (Eric, 2026-10-04: "I will update the amount in the
+// donation pool weekly so each participant can see their active share." The
+// same day: "monthly payout distributions ... payout should be check only.") ----
 async function pool(data) {
   const box = el.querySelector('#fq-pool');
   if (!box) return;
@@ -130,12 +178,12 @@ async function pool(data) {
     <section class="fq-pool">
       <h2 class="fq-sub">Donation pool</h2>
       ${p ? `<dl class="fq-facts">
-        <dt>This week</dt><dd>${dollars(p.totalCents)}</dd>
+        <dt>This month</dt><dd>${dollars(p.totalCents)}</dd>
         <dt>Shared by</dt><dd>${p.activeCount} participant${p.activeCount === 1 ? '' : 's'}</dd>
         <dt>Each share</dt><dd>${dollars(p.shareCents)}</dd>
         <dt>Posted</dt><dd>${when(p.updatedAt)}</dd>
       </dl>${p.pending ? `<p class="dim small">Telling participants now: ${p.pending} still to go, a few each minute.</p>` : ''}` : '<p class="dim small">No total posted yet.</p>'}
-      <label class="small">This week's pool total, in dollars
+      <label class="small">This month's pool total, in dollars
         <input class="fq-text fq-money" id="fq-total" inputmode="decimal" placeholder="1240.00" value="${p ? (p.totalCents / 100).toFixed(2) : ''}"></label>
       <p class="row"><button type="button" class="btn glow" id="fq-post">Post and tell participants</button> <span class="dim small" id="fq-post-said"></span></p>
       <p class="dim small">The pool is split equally among verified participants who are taking part. You are never one of them.</p>
@@ -144,13 +192,13 @@ async function pool(data) {
         <li class="fq-payout" data-uid="${esc(r.uid)}">
           <span class="fq-name">${esc(r.preferredName || 'No name')}</span>
           <span class="small">${esc(r.payTo)}</span>
-          ${r.paidThisRound ? `<span class="small ok">\u2713 Sent ${dollars(r.lastPayout.amountCents)} ${day(r.lastPayout.at)}, ID #${esc(r.lastPayout.ref)}</span>` : `
+          ${r.paidThisRound ? `<span class="small ok">\u2713 Mailed ${dollars(r.lastPayout.amountCents)} ${day(r.lastPayout.at)}, Check #${esc(r.lastPayout.ref)}</span>` : `
           <span class="fq-pay-row">
-            <input class="fq-text fq-money" data-amount inputmode="decimal" value="${p ? (p.shareCents / 100).toFixed(2) : ''}" aria-label="Amount sent">
-            <input class="fq-text" data-ref placeholder="ID #" maxlength="60" aria-label="Payment ID number">
-            <button type="button" class="btn" data-pay>Mark sent</button>
+            <input class="fq-text fq-money" data-amount inputmode="decimal" value="${p ? (p.shareCents / 100).toFixed(2) : ''}" aria-label="Amount of the check">
+            <input class="fq-text" data-ref placeholder="Check #" maxlength="60" aria-label="Check number">
+            <button type="button" class="btn" data-pay>Mark mailed</button>
           </span>
-          ${r.method === 'check' ? `<span class="dim small">${esc(CHECK_NOTE)}</span>` : ''}
+          <span class="dim small">${esc(CHECK_NOTE)}</span>
           <span class="error small" data-pay-said hidden></span>`}
         </li>`).join('')}</ul>` : '<p class="dim small">Nobody is taking part yet.</p>'}
     </section>`;
@@ -168,8 +216,8 @@ async function pool(data) {
     const cents = toCents(li.querySelector('[data-amount]').value);
     const ref = li.querySelector('[data-ref]').value.trim();
     said.hidden = true;
-    if (!Number.isInteger(cents) || cents <= 0) { said.textContent = 'Enter the amount sent.'; said.hidden = false; return; }
-    if (ref.length < 2) { said.textContent = 'Add the payment ID number.'; said.hidden = false; return; }
+    if (!Number.isInteger(cents) || cents <= 0) { said.textContent = 'Enter the amount of the check.'; said.hidden = false; return; }
+    if (ref.length < 2) { said.textContent = 'Add the check number.'; said.hidden = false; return; }
     b.disabled = true;
     try { await api('/api/admin/fund/payout', { method: 'POST', body: { uid: li.dataset.uid, amountCents: cents, ref } }); pool(); }
     catch (err) { said.textContent = err.message; said.hidden = false; b.disabled = false; }
@@ -201,11 +249,8 @@ function paint(a, me) {
   const s = a.verificationStatus;
   const docs = [a.identityDocument && docRow(a, a.identityDocument, 'id'), ...(a.medicalDocuments || []).map((d) => docRow(a, d, 'medical'))].filter(Boolean);
   const p = a.payment;
-  const payWords = !p?.method ? 'None given'
-    : p.method === 'bank' ? `Bank transfer · name on the account: ${esc(p.accountName)}`
-      : p.method === 'check' ? `Check to ${esc(p.accountName)} · ${esc([p.address?.line1, p.address?.line2].filter(Boolean).join(', '))}, ${esc(p.address?.city)}, ${esc(p.address?.state)} ${esc(p.address?.zip)}`
-      : p.method === 'other' ? `${esc(p.otherMethod)} · ${esc(p.handle)}`
-        : `${METHOD_WORDS[p.method]} · ${esc(p.handle)}`;
+  // Check only (Eric, 2026-10-04: "payout should be check only").
+  const payWords = esc(checkTo(p));
   const actions = Object.keys(ACT_WORDS).filter((k) => ACT_FROM[k].includes(s));
   const history = [...(a.audit || [])].reverse();
   const who = (by) => (by === me ? 'You' : by === a.uid ? 'Applicant' : 'Reviewer');
@@ -242,7 +287,7 @@ function paint(a, me) {
 
     <h3>Payment</h3>
     <p>${payWords}</p>
-    ${(a.payouts || []).length ? `<h3>Sent</h3><ul class="fq-history">${a.payouts.map((x) => `<li>${dollars(x.amountCents)} by ${esc(METHOD_WORDS[x.method] || x.method)} · ${day(x.at)} · ID #${esc(x.ref)}</li>`).join('')}</ul>` : ''}
+    ${(a.payouts || []).length ? `<h3>Sent</h3><ul class="fq-history">${a.payouts.map((x) => `<li>${dollars(x.amountCents)} check · ${day(x.at)} · Check #${esc(x.ref)}</li>`).join('')}</ul>` : ''}
 
     <h3>Internal note <span class="dim small">(reviewers only)</span></h3>
     <textarea id="fq-note" class="fq-text" maxlength="4000">${esc(a.internalReviewerNote)}</textarea>

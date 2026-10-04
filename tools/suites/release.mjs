@@ -76,9 +76,17 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   //   FAIL  R1 both versions read 7.23 with the new tag, the 7.23, 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
   // NEGATIVE CONTROL (run 2026-10-04, v7.22): the 7.22 entry's `quiet: true` taken off made this read
   //   FAIL  R1 both versions read 7.22 with the new tag, the 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.24 with the new tag, the 7.24 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.24';/.test(CL) && /const VERSION = '7\.24';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-payouts';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.24'
+  // RE-PINNED 2026-10-04 (v7.25): both versions read 7.25 with the fund-home tag, and the 7.25 entry
+  // says the fund is home, the rest is parked in PR 1, the alerts, Christmas Eve and the monthly checks.
+  const entry725 = (CL.match(/\{\n\s+\/\/ THE FUND IS HOME \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-04, v7.25): the worker's BUILD_TAG left at the fund-payouts tag made this read
+  //   FAIL  R1 both versions read 7.25 with the new tag, the 7.25 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.25 with the new tag, the 7.25 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.25';/.test(CL) && /const VERSION = '7\.25';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-home';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.25'
+    && /version: '7\.25',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry725)
+    && /parked in PR 1/.test(entry725) && /pocketadvocate\.eric@gmail\.com/.test(entry725) && /by check only/.test(entry725)
+    && !DASH.test(entry725) && !HARD.some((re) => re.test(entry725))
     && /version: '7\.24',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry724)
     && /Checks come from Mercury and take 7 to 10 business days\./.test(entry724) && /You are never in the split\./.test(entry724)
     && !DASH.test(entry724) && !HARD.some((re) => re.test(entry724))

@@ -658,7 +658,8 @@ ck('clock: all switches share one painter set, so no two can disagree',
 {
   const PAGE = f('public/advocate.html');
   // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
-  const IDX = f('public/admin-pr1.html');
+  // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
+  const IDX = f('public/admin-pr1-landing.html');
   // NEGATIVE CONTROL (run 2026-08-30): rewording one word of his sentence
   // ("exactly how badly" to "just how badly") made this read
   //   FAIL  advocate page: his story lands word for word, photo and signature included
