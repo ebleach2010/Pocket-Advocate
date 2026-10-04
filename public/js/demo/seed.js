@@ -545,6 +545,46 @@ export function seed({ set, file }) {
     at: days(1).toISOString(), url: '',
     meta: { paCategory: 'formsent', paStarred: '1' },
   });
+
+  // ---- the Community Assistance Fund (2026-10-04) ----------------------------
+  // Three invented applicants for the reviewer's queue: one waiting, one
+  // verified with a reverification date, and his own, which shows the
+  // self-verification block. The client demo has none, so it walks the form.
+  const ref = (uid, kind, n, type = 'application/pdf', size = 412_000) => {
+    const id = `${uid.replace(/\W/g, '').slice(-6)}${kind}${n}`.padEnd(24, '0').replace(/[^0-9a-f]/g, 'a').slice(0, 24);
+    const path = `fund/${uid}/${kind}/${id}.${type === 'application/pdf' ? 'pdf' : 'jpg'}`;
+    file(path, { name: `${kind}.pdf`, type, size, at: days(3).toISOString(), url: '' });
+    return { id, type, size, path, uploadedAt: days(3) };
+  };
+  const consents = { accurate: true, noGuarantee: true, notMedical: true, reviewerView: true, formula: true, at: days(2) };
+  set('fundApplications/demo-fund-sam', {
+    userId: 'demo-fund-sam', verificationStatus: 'submitted', step: 6, discordUsername: 'samwise_r', preferredName: 'Sam',
+    legalName: 'Samantha Rivera', email: '', applicantNote: 'The letter is from my neurologist. I blacked out the parts about medications.',
+    discordMember: true, participationRequested: true, participationActive: false, photoPublicConsent: true, photoConsentAt: days(2),
+    identityDocument: ref('demo-fund-sam', 'id', 1, 'image/jpeg', 1_800_000),
+    medicalDocuments: [ref('demo-fund-sam', 'medical', 1), ref('demo-fund-sam', 'medical', 2, 'application/pdf', 96_000)],
+    photo: ref('demo-fund-sam', 'photo', 1, 'image/jpeg', 2_400_000),
+    consents, submittedAt: days(2), createdAt: days(3), updatedAt: days(2),
+    audit: [{ at: days(3), by: 'demo-fund-sam', act: 'started' }, { at: days(2), by: 'demo-fund-sam', act: 'submitted', from: 'draft', to: 'submitted' }],
+  });
+  set('fundPayments/demo-fund-sam', { userId: 'demo-fund-sam', method: 'venmo', handle: '@sam-rivera', accountName: '', otherMethod: '', updatedAt: days(2) });
+  set('fundApplications/demo-fund-jo', {
+    userId: 'demo-fund-jo', verificationStatus: 'verified', step: 6, discordUsername: 'jo.wren', preferredName: 'Jo',
+    legalName: 'Joanna Wren', email: '', applicantNote: '', discordMember: true, participationRequested: true, participationActive: true,
+    identityDocument: ref('demo-fund-jo', 'id', 1), medicalDocuments: [ref('demo-fund-jo', 'medical', 1)], photo: null,
+    consents, submittedAt: days(40), reviewedAt: days(38), verifiedAt: days(38), reviewerId: 'demo-admin',
+    reverificationDueAt: new Date(days(38).getTime() + 182 * 86_400_000), createdAt: days(41), updatedAt: days(38),
+    audit: [{ at: days(40), by: 'demo-fund-jo', act: 'submitted', from: 'draft', to: 'submitted' }, { at: days(38), by: 'demo-admin', act: 'verify', from: 'under_review', to: 'verified' }],
+  });
+  set('fundPayments/demo-fund-jo', { userId: 'demo-fund-jo', method: 'paypal', handle: 'jo.wren@example.com', accountName: '', otherMethod: '', updatedAt: days(40) });
+  set('fundApplications/demo-admin', {
+    userId: 'demo-admin', verificationStatus: 'submitted', step: 6, discordUsername: 'eric_pa', preferredName: 'Eric',
+    legalName: 'Eric Bleach', email: '', applicantNote: '', discordMember: true, participationRequested: true, participationActive: false,
+    identityDocument: ref('demo-admin', 'id', 1), medicalDocuments: [ref('demo-admin', 'medical', 1)], photo: null,
+    consents, submittedAt: days(1), createdAt: days(1), updatedAt: days(1),
+    audit: [{ at: days(1), by: 'demo-admin', act: 'submitted', from: 'draft', to: 'submitted' }],
+  });
+  set('fundPayments/demo-admin', { userId: 'demo-admin', method: 'zelle', handle: 'eric@example.com', accountName: '', otherMethod: '', updatedAt: days(1) });
 }
 
 export const DEMO_CASE_ID = CASE_ID;

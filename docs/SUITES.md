@@ -266,6 +266,31 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The Community Assistance Fund's verification (2026-10-04, v7.22)
+
+Eric's brief: verify that applicants are real community members with
+reasonable documentation of eligibility, asking for as little sensitive
+information as possible, never ranking anyone, never deciding who is "sick
+enough". Six steps at `/fund.html`, a reviewer's queue at `/admin-fund.html`.
+
+`worker/fund.js` holds every route and `public/js/fund-rules.js` every rule
+(what is kept, what each status allows, what each side sees), shared with the
+demo mirror in `public/js/demo/fund.js`. Data is Worker-only by construction:
+`fundApplications/{uid}`, `fundPayments/{uid}`, and files under `fund/{uid}/`
+by random id, never by their names.
+
+`fund.mjs` F1 to F16 RUN the Worker module against fakes with Firestore's own
+write rules: nobody reaches anybody else's (F1), a sent application is locked
+(F2), nothing incomplete is sent (F3), a file is what it says (F4), a reviewer
+opens one through the Worker with no caching (F5), nobody verifies their own
+(F6), a decline or a request needs an internal reason that only reviewers read
+(F7), six months to reverification (F8), the history (F9), notifications name
+no one (F10), payment details live apart and refuse card and account numbers
+(F11), the GoFundMe photo needs its own consent (F12), the minimal record is
+ready and unreachable (F13), Eric's words land word for word (F14), the pages
+keep it private (F15), and the routes, gate, lists and demo agree (F16).
+`drive-fund.mjs` walks it all in the demo at 390px.
+
 ### PR 420 deleted (2026-10-04, v7.21)
 
 Eric: "Delete the trading desk folder and contents in code. I won't be

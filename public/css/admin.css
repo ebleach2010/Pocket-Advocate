@@ -1548,3 +1548,41 @@ main > p > a.small[href="/admin.html"] {
 }
 .charge-edit { font-size: 1.4rem; font-weight: 800; color: var(--orange); }
 .charge-edit input { width: 7.5rem; font: inherit; font-size: 1.4rem; font-weight: 800; color: var(--orange); }
+
+/* THE FUND QUEUE (Eric, 2026-10-04): the Community Assistance Fund's
+   verification. A list that says who is waiting, then one application at a
+   time: its facts, its documents opened in place, the internal note, the
+   actions and the history. Status pills are words in a colour, never a
+   score. */
+.fq-chips { display: flex; flex-wrap: wrap; gap: .4rem; margin: .8rem 0; }
+.fq-chip { min-height: 44px; padding: 0 .9rem; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--dim); font: inherit; font-size: .88rem; cursor: pointer; }
+.fq-chip span { opacity: .7; margin-left: .2rem; }
+.fq-chip.on { border-color: var(--cyan); color: var(--cyan); }
+.fq-list { list-style: none; padding: 0; margin: 0; display: grid; gap: .5rem; }
+.fq-row { display: grid; grid-template-columns: 1fr auto; gap: .2rem .6rem; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); text-decoration: none; }
+.fq-row:hover, .fq-row:focus-visible { border-color: var(--cyan); }
+.fq-name { font-weight: 700; }
+.fq-meta { grid-column: 1; color: var(--dim); font-size: .85rem; overflow-wrap: anywhere; }
+.fq-row .fq-pill { grid-column: 2; grid-row: 1; align-self: start; }
+.fq-pill { display: inline-block; padding: .15rem .6rem; border-radius: 999px; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+.fq-pill.s-submitted, .fq-pill.s-under_review { border-color: var(--orange); color: var(--orange); }
+.fq-pill.s-more_info { border-color: var(--magenta); color: var(--magenta); }
+.fq-pill.s-verified { border-color: var(--cyan); color: var(--cyan); }
+.fq-flag { display: inline-block; font-size: .72rem; font-weight: 700; color: var(--self, var(--magenta)); letter-spacing: .03em; }
+.fq-flag.due { color: var(--orange); }
+.fq-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.fq-head h2 { margin: .2rem 0; }
+.fq-facts { display: grid; grid-template-columns: max-content 1fr; gap: .3rem 1rem; margin: .6rem 0 1rem; }
+.fq-facts dt { color: var(--dim); }
+.fq-facts dd { margin: 0; overflow-wrap: anywhere; }
+.fq-docs { list-style: none; padding: 0; margin: .3rem 0; display: grid; gap: .5rem; }
+.fq-doc { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem; padding: .6rem .8rem; border: 1px solid var(--line); border-radius: 10px; }
+.fq-preview { flex-basis: 100%; }
+.fq-preview iframe { width: 100%; height: 70vh; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.fq-preview img { max-width: 100%; height: auto; border-radius: 8px; display: block; }
+.fq-note { white-space: pre-wrap; overflow-wrap: anywhere; }
+.fq-text { width: 100%; box-sizing: border-box; min-height: 90px; font: inherit; padding: .6rem .7rem; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); margin-top: .3rem; }
+.fq-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.fq-actions .btn { min-height: 48px; }
+.fq-confirm { margin: .8rem 0; padding: .8rem .9rem; border: 1px solid var(--line); border-radius: 12px; display: grid; gap: .5rem; }
+.fq-history { padding-left: 1.1rem; display: grid; gap: .4rem; }

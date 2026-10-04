@@ -12,6 +12,9 @@ import { DEMO_CASE_ID } from './seed.js';
 // The same two vocabularies the pages read, so the demo cannot answer with a
 // reaction the UI has no name for.
 import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
+// The Community Assistance Fund (2026-10-04): its routes, mirrored with the
+// Worker's own rules.
+import { fundDemo } from './fund.js';
 
 /**
  * The document types a file can be FILED as, mirroring FILING_CATEGORIES in
@@ -112,6 +115,8 @@ export function demoApi(role, store) {
       try { return init.body ? JSON.parse(init.body) : {}; } catch { return {}; }
     })();
     const q = new URLSearchParams((url.split('?')[1] || ''));
+    const fund = await fundDemo({ path, q, body, init, role, store, real });
+    if (fund) return fund;
 
     // ---- signing in takes anything at all --------------------------------
     // "I'll use any series of letters to fill the email box/code box. No email

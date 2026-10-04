@@ -104,6 +104,9 @@ const CLIENT_PAGES = [
   '/fit',
   // 2026-09-02: By the numbers. Measured figures and the words around them.
   '/stats',
+  // 2026-10-04: the Community Assistance Fund's verification form and status
+  // page. A stranger signs in and lands here.
+  '/fund',
 ];
 
 // Reachable without any page linking to them.
@@ -113,6 +116,9 @@ const EXTRA = [
   // 2026-09-22: the PDF writer, served to anyone and imported only by gated
   // modules, so no crawl from a client page reaches it.
   '/js/textpdf.js',
+  // 2026-10-04: the fund's rules, imported by the Worker and the demo, and by
+  // no client page, so no crawl reaches it; served to anyone all the same.
+  '/js/fund-rules.js', '/css/fund.css',
 ];
 
 // Must not be reachable without the admin cookie. Pages 404 exactly like a
@@ -122,6 +128,8 @@ const EXTRA = [
 const ADMIN_PAGES = [
   '/admin', '/admin.html', '/admin-case', '/admin-chats', '/admin-calendar',
   '/admin-availability', '/admin-dictionary',
+  // 2026-10-04: the fund's verification queue.
+  '/admin-fund',
 ];
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
@@ -134,6 +142,8 @@ const ADMIN_ASSETS = [
   '/js/admin-hours.js', '/js/admin-presence.js', '/js/admin-ledger.js',
   '/js/admin-fit.js',
   '/js/admin-personal.js',
+  // 2026-10-04: the fund's verification queue.
+  '/js/admin-fund.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

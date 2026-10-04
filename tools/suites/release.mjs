@@ -54,16 +54,24 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
 // of them quiet with an empty client list, so not one ever reached a client's notes.
 // NEGATIVE CONTROL (run 2026-10-04): the worker's VERSION left at '7.20' made this read
 //   FAIL  R1 both versions read 7.21 with the new tag, the 7.21 entry is quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+// RE-PINNED 2026-10-04 (v7.22): both versions read 7.22 with the fund-verify tag, and the 7.22 entry
+// says what was built in his words; the 7.21 entry keeps its own.
 // NEGATIVE CONTROL (run 2026-10-04): `quiet: true` taken off the 6.0 entry made this read
 //   FAIL  R1 both versions read 7.21 with the new tag, the 7.21 entry is quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
 {
   const entry721 = (CL.match(/\{\n\s+\/\/ PR 420 DELETED \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
+  const entry722 = (CL.match(/\{\n\s+\/\/ THE COMMUNITY ASSISTANCE FUND'S VERIFICATION \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
   const num = (v) => v.split('.').map(Number);
   const atLeast = (v, w) => { const [a, b] = num(v); const [c, e] = num(w); return a > c || (a === c && b >= e); };
   const since46 = changelog.CHANGELOG.filter((e) => atLeast(e.version, '4.6'));
-  check('R1 both versions read 7.21 with the new tag, the 7.21 entry is quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.21';/.test(CL) && /const VERSION = '7\.21';/.test(W) && /const BUILD_TAG = 'v2026-10-04-desk-gone';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.21'
+  // NEGATIVE CONTROL (run 2026-10-04, v7.22): the 7.22 entry's `quiet: true` taken off made this read
+  //   FAIL  R1 both versions read 7.22 with the new tag, the 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.22 with the new tag, the 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.22';/.test(CL) && /const VERSION = '7\.22';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-verify';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.22'
+    && /version: '7\.22',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry722)
+    && /Community Assistance Fund verification is built/.test(entry722) && /You cannot verify your own application\./.test(entry722)
+    && !DASH.test(entry722) && !HARD.some((re) => re.test(entry722))
     && /version: '7\.21',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry721)
     && /PR 420 is gone\./.test(entry721) && /no longer show in your dictionary or on any case/.test(entry721)
     && !DASH.test(entry721) && !HARD.some((re) => re.test(entry721))

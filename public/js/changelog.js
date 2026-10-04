@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.21';
+export const VERSION = '7.22';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.21';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE COMMUNITY ASSISTANCE FUND'S VERIFICATION (Eric, 2026-10-04). Built
+    // and reachable at /fund.html, not linked from the landing yet. Admin only.
+    version: '7.22',
+    quiet: true,
+    client: [],
+    admin: [
+      'Community Assistance Fund verification is built: a six-step application with private ID and medical uploads, save and resume, a status page, and an optional GoFundMe photo with its own consent.',
+      'Your Fund queue is on the Clients page. Verify, Request More Information, Decline Verification, Mark Inactive and Reverify, each written to the application\'s history. You cannot verify your own application.',
+    ],
+  },
   {
     // PR 420 DELETED (Eric, 2026-10-04: "Delete the trading desk folder and
     // contents in code. I won't be using it."). Admin only.

@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="robots" content="noindex">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
 <link rel="apple-touch-icon" href="/icon-180.png">
@@ -10,7 +11,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
 <meta name="theme-color" content="#EAF2FA">
-<title>Dictionary · Pocket Advocate</title>
+<title>Fund queue · Pocket Advocate</title>
 <script>
 // Paint in the stored colour scheme before the stylesheet lands, so a scheme
 // never flashes neon on the way in. Mirrors theme.js, which owns the choosing
@@ -42,17 +43,21 @@
       <a href="/admin-calendar.html">Calendar</a>
       <a href="/admin-chats.html">Chats</a>
       <a href="/admin-availability.html">Availability</a>
-      <a href="/admin-dictionary.html" class="active">📚 Terms</a>
+      <a href="/admin-dictionary.html">📚 Terms</a>
+      <a href="/admin-fund.html" class="active">🤝 Fund</a>
       <span data-nav-auth></span>
     </nav>
   </div>
 </header>
 <main>
-  <h1>📚 Dictionary</h1>
-  <p class="dim small">Every term the advisor has taught you, by type and A to Z. Tick a box when a term is yours: it's never explained to you again and the advisor pitches future notes to what you know. Untick to put it back into review. It also learns from your questions: use a term fluently and it gets checked for you.</p>
-  <div id="dict"><p class="dim">Loading…</p></div>
+  <!-- The Community Assistance Fund's verification queue (2026-10-04). Only
+       the reviewer reaches this page or its routes; every look at an
+       application and every document opened is written to its history. -->
+  <h1>🤝 Fund queue</h1>
+  <p class="dim small">Community Assistance Fund applications. Verification confirms eligibility only: a real community member with reasonable documentation. It never ranks anyone.</p>
+  <div id="fq"><p class="dim">Loading…</p></div>
 </main>
-<script type="module" src="/js/admin-dictionary.js"></script>
+<script type="module" src="/js/admin-fund.js"></script>
 <script type="module" src="/js/admin-presence.js"></script>
 </body>
 </html>

@@ -13,6 +13,15 @@
 //   POST   /api/admin/stats        recompute the figures now (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
 //   GET    /api/admin/personal/file       one personal file's bytes (admin token or a ten-minute signed link)
+//   GET    /api/fund/me             the Community Assistance Fund: the applicant's own application, no reviewer fields (signed in)
+//   POST   /api/fund/draft          save and resume: their own fields and payment details, only while it is theirs to change
+//   POST   /api/fund/upload?kind=   one ID, medical or photo file, raw body, type and size checked, stored Worker-only
+//   POST   /api/fund/remove         take one of their own files back off
+//   POST   /api/fund/submit         send for verification; the reviewer gets a push with no details
+//   GET    /api/admin/fund/list     the reviewer's queue (reviewer only)
+//   GET    /api/admin/fund/view     one application, logged in its audit history (reviewer only)
+//   GET    /api/admin/fund/file     one of its files' bytes, never a storage URL, logged (reviewer only)
+//   POST   /api/admin/fund/act      verify, reverify, request information, decline, inactive, note; never one's own verification (reviewer only)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
@@ -48,6 +57,9 @@ import { notifyUser } from './push.js';
 // are the SAME constant, so the route cannot drift wider than the thing it was
 // narrowed for.
 import { validateAction } from './advisor-acts.js';
+// The Community Assistance Fund's verification (2026-10-04): every route,
+// the applicant's and the reviewer's, lives in worker/fund.js.
+import { handleFund } from './fund.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
@@ -855,6 +867,8 @@ export default {
         return await handlePersonal(request, env, url);
       if (url.pathname === '/api/admin/personal/file' && request.method === 'GET')
         return await handlePersonalFile(request, env, url);
+      if (url.pathname.startsWith('/api/fund/') || url.pathname.startsWith('/api/admin/fund/'))
+        return await handleFund(request, env, url, ctx);
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
         return await handleSelfCase(request, env);
       if (url.pathname === '/api/admin/self-case/next' && request.method === 'POST')
@@ -2022,7 +2036,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-04-desk-gone';
+const BUILD_TAG = 'v2026-10-04-fund-verify';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2030,7 +2044,7 @@ const BUILD_TAG = 'v2026-10-04-desk-gone';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.21';
+const VERSION = '7.22';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

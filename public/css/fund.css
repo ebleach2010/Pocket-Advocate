@@ -1,0 +1,123 @@
+/* The Community Assistance Fund's pages (2026-10-04): the landing card, the
+   verification form and the status page. Built on site.css's tokens, so all
+   four colour schemes work, and calm on purpose: one thing at a time, large
+   targets, nothing that reads like a sales page. */
+
+body.fund { background: var(--bg); color: var(--ink); }
+
+.fund-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  max-width: 640px; margin: 0 auto; padding: 18px 16px 6px;
+}
+.fund-home { color: var(--ink); text-decoration: none; font-weight: 700; font-size: 1.02rem; letter-spacing: .01em; }
+.fund-out {
+  background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 999px;
+  padding: 0 14px; min-height: 40px; font: inherit; font-size: .9rem; cursor: pointer; white-space: nowrap; flex: 0 0 auto;
+}
+
+.fund-main { max-width: 640px; margin: 0 auto; padding: 8px 16px 48px; }
+.fund-main h1 { font-size: 1.55rem; line-height: 1.2; margin: .4rem 0 .5rem; text-wrap: balance; }
+.fund-main h2 { font-size: 1.15rem; margin: 1.4rem 0 .4rem; }
+.fund-dim { color: var(--dim); }
+.fund-small { font-size: .9rem; }
+.fund-measure { max-width: 60ch; }
+
+.fund-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+  padding: 20px 18px; margin: 12px 0;
+}
+
+/* Where they are: "Step 2 of 6" and a bar that fills. */
+.fund-progress { margin: 6px 0 14px; }
+.fund-progress-label { font-size: .85rem; letter-spacing: .06em; text-transform: uppercase; color: var(--dim); font-weight: 600; }
+.fund-progress-bar { height: 6px; border-radius: 999px; background: var(--line); margin-top: 8px; overflow: hidden; }
+.fund-progress-bar span { display: block; height: 100%; background: var(--cyan); border-radius: inherit; }
+
+.fund-field { display: grid; gap: 6px; margin: 16px 0; }
+.fund-field label, .fund-label { font-weight: 600; font-size: 1rem; }
+.fund-field input[type=text], .fund-field input[type=email], .fund-field textarea, .fund-field select {
+  font: inherit; font-size: 1rem; color: var(--ink); background: var(--panel);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-height: 48px; width: 100%; box-sizing: border-box;
+}
+.fund-field textarea { min-height: 110px; resize: vertical; }
+.fund-field input:focus-visible, .fund-field textarea:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
+.fund-hint { color: var(--dim); font-size: .92rem; margin: 0; }
+.fund-req { color: var(--dim); font-weight: 400; font-size: .85rem; }
+
+.fund-note {
+  border-left: 3px solid var(--cyan); background: color-mix(in srgb, var(--cyan) 7%, transparent);
+  padding: 12px 14px; border-radius: 0 12px 12px 0; margin: 14px 0; font-size: .95rem;
+}
+.fund-warn { border-left-color: var(--magenta); background: color-mix(in srgb, var(--magenta) 8%, transparent); }
+
+.fund-check {
+  display: flex; gap: 12px; align-items: flex-start; padding: 14px; margin: 10px 0;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; line-height: 1.4;
+}
+.fund-check input { width: 24px; height: 24px; flex: 0 0 auto; margin: 0; accent-color: var(--cyan); }
+.fund-check:has(input:checked) { border-color: var(--cyan); }
+
+.fund-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 10px 0; }
+.fund-choice {
+  display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel); cursor: pointer; font-weight: 600;
+}
+.fund-choice input { position: absolute; opacity: 0; pointer-events: none; }
+.fund-choice:has(input:checked) { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
+.fund-choice:has(input:focus-visible) { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+/* A file: the box to pick one, then a row per file with a tick. */
+.fund-drop {
+  display: grid; place-items: center; gap: 4px; text-align: center; min-height: 96px; padding: 16px;
+  border: 2px dashed var(--line); border-radius: 14px; cursor: pointer; color: var(--dim);
+}
+.fund-drop strong { color: var(--cyan); font-size: 1.02rem; }
+.fund-drop input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.fund-drop:has(input:focus-visible) { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.fund-drop.busy { opacity: .6; pointer-events: none; }
+.fund-files { list-style: none; padding: 0; margin: 10px 0; display: grid; gap: 8px; }
+.fund-file {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--panel);
+}
+.fund-file .fund-tick { flex: 0 0 auto; color: var(--cyan); font-weight: 800; font-size: 1.1rem; }
+.fund-file .fund-file-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.fund-file button {
+  background: none; border: 1px solid var(--line); color: var(--dim); border-radius: 999px; min-height: 40px; padding: 0 12px; font: inherit; font-size: .88rem; cursor: pointer;
+}
+
+.fund-actions { display: flex; gap: 10px; margin-top: 22px; }
+.fund-btn {
+  flex: 1; min-height: 54px; border-radius: 14px; font: inherit; font-size: 1.05rem; font-weight: 700; cursor: pointer;
+  border: 1px solid var(--cyan); background: var(--cyan); color: var(--on-accent, #fff);
+}
+.fund-btn.quiet { flex: 0 0 auto; padding: 0 20px; background: transparent; color: var(--dim); border-color: var(--line); font-weight: 600; }
+.fund-btn:disabled { opacity: .5; cursor: progress; }
+.fund-btn:focus-visible, .fund-out:focus-visible, .fund-file button:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+
+.fund-error {
+  color: var(--danger, #B3261E); background: color-mix(in srgb, var(--danger, #B3261E) 8%, transparent);
+  border-radius: 12px; padding: 12px 14px; margin: 12px 0; font-weight: 600;
+}
+.fund-error a { color: inherit; }
+.fund-saved { color: var(--dim); font-size: .88rem; min-height: 1.2em; margin: 8px 0 0; }
+
+.fund-pill {
+  display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: .8rem; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; border: 1px solid var(--cyan); color: var(--cyan);
+}
+.fund-pill.attn { border-color: var(--magenta); color: var(--magenta); }
+.fund-pill.quiet { border-color: var(--line); color: var(--dim); }
+.fund-facts { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 14px 0 0; }
+.fund-facts dt { color: var(--dim); }
+.fund-facts dd { margin: 0; font-weight: 600; }
+.fund-summary { list-style: none; padding: 0; margin: 8px 0; display: grid; gap: 6px; }
+.fund-summary li { display: flex; justify-content: space-between; gap: 10px; }
+.fund-summary button { background: none; border: 0; color: var(--cyan); font: inherit; font-size: .92rem; cursor: pointer; min-height: 36px; text-decoration: underline; }
+
+.fund-help { text-align: center; color: var(--dim); font-size: .95rem; margin: 28px 0 0; }
+.fund-help a { color: var(--cyan); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .fund-progress-bar span { transition: width .3s ease; }
+}

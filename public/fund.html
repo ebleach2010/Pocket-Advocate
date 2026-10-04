@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en" data-default-scheme="paper">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="robots" content="noindex">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#F3EEE3">
+<title>Community Assistance Fund</title>
+<script>
+// Paint in the stored colour scheme before the stylesheet lands, as the
+// landing does: a stored choice wins, otherwise Paper on a light device and
+// Night on a dark one.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme');
+    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
+      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'paper';
+    if (s !== 'neon') document.documentElement.dataset.scheme = s;
+    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m && c) m.setAttribute('content', c);
+  } catch (e) { /* storage blocked: the shipped default is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=sp15">
+<link rel="stylesheet" href="/css/fund.css?v=f1">
+<!-- Only the pinch guard here: this page has no top bar for it to arrange. -->
+<script type="module" src="/js/nav-menu.js"></script>
+</head>
+<body class="fund">
+<header class="fund-bar">
+  <a class="fund-home" href="/">Community Assistance Fund</a>
+  <button type="button" class="fund-out" id="fund-out" hidden>Sign out</button>
+</header>
+<main class="fund-main">
+  <!-- The verification form and the status page. fund.js draws every step
+       into this one box; nothing here is sent anywhere until a step's
+       Continue or the final Submit. -->
+  <div id="fund" aria-live="polite"><p class="fund-dim">Loading…</p></div>
+  <p class="fund-help">Need help? Email <a href="mailto:office@pocketadvocacy.com">office@pocketadvocacy.com</a></p>
+</main>
+<script type="module" src="/js/fund.js"></script>
+</body>
+</html>
