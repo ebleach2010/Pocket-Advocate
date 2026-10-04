@@ -145,6 +145,8 @@ async function handleDraft(request, env, user) {
     const patch = { ...(cur ? {} : app), ...draft, updatedAt: new Date() };
     if (draft.photoPublicConsent === true && app.photoPublicConsent !== true) patch.photoConsentAt = new Date();
     if (draft.photoPublicConsent === false) patch.photoConsentAt = null;
+    if (draft.usernamePublicConsent === true && app.usernamePublicConsent !== true) patch.usernameConsentAt = new Date();
+    if (draft.usernamePublicConsent === false) patch.usernameConsentAt = null;
     return { patch, mask: cur ? Object.keys(patch) : undefined };
   });
   if (out.error) return json({ error: out.error }, out.status || 400);

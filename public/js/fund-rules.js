@@ -161,6 +161,7 @@ export function cleanDraft(body) {
   if ('participationRequested' in (body || {}))
     out.participationRequested = body.participationRequested === true ? true : body.participationRequested === false ? false : null;
   if ('photoPublicConsent' in (body || {})) out.photoPublicConsent = body.photoPublicConsent === true;
+  if ('usernamePublicConsent' in (body || {})) out.usernamePublicConsent = body.usernamePublicConsent === true;
   if (body?.consents && typeof body.consents === 'object') {
     out.consents = {};
     for (const k of CONSENT_KEYS) out.consents[k] = body.consents[k] === true;
@@ -175,13 +176,15 @@ export function cleanDraft(body) {
 /** Every reason an application cannot be submitted yet, in the order of the steps. */
 export function submitGaps(app, payment) {
   const gaps = [];
-  if (!app?.discordUsername) gaps.push({ step: 1, why: 'Add your Discord username or display name.' });
+  // Eric, 2026-10-04: "Discord usernames are mandatory. They have to join."
+  if (!app?.discordUsername) gaps.push({ step: 1, why: 'Add your Discord username.' });
   if (!app?.preferredName) gaps.push({ step: 1, why: 'Add the name you would like us to use.' });
   if (!app?.legalName) gaps.push({ step: 1, why: 'Add your legal name.' });
   if (!app?.identityDocument?.id) gaps.push({ step: 2, why: 'Upload one identification document.' });
   if (!(Array.isArray(app?.medicalDocuments) && app.medicalDocuments.length)) gaps.push({ step: 3, why: 'Upload at least one document that shows eligibility.' });
   if (!String(app?.needStatement || '').trim()) gaps.push({ step: 3, why: 'Tell us briefly why you are in need.' });
   if (app?.discordMember !== true) gaps.push({ step: 4, why: 'Confirm that you are a member of the Discord community.' });
+  if (app?.usernamePublicConsent !== true) gaps.push({ step: 4, why: 'Tick the box that says your Discord username will be published if you are approved.' });
   if (app?.participationRequested !== true && app?.participationRequested !== false) gaps.push({ step: 4, why: 'Answer whether you would like to receive distributions.' });
   if (app?.photo?.id && app?.photoPublicConsent !== true) gaps.push({ step: 4, why: 'Tick the box that lets the photo be shown on the GoFundMe page, or remove the photo.' });
   if (app?.participationRequested === true) {
@@ -211,6 +214,7 @@ export function applicantView(app, payment) {
     participationRequested: app.participationRequested ?? null,
     participationActive: app.participationActive === true,
     photoPublicConsent: app.photoPublicConsent === true,
+    usernamePublicConsent: app.usernamePublicConsent === true,
     consents: Object.fromEntries(CONSENT_KEYS.map((k) => [k, app.consents?.[k] === true])),
     identityDocument: refOut(app.identityDocument, null, 'ID document'),
     medicalDocuments: (Array.isArray(app.medicalDocuments) ? app.medicalDocuments : []).map((r, i) => refOut(r, i, 'Medical document')),
@@ -261,6 +265,8 @@ export function reviewerView(uid, app, payment) {
     applicantMessage: app.applicantMessage || '',
     internalReviewerNote: app.internalReviewerNote || '',
     photoConsentAt: app.photoConsentAt || null,
+    usernamePublicConsent: app.usernamePublicConsent === true,
+    usernameConsentAt: app.usernameConsentAt || null,
     createdAt: app.createdAt || null,
     updatedAt: app.updatedAt || null,
     audit: Array.isArray(app.audit) ? app.audit : [],

@@ -52,7 +52,10 @@ const step = async (n) => page.waitForFunction((k) => document.querySelector('.f
 await page.goto(`${P}/fund.html?demo=1`, { waitUntil: 'networkidle' });
 check('A1 a new applicant lands on Step 1 of 6, Community Information', await step(1) && /Community Information/.test(await text(page)));
 await page.click('#fund-next');
-check('A2 Continue with nothing typed says what is missing and moves nowhere', /Add your Discord username or display name\./.test(await text(page)) && await step(1));
+// RE-PINNED 2026-10-04 (v7.28): Eric, "Discord usernames are mandatory. They have to join." The username is
+// asked for by name, with the invite on Step 1.
+check('A2 Continue with nothing typed says what is missing and moves nowhere', /Add your Discord username\./.test(await text(page)) && await step(1)
+  && /Not a member yet\? Join the Discord first\./.test(await text(page)));
 await page.fill('#f-discordUsername', 'river_k');
 await page.fill('#f-preferredName', 'River');
 await page.fill('#f-legalName', 'River Kowalski');
@@ -82,6 +85,9 @@ check('A6 Step 4 asks for the Discord box first, with the invite beside it', /Co
   && (await page.getAttribute('a:has-text("Join the Discord")', 'href')) === 'https://discord.gg/YZXYQFjUGa');
 await page.check('[data-c="discordMember"]');
 await page.click('.fund-choice:has(input[value="yes"])');
+await page.click('#fund-next');
+check('A6b without agreeing the username is published, Step 4 holds with the reason', await step(4) && /Tick the box that says your Discord username will be published if you are approved\./.test(await text(page)));
+await page.check('[data-c="usernamePublicConsent"]');
 await page.setInputFiles('[data-file="photo"]', png('me.png'));
 await page.waitForSelector('[data-c="photoPublicConsent"]', { timeout: 8000 }).catch(() => {});
 await page.click('#fund-next');

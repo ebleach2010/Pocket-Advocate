@@ -109,8 +109,10 @@ const up = (w, uid, kind, bytes = PDF(), type = 'application/pdf', extra = {}) =
 // (Eric: "a short blurb from them for why they are in need. Max 1500 characters.").
 // RE-PINNED 2026-10-04 (v7.25): the payment is a check to a mailing address (Eric: "payout should
 // be check only").
+// RE-PINNED 2026-10-04 (v7.28): a complete application agrees its Discord username is published if
+// approved (Eric: "Discord usernames are mandatory. They have to join.").
 const FULL = {
-  discordUsername: 'ann_d', preferredName: 'Ann', legalName: 'Ann Doe', discordMember: true, participationRequested: true,
+  discordUsername: 'ann_d', preferredName: 'Ann', legalName: 'Ann Doe', discordMember: true, usernamePublicConsent: true, participationRequested: true,
   needStatement: 'I stopped working this spring and the copays take what is left.',
   consents: { accurate: true, noGuarantee: true, notMedical: true, reviewerView: true, formula: true },
   payment: { method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' } },
@@ -178,7 +180,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 //   FAIL  F3 nothing incomplete is sent: each missing piece is refused with its own sentence and the step it belongs to, payment is asked for only from someone who wants distributions, and a complete one is Submitted with the time, the five consents stamped and the history written
 {
   const gaps = (a, p) => RULES.submitGaps(a, p).map((g) => g.step);
-  const full = { discordUsername: 'a', preferredName: 'A', legalName: 'A B', identityDocument: { id: 'x' }, medicalDocuments: [{ id: 'y' }], needStatement: 'Rent.', discordMember: true, participationRequested: true, consents: FULL.consents };
+  const full = { discordUsername: 'a', preferredName: 'A', legalName: 'A B', identityDocument: { id: 'x' }, medicalDocuments: [{ id: 'y' }], needStatement: 'Rent.', discordMember: true, usernamePublicConsent: true, participationRequested: true, consents: FULL.consents }; // RE-PINNED 2026-10-04 (v7.28): the username tick
   const pay = { method: 'check', accountName: 'A B', address: { line1: '1 Main St', line2: '', city: 'Boise', state: 'ID', zip: '83702' } }; // RE-PINNED 2026-10-04 (v7.25): check only
   const one = (k, v) => gaps({ ...full, [k]: v }, pay);
   const w = world();
@@ -1038,13 +1040,52 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     ].every((l) => READ.includes(l))
     && PAGE.includes('Your diagnosis, legal name and medical documents will not be made public.')
     && PAGE.includes('Photos are completely optional and will only be posted with your consent. Not submitting one will not affect approval or your share.')
-    && PAGE.includes('Before payout, the Discord usernames of every approved recipient are published in text and video, along with the final amount raised and the equal payout amount. No medical information or legal names are published.')
+    // RE-PINNED 2026-10-04 (v7.28): the notice became a required tick on Step 4 (Eric: "Discord usernames
+    // are mandatory. They have to join."), held by F32.
+    && PAGE.includes('I understand that if I am approved, my Discord username will be published in text and video before payout.') && PAGE.includes('No medical information or legal names are published.')
     && /You’ll get a reply within three business days\./.test(HTML) && /You’ll get a reply within three business days\./.test(IDX)
     && chase('2026-11-01T06:00:00Z') === 'If you do not receive your check by November 10, please email office@pocketadvocacy.com.'
     && /by November 10,/.test(chase('2026-10-31T20:00:00Z')) && /by January 10,/.test(chase('2026-12-28T12:00:00Z')) && chase('nope') === ''
     && /If you do not receive your check by \w+ 10, please email office@pocketadvocacy\.com\./.test(mail?.html || '')
     && /chaseLine\(next\.at\)/.test(PAGE) && !DASH.test(IDX) && !DASH.test(PAGE) && !HARD.some((re) => re.test(READ)),
     JSON.stringify({ mail: !!mail, nov: chase('2026-11-01T06:00:00Z') }));
+}
+
+// ---- F32: the Discord username is mandatory (2026-10-04, v7.28) -------------------------
+// Eric: "Discord usernames are mandatory. They have to join." The username is asked for by name (not a
+// display name) with the invite beside it, membership is confirmed on Step 4, and agreeing that the
+// username is published before payout is a required tick there, enforced by the Worker, stamped with
+// its time and shown to the reviewer. RUN: an application missing only the tick is refused at Step 4.
+// NEGATIVE CONTROL (run 2026-10-04): submitGaps' usernamePublicConsent line removed made this read
+//   FAIL  F32 the Discord username is mandatory: asked for by name with the invite beside it, membership confirmed, and the published-username tick required by the Worker at Step 4, stamped when given, cleared when taken back, and shown to the reviewer
+{
+  const w = world();
+  await readyToSubmit(w, 'ann', { usernamePublicConsent: false });
+  const held = await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const unstamped = app(w).usernameConsentAt ?? null;
+  await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { usernamePublicConsent: true } });
+  const stamped = app(w).usernameConsentAt;
+  const ok = await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const sentStatus = app(w).verificationStatus;
+  const seen = (await call(w, 'eric', '/api/admin/fund/view?uid=ann')).out?.application;
+  const w2 = world();
+  await call(w2, 'ann', '/api/fund/draft', { method: 'POST', json: { usernamePublicConsent: true } });
+  await call(w2, 'ann', '/api/fund/draft', { method: 'POST', json: { usernamePublicConsent: false } });
+  const gaps = (a) => RULES.submitGaps(a, null).map((g) => g.why);
+  check('F32 the Discord username is mandatory: asked for by name with the invite beside it, membership confirmed, and the published-username tick required by the Worker at Step 4, stamped when given, cleared when taken back, and shown to the reviewer',
+    held.status === 400 && held.out.gaps.length === 1 && held.out.gaps[0].step === 4 && held.out.error === 'Tick the box that says your Discord username will be published if you are approved.'
+    && unstamped === null && !!stamped && ok.status === 200 && sentStatus === 'submitted'
+    && seen?.usernamePublicConsent === true && !!seen.usernameConsentAt
+    && app(w2).usernamePublicConsent === false && app(w2).usernameConsentAt === null
+    && gaps({}).includes('Add your Discord username.') && gaps({}).includes('Confirm that you are a member of the Discord community.')
+    && /field\('discordUsername', 'Discord username', \{ max: 64, hint: 'Required\. Your Discord username, not a display name\.' \}\)/.test(PAGE)
+    && /You must be a member of our Discord community\. Not a member yet\? <a href="\$\{DISCORD_INVITE\}"/.test(PAGE)
+    && /check\('usernamePublicConsent', 'I understand that if I am approved, my Discord username will be published in text and video before payout\.', form\.usernamePublicConsent\)/.test(PAGE)
+    && /if \(!form\.usernamePublicConsent\) return \['Tick the box that says your Discord username will be published if you are approved\.'\];/.test(PAGE)
+    && /usernamePublicConsent: form\.usernamePublicConsent/.test(PAGE) && !/display name\./.test(PAGE.replace(/not a display name\./, ''))
+    && /<dt>Username may be published<\/dt>/.test(ADMINPAGE)
+    && f('public/index.html').includes('Applicants must be members of our Discord community. A Discord username is required.'),
+    JSON.stringify({ held: held.status, stamped: !!stamped, ok: ok.status, status: sentStatus, seen: [seen?.usernamePublicConsent, seen?.usernameConsentAt], w2: [app(w2).usernamePublicConsent, app(w2).usernameConsentAt], unstamped }));
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -2066,7 +2066,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-04-fund-jan1st';
+const BUILD_TAG = 'v2026-10-04-fund-discord';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2074,7 +2074,7 @@ const BUILD_TAG = 'v2026-10-04-fund-jan1st';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.27';
+const VERSION = '7.28';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

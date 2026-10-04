@@ -56,7 +56,7 @@ let token = '';
 let dirty = false;
 const form = {
   discordUsername: '', preferredName: '', legalName: '', email: '', applicantNote: '', needStatement: '',
-  discordMember: false, participationRequested: null, photoPublicConsent: false,
+  discordMember: false, participationRequested: null, photoPublicConsent: false, usernamePublicConsent: false,
   consents: Object.fromEntries(CONSENTS.map(([k]) => [k, false])),
   payment: { method: 'check', accountName: '', address: { line1: '', line2: '', city: '', state: '', zip: '' } },
 };
@@ -92,6 +92,7 @@ function adopt(a) {
   form.discordMember = a.discordMember === true;
   form.participationRequested = a.participationRequested ?? null;
   form.photoPublicConsent = a.photoPublicConsent === true;
+  form.usernamePublicConsent = a.usernamePublicConsent === true;
   form.consents = { ...form.consents, ...(a.consents || {}) };
   if (a.payment) form.payment = { ...form.payment, ...a.payment, address: { ...form.payment.address, ...(a.payment.address || {}) } };
 }
@@ -184,7 +185,8 @@ function checkFields() {
 function stepBody(n) {
   if (n === 1) return `
     <p class="fund-dim fund-measure">This takes about ten minutes. Your progress saves each time you tap Continue, so you can stop and come back.</p>
-    ${field('discordUsername', 'Discord username or display name', { max: 64 })}
+    ${field('discordUsername', 'Discord username', { max: 64, hint: 'Required. Your Discord username, not a display name.' })}
+    <p class="fund-hint">You must be a member of our Discord community. Not a member yet? <a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Join the Discord</a> first.</p>
     ${field('preferredName', 'Preferred name', { hint: 'What you would like us to call you.', max: 80 })}
     ${field('legalName', 'Legal name', { hint: 'Your legal name is used privately for verification and is never displayed publicly.' })}
     ${field('email', 'Email address', { optional: true, type: 'email', max: 200, hint: 'Only if you would like us to use a different email from the one you signed in with.' })}`;
@@ -207,6 +209,8 @@ function stepBody(n) {
   if (n === 4) return `
     ${check('discordMember', 'I am currently a member of the associated Discord community.', form.discordMember)}
     <p class="fund-hint">Only members of our Discord community can take part. Not a member yet? <a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Join the Discord</a>, then come back to this step.</p>
+    ${check('usernamePublicConsent', 'I understand that if I am approved, my Discord username will be published in text and video before payout.', form.usernamePublicConsent)}
+    <p class="fund-hint">No medical information or legal names are published.</p>
     <fieldset class="fund-field" style="border:0;padding:0;margin:20px 0 0">
       <legend class="fund-label">Would you like to participate as a recipient of community fund distributions?</legend>
       <div class="fund-choices">
@@ -238,7 +242,6 @@ function stepBody(n) {
       <li><span>Receiving distributions: ${form.participationRequested === true ? 'Yes' : form.participationRequested === false ? 'No' : 'not answered yet'}</span><button type="button" data-go="4">Edit</button></li>
       ${form.participationRequested === true ? `<li><span>Payment: ${esc(mailTo)}</span><button type="button" data-go="5">Edit</button></li>` : ''}
     </ul>
-    <div class="fund-note">Before payout, the Discord usernames of every approved recipient are published in text and video, along with the final amount raised and the equal payout amount. No medical information or legal names are published.</div>
     ${CONSENTS.map(([k, w]) => check(`consent:${k}`, w, form.consents[k])).join('')}`;
 }
 
@@ -318,7 +321,7 @@ function showError(message, { help = false } = {}) {
 /** What this step still needs, in the Worker's own words. '' when complete. */
 function gapOf(n) {
   if (n === 1) {
-    if (!form.discordUsername.trim()) return ['Add your Discord username or display name.', 'discordUsername'];
+    if (!form.discordUsername.trim()) return ['Add your Discord username.', 'discordUsername'];
     if (!form.preferredName.trim()) return ['Add the name you would like us to use.', 'preferredName'];
     if (!form.legalName.trim()) return ['Add your legal name.', 'legalName'];
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) return ['That email address does not look complete.', 'email'];
@@ -328,6 +331,7 @@ function gapOf(n) {
   if (n === 3 && !form.needStatement.trim()) return ['Tell us briefly why you are in need.', 'needStatement'];
   if (n === 4) {
     if (!form.discordMember) return ['Confirm that you are a member of the Discord community.'];
+    if (!form.usernamePublicConsent) return ['Tick the box that says your Discord username will be published if you are approved.'];
     if (form.participationRequested === null) return ['Answer whether you would like to receive distributions.'];
     if (filesOf('photo').length && !form.photoPublicConsent) return ['Tick the box that lets the photo be shown on the GoFundMe page, or remove the photo.'];
   }
@@ -349,7 +353,7 @@ function draftBody(nextAt) {
     discordUsername: form.discordUsername, preferredName: form.preferredName, legalName: form.legalName,
     email: form.email, applicantNote: form.applicantNote, needStatement: form.needStatement, discordMember: form.discordMember,
     participationRequested: form.participationRequested, photoPublicConsent: form.photoPublicConsent,
-    consents: form.consents, step: nextAt,
+    usernamePublicConsent: form.usernamePublicConsent, consents: form.consents, step: nextAt,
   };
   const p = form.payment;
   if (p.accountName || Object.values(p.address).some((v) => String(v || '').trim())) body.payment = { method: 'check', accountName: p.accountName, address: p.address };

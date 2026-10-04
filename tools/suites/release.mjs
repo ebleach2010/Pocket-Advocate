@@ -91,9 +91,17 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry727 = (CL.match(/\{\n\s+\/\/ JANUARY 1ST \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-04, v7.27): the 7.25 entry's monthly line put back made this read
   //   FAIL  R1 both versions read 7.27 with the new tag, the 7.27 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.27 with the new tag, the 7.27 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.27';/.test(CL) && /const VERSION = '7\.27';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-jan1st';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.27'
+  // RE-PINNED 2026-10-04 (v7.28): both versions read 7.28 with the fund-discord tag, and the 7.28 entry says
+  // the Discord username is mandatory and its publication a required tick.
+  const entry728 = (CL.match(/\{\n\s+\/\/ DISCORD IS MANDATORY \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-04, v7.28): the worker's VERSION left at '7.27' made this read
+  //   FAIL  R1 both versions read 7.28 with the new tag, the 7.28 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.28 with the new tag, the 7.28 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.28';/.test(CL) && /const VERSION = '7\.28';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-discord';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.28'
+    && /version: '7\.28',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry728)
+    && /Discord username, not a display name/.test(entry728) && /Nobody can submit without it/.test(entry728)
+    && !DASH.test(entry728) && !HARD.some((re) => re.test(entry728))
     && /version: '7\.27',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry727)
     && entry727.includes('Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027.')
     && !DASH.test(entry727) && !HARD.some((re) => re.test(entry727))

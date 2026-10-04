@@ -266,6 +266,17 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Discord is mandatory (2026-10-04, v7.28)
+
+Eric: "Discord usernames are mandatory. They have to join." Step 1 asks for
+the Discord username (not a display name) with the invite beside it; Step 4
+keeps the membership box and adds a required tick that the username is
+published before payout if approved (`usernamePublicConsent`, enforced by
+`submitGaps`, stamped `usernameConsentAt` by the Worker, shown to the
+reviewer). `fund.mjs` F32 RUNS an application missing only the tick (32
+checks); F31 and the fixtures are re-pinned. `drive-fund.mjs` A2 and the new
+A6b (36 checks).
+
 ### The fund's totals, and what Eric's post says (2026-10-04, v7.26)
 
 Eric: "I also need to input Net GoFundMe proceeds so far, Zazzle creator

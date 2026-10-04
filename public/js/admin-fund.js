@@ -328,6 +328,7 @@ function paint(a, me) {
       <dt>Wants distributions</dt><dd>${a.participationRequested === true ? 'Yes' : a.participationRequested === false ? 'No' : 'not answered'}</dd>
       <dt>Participation</dt><dd>${a.participationActive ? 'Active' : 'Not active'}</dd>
       <dt>Discord member</dt><dd>${a.discordMember ? 'Confirmed' : 'Not confirmed'}</dd>
+      <dt>Username may be published</dt><dd>${a.usernamePublicConsent ? `Agreed${a.usernameConsentAt ? ` ${day(a.usernameConsentAt)}` : ''}` : 'Not agreed'}</dd>
     </dl>
 
     <h3>Documents</h3>

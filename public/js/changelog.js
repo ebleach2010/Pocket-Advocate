@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.27';
+export const VERSION = '7.28';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.27';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // DISCORD IS MANDATORY (Eric, 2026-10-04: "Discord usernames are
+    // mandatory. They have to join."). Admin only.
+    version: '7.28',
+    quiet: true,
+    client: [],
+    admin: [
+      'The form asks for their Discord username, not a display name, with the Join the Discord link right beside it.',
+      'They must tick that their Discord username will be published before payout if they are approved. Nobody can submit without it, and you see when they agreed.',
+      'Being a Discord member is still required, and the landing page now says a Discord username is required.',
+    ],
+  },
   {
     // JANUARY 1ST (Eric, 2026-10-04, again: "Verified applicants will receive
     // payouts via Mercury Business Check on January 1st, 2027. Not monthly.").
