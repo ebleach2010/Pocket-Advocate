@@ -11,7 +11,7 @@ import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
   FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView,
-  isActiveParticipant, shareOf, checkTo, dollars,
+  isActiveParticipant, shareOf, checkTo, dollars, fundTotals, sentAndOwed, TOTALS_LIMIT,
 } from '../fund-rules.js';
 import { textPdf } from '../textpdf.js';
 
@@ -41,17 +41,16 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
   const actives = () => [...store.docs.entries()].filter(([k, a]) => /^fundApplications\/[^/]+$/.test(k) && isActiveParticipant(k.split('/')[1], a, REVIEWERS));
   const poolView = () => {
     const p = get('fundPool/current');
-    const since = p?.updatedAt ? new Date(p.updatedAt).getTime() : 0;
     return {
       me,
-      pool: p ? { totalCents: p.totalCents, activeCount: p.activeCount, shareCents: p.shareCents, updatedAt: p.updatedAt, pending: 0 } : null,
+      pool: p ? { ...fundTotals(p), activeCount: p.activeCount, shareCents: p.shareCents, updatedAt: p.updatedAt, pending: 0 } : null,
       participants: actives().map(([k, a]) => {
         const uid = k.split('/')[1];
         const pay = payOf(uid);
         const last = (a.payouts || []).slice(-1)[0] || null;
         // Check only, as in the Worker.
         const payTo = checkTo(pay);
-        return { uid, preferredName: a.preferredName || '', method: pay?.method === 'check' ? 'check' : null, payTo, lastPayout: last, paidThisRound: !!last && since > 0 && new Date(last.at).getTime() >= since };
+        return { uid, preferredName: a.preferredName || '', discordUsername: a.discordUsername || '', method: pay?.method === 'check' ? 'check' : null, payTo, lastPayout: last, ...sentAndOwed(a.payouts, p?.shareCents) };
       }),
     };
   };
@@ -60,10 +59,13 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
     if (role !== 'admin') return res(404, { error: 'Not found' });
     if (path === '/api/admin/fund/pool' && method === 'GET') return res(200, poolView());
     if (path === '/api/admin/fund/pool' && method === 'POST') {
-      const totalCents = Number(body.totalCents);
-      if (!Number.isInteger(totalCents) || totalCents < 0) return res(400, { error: 'Enter the pool total in dollars and cents, like 1240.50.' });
+      const gofundmeCents = Number(body.gofundmeCents);
+      const zazzleCents = Number(body.zazzleCents);
+      const okAmount = (n) => Number.isInteger(n) && n >= 0 && n <= TOTALS_LIMIT;
+      if (!okAmount(gofundmeCents) || !okAmount(zazzleCents)) return res(400, { error: 'Enter both amounts in dollars and cents, like 1240.50. Use 0 when there is nothing yet.' });
+      const totalCents = gofundmeCents + zazzleCents;
       const n = actives().length;
-      put('fundPool/current', { totalCents, activeCount: n, shareCents: shareOf(totalCents, n), updatedAt: now(), updatedBy: me, pending: [] });
+      put('fundPool/current', { gofundmeCents, zazzleCents, totalCents, activeCount: n, shareCents: shareOf(totalCents, n), updatedAt: now(), updatedBy: me, pending: [] });
       return res(200, poolView());
     }
     if (path === '/api/admin/fund/payout') {
@@ -161,7 +163,8 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
   if (path === '/api/fund/me') {
     const view = applicantView(cur, payOf(me));
     const p = get('fundPool/current');
-    if (view && p?.totalCents && isActiveParticipant(me, cur, REVIEWERS)) view.pool = { totalCents: p.totalCents, shareCents: p.shareCents, activeCount: p.activeCount, asOf: p.updatedAt };
+    const t = fundTotals(p);
+    if (view && t?.totalCents && isActiveParticipant(me, cur, REVIEWERS)) view.pool = { ...t, shareCents: p.shareCents, activeCount: p.activeCount, asOf: p.updatedAt, sentCents: sentAndOwed(cur.payouts, p.shareCents).sentCents };
     return res(200, { application: view });
   }
   if (path === '/api/fund/draft') {

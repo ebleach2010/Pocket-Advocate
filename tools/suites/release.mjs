@@ -81,9 +81,17 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry725 = (CL.match(/\{\n\s+\/\/ THE FUND IS HOME \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-04, v7.25): the worker's BUILD_TAG left at the fund-payouts tag made this read
   //   FAIL  R1 both versions read 7.25 with the new tag, the 7.25 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.25 with the new tag, the 7.25 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.25';/.test(CL) && /const VERSION = '7\.25';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-home';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.25'
+  // RE-PINNED 2026-10-04 (v7.26): both versions read 7.26 with the fund-totals tag, and the 7.26 entry
+  // says the queue takes the GoFundMe and Zazzle totals and what his post added.
+  const entry726 = (CL.match(/\{\n\s+\/\/ THE FUND'S TOTALS \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-04, v7.26): changelog.js's VERSION left at '7.25' made this read
+  //   FAIL  R1 both versions read 7.26 with the new tag, the 7.26 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.26 with the new tag, the 7.26 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.26';/.test(CL) && /const VERSION = '7\.26';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-totals';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.26'
+    && /version: '7\.26',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry726)
+    && /Net GoFundMe proceeds so far/.test(entry726) && /Zazzle creator earnings being added/.test(entry726) && /The GoFundMe button is live/.test(entry726)
+    && !DASH.test(entry726) && !HARD.some((re) => re.test(entry726))
     && /version: '7\.25',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry725)
     && /parked in PR 1/.test(entry725) && /pocketadvocate\.eric@gmail\.com/.test(entry725) && /by check only/.test(entry725)
     && !DASH.test(entry725) && !HARD.some((re) => re.test(entry725))

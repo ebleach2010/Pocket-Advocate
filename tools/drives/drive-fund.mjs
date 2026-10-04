@@ -21,6 +21,9 @@
 //    which opens Clients and Services.
 // C: nothing on either page is wider than a 390px screen.
 // D (v7.25): a client who opens /services.html lands on the fund page.
+// v7.26: the queue takes the GoFundMe and Zazzle totals, each row says what
+// is owed, the Friday post copies for Discord, and the landing shows the
+// GoFundMe button and what Eric's post says.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
@@ -88,7 +91,8 @@ await page.click('#fund-next');
 // RE-PINNED 2026-10-04 (v7.25): check only. Step 5 asks for the check straight away, with no method
 // to pick, and says when checks are mailed; the card number is typed into the street address.
 check('A8 then Step 5, Payment Information', await step(5) && /Never enter passwords, PINs, card numbers or bank details\./.test(await text(page))
-  && /Distributions are mailed by check on the 1st of each month, starting November 1\./.test(await text(page)) && !(await page.$('input[name="method"]')));
+  // RE-PINNED 2026-10-04 (v7.26): one payout, "Not monthly".
+  && /Payouts are mailed by Mercury Business Check on January 1, 2027\./.test(await text(page)) && !(await page.$('input[name="method"]')));
 check('A10a a check in the mail asks for the name and the address and says Mercury, 7 to 10 business days', /Checks are sent from Mercury and take 7 to 10 business days to arrive\./.test(await text(page)) && !!(await page.$('#f-addr-zip')));
 await page.fill('#f-accountName', 'River Kowalski');
 await page.fill('#f-addr-line1', '4111 1111 1111 1111');
@@ -151,19 +155,34 @@ check('B5 Verify on someone else\'s application verifies it, sets a reverificati
 await adm.screenshot({ path: `${SHOTS}/fund-review.png`, fullPage: true });
 const wideAdmin = await wide(adm);
 await adm.goto(`${P}/admin-fund.html?demo=admin`, { waitUntil: 'networkidle' });
-await adm.waitForSelector('#fq-total', { timeout: 8000 }).catch(() => {});
-await adm.fill('#fq-total', '1000');
+// RE-PINNED 2026-10-04 (v7.26): he enters the GoFundMe and Zazzle totals; the combined total follows.
+await adm.waitForSelector('#fq-gofundme', { timeout: 8000 }).catch(() => {});
+await adm.fill('#fq-gofundme', '975');
+await adm.fill('#fq-zazzle', '25');
+const live = (await adm.textContent('#fq-combined')) || '';
 await adm.click('#fq-post');
-await adm.waitForFunction(() => /Each share/.test(document.querySelector('#fq-pool')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
+await adm.waitForFunction(() => /Each share so far/.test(document.querySelector('#fq-pool')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
 const pl = (await adm.textContent('#fq-pool')) || '';
-check('B6 the month\'s pool is shared by the two taking part, never by him: $1,000.00 is $500.00 each', /This month\$1,000\.00/.test(pl) && /2 participants/.test(pl) && /\$500\.00/.test(pl) && /River/.test(pl) && /Jo/.test(pl));
+check('B6 the fund\'s totals are shared by the two taking part, never by him: $975.00 and $25.00 make $1,000.00, $500.00 each', live === '$1,000.00'
+  && /Net GoFundMe proceeds so far: \$975\.00/.test(pl) && /Zazzle creator earnings being added: \$25\.00/.test(pl) && /Combined total in the fund: \$1,000\.00/.test(pl) && /Approved recipients: 2/.test(pl)
+  && /Still owed \$500\.00/.test(pl) && /\$500\.00/.test(pl) && /River/.test(pl) && /Jo/.test(pl));
 const riverRow = adm.locator('.fq-payout:has-text("River")');
 await riverRow.locator('[data-pay]').click();
 check('B7a Mark mailed with no check number is stopped', /Add the check number\./.test((await riverRow.textContent()) || ''));
 await riverRow.locator('[data-ref]').fill('1042');
 await riverRow.locator('[data-pay]').click();
 await adm.waitForFunction(() => /Mailed \$500\.00/.test(document.querySelector('#fq-pool')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
-check('B7b River\'s check is marked mailed with its check number', /\u2713 Mailed \$500\.00 .* Check #1042/.test((await adm.textContent('#fq-pool')) || ''));
+check('B7b River\'s check is marked mailed with its check number, and River is paid up so far', /\u2713 Mailed \$500\.00 .* Check #1042/.test((await adm.textContent('#fq-pool')) || '')
+  && /Paid up so far\./.test((await adm.locator('.fq-payout:has-text("River")').textContent()) || ''));
+await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: P });
+await adm.click('#fq-copy-post');
+await adm.waitForFunction(() => /Cop/.test(document.querySelector('#fq-post-said')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
+const copied = await adm.evaluate(async () => {
+  const ta = document.querySelector('[data-copy-out]');
+  if (ta && !ta.hidden) return ta.value;
+  try { return await navigator.clipboard.readText(); } catch { return ''; }
+});
+check('B11 the Friday post copies for Discord with the four figures', /^Community Assistance Fund update, /.test(copied) && /Approved recipients: 2\nNet GoFundMe proceeds so far: \$975\.00\nZazzle creator earnings being added: \$25\.00\nCombined total in the fund: \$1,000\.00$/.test(copied), copied);
 await adm.screenshot({ path: `${SHOTS}/fund-pool.png`, fullPage: true });
 const al = (await adm.textContent('#fq-alerts')) || '';
 await adm.click('#fq-test');
@@ -187,10 +206,22 @@ check('B10 the queue\'s nav is Fund and PR 1; PR 1 opens the hub, and the hub op
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForSelector('.fund-pill', { timeout: 8000 }).catch(() => {});
 const tv = await text(page);
-check('B8 the applicant\'s status page then reads Verified with the date, participation, next reverification, this month\'s pool and share, the next check date, and the check that was mailed with its number', /You are a verified participant\./.test(tv) && /Verification date/.test(tv) && /Active: receiving distributions/.test(tv) && /Next reverification/.test(tv)
-  && /This month/.test(tv) && /Donation pool\$1,000\.00/.test(tv) && /Your share\$500\.00/.test(tv) && /Next check(November|December|January) 1, 202[67]/.test(tv)
+// RE-PINNED 2026-10-04 (v7.26): the card is The fund so far, with the three totals, the count, their share
+// so far, what was sent, the next check and the 10th of the month.
+check('B8 the applicant\'s status page then reads Verified with the date, participation, next reverification, the fund so far with their share and what was sent, the next check date, and the check that was mailed with its number', /You are a verified participant\./.test(tv) && /Verification date/.test(tv) && /Active: receiving distributions/.test(tv) && /Next reverification/.test(tv)
+  && /The fund so far/.test(tv) && /Combined total in the fund\$1,000\.00/.test(tv) && /Zazzle creator earnings being added\$25\.00/.test(tv) && /Your share so far\$500\.00/.test(tv) && /Sent to you so far\$500\.00/.test(tv)
+  && /Payout dateJanuary 1, 2027/.test(tv) && /If you do not receive your check by \w+ 10, please email office@pocketadvocacy\.com\./.test(tv)
   && /\$500\.00 check mailed/.test(tv) && /Check #1042\. Checks are sent from Mercury/.test(tv));
 await page.screenshot({ path: `${SHOTS}/fund-verified.png`, fullPage: true });
+// Long labels once squeezed the amounts into a sliver the card clipped; every amount sits inside it.
+// NEGATIVE CONTROL (run 2026-10-04, v7.26): `.fund-share .fund-facts { grid-template-columns: minmax(0, 1fr) auto; }` taken out of fund.css made this read
+//   FAIL  B12 every amount on the fund card shows whole, inside the card  -- ["$975.00","$25.00","$1,000.00","2","$500.00","$500.00","January 1, 2027"]
+const clipped = await page.evaluate(() => [...document.querySelectorAll('.fund-share dd')].filter((d) => {
+  const card = d.closest('.fund-card').getBoundingClientRect();
+  const r = d.getBoundingClientRect();
+  return r.right > card.right - 1 || d.scrollWidth > d.clientWidth + 1;
+}).map((d) => d.textContent));
+check('B12 every amount on the fund card shows whole, inside the card', clipped.length === 0, JSON.stringify(clipped));
 
 check('C1 nothing is wider than the screen on the form or the queue', !wideClient && !wideAdmin && !(await wide(page)));
 check('C2 no script error on either page', errors.length === 0, errors.join(' | '));
@@ -201,6 +232,12 @@ await cctx.addCookies([{ name: 'pa_demo', value: 'client', domain: '127.0.0.1', 
 const cp = await cctx.newPage();
 await cp.goto(`${P}/services.html`, { waitUntil: 'networkidle' });
 check('D1 a client who opens Services lands on the fund page', new URL(cp.url()).pathname === '/' && /Community Assistance Fund/.test((await cp.textContent('h1')) || ''), cp.url());
+const land = (await cp.textContent('main')) || '';
+const give = await cp.getAttribute('[data-gofundme] a', 'href').catch(() => null);
+await cp.screenshot({ path: `${SHOTS}/fund-landing.png`, fullPage: true });
+check('D2 the landing shows the GoFundMe button and says how it works and what is published', give === 'https://gofund.me/7f301549b' && /Recommended/.test(land)
+  && /How it works/.test(land) && /One shared fund, divided equally among verified recipients\./.test(land) && /Transparency/.test(land) && /Every Friday, these are posted in the Discord:/.test(land)
+  && !(await wide(cp)), JSON.stringify({ give }));
 await b.close();
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

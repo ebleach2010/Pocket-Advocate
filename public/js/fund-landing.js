@@ -13,7 +13,8 @@
 // way.
 
 // Empty until Eric sends the link. While it is empty, no button is drawn.
-export const GOFUNDME_URL = '';
+// Eric sent it with his post, 2026-10-04.
+export const GOFUNDME_URL = 'https://gofund.me/7f301549b';
 export const ZAZZLE_URL = 'https://www.zazzle.com/store/rooftop_and_reed';
 // Through the end of December 24 in Mountain time: midnight going into
 // December 25 is 07:00 UTC (standard time since November 1).

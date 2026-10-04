@@ -42,6 +42,7 @@ import {
   FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView, sniff,
   isActiveParticipant, shareOf, dollars, CHECK_NOTE, checkTo, nextPayout, payoutWords,
+  fundTotals, sentAndOwed, chaseLine, TOTALS_LIMIT,
 } from '../public/js/fund-rules.js';
 
 const AUDIT_MAX = 200;
@@ -112,11 +113,16 @@ async function handleMe(env, user) {
     getDoc(env, `fundPayments/${user.uid}`),
   ]);
   const view = applicantView(app?.data || null, pay?.data || null);
-  // A participant sees the month's pool and their share of it (Eric,
-  // 2026-10-04: "so each participant can see their active share").
+  // A participant sees the fund's totals and their share so far (Eric,
+  // 2026-10-04: "so each participant can see their active share", and "a
+  // running total of your payout").
   if (view && isActiveParticipant(user.uid, app.data, reviewerUids(env))) {
     const pool = (await getDoc(env, POOL).catch(() => null))?.data;
-    if (pool?.totalCents) view.pool = { totalCents: pool.totalCents, shareCents: pool.shareCents, activeCount: pool.activeCount, asOf: pool.updatedAt };
+    const t = fundTotals(pool);
+    if (t?.totalCents) {
+      view.pool = { ...t, shareCents: pool.shareCents, activeCount: pool.activeCount, asOf: pool.updatedAt,
+        sentCents: sentAndOwed(app.data.payouts, pool.shareCents).sentCents };
+    }
   }
   return json({ application: view });
 }
@@ -432,7 +438,7 @@ export function decisionNotice(app) {
     subject: 'Your Community Assistance Fund application is approved',
     lines: [
       'Your application is approved, and you are now a verified participant.',
-      app.participationActive ? 'You are set to receive distributions. Each month you will see the pool total and your share, and your check is mailed on the 1st.' : 'You chose not to receive distributions.',
+      app.participationActive ? 'You are set to receive distributions. Each Friday you will see the fund\'s totals and your share so far, and your check is mailed on January 1, 2027.' : 'You chose not to receive distributions.',
       app.reverificationDueAt ? `Your next reverification is due ${new Date(app.reverificationDueAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Boise' })}.` : '',
       'Verification confirms eligibility only. It is not a medical opinion.',
     ].filter(Boolean),
@@ -502,15 +508,20 @@ async function handleAct(request, env, rev, ctx) {
   return json({ ok: true, me: rev.uid, application: reviewerView(uid, out.data, pay) });
 }
 
-// ---- the monthly pool and the checks ----------------------------------------
+// ---- the fund's totals and the checks -----------------------------------------
 // Eric, 2026-10-04: "I will update the amount in the donation pool weekly so
 // each participant can see their active share", then: "Fundraiser runs
 // through Christmas Eve with monthly payout distributions. With first payout
-// November 1. Also, payout should be check only." So he posts the month's
-// total, the share is equal among everyone verified and taking part,
-// reviewers never among them, and each share goes out as a check. Telling
-// each participant is queued and the cron drains it, a few a minute, because
-// one request cannot reach everyone inside its fifty calls.
+// November 1. Also, payout should be check only." And: "Every Friday, I'll
+// post in Discord: Number of approved recipients, Net GoFundMe proceeds so
+// far, Zazzle creator earnings being added, Combined total in the fund." So
+// each Friday he enters the two totals so far; their sum is shared equally
+// among everyone verified and taking part, reviewers never among them; each
+// participant's share so far is the running total of their payout. The
+// payout went to one check on January 1, 2027 ("Not monthly"), which sends
+// what that share still owes them. Telling each
+// participant is queued and the cron drains it, a few a minute, because one
+// request cannot reach everyone inside its fifty calls.
 
 async function participants(env) {
   const rows = await listDocs(env, 'fundApplications', { pageSize: 300, all: true });
@@ -523,43 +534,46 @@ const payWords = checkTo;
 async function handlePoolGet(env, rev) {
   const [pool, list] = await Promise.all([getDoc(env, POOL).catch(() => null), participants(env)]);
   const p = pool?.data || null;
-  const since = p?.updatedAt ? new Date(p.updatedAt).getTime() : 0;
   const rows = [];
   for (const r of list) {
     const pay = (await getDoc(env, `fundPayments/${r.id}`).catch(() => null))?.data || null;
     const last = (Array.isArray(r.data.payouts) ? r.data.payouts : []).slice(-1)[0] || null;
     rows.push({
-      uid: r.id, preferredName: r.data.preferredName || '', method: pay?.method || null, payTo: payWords(pay),
+      uid: r.id, preferredName: r.data.preferredName || '', discordUsername: r.data.discordUsername || '',
+      method: pay?.method || null, payTo: payWords(pay),
       lastPayout: last ? { at: last.at, amountCents: last.amountCents, ref: last.ref } : null,
-      paidThisRound: !!last && new Date(last.at).getTime() >= since && since > 0,
+      ...sentAndOwed(r.data.payouts, p?.shareCents),
     });
   }
   return json({
     me: rev.uid,
-    pool: p ? { totalCents: p.totalCents, activeCount: p.activeCount, shareCents: p.shareCents, updatedAt: p.updatedAt, pending: (p.pending || []).length } : null,
+    pool: p ? { ...fundTotals(p), activeCount: p.activeCount, shareCents: p.shareCents, updatedAt: p.updatedAt, pending: (p.pending || []).length } : null,
     participants: rows,
   });
 }
 
 async function handlePoolSet(request, env, rev) {
   const body = await request.json().catch(() => ({}));
-  const totalCents = Number(body?.totalCents);
-  if (!Number.isInteger(totalCents) || totalCents < 0 || totalCents > 100_000_000) return json({ error: 'Enter the pool total in dollars and cents, like 1240.50.' }, 400);
+  const gofundmeCents = Number(body?.gofundmeCents);
+  const zazzleCents = Number(body?.zazzleCents);
+  const okAmount = (n) => Number.isInteger(n) && n >= 0 && n <= TOTALS_LIMIT;
+  if (!okAmount(gofundmeCents) || !okAmount(zazzleCents)) return json({ error: 'Enter both amounts in dollars and cents, like 1240.50. Use 0 when there is nothing yet.' }, 400);
+  const totalCents = gofundmeCents + zazzleCents;
   const list = await participants(env);
   const shareCents = shareOf(totalCents, list.length);
   const now = new Date();
   const cur = (await getDoc(env, POOL).catch(() => null))?.data || {};
-  const history = [...(Array.isArray(cur.history) ? cur.history : []), { at: now, totalCents, activeCount: list.length, shareCents, by: rev.uid }].slice(-104);
+  const history = [...(Array.isArray(cur.history) ? cur.history : []), { at: now, gofundmeCents, zazzleCents, totalCents, activeCount: list.length, shareCents, by: rev.uid }].slice(-104);
   await patchDoc(env, POOL, {
-    totalCents, activeCount: list.length, shareCents, updatedAt: now, updatedBy: rev.uid,
+    gofundmeCents, zazzleCents, totalCents, activeCount: list.length, shareCents, updatedAt: now, updatedBy: rev.uid,
     history, pending: totalCents > 0 ? list.map((r) => r.id) : [],
   });
   return handlePoolGet(env, rev);
 }
 
 /**
- * The cron's part: tell the next few participants this month's pool and
- * their share. Nothing here calls a paid model; it is reads, pushes and
+ * The cron's part: tell the next few participants the fund's totals and
+ * their share so far. Nothing here calls a paid model; it is reads, pushes and
  * emails, and it does nothing at all when nobody is waiting.
  */
 export async function drainFundNotices(env) {
@@ -570,18 +584,25 @@ export async function drainFundNotices(env) {
   // Claim first, under the update time, so two firings never tell anyone twice.
   const ok = await patchDoc(env, POOL, { pending: pending.slice(batch.length) }, { mask: ['pending'], ifUpdateTime: doc.updateTime }).catch(() => false);
   if (!ok) return 0;
-  const { totalCents, shareCents } = doc.data;
+  const { gofundmeCents, zazzleCents, totalCents } = fundTotals(doc.data);
+  const { shareCents, activeCount } = doc.data;
   const next = nextPayout(Date.now());
   for (const uid of batch) {
     const app = (await getDoc(env, `fundApplications/${uid}`).catch(() => null))?.data;
     if (!isActiveParticipant(uid, app, reviewerUids(env))) continue;
+    const { sentCents } = sentAndOwed(app.payouts, shareCents);
     await fundNotify(env, uid, app, {
       title: 'Community Assistance Fund',
-      body: `This month's pool is ${dollars(totalCents)}. Your share is ${dollars(shareCents)}.`,
-      subject: `This month's Community Assistance Fund pool: ${dollars(totalCents)}`,
+      body: `The fund is at ${dollars(totalCents)}. Your share so far is ${dollars(shareCents)}.`,
+      subject: `Community Assistance Fund update: ${dollars(totalCents)} so far`,
       lines: [
-        `This month's pool is ${dollars(totalCents)}.`, `Your share is ${dollars(shareCents)}.`,
-        next ? `Checks are mailed on ${payoutWords(next)}.` : '', 'You will get another note when your check is in the mail.',
+        `Net GoFundMe proceeds so far: ${dollars(gofundmeCents)}`,
+        `Zazzle creator earnings being added: ${dollars(zazzleCents)}`,
+        `Combined total in the fund: ${dollars(totalCents)}`,
+        `Approved recipients: ${activeCount}`,
+        `Your share so far: ${dollars(shareCents)}`,
+        sentCents ? `Sent to you so far: ${dollars(sentCents)}` : '',
+        next ? `Payout date: ${payoutWords(next)}.` : '', 'You will get another note when your check is in the mail.',
       ].filter(Boolean),
     });
   }
@@ -616,7 +637,7 @@ async function handlePayout(request, env, rev, ctx) {
     title: 'Community Assistance Fund',
     body: `Your ${dollars(amountCents)} check was mailed. Check #${ref}. Allow 7 to 10 business days.`,
     subject: 'Your Community Assistance Fund check is in the mail',
-    lines: [`Your share of ${dollars(amountCents)} was mailed by check.`, `Check #${ref}`, CHECK_NOTE],
+    lines: [`Your share of ${dollars(amountCents)} was mailed by check.`, `Check #${ref}`, CHECK_NOTE, chaseLine(Date.now())],
   });
   if (ctx?.waitUntil) ctx.waitUntil(note); else await note;
   return json({ ok: true, payout: { at: new Date(), amountCents, method, ref } });

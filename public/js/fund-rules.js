@@ -15,17 +15,47 @@ export const PAYMENT_METHODS = ['check'];
 export const CHECK_ONLY_REFUSAL = 'Distributions are mailed by check only.';
 export const CHECK_NOTE = 'Checks are sent from Mercury and take 7 to 10 business days to arrive.';
 // Eric, 2026-10-04: "Fundraiser runs through Christmas Eve with monthly payout
-// distributions. With first payout November 1." The last check, on January 1,
-// carries what came in through Christmas Eve. Each date counts until midnight
-// Mountain that morning (MDT on November 1, before the clocks go back; MST
-// after).
+// distributions. With first payout November 1." Then, the same day:
+// "Verified applicants will receive monthly payouts via Mercury Business Check
+// on January 1st, 2027. Not monthly." So one payout, January 1, 2027, carrying
+// everything that came in through Christmas Eve. The date counts until
+// midnight Mountain that morning (MST, 07:00 UTC).
 export const PAYOUTS = [
-  { date: '2026-11-01', at: Date.UTC(2026, 10, 1, 6) },
-  { date: '2026-12-01', at: Date.UTC(2026, 11, 1, 7) },
   { date: '2027-01-01', at: Date.UTC(2027, 0, 1, 7) },
 ];
 export const nextPayout = (now = Date.now()) => PAYOUTS.find((p) => now < p.at) || null;
 export const payoutWords = (p) => (p ? new Date(`${p.date}T12:00:00Z`).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'UTC' }) : '');
+// Eric, 2026-10-04: "If you do not receive your check by the 10th of November,
+// please email me." Each month the same: the 10th after a check mailed in the
+// first days of the month, otherwise the 10th of the month after, in
+// Mountain time.
+export function chaseLine(at) {
+  const t = new Date(at);
+  if (!Number.isFinite(t.getTime())) return '';
+  const parts = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', year: 'numeric', month: 'numeric', day: 'numeric' })
+    .formatToParts(t).map((x) => [x.type, Number(x.value)]));
+  const m = parts.day <= 5 ? parts.month : (parts.month % 12) + 1;
+  const name = new Date(Date.UTC(2026, m - 1, 10)).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' });
+  return `If you do not receive your check by ${name} 10, please email office@pocketadvocacy.com.`;
+}
+
+// The fund's totals (Eric, 2026-10-04: "Every Friday, I'll post in Discord:
+// Number of approved recipients, Net GoFundMe proceeds so far, Zazzle creator
+// earnings being added, Combined total in the fund"). Both amounts are totals
+// so far, never one week's; the combined total is their sum. A pool posted
+// before these two existed reads as GoFundMe alone.
+export const TOTALS_LIMIT = 100_000_000;
+export function fundTotals(p) {
+  if (!p) return null;
+  const gofundmeCents = Number.isInteger(p.gofundmeCents) ? p.gofundmeCents : (Number(p.totalCents) || 0);
+  const zazzleCents = Number.isInteger(p.zazzleCents) ? p.zazzleCents : 0;
+  return { gofundmeCents, zazzleCents, totalCents: gofundmeCents + zazzleCents };
+}
+/** What has been mailed to one participant, and what their share so far still owes them. */
+export function sentAndOwed(payouts, shareCents) {
+  const sentCents = (Array.isArray(payouts) ? payouts : []).reduce((n, x) => n + (Number(x?.amountCents) || 0), 0);
+  return { sentCents, owedCents: Math.max(0, (Number(shareCents) || 0) - sentCents) };
+}
 // Eric, 2026-10-04: "They must be a discord member."
 export const DISCORD_INVITE = 'https://discord.gg/YZXYQFjUGa';
 // Eric, 2026-10-04: "a short blurb from them for why they are in need. Max 1500 characters."

@@ -266,6 +266,23 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The fund's totals, and what Eric's post says (2026-10-04, v7.26)
+
+Eric: "I also need to input Net GoFundMe proceeds so far, Zazzle creator
+earnings being added, Combined total in the fund", with his Reddit post. The
+pool takes `gofundmeCents` and `zazzleCents` (totals so far; `fundTotals()` in
+`fund-rules.js` reads an old single total as GoFundMe alone); each
+participant's share so far is the running total of their payout, and
+`sentAndOwed()` gives what was mailed and what is still owed. The queue copies
+the Friday post for Discord and the approved usernames. `chaseLine()` names the
+10th of the month for a check that has not come. The GoFundMe link is set.
+
+`fund.mjs` F17, F18, F22 and F25 are re-pinned; F30 RUNS two Friday posts with
+a check between them and lifts the Discord post; F31 holds the post's
+sentences on the landing and the form and RUNS `chaseLine` (31 checks).
+`drive-fund.mjs` posts the two totals, copies the Friday post and opens the
+landing's GoFundMe button (35 checks).
+
 ### The fund is home, everything else parked in PR 1 (2026-10-04, v7.25)
 
 Eric: "I want everything but information about the fundraiser and applicants

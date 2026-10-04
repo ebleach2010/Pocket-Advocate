@@ -551,14 +551,19 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     // RE-PINNED 2026-10-04 (v7.25): Eric, "Fundraiser runs through Christmas Eve with monthly payout
     // distributions. With first payout November 1."
     && READ.includes('The fundraiser runs from now through Christmas Eve, December 24, 2026.')
-    && READ.includes('Distributions are mailed by check on the 1st of each month, starting November 1.') && !READ.includes('November 2')
-    && READ.includes('Zazzle keeps a share of each sale, so giving directly on GoFundMe sends more to the fund.')
-    && /Need help\? Email <a href="mailto:office@pocketadvocacy\.com">office@pocketadvocacy\.com<\/a>/.test(IDX)
+    // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
+    && READ.includes('Verified applicants will receive payouts via Mercury Business Check on January 1, 2027.') && !READ.includes('November') && !/each month|monthly/i.test(READ)
+    // RE-PINNED 2026-10-04 (v7.26): Zazzle's cut and the help line in the words of Eric's post ("I receive
+    // only a creator royalty/commission", "If you have questions or want to request a Zazzle design,
+    // email me ... I'll respond within three business days.").
+    && READ.includes('The full purchase price of an item does not go to the fund: Zazzle charges for producing and selling the products, and only the creator royalty is donated. If your goal is simply to maximize how much reaches recipients, donating directly through GoFundMe is better.')
+    && /Questions, or want to request a Zazzle design\? Email <a href="mailto:office@pocketadvocacy\.com">office@pocketadvocacy\.com<\/a>\. You’ll get a reply within three business days\./.test(IDX)
     // RE-PINNED 2026-10-04 (v7.25): Book is parked, so the client's sign-in lands on their case.
     && /<a href="\/signin\.html\?to=%2Fcase\.html">Existing clients: sign in<\/a>/.test(IDX)
     // RE-PINNED 2026-10-04 (v7.24): Eric, "They should also be linked to the discord", so the Discord
     // invite is the one door added.
-    && links.join() === ['/fund.html', '/signin.html?to=%2Fcase.html', 'https://discord.gg/YZXYQFjUGa', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com'].sort().join()
+    // RE-PINNED 2026-10-04 (v7.26): the help email is also the address for a check that has not come.
+    && links.join() === ['/fund.html', '/signin.html?to=%2Fcase.html', 'https://discord.gg/YZXYQFjUGa', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com', 'mailto:office@pocketadvocacy.com'].sort().join()
     && READ.includes('Applicants must be members of our Discord community.')
     && !/\$\d|maintenance\.js|book\.html|services\.html|fit\.html|nav class="tabs"/.test(IDX) && /src="\/js\/fund-landing\.js"/.test(IDX)
     && !DASH.test(IDX) && !HARD.some((re) => re.test(IDX)) && !HARD.some((re) => re.test(f('public/js/fund-landing.js'))) && !DASH.test(f('public/js/fund-landing.js')),
@@ -577,7 +582,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 //   FAIL  F18 the ways to give follow the clock: at 11:59 pm Mountain on Christmas Eve the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended December 24 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open
 {
   const FL = f('public/js/fund-landing.js');
-  const load = (url) => new Function(`${FL.replace(/^export /gm, '').replace("const GOFUNDME_URL = '';", `const GOFUNDME_URL = ${JSON.stringify(url)};`).replace(/if \(typeof document !== 'undefined'\) paintSupport\(document\);/, '')}\nreturn { paintSupport, FUNDRAISER_ENDS_AT, ENDED_LINE };`)();
+  const load = (url) => new Function(`${FL.replace(/^export /gm, '').replace(/const GOFUNDME_URL = '[^']*';/, `const GOFUNDME_URL = ${JSON.stringify(url)};`).replace(/if \(typeof document !== 'undefined'\) paintSupport\(document\);/, '')}\nreturn { paintSupport, FUNDRAISER_ENDS_AT, ENDED_LINE };`)();
   const page = () => {
     const slot = { innerHTML: '', hidden: true };
     const box = { innerHTML: 'ORIGINAL', querySelector: (q) => (q === '[data-gofundme]' ? slot : null) };
@@ -591,10 +596,14 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const withLink = load('https://www.gofundme.com/f/example');
   const linked = page();
   const linkedState = withLink.paintSupport(linked.root, Date.parse('2026-10-10T18:00:00Z'));
+  const real = page();
+  const realState = load('https://gofund.me/7f301549b').paintSupport(real.root, Date.parse('2026-10-10T18:00:00Z'));
   const IDX = f('public/index.html');
   const support = IDX.slice(IDX.indexOf('data-support'), IDX.indexOf('</section>', IDX.indexOf('data-support')));
   check('F18 the ways to give follow the clock: at 11:59 pm Mountain on Christmas Eve the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended December 24 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open',
-    /export const GOFUNDME_URL = '';/.test(FL) && /export const ZAZZLE_URL = 'https:\/\/www\.zazzle\.com\/store\/rooftop_and_reed';/.test(FL)
+    // RE-PINNED 2026-10-04 (v7.26): Eric sent the GoFundMe link with his post, so it is set; the runs
+    // above still inject an empty link and a made-up one, and the real one draws its button too.
+    /export const GOFUNDME_URL = 'https:\/\/gofund\.me\/7f301549b';/.test(FL) && realState === 'open' && /href="https:\/\/gofund\.me\/7f301549b"/.test(real.slot.innerHTML) && /export const ZAZZLE_URL = 'https:\/\/www\.zazzle\.com\/store\/rooftop_and_reed';/.test(FL)
     && noLink.FUNDRAISER_ENDS_AT === Date.parse('2026-12-25T07:00:00Z')
     && beforeState === 'open-no-link' && before.box.innerHTML === 'ORIGINAL' && before.slot.hidden === true && before.slot.innerHTML === ''
     && afterState === 'ended' && after.box.innerHTML === '<h2>Support the fund</h2><p>This fundraiser ended December 24.</p>'
@@ -683,7 +692,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && unsaid.payment?.method === 'check'
     && sent.status === 200 && mine.method === 'check' && mine.address.city === 'Boise'
     && RULES.CHECK_NOTE === 'Checks are sent from Mercury and take 7 to 10 business days to arrive.'
-    && PAGE.includes('Distributions are mailed by check on the 1st of each month, starting November 1. Where should yours go?')
+    // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
+    && PAGE.includes('Payouts are mailed by Mercury Business Check on January 1, 2027. Where should yours go?')
     && /Name to make the check out to/.test(PAGE) && !/name="method"|Check in the mail|PayPal|Venmo|Zelle/.test(PAGE)
     && /esc\(CHECK_NOTE\)/.test(PAGE) && !/tracking/i.test(PAGE + SRC + ADMINPAGE),
     JSON.stringify({ good, noZip, venmo }));
@@ -700,14 +710,22 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // The notice says this month's pool and when the checks go out.
 // NEGATIVE CONTROL (run 2026-10-04, v7.25): `next ? `Checks are mailed on ${payoutWords(next)}.` : ''` changed to `''` in drainFundNotices made this read
 //   FAIL  F22 the monthly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email, with the date the checks are mailed
+// RE-PINNED 2026-10-04 (v7.26): Eric, "Every Friday, I'll post in Discord: Number of approved recipients,
+// Net GoFundMe proceeds so far, Zazzle creator earnings being added, Combined total in the fund." He
+// enters the two totals so far; their sum is the fund, and each participant's share of it is the running
+// total of their payout.
+// NEGATIVE CONTROL (run 2026-10-04, v7.26): `const totalCents = gofundmeCents + zazzleCents;` changed to `const totalCents = gofundmeCents;` in handlePoolSet made this read
+//   FAIL  F22 the fund's totals are shared equally by the verified who are taking part and never by a reviewer: the GoFundMe and Zazzle totals add up to the combined total, the share is in whole cents, a participant sees all three, the count and their share so far and someone not taking part does not, only a reviewer can post them, a bad or missing amount is refused, and the cron tells each participant once, by push or else by email, with every figure and the date the checks are mailed
 {
   const w = world();
   const verified = (uid, extra = {}) => w.setDoc(`fundApplications/${uid}`, { userId: uid, verificationStatus: 'verified', participationRequested: true, participationActive: true, preferredName: uid, accountEmail: `${uid}@example.test`, audit: [], ...extra });
   verified('ann'); verified('bob'); verified('cy', { participationRequested: false, participationActive: false }); verified('eric');
   w.setDoc('users/ann', { role: 'client', pushSubs: [{ endpoint: 'https://push.example/a' }] });
-  const asAnn = await call(w, 'ann', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: 100 } });
-  const bad = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: -5 } });
-  const posted = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: 100001 } });
+  const asAnn = await call(w, 'ann', '/api/admin/fund/pool', { method: 'POST', json: { gofundmeCents: 100, zazzleCents: 0 } });
+  const bad = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { gofundmeCents: -5, zazzleCents: 0 } });
+  const missing = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { gofundmeCents: 100 } });
+  const oldShape = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: 100 } });
+  const posted = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { gofundmeCents: 97551, zazzleCents: 2450 } });
   const poolDoc = w.docs.get('fundPool/current').data;
   const annSees = (await call(w, 'ann', '/api/fund/me')).out.application.pool;
   const cySees = (await call(w, 'cy', '/api/fund/me')).out.application.pool;
@@ -715,16 +733,20 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const again = await w.api.drainFundNotices(env);
   const annPush = w.pushes.find((x) => x.uid === 'ann');
   const bobMail = w.emails.find((x) => x.to === 'bob@example.test');
-  const nextLine = RULES.nextPayout() ? `Checks are mailed on ${RULES.payoutWords(RULES.nextPayout())}.` : '';
-  check('F22 the monthly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email, with the date the checks are mailed',
-    asAnn.status === 404 && bad.status === 400 && posted.status === 200
+  const nextLine = RULES.nextPayout() ? `Payout date: ${RULES.payoutWords(RULES.nextPayout())}.` : ''; // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
+  check('F22 the fund\'s totals are shared equally by the verified who are taking part and never by a reviewer: the GoFundMe and Zazzle totals add up to the combined total, the share is in whole cents, a participant sees all three, the count and their share so far and someone not taking part does not, only a reviewer can post them, a bad or missing amount is refused, and the cron tells each participant once, by push or else by email, with every figure and the date the checks are mailed',
+    asAnn.status === 404 && bad.status === 400 && missing.status === 400 && oldShape.status === 400 && posted.status === 200
+    && poolDoc.gofundmeCents === 97551 && poolDoc.zazzleCents === 2450
     && poolDoc.activeCount === 2 && poolDoc.shareCents === 50000 && poolDoc.totalCents === 100001 && poolDoc.history.length === 1
+    && posted.out.pool.gofundmeCents === 97551 && posted.out.pool.zazzleCents === 2450 && posted.out.pool.totalCents === 100001
+    && annSees?.gofundmeCents === 97551 && annSees.zazzleCents === 2450 && annSees.activeCount === 2
     && posted.out.participants.map((r) => r.uid).sort().join() === 'ann,bob'
     && annSees?.totalCents === 100001 && annSees.shareCents === 50000 && cySees === undefined
     && told === 2 && again === 0 && w.docs.get('fundPool/current').data.pending.length === 0
-    && annPush?.body === "This month's pool is $1,000.01. Your share is $500.00." && !w.emails.some((x) => x.to === 'ann@example.test')
-    && /Your share is \$500\.00\./.test(bobMail?.html || '') && (bobMail?.html || '').includes(nextLine) && !!nextLine
-    && /This month&#39;s Community Assistance Fund pool|This month's Community Assistance Fund pool/.test(bobMail?.subject || '')
+    && annPush?.body === 'The fund is at $1,000.01. Your share so far is $500.00.' && !w.emails.some((x) => x.to === 'ann@example.test')
+    && ['Net GoFundMe proceeds so far: $975.51', 'Zazzle creator earnings being added: $24.50', 'Combined total in the fund: $1,000.01', 'Approved recipients: 2', 'Your share so far: $500.00']
+      .every((l) => (bobMail?.html || '').includes(l)) && (bobMail?.html || '').includes(nextLine) && !!nextLine
+    && bobMail?.subject === 'Community Assistance Fund update: $1,000.01 so far'
     && /You will get another note when your check is in the mail\./.test(bobMail?.html || '')
     && !w.pushes.some((x) => x.uid === 'eric' || x.uid === 'cy'),
     JSON.stringify({ pool: { n: poolDoc.activeCount, share: poolDoc.shareCents }, told, again }));
@@ -792,17 +814,23 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // RE-PINNED 2026-10-04 (v7.25): monthly and check only; the payout reads "Check #" where it read "ID #".
 // NEGATIVE CONTROL (run 2026-10-04, v7.25): the status page's `${nextLine}` taken out of the share card made this read
 //   FAIL  F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, this month's share, the next check date and each check mailed with its number on the status page, and the queue's monthly pool total and Mark mailed with a required check number
+// RE-PINNED 2026-10-04 (v7.26): the status card is "The fund so far" with the three totals, the count and
+// their share so far; the queue takes the GoFundMe and Zazzle totals.
+// NEGATIVE CONTROL (run 2026-10-04, v7.26): the status card's Zazzle row taken out made this read
+//   FAIL  F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, the fund so far with their share so far, the next check date and each check mailed with its number on the status page, and the queue's two totals and Mark mailed with a required check number
 {
-  check('F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, this month\'s share, the next check date and each check mailed with its number on the status page, and the queue\'s monthly pool total and Mark mailed with a required check number',
+  check('F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, the fund so far with their share so far, the next check date and each check mailed with its number on the status page, and the queue\'s two totals and Mark mailed with a required check number',
     RULES.DISCORD_INVITE === 'https://discord.gg/YZXYQFjUGa' && /Not a member yet\? <a href="\$\{DISCORD_INVITE\}" target="_blank" rel="noopener">Join the Discord<\/a>/.test(PAGE)
     && /<strong>iPhone:<\/strong> open this page in Safari/.test(PAGE) && /<strong>Android:<\/strong> open this page in Chrome/.test(PAGE)
-    && /import \{ enablePush, pushSupported, pushInstalled \} from '\.\/push\.js';/.test(PAGE) && /each month's pool and your share, and a note when your check is mailed, with its check number/.test(PAGE) && /Without notifications, the same updates come to your email\./.test(PAGE)
-    && /<dt>Your share<\/dt><dd>\$\{dollars\(app\.pool\.shareCents\)\}<\/dd>\n\s+\$\{nextLine\}/.test(PAGE) && /<h2>This month<\/h2>/.test(PAGE) && !/This week/.test(PAGE)
-    && /<dt>Next check<\/dt><dd>\$\{esc\(payoutWords\(next\)\)\}<\/dd>/.test(PAGE) && /check mailed \$\{dateWords\(x\.at\)\}/.test(PAGE) && /Check #\$\{esc\(x\.ref\)\}/.test(PAGE) && !/ID #/.test(PAGE)
-    && /'\/api\/admin\/fund\/pool', \{ method: 'POST', body: \{ totalCents: cents \} \}/.test(ADMINPAGE)
+    && /import \{ enablePush, pushSupported, pushInstalled \} from '\.\/push\.js';/.test(PAGE) && /the fund's totals and your share so far each Friday, and a note when your check is mailed, with its check number/.test(PAGE) && /Without notifications, the same updates come to your email\./.test(PAGE)
+    && /<dt>Your share so far<\/dt><dd>\$\{dollars\(pl\.shareCents\)\}<\/dd>/.test(PAGE) && /<dt>Net GoFundMe proceeds so far<\/dt>/.test(PAGE)
+    && /<dt>Zazzle creator earnings being added<\/dt>/.test(PAGE) && /<dt>Combined total in the fund<\/dt>/.test(PAGE) && /<dt>Approved recipients<\/dt>/.test(PAGE)
+    && /\$\{nextLine\}/.test(PAGE) && /<h2>The fund so far<\/h2>/.test(PAGE) && !/This week|This month/.test(PAGE)
+    && /<dt>Payout date<\/dt><dd>\$\{esc\(payoutWords\(next\)\)\}<\/dd>/.test(PAGE) && /check mailed \$\{dateWords\(x\.at\)\}/.test(PAGE) && /Check #\$\{esc\(x\.ref\)\}/.test(PAGE) && !/ID #/.test(PAGE)
+    && /'\/api\/admin\/fund\/pool', \{ method: 'POST', body: \{ gofundmeCents: g, zazzleCents: z \} \}/.test(ADMINPAGE)
     && /'\/api\/admin\/fund\/payout', \{ method: 'POST', body: \{ uid: li\.dataset\.uid, amountCents: cents, ref \} \}/.test(ADMINPAGE)
     && /if \(ref\.length < 2\) \{ said\.textContent = 'Add the check number\.'/.test(ADMINPAGE)
-    && /<dt>This month<\/dt>/.test(ADMINPAGE) && /This month's pool total, in dollars/.test(ADMINPAGE) && /placeholder="Check #"/.test(ADMINPAGE) && !/ID #|This week/.test(ADMINPAGE)
+    && /Net GoFundMe proceeds so far, in dollars/.test(ADMINPAGE) && /Zazzle creator earnings being added, in dollars/.test(ADMINPAGE) && /placeholder="Check #"/.test(ADMINPAGE) && !/ID #|This week|This month/.test(ADMINPAGE)
     && !HARD.some((re) => re.test(f('public/js/push.js'))),
     'pins');
 }
@@ -923,15 +951,97 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // of midnight Mountain going into November 1, early December and early January.
 // NEGATIVE CONTROL (run 2026-10-04): the first payout's `at` moved to `Date.UTC(2026, 10, 1, 0)` (midnight UTC, the evening of Oct 31 in Mountain time) made this read
 //   FAIL  F29 the checks go out on the 1st of November, December and January: the next check is November 1 until midnight Mountain begins it, then December 1, then January 1, then none; the words read like a date, and the landing and the status page say the same
+// RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
+// One date. RUN at early October, early November, either side of midnight Mountain going into
+// January 1 (07:00 UTC), and early January.
+// NEGATIVE CONTROL (run 2026-10-04, v7.26): the November 1 payout put back first in PAYOUTS made this read
+//   FAIL  F29 the payout is one check, on January 1, 2027: it is the payout date from now until midnight Mountain begins that day, and none after; the words read like a date, and the landing and the status page say the same
 {
   const at = (iso) => RULES.nextPayout(Date.parse(iso))?.date || null;
-  check('F29 the checks go out on the 1st of November, December and January: the next check is November 1 until midnight Mountain begins it, then December 1, then January 1, then none; the words read like a date, and the landing and the status page say the same',
-    RULES.PAYOUTS.map((p) => p.date).join() === '2026-11-01,2026-12-01,2027-01-01'
-    && at('2026-10-04T18:00:00Z') === '2026-11-01' && at('2026-11-01T05:59:59Z') === '2026-11-01' && at('2026-11-01T06:01:00Z') === '2026-12-01'
-    && at('2026-12-02T12:00:00Z') === '2027-01-01' && at('2027-01-02T12:00:00Z') === null
-    && RULES.payoutWords(RULES.PAYOUTS[0]) === 'November 1, 2026' && RULES.payoutWords(RULES.PAYOUTS[2]) === 'January 1, 2027' && RULES.payoutWords(null) === ''
-    && f('public/index.html').includes('starting November 1.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE),
-    JSON.stringify(['2026-10-04T18:00:00Z', '2026-11-01T05:59:59Z', '2026-11-01T06:01:00Z', '2026-12-02T12:00:00Z', '2027-01-02T12:00:00Z'].map(at)));
+  check('F29 the payout is one check, on January 1, 2027: it is the payout date from now until midnight Mountain begins that day, and none after; the words read like a date, and the landing and the status page say the same',
+    RULES.PAYOUTS.map((p) => p.date).join() === '2027-01-01'
+    && at('2026-10-04T18:00:00Z') === '2027-01-01' && at('2026-11-02T12:00:00Z') === '2027-01-01' && at('2027-01-01T06:59:59Z') === '2027-01-01'
+    && at('2027-01-01T07:00:00Z') === null && at('2027-01-02T12:00:00Z') === null
+    && RULES.payoutWords(RULES.PAYOUTS[0]) === 'January 1, 2027' && RULES.payoutWords(null) === ''
+    && RULES.chaseLine(RULES.PAYOUTS[0].at) === 'If you do not receive your check by January 10, please email office@pocketadvocacy.com.'
+    && f('public/index.html').includes('on January 1, 2027.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE)
+    && !/November|each month|monthly/i.test(PAGE.replace(/^\s*\/\/.*$/gm, '')),
+    JSON.stringify(['2026-10-04T18:00:00Z', '2026-11-02T12:00:00Z', '2027-01-01T06:59:59Z', '2027-01-01T07:00:00Z', '2027-01-02T12:00:00Z'].map(at)));
+}
+
+// ---- F30: the fund's totals, the running share and what is owed (2026-10-04, v7.26) ----
+// Eric: "I also need to input Net GoFundMe proceeds so far, Zazzle creator earnings being added,
+// Combined total in the fund", and "you will get notifications of all updates, including a running
+// total of your payout." RUN: two Friday posts with a check mailed between them. Each participant's
+// share so far, what has been mailed and what is still owed follow; the queue's Friday post for
+// Discord is lifted and RUN, and the approved usernames are one tap to copy.
+// NEGATIVE CONTROL (run 2026-10-04): sentAndOwed's `Math.max(0, (Number(shareCents) || 0) - sentCents)` changed to `(Number(shareCents) || 0)` made this read
+//   FAIL  F30 the running share: two Friday posts add the GoFundMe and Zazzle totals, each participant's share so far, what was mailed and what is still owed follow each post, the participant sees what was sent to them, an old single total reads as GoFundMe alone, and the queue copies the Friday post and the approved Discord usernames
+{
+  const w = world();
+  const verified = (uid, extra = {}) => w.setDoc(`fundApplications/${uid}`, { userId: uid, verificationStatus: 'verified', participationRequested: true, participationActive: true, preferredName: uid, discordUsername: `${uid}_d`, accountEmail: `${uid}@example.test`, audit: [], ...extra });
+  verified('ann'); verified('bob');
+  for (const u of ['ann', 'bob']) w.setDoc(`fundPayments/${u}`, { method: 'check', accountName: u, address: { line1: '1 Main St', line2: '', city: 'Boise', state: 'ID', zip: '83702' } });
+  await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { gofundmeCents: 100000, zazzleCents: 0 } });
+  await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 30000, ref: '1001' } });
+  const after1 = (await call(w, 'eric', '/api/admin/fund/pool')).out;
+  const second = (await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { gofundmeCents: 150000, zazzleCents: 10000 } })).out;
+  const row = (o, u) => o.participants.find((r) => r.uid === u);
+  const annSees = (await call(w, 'ann', '/api/fund/me')).out.application.pool;
+  const legacy = RULES.fundTotals({ totalCents: 500 });
+  const lift = (src, head) => { const i = src.indexOf(head); return i < 0 ? '' : src.slice(i, src.indexOf('\n}\n', i) + 2); };
+  const discordPost = new Function('dollars', 'longDay', `${lift(ADMINPAGE, 'function discordPost(p) {')}\nreturn discordPost;`)(RULES.dollars, () => 'October 9, 2026');
+  const post = discordPost({ updatedAt: 'x', activeCount: 2, gofundmeCents: 150000, zazzleCents: 10000, totalCents: 160000 });
+  check('F30 the running share: two Friday posts add the GoFundMe and Zazzle totals, each participant\'s share so far, what was mailed and what is still owed follow each post, the participant sees what was sent to them, an old single total reads as GoFundMe alone, and the queue copies the Friday post and the approved Discord usernames',
+    row(after1, 'ann').sentCents === 30000 && row(after1, 'ann').owedCents === 20000 && row(after1, 'bob').owedCents === 50000 && row(after1, 'ann').discordUsername === 'ann_d'
+    && second.pool.totalCents === 160000 && second.pool.shareCents === 80000 && row(second, 'ann').owedCents === 50000 && row(second, 'bob').owedCents === 80000
+    && annSees?.shareCents === 80000 && annSees.sentCents === 30000 && annSees.totalCents === 160000
+    && legacy.gofundmeCents === 500 && legacy.zazzleCents === 0 && legacy.totalCents === 500
+    && RULES.sentAndOwed([{ amountCents: 90000 }], 80000).owedCents === 0
+    && post === 'Community Assistance Fund update, October 9, 2026\nApproved recipients: 2\nNet GoFundMe proceeds so far: $1,500.00\nZazzle creator earnings being added: $100.00\nCombined total in the fund: $1,600.00'
+    && /Copy the Friday post for Discord/.test(ADMINPAGE) && /Copy the approved Discord usernames/.test(ADMINPAGE) && /navigator\.clipboard\.writeText\(text\)/.test(ADMINPAGE)
+    && /value="\$\{p \? money\(r\.owedCents\) : ''\}"/.test(ADMINPAGE) && /Paid up so far\./.test(ADMINPAGE) && /Still owed \$\{dollars\(r\.owedCents\)\}/.test(ADMINPAGE)
+    && /Both are totals so far, not one week's\. Post every Friday\./.test(ADMINPAGE) && /id="fq-combined"/.test(ADMINPAGE)
+    && /path === '\/api\/admin\/fund\/pool' && method === 'POST'/.test(DEMO) && /gofundmeCents, zazzleCents, totalCents/.test(DEMO) && /sentAndOwed\(a\.payouts, p\?\.shareCents\)/.test(DEMO),
+    JSON.stringify({ a1: row(after1, 'ann'), a2: row(second, 'ann'), annSees, post }));
+}
+
+// ---- F31: what Eric's post says, on the pages (2026-10-04, v7.26) ----------------------
+// His Reddit post, sent "in case there's anything here you haven't added": one shared fund divided
+// equally, the organizer takes nothing, January 10 for a check that has not come, what is
+// never made public, the optional photo, the Home Screen running total, the Friday figures, the
+// usernames published before payout, sharing, and a reply within three business days.
+// NEGATIVE CONTROL (run 2026-10-04): chaseLine's `parts.day <= 5 ? parts.month : (parts.month % 12) + 1` changed to `parts.month` made this read
+//   FAIL  F31 what his post says is on the pages: the landing says how it works and what is published every Friday and before payout, the form says what stays private, that a photo is optional and that usernames are published, both pages promise a reply in three business days, and a check that has not come by the 10th is chased, in the check email too
+{
+  const IDX = f('public/index.html');
+  const READ = IDX.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<!--[\s\S]*?-->/g, '').replace(/<[^>]+>/g, '');
+  const w = world();
+  w.setDoc('fundApplications/bob', { userId: 'bob', verificationStatus: 'verified', participationRequested: true, participationActive: true, accountEmail: 'bob@example.test', audit: [] });
+  w.setDoc('fundPayments/bob', { method: 'check', accountName: 'Bob B', address: { line1: '1 Main St', line2: '', city: 'Boise', state: 'ID', zip: '83702' } });
+  await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'bob', amountCents: 50000, ref: '2001' } });
+  const mail = w.emails.find((x) => x.to === 'bob@example.test');
+  const chase = (iso) => RULES.chaseLine(Date.parse(iso));
+  check('F31 what his post says is on the pages: the landing says how it works and what is published every Friday and before payout, the form says what stays private, that a photo is optional and that usernames are published, both pages promise a reply in three business days, and a check that has not come by the 10th is chased, in the check email too',
+    ['One shared fund, divided equally among verified recipients.',
+      'All net proceeds from the GoFundMe plus any Zazzle creator earnings contributed during the fundraiser will be split equally among every approved participant. The organizer will not receive any portion of the payout.',
+      'If you do not receive your check by January 10, please email office@pocketadvocacy.com.', // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
+      'Your diagnosis, legal name and medical documents will not be made public.',
+      'Photos will only be posted with your consent. Not submitting one will not affect approval or your share.',
+      'including a running total of your payout.',
+      'Every Friday, these are posted in the Discord:', 'Number of approved recipients', 'Net GoFundMe proceeds so far', 'Zazzle creator earnings being added', 'Combined total in the fund',
+      'Before payout, the Discord usernames of every approved recipient are published in both text and video, along with the final amount raised and the equal payout amount. No medical information or legal names are published.',
+      'Please feel free to share the GoFundMe, the Discord, this page or the store with friends and family.',
+    ].every((l) => READ.includes(l))
+    && PAGE.includes('Your diagnosis, legal name and medical documents will not be made public.')
+    && PAGE.includes('Photos are completely optional and will only be posted with your consent. Not submitting one will not affect approval or your share.')
+    && PAGE.includes('Before payout, the Discord usernames of every approved recipient are published in text and video, along with the final amount raised and the equal payout amount. No medical information or legal names are published.')
+    && /You’ll get a reply within three business days\./.test(HTML) && /You’ll get a reply within three business days\./.test(IDX)
+    && chase('2026-11-01T06:00:00Z') === 'If you do not receive your check by November 10, please email office@pocketadvocacy.com.'
+    && /by November 10,/.test(chase('2026-10-31T20:00:00Z')) && /by January 10,/.test(chase('2026-12-28T12:00:00Z')) && chase('nope') === ''
+    && /If you do not receive your check by \w+ 10, please email office@pocketadvocacy\.com\./.test(mail?.html || '')
+    && /chaseLine\(next\.at\)/.test(PAGE) && !DASH.test(IDX) && !DASH.test(PAGE) && !HARD.some((re) => re.test(READ)),
+    JSON.stringify({ mail: !!mail, nov: chase('2026-11-01T06:00:00Z') }));
 }
 
 const failed = results.filter((r) => !r.pass);

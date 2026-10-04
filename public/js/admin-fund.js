@@ -162,9 +162,42 @@ function testWords({ devices = 0, emailed = false }) {
   return 'Nothing went out: no device has alerts on, and the email did not go.';
 }
 
-// ---- the monthly pool (Eric, 2026-10-04: "I will update the amount in the
-// donation pool weekly so each participant can see their active share." The
-// same day: "monthly payout distributions ... payout should be check only.") ----
+// ---- the fund's totals (Eric, 2026-10-04: "I will update the amount in the
+// donation pool weekly so each participant can see their active share", then
+// "monthly payout distributions ... payout should be check only", and "Every
+// Friday, I'll post in Discord: Number of approved recipients, Net GoFundMe
+// proceeds so far, Zazzle creator earnings being added, Combined total in the
+// fund"). He enters the two totals so far; the combined total and each share
+// follow, and the Friday post is one tap to copy. The payout is one check on
+// January 1, 2027 ("Not monthly"). ----
+const longDay = (v) => (v ? new Date(v).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : '');
+const money = (c) => (Number.isInteger(c) ? (c / 100).toFixed(2) : '');
+
+function discordPost(p) {
+  return [
+    `Community Assistance Fund update, ${longDay(p.updatedAt)}`,
+    `Approved recipients: ${p.activeCount}`,
+    `Net GoFundMe proceeds so far: ${dollars(p.gofundmeCents)}`,
+    `Zazzle creator earnings being added: ${dollars(p.zazzleCents)}`,
+    `Combined total in the fund: ${dollars(p.totalCents)}`,
+  ].join('\n');
+}
+
+async function copyOut(box, text, said) {
+  const out = box.querySelector('[data-copy-out]');
+  try {
+    await navigator.clipboard.writeText(text);
+    out.hidden = true;
+    said.textContent = 'Copied. Paste it into Discord.';
+  } catch {
+    // No clipboard here: show it, selected, to copy by hand.
+    out.value = text;
+    out.hidden = false;
+    out.select();
+    said.textContent = 'Copy the text below.';
+  }
+}
+
 async function pool(data) {
   const box = el.querySelector('#fq-pool');
   if (!box) return;
@@ -176,38 +209,61 @@ async function pool(data) {
   const rows = out.participants || [];
   box.innerHTML = `
     <section class="fq-pool">
-      <h2 class="fq-sub">Donation pool</h2>
-      ${p ? `<dl class="fq-facts">
-        <dt>This month</dt><dd>${dollars(p.totalCents)}</dd>
-        <dt>Shared by</dt><dd>${p.activeCount} participant${p.activeCount === 1 ? '' : 's'}</dd>
-        <dt>Each share</dt><dd>${dollars(p.shareCents)}</dd>
-        <dt>Posted</dt><dd>${when(p.updatedAt)}</dd>
-      </dl>${p.pending ? `<p class="dim small">Telling participants now: ${p.pending} still to go, a few each minute.</p>` : ''}` : '<p class="dim small">No total posted yet.</p>'}
-      <label class="small">This month's pool total, in dollars
-        <input class="fq-text fq-money" id="fq-total" inputmode="decimal" placeholder="1240.00" value="${p ? (p.totalCents / 100).toFixed(2) : ''}"></label>
-      <p class="row"><button type="button" class="btn glow" id="fq-post">Post and tell participants</button> <span class="dim small" id="fq-post-said"></span></p>
-      <p class="dim small">The pool is split equally among verified participants who are taking part. You are never one of them.</p>
-      <h3>Payouts</h3>
+      <h2 class="fq-sub">The fund so far</h2>
+      ${p ? `<div class="fq-totals">
+        <p class="small">Net GoFundMe proceeds so far: <strong>${dollars(p.gofundmeCents)}</strong></p>
+        <p class="small">Zazzle creator earnings being added: <strong>${dollars(p.zazzleCents)}</strong></p>
+        <p class="small">Combined total in the fund: <strong>${dollars(p.totalCents)}</strong></p>
+        <p class="small">Approved recipients: <strong>${p.activeCount}</strong></p>
+        <p class="small">Each share so far: <strong>${dollars(p.shareCents)}</strong></p>
+        <p class="dim small">Posted ${when(p.updatedAt)}</p>
+      </div>${p.pending ? `<p class="dim small">Telling participants now: ${p.pending} still to go, a few each minute.</p>` : ''}
+      <p class="row"><button type="button" class="btn" id="fq-copy-post">Copy the Friday post for Discord</button></p>` : '<p class="dim small">No totals posted yet.</p>'}
+      <label class="small">Net GoFundMe proceeds so far, in dollars
+        <input class="fq-text fq-money" id="fq-gofundme" inputmode="decimal" placeholder="1240.00" value="${p ? money(p.gofundmeCents) : ''}"></label>
+      <label class="small">Zazzle creator earnings being added, in dollars
+        <input class="fq-text fq-money" id="fq-zazzle" inputmode="decimal" placeholder="0.00" value="${p ? money(p.zazzleCents) : ''}"></label>
+      <p class="small">Combined total in the fund: <strong id="fq-combined">${p ? dollars(p.totalCents) : '$0.00'}</strong></p>
+      <p class="dim small">Both are totals so far, not one week's. Post every Friday.</p>
+      <p class="row"><button type="button" class="btn glow" id="fq-post">Post and tell participants</button> <span class="dim small" id="fq-post-said" role="status"></span></p>
+      <textarea class="fq-text" data-copy-out rows="6" readonly hidden></textarea>
+      <p class="dim small">The fund is split equally among approved recipients. You are never one of them.</p>
+      <h3>Checks</h3>
       ${rows.length ? `<ul class="fq-payouts">${rows.map((r) => `
         <li class="fq-payout" data-uid="${esc(r.uid)}">
-          <span class="fq-name">${esc(r.preferredName || 'No name')}</span>
+          <span class="fq-name">${esc(r.preferredName || 'No name')}${r.discordUsername ? ` <span class="dim small">${esc(r.discordUsername)}</span>` : ''}</span>
           <span class="small">${esc(r.payTo)}</span>
-          ${r.paidThisRound ? `<span class="small ok">\u2713 Mailed ${dollars(r.lastPayout.amountCents)} ${day(r.lastPayout.at)}, Check #${esc(r.lastPayout.ref)}</span>` : `
+          ${p ? `<span class="small">Share so far ${dollars(p.shareCents)} · Sent ${dollars(r.sentCents)} · Still owed ${dollars(r.owedCents)}</span>` : ''}
+          ${r.lastPayout ? `<span class="small ok">✓ Mailed ${dollars(r.lastPayout.amountCents)} ${day(r.lastPayout.at)}, Check #${esc(r.lastPayout.ref)}</span>` : ''}
+          ${p && !r.owedCents ? '<span class="dim small">Paid up so far.</span>' : `
           <span class="fq-pay-row">
-            <input class="fq-text fq-money" data-amount inputmode="decimal" value="${p ? (p.shareCents / 100).toFixed(2) : ''}" aria-label="Amount of the check">
+            <input class="fq-text fq-money" data-amount inputmode="decimal" value="${p ? money(r.owedCents) : ''}" aria-label="Amount of the check">
             <input class="fq-text" data-ref placeholder="Check #" maxlength="60" aria-label="Check number">
             <button type="button" class="btn" data-pay>Mark mailed</button>
           </span>
           <span class="dim small">${esc(CHECK_NOTE)}</span>
           <span class="error small" data-pay-said hidden></span>`}
-        </li>`).join('')}</ul>` : '<p class="dim small">Nobody is taking part yet.</p>'}
+        </li>`).join('')}</ul>
+      <p class="row"><button type="button" class="btn" id="fq-copy-names">Copy the approved Discord usernames</button> <span class="dim small" id="fq-names-said" role="status"></span></p>
+      <p class="dim small">For the list you publish before payout. Only Discord usernames: no legal names, nothing medical.</p>` : '<p class="dim small">Nobody is taking part yet.</p>'}
     </section>`;
+  const combine = () => {
+    const g = toCents(box.querySelector('#fq-gofundme').value || '0');
+    const z = toCents(box.querySelector('#fq-zazzle').value || '0');
+    box.querySelector('#fq-combined').textContent = Number.isInteger(g) && Number.isInteger(z) ? dollars(g + z) : 'check the amounts';
+  };
+  box.querySelector('#fq-gofundme').addEventListener('input', combine);
+  box.querySelector('#fq-zazzle').addEventListener('input', combine);
+  box.querySelector('#fq-copy-post')?.addEventListener('click', () => copyOut(box, discordPost(p), box.querySelector('#fq-post-said')));
+  box.querySelector('#fq-copy-names')?.addEventListener('click', () => copyOut(box,
+    [`Approved recipients (${rows.length}):`, ...rows.map((r) => r.discordUsername || '(no Discord name)')].join('\n'), box.querySelector('#fq-names-said')));
   box.querySelector('#fq-post').addEventListener('click', async (e) => {
     const said = box.querySelector('#fq-post-said');
-    const cents = toCents(box.querySelector('#fq-total').value);
-    if (!Number.isInteger(cents) || cents < 0) { said.textContent = 'Enter the total in dollars, like 1240.00.'; return; }
+    const g = toCents(box.querySelector('#fq-gofundme').value);
+    const z = toCents(box.querySelector('#fq-zazzle').value || '0');
+    if (!box.querySelector('#fq-gofundme').value.trim() || !Number.isInteger(g) || g < 0 || !Number.isInteger(z) || z < 0) { said.textContent = 'Enter the GoFundMe amount in dollars, like 1240.00, and the Zazzle amount, or 0.'; return; }
     e.currentTarget.disabled = true;
-    try { pool(await api('/api/admin/fund/pool', { method: 'POST', body: { totalCents: cents } })); }
+    try { pool(await api('/api/admin/fund/pool', { method: 'POST', body: { gofundmeCents: g, zazzleCents: z } })); }
     catch (err) { said.textContent = err.message; e.currentTarget.disabled = false; }
   });
   box.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', async () => {

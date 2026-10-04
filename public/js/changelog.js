@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.25';
+export const VERSION = '7.26';
 
 /**
  * Newest first.
@@ -51,6 +51,25 @@ export const VERSION = '7.25';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE FUND'S TOTALS (Eric, 2026-10-04: "I also need to input Net GoFundMe
+    // proceeds so far, Zazzle creator earnings being added, Combined total in
+    // the fund", with his Reddit post "in case there's anything here you
+    // haven't added"; then "Verified applicants will receive monthly payouts
+    // via Mercury Business Check on January 1st, 2027. Not monthly."). Admin
+    // only.
+    version: '7.26',
+    quiet: true,
+    client: [],
+    admin: [
+      'The Fund queue now takes the Net GoFundMe proceeds so far and the Zazzle creator earnings being added. The combined total, the approved recipients and each share so far follow.',
+      'Each post tells every participant the totals and their share so far. One button copies the Friday post for Discord, and another copies the approved Discord usernames.',
+      'Each participant shows their share so far, what was sent and what is still owed, and the check amount starts at what is owed.',
+      'The payout is one check, mailed January 1, 2027. Not monthly.',
+      'The GoFundMe button is live on the landing page.',
+      'From your post: how it works, the Friday figures, the usernames published before payout, the optional photo, what stays private, emailing if a check has not come by the 10th, and a reply within three business days.',
+    ],
+  },
   {
     // THE FUND IS HOME (Eric, 2026-10-04: "I want everything but information
     // about the fundraiser and applicants HIDDEN in a parked PR 1. And be sure

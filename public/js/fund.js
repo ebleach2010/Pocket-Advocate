@@ -17,7 +17,7 @@
 import { requireUser } from './auth.js';
 import { auth, signOut } from './firebase.js';
 import { enablePush, pushSupported, pushInstalled } from './push.js';
-import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, nextPayout, payoutWords } from './fund-rules.js';
+import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, nextPayout, payoutWords, chaseLine } from './fund-rules.js';
 
 const HELP = 'office@pocketadvocacy.com';
 const box = document.getElementById('fund');
@@ -202,7 +202,8 @@ function stepBody(n) {
     </ul>
     ${uploader('medical')}
     ${field('needStatement', 'In a few sentences, why are you in need?', { area: true, max: NEED_MAX, hint: 'In your own words. You never need to name a diagnosis.' })}
-    ${field('applicantNote', NOTE_LABEL, { optional: true, area: true, max: 2000, hint: 'You never need to describe a diagnosis.' })}`;
+    ${field('applicantNote', NOTE_LABEL, { optional: true, area: true, max: 2000, hint: 'You never need to describe a diagnosis.' })}
+    <p class="fund-hint">Your diagnosis, legal name and medical documents will not be made public.</p>`;
   if (n === 4) return `
     ${check('discordMember', 'I am currently a member of the associated Discord community.', form.discordMember)}
     <p class="fund-hint">Only members of our Discord community can take part. Not a member yet? <a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Join the Discord</a>, then come back to this step.</p>
@@ -215,11 +216,12 @@ function stepBody(n) {
       <p class="fund-hint">Only applicants who choose Yes can receive distributions once verified.</p>
     </fieldset>
     <h2>A photo for the GoFundMe page <span class="fund-req">(optional)</span></h2>
-    <p class="fund-hint">If you would like, you can add a picture of yourself to be included on the fund’s GoFundMe page. You can skip this.</p>
+    <p class="fund-hint">If you would like, you can add a picture of yourself to be included on the fund’s GoFundMe page, so donors can see some of the people they are helping. You can skip this.</p>
+    <p class="fund-hint">Photos are completely optional and will only be posted with your consent. Not submitting one will not affect approval or your share.</p>
     ${uploader('photo')}
     ${filesOf('photo').length ? check('photoPublicConsent', 'I agree this photo may be shown publicly on the community’s GoFundMe page.', form.photoPublicConsent) : ''}`;
   if (n === 5) return `
-    <p class="fund-measure">Distributions are mailed by check on the 1st of each month, starting November 1. Where should yours go?</p>
+    <p class="fund-measure">Payouts are mailed by Mercury Business Check on January 1, 2027. Where should yours go?</p>
     <p class="fund-note">${esc(CHECK_NOTE)}</p>
     ${checkFields()}
     <div class="fund-note fund-warn">Never enter passwords, PINs, card numbers or bank details. We will never ask for them.</div>
@@ -236,6 +238,7 @@ function stepBody(n) {
       <li><span>Receiving distributions: ${form.participationRequested === true ? 'Yes' : form.participationRequested === false ? 'No' : 'not answered yet'}</span><button type="button" data-go="4">Edit</button></li>
       ${form.participationRequested === true ? `<li><span>Payment: ${esc(mailTo)}</span><button type="button" data-go="5">Edit</button></li>` : ''}
     </ul>
+    <div class="fund-note">Before payout, the Discord usernames of every approved recipient are published in text and video, along with the final amount raised and the equal payout amount. No medical information or legal names are published.</div>
     ${CONSENTS.map(([k, w]) => check(`consent:${k}`, w, form.consents[k])).join('')}`;
 }
 
@@ -498,25 +501,36 @@ function renderStatus() {
     <p class="fund-hint" style="margin-top:14px">Verification confirms eligibility only. It is not a medical opinion.</p>`;
   // Eric, 2026-10-04: "I will update the amount in the donation pool weekly
   // so each participant can see their active share." Then, the same day:
-  // "monthly payout distributions. With first payout November 1."
+  // "monthly payout distributions. With first payout November 1." And:
+  // "Every Friday, I'll post in Discord: Number of approved recipients, Net
+  // GoFundMe proceeds so far, Zazzle creator earnings being added, Combined
+  // total in the fund", with "a running total of your payout" on their phone.
+  // The payout is one check, on January 1, 2027 ("Not monthly").
   const next = nextPayout();
-  const nextLine = next ? `<dt>Next check</dt><dd>${esc(payoutWords(next))}</dd>` : '';
-  const share = s === 'verified' && app.participationActive ? (app.pool ? `
+  const nextLine = next ? `<dt>Payout date</dt><dd>${esc(payoutWords(next))}</dd>` : '';
+  const chase = next ? `<p class="fund-hint">${esc(chaseLine(next.at))}</p>` : '';
+  const pl = app.pool;
+  const share = s === 'verified' && app.participationActive ? (pl ? `
     <div class="fund-card fund-share">
-      <h2>This month</h2>
+      <h2>The fund so far</h2>
       <dl class="fund-facts">
-        <dt>Donation pool</dt><dd>${dollars(app.pool.totalCents)}</dd>
-        <dt>Your share</dt><dd>${dollars(app.pool.shareCents)}</dd>
+        <dt>Net GoFundMe proceeds so far</dt><dd>${dollars(pl.gofundmeCents)}</dd>
+        <dt>Zazzle creator earnings being added</dt><dd>${dollars(pl.zazzleCents)}</dd>
+        <dt>Combined total in the fund</dt><dd>${dollars(pl.totalCents)}</dd>
+        <dt>Approved recipients</dt><dd>${esc(pl.activeCount)}</dd>
+        <dt>Your share so far</dt><dd>${dollars(pl.shareCents)}</dd>
+        ${pl.sentCents ? `<dt>Sent to you so far</dt><dd>${dollars(pl.sentCents)}</dd>` : ''}
         ${nextLine}
       </dl>
-      <p class="fund-hint" style="margin-top:12px">Updated ${dateWords(app.pool.asOf)}. The pool is shared equally among everyone taking part.</p>
+      ${chase}
+      <p class="fund-hint" style="margin-top:12px">Updated ${dateWords(pl.asOf)}, and every Friday. The fund is shared equally among every approved recipient.</p>
     </div>` : `
-    <div class="fund-card fund-share"><h2>This month</h2>${nextLine ? `<dl class="fund-facts">${nextLine}</dl>` : ''}<p class="fund-hint">The pool total and your share show here once the month's total is posted.</p></div>`) : '';
+    <div class="fund-card fund-share"><h2>The fund so far</h2>${nextLine ? `<dl class="fund-facts">${nextLine}</dl>` : ''}${chase}<p class="fund-hint">The fund's totals and your share so far show here once they are posted. They are updated every Friday.</p></div>`) : '';
   const sent = (app.payouts || []).length ? `
     <div class="fund-card">
       <h2>Sent to you</h2>
       <ul class="fund-sent">${app.payouts.map((x) => `
-        <li><strong>${dollars(x.amountCents)}</strong> check mailed ${dateWords(x.at)}<br><span class="fund-dim fund-small">Check #${esc(x.ref)}. ${esc(CHECK_NOTE)}</span></li>`).join('')}
+        <li><strong>${dollars(x.amountCents)}</strong> check mailed ${dateWords(x.at)}<br><span class="fund-dim fund-small">Check #${esc(x.ref)}. ${esc(CHECK_NOTE)}${Date.now() - new Date(x.at).getTime() < 20 * 86_400_000 ? ` ${esc(chaseLine(x.at))}` : ''}</span></li>`).join('')}
       </ul>
     </div>` : '';
   if (s === 'not_verified') body = `
@@ -536,7 +550,7 @@ function renderStatus() {
 // Eric, 2026-10-04: "There should still be instructions for how to add to
 // Home Screen, and they will receive notifications about their verification
 // status, weekly donation pool total and their split, and any marks that
-// they've been sent their money." The pool went monthly the same day. On iPhone a notification needs the Home
+// they've been sent their money." The totals are posted every Friday. On iPhone a notification needs the Home
 // Screen icon, so the steps come first; whoever never turns them on gets the
 // same news by email.
 
@@ -548,7 +562,7 @@ function notifyCard() {
   return `
     <div class="fund-card fund-notify">
       <h2>Get updates on your phone</h2>
-      <p class="fund-hint">Your verification status, each month's pool and your share, and a note when your check is mailed, with its check number.</p>
+      <p class="fund-hint">Your verification status, the fund's totals and your share so far each Friday, and a note when your check is mailed, with its check number.</p>
       ${pushInstalled() ? '' : `
       <p class="fund-label">Add this page to your Home Screen</p>
       <p class="fund-small"><strong>iPhone:</strong> open this page in Safari, tap Share (the square with an arrow), then <strong>Add to Home Screen</strong>, and open it from the new icon.</p>

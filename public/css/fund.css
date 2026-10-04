@@ -145,6 +145,10 @@ a.fund-btn { display: flex; align-items: center; justify-content: center; text-d
 .fund-two .fund-field { margin: 16px 0 0; }
 .fund-sent { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 10px; }
 .fund-share h2, .fund-notify h2 { margin-top: 0; }
+/* The fund's totals (v7.26): the labels are long, so they take the room and
+   the amounts sit right, never squeezed into a sliver. */
+.fund-share .fund-facts { grid-template-columns: minmax(0, 1fr) auto; }
+.fund-share .fund-facts dd { text-align: right; white-space: nowrap; }
 .fund-notify .fund-btn { margin: 8px 0 0; width: 100%; }
 .fl-discord { font-size: .95rem; margin: -6px 0 18px; }
 .fl-discord a { color: var(--cyan); font-weight: 600; }
