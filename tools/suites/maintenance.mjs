@@ -86,7 +86,8 @@ check('M12 the Worker refusal says the same thing as the page',
 
 // Wired to the front door, and NOWHERE a current client goes.
 const has = (f) => readFileSync(`${ROOT}/public/${f}`, 'utf8').includes('/js/maintenance.js');
-check('M11 on the landing page', has('index.html'));
+// RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs. The fund's landing sells nothing, so the notice rides with the parked page.
+check('M11 on the landing page', has('admin-pr1.html') && !has('index.html'));
 check('M12 on the booking page', has('book.html'));
 check('M13 on the subscribe page', has('subscribe.html'));
 for (const f of ['case.html', 'chat.html', 'signin.html', 'subscription.html'])

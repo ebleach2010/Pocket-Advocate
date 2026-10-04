@@ -26,6 +26,7 @@ const ADMIN = [
   '/admin.html?demo=admin', '/admin-case.html?id=demo-case&demo=admin', '/admin-case.html?id=demo-case-full&demo=admin',
   '/admin-chats.html?demo=admin', '/admin-calendar.html?demo=admin', '/admin-availability.html?demo=admin',
   '/admin-dictionary.html?demo=admin', '/admin-fund.html?demo=admin', '/admin-fund.html?demo=admin#uid=demo-fund-sam',
+  '/admin-pr1.html?demo=admin',
 ];
 const b = await chromium.launch({ executablePath: process.env.PA_CHROMIUM || '/opt/pw-browsers/chromium' });
 const findings = [];

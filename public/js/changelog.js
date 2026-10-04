@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.22';
+export const VERSION = '7.23';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.22';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE LANDING, IN ISOLATION (Eric, 2026-10-04: "take what's on the landing
+    // page and park it as PR 1; hidden from view. So this landing page will be
+    // simple and in isolation"). Admin only.
+    version: '7.23',
+    quiet: true,
+    client: [],
+    admin: [
+      'The landing is now the Community Assistance Fund alone: your card, Apply for Verification, the ways to give, the help email, and a small sign-in link for existing clients.',
+      'The old landing is parked as PR 1, only for you, from the Clients page.',
+      'It says the fundraiser runs through November 2, 2026, and after that day it says the fundraiser ended. The GoFundMe button appears once you send the link.',
+    ],
+  },
   {
     // THE COMMUNITY ASSISTANCE FUND'S VERIFICATION (Eric, 2026-10-04). Built
     // and reachable at /fund.html, not linked from the landing yet. Admin only.

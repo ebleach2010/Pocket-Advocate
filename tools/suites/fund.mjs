@@ -490,6 +490,83 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     JSON.stringify({ gate: !!gate, self: self.status, asClient: asClient.status }));
 }
 
+// ---- F17: the landing is the fund, alone (2026-10-04, v7.23) ------------------
+// Eric: "take what's on the landing page and park it as PR 1; hidden from view. So this landing page
+// will be simple and in isolation." His card word for word, Apply for Verification into the form,
+// the ways to give, the help email and one quiet door for existing clients; nothing that sells.
+// NEGATIVE CONTROL (run 2026-10-04): a `<a href="/services.html">Services</a>` added under the card made this read
+//   FAIL  F17 the landing is the fund alone: his card word for word with Apply for Verification into the form, the dates said plainly, Zazzle second with its cut explained, the help email and a quiet sign-in for existing clients, and no other door, price, booking or maintenance notice; no dash, no word from the blindness list
+{
+  const IDX = f('public/index.html');
+  const READ = IDX.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<!--[\s\S]*?-->/g, '');
+  const links = [...IDX.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]).sort();
+  check('F17 the landing is the fund alone: his card word for word with Apply for Verification into the form, the dates said plainly, Zazzle second with its cut explained, the help email and a quiet sign-in for existing clients, and no other door, price, booking or maintenance notice; no dash, no word from the blindness list',
+    /<title>Community Assistance Fund<\/title>/.test(IDX) && /<h1>Community Assistance Fund<\/h1>/.test(IDX)
+    && READ.includes('Members of our community experiencing significant illness or disability may apply to become verified participants in our community assistance fund. Verification exists to protect members and donors while requiring as little sensitive information as possible.')
+    && /<a class="fund-btn fl-apply" href="\/fund\.html">Apply for Verification<\/a>/.test(IDX)
+    && READ.includes('The fundraiser runs from now through November 2, 2026.')
+    && READ.includes('Zazzle keeps a share of each sale, so giving directly on GoFundMe sends more to the fund.')
+    && /Need help\? Email <a href="mailto:office@pocketadvocacy\.com">office@pocketadvocacy\.com<\/a>/.test(IDX)
+    && /<a href="\/signin\.html">Existing clients: sign in<\/a>/.test(IDX)
+    && links.join() === ['/fund.html', '/signin.html', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com'].sort().join()
+    && !/\$\d|maintenance\.js|book\.html|services\.html|fit\.html|nav class="tabs"/.test(IDX) && /src="\/js\/fund-landing\.js"/.test(IDX)
+    && !DASH.test(IDX) && !HARD.some((re) => re.test(IDX)) && !HARD.some((re) => re.test(f('public/js/fund-landing.js'))) && !DASH.test(f('public/js/fund-landing.js')),
+    JSON.stringify(links));
+}
+
+// ---- F18: the ways to give, on the clock (2026-10-04, v7.23) ---------------------
+// Eric: "Make sure it's explicit that the fundraiser will go from the moment it's live to November 2."
+// And the GoFundMe button: hidden until he sends the link. RUN at fixed instants either side of the
+// end of November 2 in Mountain time, against a fake page, with the link empty and with one set.
+// NEGATIVE CONTROL (run 2026-10-04): FUNDRAISER_ENDS_AT moved to `Date.UTC(2026, 10, 3, 0, 0, 0)` (midnight UTC, the evening of Nov 2 in Mountain time) made this read
+//   FAIL  F18 the ways to give follow the clock: at 11:59 pm Mountain on November 2 the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended November 2 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open
+{
+  const FL = f('public/js/fund-landing.js');
+  const load = (url) => new Function(`${FL.replace(/^export /gm, '').replace("const GOFUNDME_URL = '';", `const GOFUNDME_URL = ${JSON.stringify(url)};`).replace(/if \(typeof document !== 'undefined'\) paintSupport\(document\);/, '')}\nreturn { paintSupport, FUNDRAISER_ENDS_AT, ENDED_LINE };`)();
+  const page = () => {
+    const slot = { innerHTML: '', hidden: true };
+    const box = { innerHTML: 'ORIGINAL', querySelector: (q) => (q === '[data-gofundme]' ? slot : null) };
+    return { root: { querySelector: (q) => (q === '[data-support]' ? box : null) }, box, slot };
+  };
+  const noLink = load('');
+  const before = page();
+  const beforeState = noLink.paintSupport(before.root, Date.parse('2026-11-03T06:59:59Z'));
+  const after = page();
+  const afterState = noLink.paintSupport(after.root, Date.parse('2026-11-03T07:00:00Z'));
+  const withLink = load('https://www.gofundme.com/f/example');
+  const linked = page();
+  const linkedState = withLink.paintSupport(linked.root, Date.parse('2026-10-10T18:00:00Z'));
+  const IDX = f('public/index.html');
+  const support = IDX.slice(IDX.indexOf('data-support'), IDX.indexOf('</section>', IDX.indexOf('data-support')));
+  check('F18 the ways to give follow the clock: at 11:59 pm Mountain on November 2 the block is untouched and no GoFundMe button is drawn while the link is empty; at midnight it reads This fundraiser ended November 2 and nothing else; with a link set, the button is drawn as the recommended way; Apply sits outside the block, so applying stays open',
+    /export const GOFUNDME_URL = '';/.test(FL) && /export const ZAZZLE_URL = 'https:\/\/www\.zazzle\.com\/store\/rooftop_and_reed';/.test(FL)
+    && noLink.FUNDRAISER_ENDS_AT === Date.parse('2026-11-03T07:00:00Z')
+    && beforeState === 'open-no-link' && before.box.innerHTML === 'ORIGINAL' && before.slot.hidden === true && before.slot.innerHTML === ''
+    && afterState === 'ended' && after.box.innerHTML === '<h2>Support the fund</h2><p>This fundraiser ended November 2.</p>'
+    && linkedState === 'open' && linked.slot.hidden === false && /href="https:\/\/www\.gofundme\.com\/f\/example"/.test(linked.slot.innerHTML) && /Give on GoFundMe/.test(linked.slot.innerHTML) && /Recommended/.test(linked.slot.innerHTML)
+    && /<p class="fl-give-row" data-gofundme hidden><\/p>/.test(support) && !/fund\.html/.test(support),
+    JSON.stringify({ beforeState, afterState, linkedState }));
+}
+
+// ---- F19: PR 1, parked (2026-10-04, v7.23) ---------------------------------------
+// The landing as it stood, word for word, behind the admin gate: not indexed, without the redirect
+// that would send its only reader away, linked from the Clients page, and named in the audit's
+// gated pages and in the sideways drive.
+// NEGATIVE CONTROL (run 2026-10-04): the admin-device redirect pasted back into admin-pr1.html made this read
+//   FAIL  F19 PR 1 is the old landing, parked: word for word but for its name, the noindex and the redirect it no longer has; behind the admin gate; linked from the Clients page; named in the audit's gated pages and measured by the sideways drive
+{
+  const PR1 = f('public/admin-pr1.html');
+  const gate = (W.match(/const ADMIN_ASSET =\n\s+(\/.*\/);/) || [])[1];
+  const RE = gate ? new Function(`return ${gate}`)() : /$^/;
+  check('F19 PR 1 is the old landing, parked: word for word but for its name, the noindex and the redirect it no longer has; behind the admin gate; linked from the Clients page; named in the audit\'s gated pages and measured by the sideways drive',
+    /<title>PR 1 · Pocket Advocate<\/title>/.test(PR1) && /<meta name="robots" content="noindex">/.test(PR1) && !/pa-admin-device|location\.replace/.test(PR1)
+    && /<h2>Ready when you are\.<\/h2>/.test(PR1) && /src="\/js\/maintenance\.js"/.test(PR1) && /class="land-sec hero"/.test(PR1)
+    && RE.test('/admin-pr1.html') && RE.test('/admin-pr1')
+    && /<a class="btn quiet" href="\/admin-pr1\.html">PR 1 \(the parked landing\)<\/a>/.test(f('public/js/admin.js'))
+    && /'\/admin-pr1',/.test(f('tools/blindness-audit.mjs')) && /'\/admin-pr1\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')),
+    `${PR1.length} bytes`);
+}
+
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);
 if (failed.length) { for (const x of failed) console.log(`  FAILED: ${x.name}`); process.exit(1); }

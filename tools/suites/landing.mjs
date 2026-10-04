@@ -46,7 +46,8 @@ function check(name, cond, detail = '') {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond || !detail ? '' : `  -- ${detail}`}`);
 }
 
-const IDX = f('public/index.html');
+// RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
+const IDX = f('public/admin-pr1.html');
 const GLOW = f('public/css/glowup.css');
 const SITE = f('public/css/site.css');
 // The page without its scripts and HTML comments: what a person reads.
@@ -243,7 +244,8 @@ console.log('\n--- D. the audit fixes ---');
       .every((n) => { const t = f(`public/${n}`); return !/site\.css\?v=sp13|glowup\.css\?v=sp[56]\b/.test(t); }));
   check('D7 "Ready when you are." closes exactly one page, and about.html says the legal part once in main and once in the site footer',
   readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html'))
-    .filter((n) => /<h2>Ready when you are\.<\/h2>/.test(f(`public/${n}`))).join() === 'index.html'
+    // RE-PINNED 2026-10-04 (v7.23): the page it closes is the parked landing, PR 1.
+    .filter((n) => /<h2>Ready when you are\.<\/h2>/.test(f(`public/${n}`))).join() === 'admin-pr1.html'
   && !/<footer class="legal">/.test(f('public/about.html'))
   && (f('public/about.html').match(/<h2>The legal basics<\/h2>/g) || []).length === 1
   && (f('public/about.html').match(/If you are having a medical emergency, call 911\./g) || []).length === 1);
@@ -263,8 +265,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
 check('E1 not one em or en dash in the served page, comments included', !/[–—]/.test(IDX));
 check('E2 not one term from the blindness list, in the page or the new stylesheet section',
   HARD.every((re) => !re.test(IDX)) && HARD.every((re) => !re.test(GLOW.slice(GLOW.indexOf('18. LANDING')))));
+// RE-PINNED 2026-10-04 (v7.23): parked as PR 1, the old landing keeps its maintenance notice and loses
+// the redirect, since it would send the one person who can open it away; the redirect, with its demo
+// guard, stays on the public landing, which is the fund's now.
 check('E3 the landing still wears the maintenance notice and the demo never redirects an admin device',
-  /src="\/js\/maintenance\.js"/.test(IDX) && /sessionStorage\.getItem\('pa-demo'\)\)\) return;/.test(IDX));
+  /src="\/js\/maintenance\.js"/.test(IDX) && !/pa-admin-device/.test(IDX)
+  && /sessionStorage\.getItem\('pa-demo'\)\)\) return;/.test(f('public/index.html')) && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(f('public/index.html')));
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

@@ -319,7 +319,8 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
 {
   const page = f('public/stats.html');
   const js = f('public/js/stats.js');
-  const idx = f('public/index.html');
+  // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
+  const idx = f('public/admin-pr1.html');
   const strip = idx.slice(idx.indexOf('id="numbers"'), idx.indexOf('The whole ledger') + 40);
   const fresh = [page, js, strip];
   check('D1 the page carries the four tiles, the ledger, the floor line and loads stats.js',

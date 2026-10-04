@@ -266,6 +266,20 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The landing, in isolation, and PR 1 (2026-10-04, v7.23)
+
+Eric: "take what's on the landing page and park it as PR 1; hidden from view.
+So this landing page will be simple and in isolation." `index.html` is the
+fund's card alone, the ways to give, the help email and a quiet sign-in; the
+old landing is `admin-pr1.html`, word for word behind the admin gate, without
+the redirect that would send its only reader away. Every pin on the old
+landing (landing.mjs, checkins W7, stats D2/D3/D9, fitcall F8 to F10, defects'
+advocate door, maintenance M11) reads PR 1 now, each with a dated note.
+`fund.mjs` F17 holds the new landing's words and doors, F18 RUNS the support
+block at either side of the end of November 2 in Mountain time and with and
+without a GoFundMe link (`GOFUNDME_URL` in `public/js/fund-landing.js`, empty
+until Eric sends it), and F19 holds PR 1 parked.
+
 ### The Community Assistance Fund's verification (2026-10-04, v7.22)
 
 Eric's brief: verify that applicants are real community members with

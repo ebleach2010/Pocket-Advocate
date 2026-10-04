@@ -304,7 +304,8 @@ check('W6 the one client fallback left moved with it; booking compiles no tier p
 // actually sells. A move to the wrong page still fails here.
 check('W7 the landing sells with his phrase, and the value math is on the services page',
   (() => {
-    const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');
+    // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
+    const idx = readFileSync(`${ROOT}/public/admin-pr1.html`, 'utf8');
     const svc = readFileSync(`${ROOT}/public/services.html`, 'utf8');
     // His words, on the page a stranger arrives at.
     const hisPhrase = /5 years' worth of boots on the ground experience/.test(idx);

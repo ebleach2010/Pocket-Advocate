@@ -128,8 +128,9 @@ const EXTRA = [
 const ADMIN_PAGES = [
   '/admin', '/admin.html', '/admin-case', '/admin-chats', '/admin-calendar',
   '/admin-availability', '/admin-dictionary',
-  // 2026-10-04: the fund's verification queue.
-  '/admin-fund',
+  // 2026-10-04: the fund's verification queue, and PR 1, the landing that
+  // stood before the fund's, parked behind the gate.
+  '/admin-fund', '/admin-pr1',
 ];
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',

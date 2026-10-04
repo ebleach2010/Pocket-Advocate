@@ -121,3 +121,21 @@ body.fund { background: var(--bg); color: var(--ink); }
 @media (prefers-reduced-motion: no-preference) {
   .fund-progress-bar span { transition: width .3s ease; }
 }
+
+/* The landing (2026-10-04): the card alone at the top of the screen, the
+   ways to give under it, and the doors at the foot. A link that does a
+   button's job looks like the button. */
+.fl-main { padding-top: 40px; }
+.fl-card { padding: 26px 20px; }
+.fl-card h1 { font-size: 1.8rem; margin-top: 0; }
+.fl-lede { font-size: 1.08rem; line-height: 1.55; margin: 0 0 20px; }
+a.fund-btn { display: flex; align-items: center; justify-content: center; text-decoration: none; text-align: center; }
+.fl-support { padding: 4px 4px 0; }
+.fl-support h2 { margin-top: 1.6rem; }
+.fl-dates { font-weight: 700; }
+.fl-give-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.fl-give-row .fund-btn { flex: 1 1 220px; }
+.fl-rec { color: var(--dim); font-size: .88rem; font-weight: 600; }
+.fl-link { color: var(--cyan); font-weight: 600; }
+.fl-signin { text-align: center; margin: 10px 0 0; font-size: .92rem; }
+.fl-signin a { color: var(--dim); }
