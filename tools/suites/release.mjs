@@ -64,6 +64,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const num = (v) => v.split('.').map(Number);
   const atLeast = (v, w) => { const [a, b] = num(v); const [c, e] = num(w); return a > c || (a === c && b >= e); };
   const since46 = changelog.CHANGELOG.filter((e) => atLeast(e.version, '4.6'));
+  // RE-PINNED 2026-10-04 (v7.24): both versions read 7.24 with the fund-payouts tag, and the 7.24 entry
+  // says what the fund gained in his words; the 7.23 entry keeps its own.
+  const entry724 = (CL.match(/\{\n\s+\/\/ THE FUND, PAID OUT \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-04, v7.24): the worker's BUILD_TAG left at the fund-landing tag made this read
+  //   FAIL  R1 both versions read 7.24 with the new tag, the 7.24 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
   // RE-PINNED 2026-10-04 (v7.23): both versions read 7.23 with the fund-landing tag, and the 7.23 entry
   // says the landing is the fund alone; the 7.22 entry keeps its own.
   const entry723 = (CL.match(/\{\n\s+\/\/ THE LANDING, IN ISOLATION \(Eric, 2026-10-04[\s\S]*?\n  \},/) || [''])[0];
@@ -71,9 +76,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   //   FAIL  R1 both versions read 7.23 with the new tag, the 7.23, 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
   // NEGATIVE CONTROL (run 2026-10-04, v7.22): the 7.22 entry's `quiet: true` taken off made this read
   //   FAIL  R1 both versions read 7.22 with the new tag, the 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.23 with the new tag, the 7.23, 7.22 and 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.23';/.test(CL) && /const VERSION = '7\.23';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-landing';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.23'
+  check('R1 both versions read 7.24 with the new tag, the 7.24 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.24';/.test(CL) && /const VERSION = '7\.24';/.test(W) && /const BUILD_TAG = 'v2026-10-04-fund-payouts';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.24'
+    && /version: '7\.24',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry724)
+    && /Checks come from Mercury and take 7 to 10 business days\./.test(entry724) && /You are never in the split\./.test(entry724)
+    && !DASH.test(entry724) && !HARD.some((re) => re.test(entry724))
     && /version: '7\.23',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry723)
     && /The landing is now the Community Assistance Fund alone/.test(entry723) && /parked as PR 1/.test(entry723)
     && !DASH.test(entry723) && !HARD.some((re) => re.test(entry723))

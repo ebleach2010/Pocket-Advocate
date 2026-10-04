@@ -547,9 +547,10 @@ export function seed({ set, file }) {
   });
 
   // ---- the Community Assistance Fund (2026-10-04) ----------------------------
-  // Three invented applicants for the reviewer's queue: one waiting, one
-  // verified with a reverification date, and his own, which shows the
-  // self-verification block. The client demo has none, so it walks the form.
+  // Two invented applicants for the reviewer's queue: one waiting, one
+  // verified with a reverification date and a check in the mail. He never
+  // applies (Eric, 2026-10-04: "I will not be included in the payout. I only
+  // organize."). The client demo has none, so it walks the form.
   const ref = (uid, kind, n, type = 'application/pdf', size = 412_000) => {
     const id = `${uid.replace(/\W/g, '').slice(-6)}${kind}${n}`.padEnd(24, '0').replace(/[^0-9a-f]/g, 'a').slice(0, 24);
     const path = `fund/${uid}/${kind}/${id}.${type === 'application/pdf' ? 'pdf' : 'jpg'}`;
@@ -560,6 +561,7 @@ export function seed({ set, file }) {
   set('fundApplications/demo-fund-sam', {
     userId: 'demo-fund-sam', verificationStatus: 'submitted', step: 6, discordUsername: 'samwise_r', preferredName: 'Sam',
     legalName: 'Samantha Rivera', email: '', applicantNote: 'The letter is from my neurologist. I blacked out the parts about medications.',
+    needStatement: 'I had to stop working in March and my savings ran out in August. Rent and my medications take everything my partner earns.',
     discordMember: true, participationRequested: true, participationActive: false, photoPublicConsent: true, photoConsentAt: days(2),
     identityDocument: ref('demo-fund-sam', 'id', 1, 'image/jpeg', 1_800_000),
     medicalDocuments: [ref('demo-fund-sam', 'medical', 1), ref('demo-fund-sam', 'medical', 2, 'application/pdf', 96_000)],
@@ -571,20 +573,13 @@ export function seed({ set, file }) {
   set('fundApplications/demo-fund-jo', {
     userId: 'demo-fund-jo', verificationStatus: 'verified', step: 6, discordUsername: 'jo.wren', preferredName: 'Jo',
     legalName: 'Joanna Wren', email: '', applicantNote: '', discordMember: true, participationRequested: true, participationActive: true,
+    needStatement: 'My infusions are only partly covered and the copays come every three weeks.',
     identityDocument: ref('demo-fund-jo', 'id', 1), medicalDocuments: [ref('demo-fund-jo', 'medical', 1)], photo: null,
     consents, submittedAt: days(40), reviewedAt: days(38), verifiedAt: days(38), reviewerId: 'demo-admin',
     reverificationDueAt: new Date(days(38).getTime() + 182 * 86_400_000), createdAt: days(41), updatedAt: days(38),
     audit: [{ at: days(40), by: 'demo-fund-jo', act: 'submitted', from: 'draft', to: 'submitted' }, { at: days(38), by: 'demo-admin', act: 'verify', from: 'under_review', to: 'verified' }],
   });
-  set('fundPayments/demo-fund-jo', { userId: 'demo-fund-jo', method: 'paypal', handle: 'jo.wren@example.com', accountName: '', otherMethod: '', updatedAt: days(40) });
-  set('fundApplications/demo-admin', {
-    userId: 'demo-admin', verificationStatus: 'submitted', step: 6, discordUsername: 'eric_pa', preferredName: 'Eric',
-    legalName: 'Eric Bleach', email: '', applicantNote: '', discordMember: true, participationRequested: true, participationActive: false,
-    identityDocument: ref('demo-admin', 'id', 1), medicalDocuments: [ref('demo-admin', 'medical', 1)], photo: null,
-    consents, submittedAt: days(1), createdAt: days(1), updatedAt: days(1),
-    audit: [{ at: days(1), by: 'demo-admin', act: 'submitted', from: 'draft', to: 'submitted' }],
-  });
-  set('fundPayments/demo-admin', { userId: 'demo-admin', method: 'zelle', handle: 'eric@example.com', accountName: '', otherMethod: '', updatedAt: days(1) });
+  set('fundPayments/demo-fund-jo', { userId: 'demo-fund-jo', method: 'check', handle: '', accountName: 'Joanna Wren', otherMethod: '', address: { line1: '412 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' }, updatedAt: days(40) });
 }
 
 export const DEMO_CASE_ID = CASE_ID;

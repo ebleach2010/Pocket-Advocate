@@ -41,11 +41,22 @@ import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
   FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView, sniff,
+  isActiveParticipant, shareOf, dollars, METHOD_WORDS, CHECK_NOTE,
 } from '../public/js/fund-rules.js';
 
 const AUDIT_MAX = 200;
 // A second reviewer's uid goes here once there is one.
 export const FUND_REVIEWER_UIDS = [];
+// Everyone who reviews, and so is never in a payout (Eric, 2026-10-04: "I
+// will not be included in the payout. I only organize.").
+const reviewerUids = (env) => [env.ADMIN_UID, ...FUND_REVIEWER_UIDS].filter(Boolean);
+const POOL = 'fundPool/current';
+// How many participants one firing tells about the week's pool: each one is
+// a profile read, a push or an email, inside the fifty outside calls an
+// invocation gets.
+const NOTICES_PER_RUN = 8;
+const SITE = 'https://thepocketadvocates.com/fund.html';
+const escHtml = (v) => String(v ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status,
@@ -100,7 +111,14 @@ async function handleMe(env, user) {
     getDoc(env, `fundApplications/${user.uid}`),
     getDoc(env, `fundPayments/${user.uid}`),
   ]);
-  return json({ application: applicantView(app?.data || null, pay?.data || null) });
+  const view = applicantView(app?.data || null, pay?.data || null);
+  // A participant sees the week's pool and their share of it (Eric,
+  // 2026-10-04: "so each participant can see their active share").
+  if (view && isActiveParticipant(user.uid, app.data, reviewerUids(env))) {
+    const pool = (await getDoc(env, POOL).catch(() => null))?.data;
+    if (pool?.totalCents) view.pool = { totalCents: pool.totalCents, shareCents: pool.shareCents, activeCount: pool.activeCount, asOf: pool.updatedAt };
+  }
+  return json({ application: view });
 }
 
 async function handleDraft(request, env, user) {
@@ -350,15 +368,55 @@ async function handleFile(env, url, rev) {
   });
 }
 
-/** One generic line to the applicant's sign-in email: never what changed or why. */
-async function tellApplicant(env, app) {
-  const to = app?.accountEmail;
-  if (!to) return;
-  await sendEmail(env, {
-    to,
-    subject: 'An update on your Community Assistance Fund application',
-    html: '<p>There is an update on your Community Assistance Fund application.</p><p>Sign in at <a href="https://thepocketadvocates.com/fund.html">thepocketadvocates.com/fund.html</a> to see it.</p>',
-  }).catch(() => {});
+/**
+ * Tells an applicant something: a push when they turned notifications on,
+ * and an email when they did not or when `alsoEmail` says it must go
+ * (Eric, 2026-10-04: the approval or the denial "with the reason is sent to
+ * their email"). The email goes to the address they gave, or the one they
+ * signed in with. Never throws.
+ */
+export async function fundNotify(env, uid, app, { title, body, subject, lines, alsoEmail = false }) {
+  try {
+    const prof = await getDoc(env, `users/${uid}`).catch(() => null);
+    const hasPush = Array.isArray(prof?.data?.pushSubs) && prof.data.pushSubs.length > 0;
+    if (hasPush) await notifyUser(env, uid, { title, body, link: '/fund.html', max: 3 });
+    const to = app?.email || app?.accountEmail;
+    if ((alsoEmail || !hasPush) && to && subject) {
+      const html = `${lines.map((l) => `<p>${escHtml(l)}</p>`).join('')}<p><a href="${SITE}">Open the Community Assistance Fund</a></p>`;
+      await sendEmail(env, { to, subject, html });
+    }
+  } catch { /* best effort, like every notice */ }
+}
+
+/** The decision, in words the applicant reads in their email. */
+export function decisionNotice(app) {
+  const s = app?.verificationStatus;
+  const msg = String(app?.applicantMessage || '').trim();
+  if (s === 'verified') return {
+    title: 'Community Assistance Fund', body: 'Your application is approved. You are verified.',
+    subject: 'Your Community Assistance Fund application is approved',
+    lines: [
+      'Your application is approved, and you are now a verified participant.',
+      app.participationActive ? 'You are set to receive distributions. Each week you will see the pool total and your share.' : 'You chose not to receive distributions.',
+      app.reverificationDueAt ? `Your next reverification is due ${new Date(app.reverificationDueAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric', timeZone: 'America/Boise' })}.` : '',
+      'Verification confirms eligibility only. It is not a medical opinion.',
+    ].filter(Boolean),
+  };
+  if (s === 'not_verified') return {
+    title: 'Community Assistance Fund', body: 'Your application was not approved. Your email has the reason.',
+    subject: 'Your Community Assistance Fund application was not approved',
+    lines: ['Your application was not approved.', `The reason: ${msg}`, 'If you have questions, reply to office@pocketadvocacy.com.'],
+  };
+  if (s === 'more_info') return {
+    title: 'Community Assistance Fund', body: 'More information is needed on your application.',
+    subject: 'More information is needed on your Community Assistance Fund application',
+    lines: ['More information is needed before your application can be finished.', `What is needed: ${msg}`, 'Sign in, make your changes, and submit again.'],
+  };
+  return {
+    title: 'Community Assistance Fund', body: 'Your participation is now inactive.',
+    subject: 'Your Community Assistance Fund participation is inactive',
+    lines: ['Your participation in the Community Assistance Fund is now inactive.', 'If you have questions, reply to office@pocketadvocacy.com.'],
+  };
 }
 
 async function handleAct(request, env, rev, ctx) {
@@ -368,15 +426,16 @@ async function handleAct(request, env, rev, ctx) {
   if (!okUid(uid) || !ACTIONS.has(action)) return json({ error: 'That action is not available.' }, 400);
   // The rule, before anything is read: nobody verifies their own application.
   if ((action === 'verify' || action === 'reverify') && uid === rev.uid) return json({ error: SELF_VERIFY_REFUSAL }, 403);
-  // Eric's brief: "Require the reviewer to enter a brief internal reason when
-  // declining verification or requesting more information." The reason is
-  // the reviewer's own and stays in the audit history; what the applicant
-  // reads is a separate, optional message.
+  // Eric, 2026-10-04: "I approve or deny their application (if denied, I give
+  // a message why). Then their application approval or denial with the
+  // reason is sent to their email." So a denial, and a request for more, each
+  // need the message the applicant reads; a private reason may ride beside
+  // it into the history.
   const reason = clean(body?.reason, 1000);
   const message = clean(body?.message, 1000);
   const note = clean(body?.note, 4000);
-  if ((action === 'request_info' || action === 'decline') && reason.length < 2)
-    return json({ error: action === 'decline' ? 'Write a brief internal reason for declining.' : 'Write a brief internal reason for asking for more information.' }, 400);
+  if ((action === 'request_info' || action === 'decline') && message.length < 2)
+    return json({ error: action === 'decline' ? 'Write the reason for the denial. It is sent to the applicant.' : 'Write what you need from the applicant. It is sent to them.' }, 400);
   const out = await mutate(env, `fundApplications/${uid}`, (cur) => {
     if (!cur) return { error: 'Not found', status: 404 };
     const from = cur.verificationStatus;
@@ -401,11 +460,135 @@ async function handleAct(request, env, rev, ctx) {
   });
   if (out.error) return json({ error: out.error }, out.status || 400);
   if (action !== 'note') {
-    const mail = tellApplicant(env, out.data);
+    const mail = fundNotify(env, uid, out.data, { ...decisionNotice(out.data), alsoEmail: true });
     if (ctx?.waitUntil) ctx.waitUntil(mail); else await mail;
   }
   const pay = (await getDoc(env, `fundPayments/${uid}`))?.data || null;
   return json({ ok: true, me: rev.uid, application: reviewerView(uid, out.data, pay) });
+}
+
+// ---- the weekly pool and the payouts ---------------------------------------
+// Eric, 2026-10-04: "I will update the amount in the donation pool weekly so
+// each participant can see their active share." The share is equal, the
+// pool split among everyone verified and taking part, reviewers never among
+// them. Telling each participant is queued and the cron drains it, a few a
+// minute, because one request cannot reach everyone inside its fifty calls.
+
+async function participants(env) {
+  const rows = await listDocs(env, 'fundApplications', { pageSize: 300, all: true });
+  const revs = reviewerUids(env);
+  return rows.filter((r) => isActiveParticipant(r.id, r.data, revs));
+}
+
+const payWords = (p) => {
+  if (!p?.method) return 'no payment details yet';
+  if (p.method === 'check') {
+    const a = p.address || {};
+    return `Check to ${p.accountName}, ${[a.line1, a.line2].filter(Boolean).join(', ')}, ${a.city}, ${a.state} ${a.zip}`;
+  }
+  if (p.method === 'bank') return `Bank transfer, name on the account: ${p.accountName}`;
+  if (p.method === 'other') return `${p.otherMethod}: ${p.handle}`;
+  return `${METHOD_WORDS[p.method]}: ${p.handle}`;
+};
+
+async function handlePoolGet(env, rev) {
+  const [pool, list] = await Promise.all([getDoc(env, POOL).catch(() => null), participants(env)]);
+  const p = pool?.data || null;
+  const since = p?.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+  const rows = [];
+  for (const r of list) {
+    const pay = (await getDoc(env, `fundPayments/${r.id}`).catch(() => null))?.data || null;
+    const last = (Array.isArray(r.data.payouts) ? r.data.payouts : []).slice(-1)[0] || null;
+    rows.push({
+      uid: r.id, preferredName: r.data.preferredName || '', method: pay?.method || null, payTo: payWords(pay),
+      lastPayout: last ? { at: last.at, amountCents: last.amountCents, ref: last.ref } : null,
+      paidThisRound: !!last && new Date(last.at).getTime() >= since && since > 0,
+    });
+  }
+  return json({
+    me: rev.uid,
+    pool: p ? { totalCents: p.totalCents, activeCount: p.activeCount, shareCents: p.shareCents, updatedAt: p.updatedAt, pending: (p.pending || []).length } : null,
+    participants: rows,
+  });
+}
+
+async function handlePoolSet(request, env, rev) {
+  const body = await request.json().catch(() => ({}));
+  const totalCents = Number(body?.totalCents);
+  if (!Number.isInteger(totalCents) || totalCents < 0 || totalCents > 100_000_000) return json({ error: 'Enter the pool total in dollars and cents, like 1240.50.' }, 400);
+  const list = await participants(env);
+  const shareCents = shareOf(totalCents, list.length);
+  const now = new Date();
+  const cur = (await getDoc(env, POOL).catch(() => null))?.data || {};
+  const history = [...(Array.isArray(cur.history) ? cur.history : []), { at: now, totalCents, activeCount: list.length, shareCents, by: rev.uid }].slice(-104);
+  await patchDoc(env, POOL, {
+    totalCents, activeCount: list.length, shareCents, updatedAt: now, updatedBy: rev.uid,
+    history, pending: totalCents > 0 ? list.map((r) => r.id) : [],
+  });
+  return handlePoolGet(env, rev);
+}
+
+/**
+ * The cron's part: tell the next few participants this week's pool and
+ * their share. Nothing here calls a paid model; it is reads, pushes and
+ * emails, and it does nothing at all when nobody is waiting.
+ */
+export async function drainFundNotices(env) {
+  const doc = await getDoc(env, POOL).catch(() => null);
+  const pending = Array.isArray(doc?.data?.pending) ? doc.data.pending : [];
+  if (!pending.length) return 0;
+  const batch = pending.slice(0, NOTICES_PER_RUN);
+  // Claim first, under the update time, so two firings never tell anyone twice.
+  const ok = await patchDoc(env, POOL, { pending: pending.slice(batch.length) }, { mask: ['pending'], ifUpdateTime: doc.updateTime }).catch(() => false);
+  if (!ok) return 0;
+  const { totalCents, shareCents } = doc.data;
+  for (const uid of batch) {
+    const app = (await getDoc(env, `fundApplications/${uid}`).catch(() => null))?.data;
+    if (!isActiveParticipant(uid, app, reviewerUids(env))) continue;
+    await fundNotify(env, uid, app, {
+      title: 'Community Assistance Fund',
+      body: `This week's pool is ${dollars(totalCents)}. Your share is ${dollars(shareCents)}.`,
+      subject: `This week's Community Assistance Fund pool: ${dollars(totalCents)}`,
+      lines: [`This week's pool is ${dollars(totalCents)}.`, `Your share is ${dollars(shareCents)}.`, 'You will get another note when your share has been sent.'],
+    });
+  }
+  return batch.length;
+}
+
+/** Eric marks one participant's money as sent, with its ID number. */
+async function handlePayout(request, env, rev, ctx) {
+  const body = await request.json().catch(() => ({}));
+  const uid = body?.uid;
+  const amountCents = Number(body?.amountCents);
+  const ref = clean(body?.ref, 60);
+  if (!okUid(uid)) return json({ error: 'Not found' }, 404);
+  if (reviewerUids(env).includes(uid)) return json({ error: 'Reviewers are not paid from the fund.' }, 403);
+  if (!Number.isInteger(amountCents) || amountCents <= 0 || amountCents > 100_000_000) return json({ error: 'Enter the amount sent, like 124.00.' }, 400);
+  if (ref.length < 2) return json({ error: 'Add the ID number of the payment.' }, 400);
+  const pay = (await getDoc(env, `fundPayments/${uid}`).catch(() => null))?.data || null;
+  const method = pay?.method || 'other';
+  const out = await mutate(env, `fundApplications/${uid}`, (cur) => {
+    if (!cur) return { error: 'Not found', status: 404 };
+    if (!isActiveParticipant(uid, cur, reviewerUids(env))) return { error: 'Only a verified participant who is taking part can be paid.', status: 409 };
+    const row = { at: new Date(), amountCents, method, ref, by: rev.uid };
+    return { patch: {
+      payouts: [...(Array.isArray(cur.payouts) ? cur.payouts : []), row].slice(-200),
+      updatedAt: new Date(),
+      audit: withAudit(cur, { ...auditRow(rev.uid, 'payout-sent'), msg: `${dollars(amountCents)} by ${METHOD_WORDS[method]}, ID #${ref}` }),
+    } };
+  });
+  if (out.error) return json({ error: out.error }, out.status || 400);
+  const check = method === 'check';
+  const note = fundNotify(env, uid, out.data, {
+    title: 'Community Assistance Fund',
+    body: check ? `Your ${dollars(amountCents)} check was mailed. ID #${ref}. Allow 7 to 10 business days.` : `Your ${dollars(amountCents)} share was sent by ${METHOD_WORDS[method]}. ID #${ref}.`,
+    subject: check ? 'Your Community Assistance Fund check is in the mail' : 'Your Community Assistance Fund share was sent',
+    lines: check
+      ? [`Your share of ${dollars(amountCents)} was mailed by check.`, `ID #${ref}`, CHECK_NOTE]
+      : [`Your share of ${dollars(amountCents)} was sent by ${METHOD_WORDS[method]}.`, `ID #${ref}`],
+  });
+  if (ctx?.waitUntil) ctx.waitUntil(note); else await note;
+  return json({ ok: true, payout: { at: new Date(), amountCents, method, ref } });
 }
 
 /**
@@ -444,6 +627,9 @@ export async function handleFund(request, env, url, ctx) {
     if (p === '/api/admin/fund/view' && request.method === 'GET') return handleView(env, url, rev);
     if (p === '/api/admin/fund/file' && request.method === 'GET') return handleFile(env, url, rev);
     if (p === '/api/admin/fund/act' && request.method === 'POST') return handleAct(request, env, rev, ctx);
+    if (p === '/api/admin/fund/pool' && request.method === 'GET') return handlePoolGet(env, rev);
+    if (p === '/api/admin/fund/pool' && request.method === 'POST') return handlePoolSet(request, env, rev);
+    if (p === '/api/admin/fund/payout' && request.method === 'POST') return handlePayout(request, env, rev, ctx);
     return json({ error: 'Not found' }, 404);
   }
   const user = await requireUser(request, env);

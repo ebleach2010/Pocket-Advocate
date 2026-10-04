@@ -22,6 +22,8 @@
 //   GET    /api/admin/fund/view     one application, logged in its audit history (reviewer only)
 //   GET    /api/admin/fund/file     one of its files' bytes, never a storage URL, logged (reviewer only)
 //   POST   /api/admin/fund/act      verify, reverify, request information, decline, inactive, note; never one's own verification (reviewer only)
+//   GET/POST /api/admin/fund/pool    the weekly pool: who shares it and how to pay them; set the total and queue each participant's notice (reviewer only)
+//   POST   /api/admin/fund/payout   mark one participant's share sent, with its ID number; they are told (reviewer only)
 //   POST   /api/admin/case-update  join link / milestones / close / contact: phone and home address (admin)
 //   POST   /api/admin/self-case    a new case of his own, with his details, pulling from the personal cases he ticks (admin)
 //   POST   /api/admin/self-case/next  close his own case with its top diagnosis confirmed and open the next one from it (admin)
@@ -59,7 +61,7 @@ import { notifyUser } from './push.js';
 import { validateAction } from './advisor-acts.js';
 // The Community Assistance Fund's verification (2026-10-04): every route,
 // the applicant's and the reviewer's, lives in worker/fund.js.
-import { handleFund } from './fund.js';
+import { handleFund, drainFundNotices } from './fund.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
@@ -1393,6 +1395,10 @@ export default {
     // a quarter hour of the old behaviour after the deploy is a quarter hour
     // in which somebody can buy a case he has said he cannot take.
     ctx.waitUntil(closeBookingsAug2026(env));
+    // The fund's weekly pool notices (2026-10-04): a few participants a
+    // minute, so nobody waits past the next firing's turn. One read when
+    // nobody is waiting; no model anywhere in it.
+    ctx.waitUntil(drainFundNotices(env).catch(() => 0));
     // THE KILL, found by the flight recorder (2026-08-24). Cloudflare's
     // fifteen minute guarantee attaches to the promise scheduled() RETURNS:
     // "The runtime waits for the promise returned by the scheduled() handler
@@ -2036,7 +2042,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-04-fund-landing';
+const BUILD_TAG = 'v2026-10-04-fund-payouts';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2044,7 +2050,7 @@ const BUILD_TAG = 'v2026-10-04-fund-landing';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.23';
+const VERSION = '7.24';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

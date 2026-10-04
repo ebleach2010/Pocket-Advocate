@@ -139,3 +139,13 @@ a.fund-btn { display: flex; align-items: center; justify-content: center; text-d
 .fl-link { color: var(--cyan); font-weight: 600; }
 .fl-signin { text-align: center; margin: 10px 0 0; font-size: .92rem; }
 .fl-signin a { color: var(--dim); }
+
+/* State and ZIP side by side; what was sent, one line each (2026-10-04). */
+.fund-two { display: grid; grid-template-columns: 1fr 1.4fr; gap: 12px; }
+.fund-two .fund-field { margin: 16px 0 0; }
+.fund-sent { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 10px; }
+.fund-share h2, .fund-notify h2 { margin-top: 0; }
+.fund-notify .fund-btn { margin: 8px 0 0; width: 100%; }
+.fl-discord { font-size: .95rem; margin: -6px 0 18px; }
+.fl-discord a { color: var(--cyan); font-weight: 600; }
+.fund-card > h2:first-child { margin-top: 0; }

@@ -429,7 +429,10 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // the list, so all seven move to stat128.
     // NEGATIVE CONTROL (run 2026-10-04, v7.22): admin-fund.html put back to stat127 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat128/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-04 (v7.24): the pool panel and the payouts joined the stylesheet: stat129.
+    // NEGATIVE CONTROL (run 2026-10-04, v7.24): admin-fund.html put back to stat128 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat129/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

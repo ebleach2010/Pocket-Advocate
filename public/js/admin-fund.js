@@ -9,6 +9,7 @@
 // refuses them there whatever this page does.
 
 import { requireAdmin, hydrateNav } from './auth.js';
+import { dollars, CHECK_NOTE } from './fund-rules.js';
 
 hydrateNav();
 const user = await requireAdmin();
@@ -47,10 +48,11 @@ const HISTORY_WORDS = {
   viewed: 'Opened the application', 'review-started': 'Review started',
   'opened-id': 'Opened the ID document', 'opened-medical': 'Opened a medical document', 'opened-photo': 'Opened the photo',
   verify: 'Verified', reverify: 'Reverified', request_info: 'Asked for more information', decline: 'Declined verification',
-  inactive: 'Marked inactive', 'note-saved': 'Saved the internal note',
+  inactive: 'Marked inactive', 'note-saved': 'Saved the internal note', 'payout-sent': 'Marked money sent',
 };
 const TYPE_WORDS = { 'application/pdf': 'PDF', 'image/jpeg': 'JPG', 'image/png': 'PNG', 'image/heic': 'HEIC', 'image/heif': 'HEIF', 'image/webp': 'WEBP' };
-const METHOD_WORDS = { paypal: 'PayPal', venmo: 'Venmo', zelle: 'Zelle', bank: 'Bank transfer', other: 'Other' };
+const METHOD_WORDS = { paypal: 'PayPal', venmo: 'Venmo', zelle: 'Zelle', bank: 'Bank transfer', check: 'Check', other: 'Other' };
+const toCents = (v) => { const n = Number(String(v || '').replace(/[$,\s]/g, '')); return Number.isFinite(n) ? Math.round(n * 100) : NaN; };
 const when = (v) => (v ? new Date(v).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '');
 const day = (v) => (v ? new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '');
 const sizeWords = (n) => (n >= 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round((n || 0) / 1024))} KB`);
@@ -97,6 +99,8 @@ async function list() {
   const shown = rows.filter((r) => pick[2](r.verificationStatus))
     .sort((x, y) => (filter === 'waiting' ? at(x) - at(y) : at(y) - at(x)));
   el.innerHTML = `
+    <div id="fq-pool"><p class="dim small">Loading the pool…</p></div>
+    <h2 class="fq-sub">Applications</h2>
     <div class="fq-chips" role="tablist">${FILTERS.map(([k, w, fn]) => `
       <button type="button" class="fq-chip${k === filter ? ' on' : ''}" data-f="${k}" role="tab" aria-selected="${k === filter}">${w} <span>${count(fn)}</span></button>`).join('')}
     </div>
@@ -108,6 +112,68 @@ async function list() {
         ${r.reverificationOverdue ? '<span class="fq-flag due">reverification due</span>' : ''}
       </a></li>`).join('')}</ul>` : '<p class="dim">Nothing here.</p>'}`;
   el.querySelectorAll('[data-f]').forEach((b) => b.addEventListener('click', () => { filter = b.dataset.f; list(); }));
+  pool();
+}
+
+// ---- the weekly pool (Eric, 2026-10-04: "I will update the amount in the
+// donation pool weekly so each participant can see their active share.") ----
+async function pool(data) {
+  const box = el.querySelector('#fq-pool');
+  if (!box) return;
+  let out = data;
+  if (!out) {
+    try { out = await api('/api/admin/fund/pool'); } catch (err) { box.innerHTML = `<p class="error">Couldn't load the pool: ${esc(err.message)}</p>`; return; }
+  }
+  const p = out.pool;
+  const rows = out.participants || [];
+  box.innerHTML = `
+    <section class="fq-pool">
+      <h2 class="fq-sub">Donation pool</h2>
+      ${p ? `<dl class="fq-facts">
+        <dt>This week</dt><dd>${dollars(p.totalCents)}</dd>
+        <dt>Shared by</dt><dd>${p.activeCount} participant${p.activeCount === 1 ? '' : 's'}</dd>
+        <dt>Each share</dt><dd>${dollars(p.shareCents)}</dd>
+        <dt>Posted</dt><dd>${when(p.updatedAt)}</dd>
+      </dl>${p.pending ? `<p class="dim small">Telling participants now: ${p.pending} still to go, a few each minute.</p>` : ''}` : '<p class="dim small">No total posted yet.</p>'}
+      <label class="small">This week's pool total, in dollars
+        <input class="fq-text fq-money" id="fq-total" inputmode="decimal" placeholder="1240.00" value="${p ? (p.totalCents / 100).toFixed(2) : ''}"></label>
+      <p class="row"><button type="button" class="btn glow" id="fq-post">Post and tell participants</button> <span class="dim small" id="fq-post-said"></span></p>
+      <p class="dim small">The pool is split equally among verified participants who are taking part. You are never one of them.</p>
+      <h3>Payouts</h3>
+      ${rows.length ? `<ul class="fq-payouts">${rows.map((r) => `
+        <li class="fq-payout" data-uid="${esc(r.uid)}">
+          <span class="fq-name">${esc(r.preferredName || 'No name')}</span>
+          <span class="small">${esc(r.payTo)}</span>
+          ${r.paidThisRound ? `<span class="small ok">\u2713 Sent ${dollars(r.lastPayout.amountCents)} ${day(r.lastPayout.at)}, ID #${esc(r.lastPayout.ref)}</span>` : `
+          <span class="fq-pay-row">
+            <input class="fq-text fq-money" data-amount inputmode="decimal" value="${p ? (p.shareCents / 100).toFixed(2) : ''}" aria-label="Amount sent">
+            <input class="fq-text" data-ref placeholder="ID #" maxlength="60" aria-label="Payment ID number">
+            <button type="button" class="btn" data-pay>Mark sent</button>
+          </span>
+          ${r.method === 'check' ? `<span class="dim small">${esc(CHECK_NOTE)}</span>` : ''}
+          <span class="error small" data-pay-said hidden></span>`}
+        </li>`).join('')}</ul>` : '<p class="dim small">Nobody is taking part yet.</p>'}
+    </section>`;
+  box.querySelector('#fq-post').addEventListener('click', async (e) => {
+    const said = box.querySelector('#fq-post-said');
+    const cents = toCents(box.querySelector('#fq-total').value);
+    if (!Number.isInteger(cents) || cents < 0) { said.textContent = 'Enter the total in dollars, like 1240.00.'; return; }
+    e.currentTarget.disabled = true;
+    try { pool(await api('/api/admin/fund/pool', { method: 'POST', body: { totalCents: cents } })); }
+    catch (err) { said.textContent = err.message; e.currentTarget.disabled = false; }
+  });
+  box.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', async () => {
+    const li = b.closest('[data-uid]');
+    const said = li.querySelector('[data-pay-said]');
+    const cents = toCents(li.querySelector('[data-amount]').value);
+    const ref = li.querySelector('[data-ref]').value.trim();
+    said.hidden = true;
+    if (!Number.isInteger(cents) || cents <= 0) { said.textContent = 'Enter the amount sent.'; said.hidden = false; return; }
+    if (ref.length < 2) { said.textContent = 'Add the payment ID number.'; said.hidden = false; return; }
+    b.disabled = true;
+    try { await api('/api/admin/fund/payout', { method: 'POST', body: { uid: li.dataset.uid, amountCents: cents, ref } }); pool(); }
+    catch (err) { said.textContent = err.message; said.hidden = false; b.disabled = false; }
+  }));
 }
 
 async function openOne(uid) {
@@ -137,6 +203,7 @@ function paint(a, me) {
   const p = a.payment;
   const payWords = !p?.method ? 'None given'
     : p.method === 'bank' ? `Bank transfer · name on the account: ${esc(p.accountName)}`
+      : p.method === 'check' ? `Check to ${esc(p.accountName)} · ${esc([p.address?.line1, p.address?.line2].filter(Boolean).join(', '))}, ${esc(p.address?.city)}, ${esc(p.address?.state)} ${esc(p.address?.zip)}`
       : p.method === 'other' ? `${esc(p.otherMethod)} · ${esc(p.handle)}`
         : `${METHOD_WORDS[p.method]} · ${esc(p.handle)}`;
   const actions = Object.keys(ACT_WORDS).filter((k) => ACT_FROM[k].includes(s));
@@ -167,11 +234,15 @@ function paint(a, me) {
     ${a.photo ? `<h3>GoFundMe photo</h3><ul class="fq-docs">${docRow(a, a.photo, 'photo')}</ul>
       <p class="small ${a.photoPublicConsent ? '' : 'error'}">${a.photoPublicConsent ? `Public-use consent given${a.photoConsentAt ? ` ${day(a.photoConsentAt)}` : ''}.` : 'No public-use consent: do not use this photo.'}</p>` : ''}
 
+    <h3>Why they are in need</h3>
+    <p class="fq-note">${a.needStatement ? esc(a.needStatement) : '<span class="dim">Not written yet.</span>'}</p>
+
     <h3>Applicant note</h3>
     <p class="fq-note">${a.applicantNote ? esc(a.applicantNote) : '<span class="dim">None.</span>'}</p>
 
     <h3>Payment</h3>
     <p>${payWords}</p>
+    ${(a.payouts || []).length ? `<h3>Sent</h3><ul class="fq-history">${a.payouts.map((x) => `<li>${dollars(x.amountCents)} by ${esc(METHOD_WORDS[x.method] || x.method)} · ${day(x.at)} · ID #${esc(x.ref)}</li>`).join('')}</ul>` : ''}
 
     <h3>Internal note <span class="dim small">(reviewers only)</span></h3>
     <textarea id="fq-note" class="fq-text" maxlength="4000">${esc(a.internalReviewerNote)}</textarea>
@@ -217,10 +288,11 @@ function actForm(a, act) {
     <div class="fq-confirm">
       <p><strong>${ACT_WORDS[act]}</strong>${act === 'verify' || act === 'reverify' ? ': confirms eligibility only, and sets reverification six months out.' : ''}</p>
       ${needsReason ? `
-        <label class="small">Brief internal reason <span class="dim">(required, reviewers only)</span>
-          <textarea class="fq-text" id="fq-reason" maxlength="1000"></textarea></label>
-        <label class="small">Message to the applicant <span class="dim">(optional, they will see this)</span>
-          <textarea class="fq-text" id="fq-message" maxlength="1000"></textarea></label>` : ''}
+        <label class="small">${act === 'decline' ? 'Why it was denied' : 'What you need from them'} <span class="dim">(required, emailed to the applicant)</span>
+          <textarea class="fq-text" id="fq-message" maxlength="1000"></textarea></label>
+        <label class="small">Private note for the history <span class="dim">(optional, only you see it)</span>
+          <textarea class="fq-text" id="fq-reason" maxlength="1000"></textarea></label>` : ''}
+      ${act === 'verify' || act === 'reverify' ? '<p class="dim small">The applicant gets an email saying they are approved.</p>' : ''}
       <p class="row"><button type="button" class="btn glow" id="fq-go">${ACT_WORDS[act]}</button>
         <button type="button" class="btn quiet" id="fq-cancel">Cancel</button></p>
     </div>`;
@@ -230,10 +302,10 @@ function actForm(a, act) {
     err.hidden = true;
     const reason = box.querySelector('#fq-reason')?.value.trim() || '';
     const message = box.querySelector('#fq-message')?.value.trim() || '';
-    if (needsReason && reason.length < 2) {
-      err.textContent = 'Write a brief internal reason first.';
+    if (needsReason && message.length < 2) {
+      err.textContent = act === 'decline' ? 'Write why it was denied first. It is emailed to them.' : 'Write what you need first. It is emailed to them.';
       err.hidden = false;
-      box.querySelector('#fq-reason').focus();
+      box.querySelector('#fq-message').focus();
       return;
     }
     e.currentTarget.disabled = true;

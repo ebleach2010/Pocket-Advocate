@@ -266,6 +266,22 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The fund, paid out (2026-10-04, v7.24)
+
+Eric's next list: the Discord invite and membership, a required reason they
+are in need (1500 characters), approve or deny with the decision and the
+reason emailed, a check in the mail with the address (Mercury, 7 to 10
+business days, no tracking number), the weekly pool with each participant's
+equal share and Eric never in it, money marked sent with an ID number, and
+notifications for all of it (push when turned on, email otherwise), with the
+Home Screen steps on the status page.
+
+`fund.mjs` F7 and F10 are re-pinned to the emailed decision; F20 the need
+statement, F21 the check, F22 the pool and its share and the queued notices,
+F23 the payouts, F24 the cron drain claiming before telling and calling no
+model, F25 the page wiring. `drive-fund.mjs` walks the check, the pool, a
+payout and what the applicant then sees (29 checks).
+
 ### The landing, in isolation, and PR 1 (2026-10-04, v7.23)
 
 Eric: "take what's on the landing page and park it as PR 1; hidden from view.

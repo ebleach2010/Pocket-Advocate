@@ -16,6 +16,8 @@
 
 import { requireUser } from './auth.js';
 import { auth, signOut } from './firebase.js';
+import { enablePush, pushSupported, pushInstalled } from './push.js';
+import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, METHOD_WORDS } from './fund-rules.js';
 
 const HELP = 'office@pocketadvocacy.com';
 const box = document.getElementById('fund');
@@ -36,7 +38,7 @@ const CONSENTS = [
   ['reviewerView', 'I consent to authorized reviewers viewing the information and documents I submitted for the limited purpose of determining eligibility.'],
   ['formula', 'I understand that, if approved and actively participating, I will receive distributions according to the same published distribution formula used for other verified participants.'],
 ];
-const METHODS = [['paypal', 'PayPal'], ['venmo', 'Venmo'], ['zelle', 'Zelle'], ['bank', 'Bank transfer'], ['other', 'Other']];
+const METHODS = [['paypal', 'PayPal'], ['venmo', 'Venmo'], ['zelle', 'Zelle'], ['check', 'Check in the mail'], ['bank', 'Bank transfer'], ['other', 'Other']];
 const ID_REDACT = 'You may redact information we do not need, including your address, ID number, date of birth, and other unrelated personal information. We primarily need enough information to reasonably confirm that the application belongs to a real person.';
 const MED_REDACT = 'You may redact diagnoses, medications, test results, account numbers, dates of birth, and unrelated medical information. We only need enough information to reasonably verify eligibility.';
 const NOTE_LABEL = 'Anything you’d like the reviewer to know about your documentation?';
@@ -54,10 +56,10 @@ let step = 1;
 let token = '';
 let dirty = false;
 const form = {
-  discordUsername: '', preferredName: '', legalName: '', email: '', applicantNote: '',
+  discordUsername: '', preferredName: '', legalName: '', email: '', applicantNote: '', needStatement: '',
   discordMember: false, participationRequested: null, photoPublicConsent: false,
   consents: Object.fromEntries(CONSENTS.map(([k]) => [k, false])),
-  payment: { method: null, handle: '', accountName: '', otherMethod: '' },
+  payment: { method: null, handle: '', accountName: '', otherMethod: '', address: { line1: '', line2: '', city: '', state: '', zip: '' } },
 };
 
 const user = await requireUser();
@@ -87,12 +89,12 @@ async function api(path, { method = 'GET', body, headers = {} } = {}) {
 function adopt(a) {
   app = a;
   if (!a) return;
-  for (const k of ['discordUsername', 'preferredName', 'legalName', 'email', 'applicantNote']) form[k] = a[k] || '';
+  for (const k of ['discordUsername', 'preferredName', 'legalName', 'email', 'applicantNote', 'needStatement']) form[k] = a[k] || '';
   form.discordMember = a.discordMember === true;
   form.participationRequested = a.participationRequested ?? null;
   form.photoPublicConsent = a.photoPublicConsent === true;
   form.consents = { ...form.consents, ...(a.consents || {}) };
-  if (a.payment) form.payment = { ...form.payment, ...a.payment };
+  if (a.payment) form.payment = { ...form.payment, ...a.payment, address: { ...form.payment.address, ...(a.payment.address || {}) } };
 }
 
 async function start() {
@@ -135,7 +137,7 @@ const field = (key, label, { hint = '', optional = false, type = 'text', max = 1
     <label for="f-${key}">${esc(label)}${optional ? ' <span class="fund-req">(optional)</span>' : ''}</label>
     ${hint ? `<p class="fund-hint" id="h-${key}">${hint}</p>` : ''}
     ${area
-      ? `<textarea id="f-${key}" data-k="${key}" maxlength="${max}"${hint ? ` aria-describedby="h-${key}"` : ''}>${esc(value ?? form[key])}</textarea>`
+      ? `<textarea id="f-${key}" data-k="${key}" maxlength="${max}"${hint ? ` aria-describedby="h-${key}"` : ''}>${esc(value ?? form[key])}</textarea>${key === 'needStatement' ? `<p class="fund-hint" data-count="${key}">${max - String(value ?? form[key]).length} characters left</p>` : ''}`
       : `<input type="${type}" id="f-${key}" data-k="${key}" maxlength="${max}" value="${esc(value ?? form[key])}"${hint ? ` aria-describedby="h-${key}"` : ''}${type === 'email' ? ' inputmode="email" autocomplete="email"' : ''}>`}
   </div>`;
 
@@ -174,6 +176,15 @@ function methodFields() {
   if (p.method === 'venmo') return field('handle', 'Venmo @username', { value: p.handle, max: 60 });
   if (p.method === 'zelle') return field('handle', 'The email or phone number your Zelle uses', { value: p.handle });
   if (p.method === 'bank') return field('accountName', 'Name on the account', { value: p.accountName, hint: 'We will arrange the account details with you privately when a distribution is ready. Please do not enter account or routing numbers here.' });
+  if (p.method === 'check') {
+    const a = p.address || {};
+    return `<p class="fund-note">${esc(CHECK_NOTE)}</p>`
+      + field('accountName', 'Name to make the check out to', { value: p.accountName })
+      + field('addr-line1', 'Street address', { value: a.line1 })
+      + field('addr-line2', 'Apartment, suite or unit', { value: a.line2, optional: true })
+      + field('addr-city', 'City', { value: a.city, max: 80 })
+      + `<div class="fund-two">${field('addr-state', 'State', { value: a.state, max: 2, hint: 'Two letters, like ID.' })}${field('addr-zip', 'ZIP code', { value: a.zip, max: 10 })}</div>`;
+  }
   if (p.method === 'other') return field('otherMethod', 'Which service?', { value: p.otherMethod, max: 60 }) + field('handle', 'Your username or address on that service', { value: p.handle });
   return '';
 }
@@ -198,9 +209,11 @@ function stepBody(n) {
       <li>Disability-benefit or disability-determination letter</li><li>Other comparable healthcare documentation</li>
     </ul>
     ${uploader('medical')}
+    ${field('needStatement', 'In a few sentences, why are you in need?', { area: true, max: NEED_MAX, hint: 'In your own words. You never need to name a diagnosis.' })}
     ${field('applicantNote', NOTE_LABEL, { optional: true, area: true, max: 2000, hint: 'You never need to describe a diagnosis.' })}`;
   if (n === 4) return `
     ${check('discordMember', 'I am currently a member of the associated Discord community.', form.discordMember)}
+    <p class="fund-hint">Only members of our Discord community can take part. Not a member yet? <a href="${DISCORD_INVITE}" target="_blank" rel="noopener">Join the Discord</a>, then come back to this step.</p>
     <fieldset class="fund-field" style="border:0;padding:0;margin:20px 0 0">
       <legend class="fund-label">Would you like to participate as a recipient of community fund distributions?</legend>
       <div class="fund-choices">
@@ -263,12 +276,7 @@ function wire() {
   // A message about what was missing goes as soon as they start fixing it.
   box.addEventListener('input', clearError);
   box.addEventListener('change', clearError);
-  box.querySelectorAll('[data-k]').forEach((el) => el.addEventListener('input', () => {
-    const k = el.dataset.k;
-    if (['handle', 'accountName', 'otherMethod'].includes(k)) form.payment[k] = el.value;
-    else form[k] = el.value;
-    dirty = true;
-  }));
+  box.querySelectorAll('[data-k]').forEach((el) => el.addEventListener('input', () => setField(el)));
   box.querySelectorAll('[data-c]').forEach((el) => el.addEventListener('change', () => {
     const k = el.dataset.c;
     if (k.startsWith('consent:')) form.consents[k.slice(8)] = el.checked;
@@ -284,13 +292,24 @@ function wire() {
     dirty = true;
     const slot = box.querySelector('#method-fields');
     slot.innerHTML = methodFields();
-    slot.querySelectorAll('[data-k]').forEach((x) => x.addEventListener('input', () => { form.payment[x.dataset.k] = x.value; dirty = true; }));
+    slot.querySelectorAll('[data-k]').forEach((x) => x.addEventListener('input', () => setField(x)));
   }));
   box.querySelectorAll('[data-file]').forEach((el) => el.addEventListener('change', () => upload(el.dataset.file, [...el.files])));
   box.querySelectorAll('[data-remove]').forEach((el) => el.addEventListener('click', () => removeFile(el.dataset.remove, el.dataset.id, el)));
   box.querySelectorAll('[data-go]').forEach((el) => el.addEventListener('click', () => go(Number(el.dataset.go))));
   box.querySelector('#fund-back')?.addEventListener('click', () => go(prevStep()));
   box.querySelector('#fund-next')?.addEventListener('click', next);
+}
+
+/** One keystroke into `form`, wherever that field lives. */
+function setField(el) {
+  const k = el.dataset.k;
+  if (k.startsWith('addr-')) form.payment.address[k.slice(5)] = el.value;
+  else if (['handle', 'accountName', 'otherMethod'].includes(k)) form.payment[k] = el.value;
+  else form[k] = el.value;
+  const count = box.querySelector(`[data-count="${k}"]`);
+  if (count) count.textContent = `${Number(el.maxLength) - el.value.length} characters left`;
+  dirty = true;
 }
 
 const prevStep = () => (step === 6 && form.participationRequested === false ? 4 : step - 1);
@@ -319,6 +338,7 @@ function gapOf(n) {
   }
   if (n === 2 && !filesOf('id').length) return ['Upload one identification document.'];
   if (n === 3 && !filesOf('medical').length) return ['Upload at least one document that shows eligibility.'];
+  if (n === 3 && !form.needStatement.trim()) return ['Tell us briefly why you are in need.', 'needStatement'];
   if (n === 4) {
     if (!form.discordMember) return ['Confirm that you are a member of the Discord community.'];
     if (form.participationRequested === null) return ['Answer whether you would like to receive distributions.'];
@@ -328,8 +348,17 @@ function gapOf(n) {
     const p = form.payment;
     if (!p.method) return ['Choose how you would like to receive distributions.'];
     if (p.method === 'bank' && !p.accountName.trim()) return ['Add the name on the bank account.', 'accountName'];
+    if (p.method === 'check') {
+      const a = p.address;
+      if (!p.accountName.trim()) return ['Add the name the check should be made out to.', 'accountName'];
+      if (!a.line1.trim()) return ['Add the street address the check should be mailed to.', 'addr-line1'];
+      if (!a.city.trim()) return ['Add the city.', 'addr-city'];
+      if (!/^[A-Za-z]{2}$/.test(a.state.trim())) return ['Add the two-letter state, like ID.', 'addr-state'];
+      if (!/^\d{5}(-\d{4})?$/.test(a.zip.trim())) return ['Add the five-digit ZIP code.', 'addr-zip'];
+      return '';
+    }
     if (p.method === 'other' && !p.otherMethod.trim()) return ['Say which service you use.', 'otherMethod'];
-    if (p.method !== 'bank' && !p.handle.trim()) return ['Add the details for that payment method.', 'handle'];
+    if (p.method !== 'bank' && p.method !== 'check' && !p.handle.trim()) return ['Add the details for that payment method.', 'handle'];
   }
   if (n === 6 && !CONSENTS.every(([k]) => form.consents[k])) return ['Tick all five statements.'];
   return '';
@@ -338,7 +367,7 @@ function gapOf(n) {
 function draftBody(nextAt) {
   const body = {
     discordUsername: form.discordUsername, preferredName: form.preferredName, legalName: form.legalName,
-    email: form.email, applicantNote: form.applicantNote, discordMember: form.discordMember,
+    email: form.email, applicantNote: form.applicantNote, needStatement: form.needStatement, discordMember: form.discordMember,
     participationRequested: form.participationRequested, photoPublicConsent: form.photoPublicConsent,
     consents: form.consents, step: nextAt,
   };
@@ -489,6 +518,25 @@ function renderStatus() {
       ${app.reverificationDueAt ? `<dt>Next reverification</dt><dd>${dateWords(app.reverificationDueAt)}</dd>` : ''}
     </dl>
     <p class="fund-hint" style="margin-top:14px">Verification confirms eligibility only. It is not a medical opinion.</p>`;
+  // Eric, 2026-10-04: "I will update the amount in the donation pool weekly
+  // so each participant can see their active share."
+  const share = s === 'verified' && app.participationActive ? (app.pool ? `
+    <div class="fund-card fund-share">
+      <h2>This week</h2>
+      <dl class="fund-facts">
+        <dt>Donation pool</dt><dd>${dollars(app.pool.totalCents)}</dd>
+        <dt>Your share</dt><dd>${dollars(app.pool.shareCents)}</dd>
+      </dl>
+      <p class="fund-hint" style="margin-top:12px">Updated ${dateWords(app.pool.asOf)}. The pool is shared equally among everyone taking part.</p>
+    </div>` : `
+    <div class="fund-card fund-share"><h2>This week</h2><p class="fund-hint">The pool total and your share show here once the week's total is posted.</p></div>`) : '';
+  const sent = (app.payouts || []).length ? `
+    <div class="fund-card">
+      <h2>Sent to you</h2>
+      <ul class="fund-sent">${app.payouts.map((x) => `
+        <li><strong>${dollars(x.amountCents)}</strong> by ${esc(METHOD_WORDS[x.method] || 'payment')} on ${dateWords(x.at)}<br><span class="fund-dim fund-small">ID #${esc(x.ref)}${x.method === 'check' ? `. ${esc(CHECK_NOTE)}` : ''}</span></li>`).join('')}
+      </ul>
+    </div>` : '';
   if (s === 'not_verified') body = `
     <h1>Your application was not verified.</h1>
     ${app.applicantMessage ? `<p class="fund-measure">The reviewer’s note: <strong>${esc(app.applicantMessage)}</strong></p>` : ''}
@@ -497,6 +545,48 @@ function renderStatus() {
     <h1>Your participation is currently inactive.</h1>
     ${app.verifiedAt ? `<dl class="fund-facts"><dt>Last verified</dt><dd>${dateWords(app.verifiedAt)}</dd></dl>` : ''}
     <p class="fund-measure">If you have questions, email <a href="mailto:${HELP}">${HELP}</a>.</p>`;
-  box.innerHTML = `<div class="fund-card">${pill}${body}</div>`;
+  box.innerHTML = `<div class="fund-card">${pill}${body}</div>${share || ''}${sent || ''}${s === 'not_verified' ? '' : notifyCard()}`;
+  wireNotify();
   window.scrollTo(0, 0);
+}
+
+// ---- updates on their phone -----------------------------------------------------
+// Eric, 2026-10-04: "There should still be instructions for how to add to
+// Home Screen, and they will receive notifications about their verification
+// status, weekly donation pool total and their split, and any marks that
+// they've been sent their money." On iPhone a notification needs the Home
+// Screen icon, so the steps come first; whoever never turns them on gets the
+// same news by email.
+
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent || '');
+
+function notifyCard() {
+  const on = typeof Notification !== 'undefined' && Notification.permission === 'granted';
+  const canAsk = pushSupported() && !on && (typeof Notification === 'undefined' || Notification.permission !== 'denied');
+  return `
+    <div class="fund-card fund-notify">
+      <h2>Get updates on your phone</h2>
+      <p class="fund-hint">Your verification status, each week's pool and your share, and a note when your money has been sent, with its ID number.</p>
+      ${pushInstalled() ? '' : `
+      <p class="fund-label">Add this page to your Home Screen</p>
+      <p class="fund-small"><strong>iPhone:</strong> open this page in Safari, tap Share (the square with an arrow), then <strong>Add to Home Screen</strong>, and open it from the new icon.</p>
+      <p class="fund-small"><strong>Android:</strong> open this page in Chrome, tap the three-dot menu, then <strong>Add to Home screen</strong>.</p>
+      <p class="fund-hint">Adding it to your Home Screen asks you to sign in once more. That only happens the first time.</p>`}
+      ${on ? '<p class="fund-saved">\u2713 Notifications are on for this device.</p>'
+        : canAsk ? '<button type="button" class="fund-btn" id="fund-push">Turn on notifications</button><p class="fund-saved" id="fund-push-said"></p>'
+          : `<p class="fund-hint">${isIOS() && !pushInstalled() ? 'Open it from your Home Screen icon to turn on notifications.' : 'This browser cannot show notifications.'}</p>`}
+      <p class="fund-hint">Without notifications, the same updates come to your email.</p>
+    </div>`;
+}
+
+function wireNotify() {
+  const btn = box.querySelector('#fund-push');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const said = box.querySelector('#fund-push-said');
+    const out = await enablePush(user);
+    if (out.ok) { btn.remove(); if (said) said.textContent = '\u2713 Notifications are on for this device.'; }
+    else { btn.disabled = false; if (said) said.textContent = out.error; }
+  });
 }

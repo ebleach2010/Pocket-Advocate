@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.23';
+export const VERSION = '7.24';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '7.23';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE FUND, PAID OUT (Eric, 2026-10-04: the Discord, a blurb of why,
+    // approve or deny with the reason emailed, check in the mail, the weekly
+    // pool and each share, money marked sent, notifications). Admin only.
+    version: '7.24',
+    quiet: true,
+    client: [],
+    admin: [
+      'Applicants are linked to the Discord and must be members. They write a short reason they are in need, up to 1500 characters.',
+      'Approve or deny: a denial needs your reason, and either way the decision and the reason are emailed to them.',
+      'They can choose a check in the mail and give their address. Checks come from Mercury and take 7 to 10 business days.',
+      'Post the pool total each week on the Fund queue. Everyone taking part sees the total and their equal share and is notified. You are never in the split.',
+      'Mark each participant\'s money as sent with its ID number. They are notified, by phone if they turned that on, otherwise by email.',
+      'The status page shows how to add it to the Home Screen and turn on notifications.',
+    ],
+  },
   {
     // THE LANDING, IN ISOLATION (Eric, 2026-10-04: "take what's on the landing
     // page and park it as PR 1; hidden from view. So this landing page will be

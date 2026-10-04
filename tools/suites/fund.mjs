@@ -74,7 +74,7 @@ function world({ putFails = false } = {}) {
   const body = SRC
     .replace(/^import [\s\S]*?from '[^']+';\n/gm, '')
     .replace(/^export (const|async function|function) /gm, '$1 ');
-  const api = new Function(...Object.keys(deps), `${body}\nreturn { handleFund, minimizeFundApplication, isFundReviewer, FUND_REVIEWER_UIDS };`)(...Object.values(deps));
+  const api = new Function(...Object.keys(deps), `${body}\nreturn { handleFund, minimizeFundApplication, isFundReviewer, FUND_REVIEWER_UIDS, drainFundNotices };`)(...Object.values(deps));
   setDoc('users/eric', { role: 'admin' });
   setDoc('users/ann', { role: 'client' });
   return { docs, files, pushes, emails, api, setDoc };
@@ -105,8 +105,11 @@ const call = async (w, uid, path, opts) => {
 const PDF = () => new TextEncoder().encode('%PDF-1.4\n% one page\n%%EOF\n').buffer;
 const PNG = () => new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0x0D]).buffer;
 const up = (w, uid, kind, bytes = PDF(), type = 'application/pdf', extra = {}) => call(w, uid, `/api/fund/upload?kind=${kind}`, { method: 'POST', bytes, type, ...extra });
+// RE-PINNED 2026-10-04 (v7.24): a complete application carries the short reason they are in need
+// (Eric: "a short blurb from them for why they are in need. Max 1500 characters.").
 const FULL = {
   discordUsername: 'ann_d', preferredName: 'Ann', legalName: 'Ann Doe', discordMember: true, participationRequested: true,
+  needStatement: 'I stopped working this spring and the copays take what is left.',
   consents: { accurate: true, noGuarantee: true, notMedical: true, reviewerView: true, formula: true },
   payment: { method: 'venmo', handle: '@ann-d' },
 };
@@ -173,7 +176,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 //   FAIL  F3 nothing incomplete is sent: each missing piece is refused with its own sentence and the step it belongs to, payment is asked for only from someone who wants distributions, and a complete one is Submitted with the time, the five consents stamped and the history written
 {
   const gaps = (a, p) => RULES.submitGaps(a, p).map((g) => g.step);
-  const full = { discordUsername: 'a', preferredName: 'A', legalName: 'A B', identityDocument: { id: 'x' }, medicalDocuments: [{ id: 'y' }], discordMember: true, participationRequested: true, consents: FULL.consents };
+  const full = { discordUsername: 'a', preferredName: 'A', legalName: 'A B', identityDocument: { id: 'x' }, medicalDocuments: [{ id: 'y' }], needStatement: 'Rent.', discordMember: true, participationRequested: true, consents: FULL.consents };
   const pay = { method: 'venmo', handle: '@a-b' };
   const one = (k, v) => gaps({ ...full, [k]: v }, pay);
   const w = world();
@@ -269,28 +272,37 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     JSON.stringify({ self: self.status, selfRe: selfRe.status, other: other.status }));
 }
 
-// ---- F7: the reason is the reviewer's, the message is the applicant's ----------
+// ---- F7: the denial says why, to the applicant ---------------------------------
 // NEGATIVE CONTROL (run 2026-10-04): the reason length check changed to `reason.length < 0` made this read
-//   FAIL  F7 a decline or a request for more information needs a brief internal reason, which goes only into the history; the applicant reads only the optional message, and only while it asks something of them or explains a decline; the internal note never reaches them
+//   FAIL  F7 a decline or a request for more information needs a brief internal reason, which goes only into the history; ...
+// RE-PINNED 2026-10-04 (v7.24): Eric, "I approve or deny their application (if denied, I give a message
+// why). Then their application approval or denial with the reason is sent to their email." The required
+// text is now the message the applicant reads; a private reason may ride into the history and never
+// reaches them.
+// NEGATIVE CONTROL (run 2026-10-04, v7.24): the message length check changed to `message.length < 0` made this read
+//   FAIL  F7 a denial or a request for more information needs the message the applicant reads, and a private reason only ever goes into the history: the applicant sees the message while it explains a denial or asks something of them, and never the private reason or the internal note
 {
   const w = world();
   await readyToSubmit(w);
   await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
-  const noReason = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'decline', message: 'Sorry.' } });
-  const noReason2 = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'request_info', reason: ' ' } });
+  const noMsg = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'decline', reason: 'Not a member' } });
+  const noMsg2 = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'request_info', message: ' ' } });
   await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'note', note: 'Second letter looks fine.' } });
   const asked = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'request_info', reason: 'ID photo is blurry', message: 'Please add a clearer photo of your ID.' } });
   const sees = (await call(w, 'ann', '/api/fund/me')).out.application;
   await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
   const after = (await call(w, 'ann', '/api/fund/me')).out.application;
+  const denied = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'decline', message: 'We could not confirm membership in the Discord.' } });
+  const seesNo = (await call(w, 'ann', '/api/fund/me')).out.application;
   const row = app(w).audit.find((r) => r.act === 'request_info');
-  const s = JSON.stringify(sees);
-  check('F7 a decline or a request for more information needs a brief internal reason, which goes only into the history; the applicant reads only the optional message, and only while it asks something of them or explains a decline; the internal note never reaches them',
-    noReason.status === 400 && noReason2.status === 400 && asked.status === 200
+  const s = JSON.stringify([sees, seesNo]);
+  check('F7 a denial or a request for more information needs the message the applicant reads, and a private reason only ever goes into the history: the applicant sees the message while it explains a denial or asks something of them, and never the private reason or the internal note',
+    noMsg.status === 400 && /sent to the applicant/.test(noMsg.out.error) && noMsg2.status === 400 && asked.status === 200 && denied.status === 200
     && row?.reason === 'ID photo is blurry' && row?.msg === 'Please add a clearer photo of your ID.'
-    && sees.verificationStatus === 'more_info' && sees.applicantMessage === 'Please add a clearer photo of your ID.'
-    && !/blurry|Second letter|internalReviewerNote|reviewerId|audit|accountEmail/.test(s) && after.applicantMessage === '',
-    JSON.stringify({ noReason: noReason.status, keys: Object.keys(sees) }));
+    && sees.verificationStatus === 'more_info' && sees.applicantMessage === 'Please add a clearer photo of your ID.' && after.applicantMessage === ''
+    && seesNo.verificationStatus === 'not_verified' && seesNo.applicantMessage === 'We could not confirm membership in the Discord.'
+    && !/blurry|Second letter|internalReviewerNote|reviewerId|audit|accountEmail/.test(s),
+    JSON.stringify({ noMsg: noMsg.status, keys: Object.keys(sees) }));
 }
 
 // ---- F8: verifying, and six months ----------------------------------------------
@@ -339,22 +351,38 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 
 // ---- F10: what leaves the Worker about an application ---------------------------
 // NEGATIVE CONTROL (run 2026-10-04): the submit push's body changed to `body: \`From ${out.data.preferredName}\`` made this read
-//   FAIL  F10 nothing about an applicant leaves in a notification: the reviewer's push names no one and says nothing about the application, the applicant's email says only that there is an update and where to sign in, and the Worker module logs nothing at all
+//   FAIL  F10 nothing about an applicant leaves in a notification: ...
+// RE-PINNED 2026-10-04 (v7.24): the decision and the reason now go to the applicant by email, as Eric
+// asked, and by push when they turned that on. Still nothing else from the application: no legal name,
+// no document, no note, no private reason; and the reviewer's push still names no one.
+// NEGATIVE CONTROL (run 2026-10-04, v7.24): `The reason: ${msg}` changed to `The reason: ${msg} (${app.legalName})` made this read
+//   FAIL  F10 what leaves about an applicant is only what they need: the reviewer's push names no one; the decision email goes to the address they gave with the decision and the reviewer's message and nothing else from the application, approved or denied; a push goes too when they turned notifications on; and the Worker module logs nothing at all
 {
   const w = world();
   await readyToSubmit(w);
   await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
-  w.setDoc('fundApplications/ann', { ...app(w), accountEmail: 'ann@example.test' });
-  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'decline', reason: 'Not a member', message: 'You are not in the server.' } });
+  w.setDoc('fundApplications/ann', { ...app(w), accountEmail: 'ann@example.test', email: 'ann.alt@example.test' });
+  w.setDoc('users/ann', { role: 'client', pushSubs: [{ endpoint: 'https://push.example/x' }] });
+  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'decline', reason: 'Private: letter looked edited', message: 'We could not confirm membership in the Discord.' } });
   const p = w.pushes[0];
+  const denyPush = w.pushes[1];
   const e = w.emails[0];
-  const all = JSON.stringify([w.pushes, w.emails]);
-  check('F10 nothing about an applicant leaves in a notification: the reviewer\'s push names no one and says nothing about the application, the applicant\'s email says only that there is an update and where to sign in, and the Worker module logs nothing at all',
-    w.pushes.length === 1 && p.uid === 'eric' && p.title === 'New fund application' && p.body === 'Open the fund queue to review it.' && p.link === '/admin-fund.html'
-    && w.emails.length === 1 && e.to === 'ann@example.test' && e.subject === 'An update on your Community Assistance Fund application'
-    && !/Ann|ann_d|Doe|Not a member|not in the server|declin|Not Verified|medical/i.test(all.replace('ann@example.test', ''))
+  const w2 = world();
+  await readyToSubmit(w2);
+  await call(w2, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  w2.setDoc('fundApplications/ann', { ...app(w2), accountEmail: 'ann@example.test' });
+  await call(w2, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify' } });
+  const ok = w2.emails[0];
+  const all = JSON.stringify([w.pushes, w.emails, w2.emails]);
+  check('F10 what leaves about an applicant is only what they need: the reviewer\'s push names no one; the decision email goes to the address they gave with the decision and the reviewer\'s message and nothing else from the application, approved or denied; a push goes too when they turned notifications on; and the Worker module logs nothing at all',
+    p.uid === 'eric' && p.title === 'New fund application' && p.body === 'Open the fund queue to review it.' && p.link === '/admin-fund.html'
+    && denyPush?.uid === 'ann' && /not approved/.test(denyPush.body) && !/Discord|membership/.test(denyPush.body)
+    && w.emails.length === 1 && e.to === 'ann.alt@example.test' && e.subject === 'Your Community Assistance Fund application was not approved'
+    && /The reason: We could not confirm membership in the Discord\./.test(e.html)
+    && ok.to === 'ann@example.test' && ok.subject === 'Your Community Assistance Fund application is approved' && /verified participant/.test(ok.html) && /next reverification/.test(ok.html)
+    && !/Ann Doe|ann_d|Private: letter|copays|stopped working|medical document|\.pdf/i.test(all)
     && !/console\.|diagLog/.test(SRC),
-    all.slice(0, 300));
+    all.slice(0, 400));
 }
 
 // ---- F11: payment details -------------------------------------------------------
@@ -481,7 +509,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const selfOut = await self.json();
   check('F16 the routes, the gate, the lists and the demo: both prefixes reach handleFund and nothing else does, the queue\'s page and module sit behind the admin gate, the audit names the form, the queue and both modules, the drives measure both pages, and the demo answers with the same rules and refuses his own verification with the same sentence',
     /if \(url\.pathname\.startsWith\('\/api\/fund\/'\) \|\| url\.pathname\.startsWith\('\/api\/admin\/fund\/'\)\)\n\s+return await handleFund\(request, env, url, ctx\);/.test(W)
-    && (W.match(/handleFund\(/g) || []).length === 1 && /import \{ handleFund \} from '\.\/fund\.js';/.test(W)
+    // RE-PINNED 2026-10-04 (v7.24): the cron's notice drain comes from the same module.
+    && (W.match(/handleFund\(/g) || []).length === 1 && /import \{ handleFund, drainFundNotices \} from '\.\/fund\.js';/.test(W)
     && RE.test('/admin-fund.html') && RE.test('/admin-fund') && RE.test('/js/admin-fund.js') && !RE.test('/fund.html') && !RE.test('/js/fund.js')
     && /'\/fund',/.test(AUDIT) && /'\/admin-fund',/.test(AUDIT) && /'\/js\/admin-fund\.js',/.test(AUDIT) && /'\/js\/fund-rules\.js'/.test(AUDIT)
     && /'\/fund\.html\?demo=1'/.test(NOSIDE) && /'\/admin-fund\.html\?demo=admin'/.test(NOSIDE)
@@ -508,7 +537,10 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && READ.includes('Zazzle keeps a share of each sale, so giving directly on GoFundMe sends more to the fund.')
     && /Need help\? Email <a href="mailto:office@pocketadvocacy\.com">office@pocketadvocacy\.com<\/a>/.test(IDX)
     && /<a href="\/signin\.html">Existing clients: sign in<\/a>/.test(IDX)
-    && links.join() === ['/fund.html', '/signin.html', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com'].sort().join()
+    // RE-PINNED 2026-10-04 (v7.24): Eric, "They should also be linked to the discord", so the Discord
+    // invite is the one door added.
+    && links.join() === ['/fund.html', '/signin.html', 'https://discord.gg/YZXYQFjUGa', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com'].sort().join()
+    && READ.includes('Applicants must be members of our Discord community.')
     && !/\$\d|maintenance\.js|book\.html|services\.html|fit\.html|nav class="tabs"/.test(IDX) && /src="\/js\/fund-landing\.js"/.test(IDX)
     && !DASH.test(IDX) && !HARD.some((re) => re.test(IDX)) && !HARD.some((re) => re.test(f('public/js/fund-landing.js'))) && !DASH.test(f('public/js/fund-landing.js')),
     JSON.stringify(links));
@@ -565,6 +597,150 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && /<a class="btn quiet" href="\/admin-pr1\.html">PR 1 \(the parked landing\)<\/a>/.test(f('public/js/admin.js'))
     && /'\/admin-pr1',/.test(f('tools/blindness-audit.mjs')) && /'\/admin-pr1\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')),
     `${PR1.length} bytes`);
+}
+
+// ---- F20: why they are in need (2026-10-04, v7.24) ----------------------------
+// Eric: "The verification process requires a short blurb from them for why they are in need. Max 1500
+// characters." Required to send, capped by the Worker whatever the page allows, read by the reviewer,
+// and never a place a diagnosis is asked for.
+// NEGATIVE CONTROL (run 2026-10-04): the cap changed to `needStatement: 20000,` in TEXT_LIMITS made this read
+//   FAIL  F20 the reason they are in need is required, kept to 1500 characters by the Worker, and read by the reviewer: an application without it is held at Step 3 with its sentence, a longer one is cut at 1500, and the page asks for it in their own words with a counter and no diagnosis
+{
+  const w = world();
+  await readyToSubmit(w, 'ann', { needStatement: '' });
+  const held = await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { needStatement: 'x'.repeat(1700) } });
+  const capped = app(w).needStatement.length;
+  await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { needStatement: 'Rent and copays.' } });
+  const sent = await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const rv = (await call(w, 'eric', '/api/admin/fund/view?uid=ann')).out.application;
+  check('F20 the reason they are in need is required, kept to 1500 characters by the Worker, and read by the reviewer: an application without it is held at Step 3 with its sentence, a longer one is cut at 1500, and the page asks for it in their own words with a counter and no diagnosis',
+    held.status === 400 && held.out.gaps[0].step === 3 && held.out.error === 'Tell us briefly why you are in need.'
+    && capped === 1500 && RULES.NEED_MAX === 1500 && sent.status === 200 && rv.needStatement === 'Rent and copays.'
+    && /field\('needStatement', 'In a few sentences, why are you in need\?', \{ area: true, max: NEED_MAX, hint: 'In your own words\. You never need to name a diagnosis\.' \}\)/.test(PAGE)
+    && /data-count="\$\{key\}"/.test(PAGE) && /Tell us briefly why you are in need\./.test(PAGE) && /Why they are in need/.test(ADMINPAGE),
+    JSON.stringify({ held: held.out, capped }));
+}
+
+// ---- F21: a check in the mail (2026-10-04, v7.24) -------------------------------
+// Eric: "They may also opt for check in the mail. If so, it creates a field for their address." And: "No
+// tracking number. Payout via check will come from Mercury banking and take 7-10 business days to arrive."
+// NEGATIVE CONTROL (run 2026-10-04): `if (method === 'check') {` widened to `if (method === 'check' || true) {` in cleanPayment made this read
+//   FAIL  F21 a check in the mail keeps the name and the mailing address and nothing it does not need: the state is two capital letters, a ZIP+4 and a street called Pin Oak are fine, a card number in the address is refused, a missing ZIP is asked for, every other method keeps no address, and the page says checks come from Mercury in 7 to 10 business days with no tracking number
+{
+  const good = RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', handle: '@x', address: { line1: '12 Pin Oak Dr', line2: 'Apt 4', city: 'Boise', state: 'id', zip: '83702-1234' } });
+  const noZip = RULES.paymentGap(RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', city: 'Boise', state: 'ID', zip: '' } }).payment);
+  const card = RULES.cleanPayment({ method: 'check', accountName: 'Ann Doe', address: { line1: '4111 1111 1111 1111', city: 'Boise', state: 'ID', zip: '83702' } });
+  const venmo = RULES.cleanPayment({ method: 'venmo', handle: '@ann-d', address: { line1: '12 Pin Oak Dr' } });
+  const w = world();
+  await readyToSubmit(w, 'ann', { payment: { method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', city: 'Boise', state: 'ID', zip: '83702' } } });
+  const sent = await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const mine = sent.out.application.payment;
+  check('F21 a check in the mail keeps the name and the mailing address and nothing it does not need: the state is two capital letters, a ZIP+4 and a street called Pin Oak are fine, a card number in the address is refused, a missing ZIP is asked for, every other method keeps no address, and the page says checks come from Mercury in 7 to 10 business days with no tracking number',
+    good.payment?.address?.state === 'ID' && good.payment.address.zip === '83702-1234' && good.payment.address.line1 === '12 Pin Oak Dr' && good.payment.handle === '' && RULES.paymentGap(good.payment) === ''
+    && noZip === 'Add the five-digit ZIP code.' && card.error === RULES.SENSITIVE_REFUSAL && venmo.payment.address === null
+    && sent.status === 200 && mine.method === 'check' && mine.address.city === 'Boise'
+    && RULES.CHECK_NOTE === 'Checks are sent from Mercury and take 7 to 10 business days to arrive.'
+    && /\['check', 'Check in the mail'\]/.test(PAGE) && /esc\(CHECK_NOTE\)/.test(PAGE) && !/tracking/i.test(PAGE + SRC + ADMINPAGE),
+    JSON.stringify({ good, noZip, venmo: venmo.payment }));
+}
+
+// ---- F22: the weekly pool and each share (2026-10-04, v7.24) ---------------------
+// Eric: "I will update the amount in the donation pool weekly so each participant can see their active
+// share." And: "I will not be included in the payout. I only organize." The share is equal among the
+// verified who are taking part, reviewers never among them; each participant hears about it, by push if
+// they turned that on and otherwise by email, a few at a time from the cron.
+// NEGATIVE CONTROL (run 2026-10-04): isActiveParticipant's `&& !reviewerUids.includes(uid)` removed made this read
+//   FAIL  F22 the weekly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email
+{
+  const w = world();
+  const verified = (uid, extra = {}) => w.setDoc(`fundApplications/${uid}`, { userId: uid, verificationStatus: 'verified', participationRequested: true, participationActive: true, preferredName: uid, accountEmail: `${uid}@example.test`, audit: [], ...extra });
+  verified('ann'); verified('bob'); verified('cy', { participationRequested: false, participationActive: false }); verified('eric');
+  w.setDoc('users/ann', { role: 'client', pushSubs: [{ endpoint: 'https://push.example/a' }] });
+  const asAnn = await call(w, 'ann', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: 100 } });
+  const bad = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: -5 } });
+  const posted = await call(w, 'eric', '/api/admin/fund/pool', { method: 'POST', json: { totalCents: 100001 } });
+  const poolDoc = w.docs.get('fundPool/current').data;
+  const annSees = (await call(w, 'ann', '/api/fund/me')).out.application.pool;
+  const cySees = (await call(w, 'cy', '/api/fund/me')).out.application.pool;
+  const told = await w.api.drainFundNotices(env);
+  const again = await w.api.drainFundNotices(env);
+  const annPush = w.pushes.find((x) => x.uid === 'ann');
+  const bobMail = w.emails.find((x) => x.to === 'bob@example.test');
+  check('F22 the weekly pool is shared equally by the verified who are taking part and never by a reviewer: the share is in whole cents, a participant sees the total and their share and someone not taking part does not, only a reviewer can post it, a bad total is refused, and the cron tells each participant once, by push or else by email',
+    asAnn.status === 404 && bad.status === 400 && posted.status === 200
+    && poolDoc.activeCount === 2 && poolDoc.shareCents === 50000 && poolDoc.totalCents === 100001 && poolDoc.history.length === 1
+    && posted.out.participants.map((r) => r.uid).sort().join() === 'ann,bob'
+    && annSees?.totalCents === 100001 && annSees.shareCents === 50000 && cySees === undefined
+    && told === 2 && again === 0 && w.docs.get('fundPool/current').data.pending.length === 0
+    && annPush?.body === "This week's pool is $1,000.01. Your share is $500.00." && !w.emails.some((x) => x.to === 'ann@example.test')
+    && /Your share is \$500\.00\./.test(bobMail?.html || '') && !w.pushes.some((x) => x.uid === 'eric' || x.uid === 'cy'),
+    JSON.stringify({ pool: { n: poolDoc.activeCount, share: poolDoc.shareCents }, told, again }));
+}
+
+// ---- F23: money marked sent (2026-10-04, v7.24) ----------------------------------
+// Eric: they are told "any marks that they've been sent their money with an ID #", and checks come from
+// Mercury in 7 to 10 business days. Only a verified participant who is taking part can be paid, never a
+// reviewer, and never without the ID number.
+// NEGATIVE CONTROL (run 2026-10-04): handlePayout's `if (ref.length < 2) return ...` removed made this read
+//   FAIL  F23 money is marked sent with its ID number and the participant is told: the payout is on their status with the amount, the method and the ID and never who marked it, it is in the history, a check says Mercury and 7 to 10 business days, and a reviewer, someone not taking part or a mark with no ID is refused
+{
+  const w = world();
+  const verified = (uid, extra = {}) => w.setDoc(`fundApplications/${uid}`, { userId: uid, verificationStatus: 'verified', participationRequested: true, participationActive: true, accountEmail: `${uid}@example.test`, audit: [], ...extra });
+  verified('ann'); verified('bob'); verified('cy', { participationActive: false }); verified('eric');
+  w.setDoc('fundPayments/ann', { method: 'venmo', handle: '@ann-d' });
+  w.setDoc('fundPayments/bob', { method: 'check', accountName: 'Bob B', address: { line1: '1 Main St', line2: '', city: 'Boise', state: 'ID', zip: '83702' } });
+  w.setDoc('users/ann', { role: 'client', pushSubs: [{ endpoint: 'https://push.example/a' }] });
+  const paid = await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 50000, ref: 'VX-1042' } });
+  const checkPaid = await call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'bob', amountCents: 50000, ref: '1042' } });
+  const refused = await Promise.all([
+    call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'eric', amountCents: 100, ref: 'X1' } }),
+    call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'cy', amountCents: 100, ref: 'X1' } }),
+    call(w, 'eric', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 100, ref: '' } }),
+    call(w, 'ann', '/api/admin/fund/payout', { method: 'POST', json: { uid: 'ann', amountCents: 100, ref: 'X1' } }),
+  ]);
+  const annSees = (await call(w, 'ann', '/api/fund/me')).out.application.payouts;
+  const bobMail = w.emails.find((x) => x.to === 'bob@example.test');
+  check('F23 money is marked sent with its ID number and the participant is told: the payout is on their status with the amount, the method and the ID and never who marked it, it is in the history, a check says Mercury and 7 to 10 business days, and a reviewer, someone not taking part or a mark with no ID is refused',
+    paid.status === 200 && checkPaid.status === 200 && refused.map((r) => r.status).join() === '403,409,400,404'
+    && annSees.length === 1 && annSees[0].amountCents === 50000 && annSees[0].method === 'venmo' && annSees[0].ref === 'VX-1042' && !('by' in annSees[0])
+    && app(w).audit.some((r) => r.act === 'payout-sent' && /ID #VX-1042/.test(r.msg))
+    && w.pushes.some((x) => x.uid === 'ann' && x.body === 'Your $500.00 share was sent by Venmo. ID #VX-1042.')
+    && bobMail?.subject === 'Your Community Assistance Fund check is in the mail' && /Checks are sent from Mercury and take 7 to 10 business days to arrive\./.test(bobMail.html) && /ID #1042/.test(bobMail.html),
+    JSON.stringify({ refused: refused.map((r) => r.status), annSees }));
+}
+
+// ---- F24: the cron tells them, and spends nothing (2026-10-04, v7.24) -------------
+// The week's notices ride the per-minute firing, a few at a time, each claimed under the document's update
+// time before anyone is told, so two firings never tell anyone twice. No model anywhere in it.
+// NEGATIVE CONTROL (run 2026-10-04): the claim's `ifUpdateTime: doc.updateTime` dropped made this read
+//   FAIL  F24 the cron drains the week's notices a few at a time and claims each batch before telling anyone, and nothing in it calls a paid model
+{
+  const cron = (W.match(/async scheduled\(event, env, ctx\) \{[\s\S]*?\n  \},\n/) || [''])[0];
+  const drain = (SRC.match(/export async function drainFundNotices\(env\) \{[\s\S]*?\n\}\n/) || [''])[0];
+  check('F24 the cron drains the week\'s notices a few at a time and claims each batch before telling anyone, and nothing in it calls a paid model',
+    /\n    ctx\.waitUntil\(drainFundNotices\(env\)\.catch\(\(\) => 0\)\);\n/.test(cron)
+    && /const NOTICES_PER_RUN = [1-9];/.test(SRC) && /\{ mask: \['pending'\], ifUpdateTime: doc\.updateTime \}/.test(drain)
+    && drain.indexOf('ifUpdateTime') < drain.indexOf('fundNotify(') && !/runAnalysis|runQuestion|client\(env\)|messages\.create|ANTHROPIC/.test(SRC),
+    `${drain.length} chars`);
+}
+
+// ---- F25: the Discord, the Home Screen and the queue's new tools (2026-10-04, v7.24) ----
+// Eric: "They should also be linked to the discord" and "They must be a discord member"; "There should
+// still be instructions for how to add to Home Screen, and they will receive notifications".
+// NEGATIVE CONTROL (run 2026-10-04): the Android line taken out of the notification card made this read
+//   FAIL  F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, the share and what was sent on the status page, and the queue's pool total and Mark sent with a required ID
+{
+  check('F25 the pages carry the rest: the Discord invite beside the member box, the Home Screen steps for iPhone and Android with the button that turns notifications on and the email fallback said plainly, the share and what was sent on the status page, and the queue\'s pool total and Mark sent with a required ID',
+    RULES.DISCORD_INVITE === 'https://discord.gg/YZXYQFjUGa' && /Not a member yet\? <a href="\$\{DISCORD_INVITE\}" target="_blank" rel="noopener">Join the Discord<\/a>/.test(PAGE)
+    && /<strong>iPhone:<\/strong> open this page in Safari/.test(PAGE) && /<strong>Android:<\/strong> open this page in Chrome/.test(PAGE)
+    && /import \{ enablePush, pushSupported, pushInstalled \} from '\.\/push\.js';/.test(PAGE) && /Without notifications, the same updates come to your email\./.test(PAGE)
+    && /<dt>Your share<\/dt><dd>\$\{dollars\(app\.pool\.shareCents\)\}<\/dd>/.test(PAGE) && /ID #\$\{esc\(x\.ref\)\}/.test(PAGE)
+    && /'\/api\/admin\/fund\/pool', \{ method: 'POST', body: \{ totalCents: cents \} \}/.test(ADMINPAGE)
+    && /'\/api\/admin\/fund\/payout', \{ method: 'POST', body: \{ uid: li\.dataset\.uid, amountCents: cents, ref \} \}/.test(ADMINPAGE)
+    && /if \(ref\.length < 2\) \{ said\.textContent = 'Add the payment ID number\.'/.test(ADMINPAGE)
+    && !HARD.some((re) => re.test(f('public/js/push.js'))),
+    'pins');
 }
 
 const failed = results.filter((r) => !r.pass);

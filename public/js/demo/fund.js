@@ -11,6 +11,7 @@ import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
   FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView,
+  isActiveParticipant, shareOf, METHOD_WORDS,
 } from '../fund-rules.js';
 import { textPdf } from '../textpdf.js';
 
@@ -35,9 +36,49 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
   const put = (p, v) => { store.docs.set(p, v); store.persist?.(); };
   const appPath = (uid) => `fundApplications/${uid}`;
   const payOf = (uid) => get(`fundPayments/${uid}`);
+  // His own uid is never in a payout, as in the Worker.
+  const REVIEWERS = ['demo-admin'];
+  const actives = () => [...store.docs.entries()].filter(([k, a]) => /^fundApplications\/[^/]+$/.test(k) && isActiveParticipant(k.split('/')[1], a, REVIEWERS));
+  const poolView = () => {
+    const p = get('fundPool/current');
+    const since = p?.updatedAt ? new Date(p.updatedAt).getTime() : 0;
+    return {
+      me,
+      pool: p ? { totalCents: p.totalCents, activeCount: p.activeCount, shareCents: p.shareCents, updatedAt: p.updatedAt, pending: 0 } : null,
+      participants: actives().map(([k, a]) => {
+        const uid = k.split('/')[1];
+        const pay = payOf(uid);
+        const last = (a.payouts || []).slice(-1)[0] || null;
+        const payTo = !pay?.method ? 'no payment details yet' : pay.method === 'check'
+          ? `Check to ${pay.accountName}, ${pay.address?.line1}, ${pay.address?.city}, ${pay.address?.state} ${pay.address?.zip}` : `${METHOD_WORDS[pay.method]}: ${pay.handle || pay.accountName}`;
+        return { uid, preferredName: a.preferredName || '', method: pay?.method || null, payTo, lastPayout: last, paidThisRound: !!last && since > 0 && new Date(last.at).getTime() >= since };
+      }),
+    };
+  };
 
   if (path.startsWith('/api/admin/fund/')) {
     if (role !== 'admin') return res(404, { error: 'Not found' });
+    if (path === '/api/admin/fund/pool' && method === 'GET') return res(200, poolView());
+    if (path === '/api/admin/fund/pool' && method === 'POST') {
+      const totalCents = Number(body.totalCents);
+      if (!Number.isInteger(totalCents) || totalCents < 0) return res(400, { error: 'Enter the pool total in dollars and cents, like 1240.50.' });
+      const n = actives().length;
+      put('fundPool/current', { totalCents, activeCount: n, shareCents: shareOf(totalCents, n), updatedAt: now(), updatedBy: me, pending: [] });
+      return res(200, poolView());
+    }
+    if (path === '/api/admin/fund/payout') {
+      const uid = body.uid;
+      const a = get(appPath(uid));
+      const amountCents = Number(body.amountCents);
+      const ref = clean(body.ref, 60);
+      if (REVIEWERS.includes(uid)) return res(403, { error: 'Reviewers are not paid from the fund.' });
+      if (!Number.isInteger(amountCents) || amountCents <= 0) return res(400, { error: 'Enter the amount sent, like 124.00.' });
+      if (ref.length < 2) return res(400, { error: 'Add the ID number of the payment.' });
+      if (!a || !isActiveParticipant(uid, a, REVIEWERS)) return res(409, { error: 'Only a verified participant who is taking part can be paid.' });
+      const m = payOf(uid)?.method || 'other';
+      put(appPath(uid), { ...a, payouts: [...(a.payouts || []), { at: now(), amountCents, method: m, ref, by: me }], audit: audit(a, row(me, 'payout-sent', '', '', { msg: `ID #${ref}` })) });
+      return res(200, { ok: true });
+    }
     if (path === '/api/admin/fund/list') {
       const apps = [...store.docs.entries()].filter(([k]) => /^fundApplications\/[^/]+$/.test(k)).map(([k, a]) => {
         const uid = k.split('/')[1];
@@ -82,8 +123,8 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
       const reason = clean(body.reason, 1000);
       const message = clean(body.message, 1000);
       const note = clean(body.note, 4000);
-      if ((action === 'request_info' || action === 'decline') && reason.length < 2)
-        return res(400, { error: action === 'decline' ? 'Write a brief internal reason for declining.' : 'Write a brief internal reason for asking for more information.' });
+      if ((action === 'request_info' || action === 'decline') && message.length < 2)
+        return res(400, { error: action === 'decline' ? 'Write the reason for the denial. It is sent to the applicant.' : 'Write what you need from the applicant. It is sent to them.' });
       let next;
       if (action === 'note') next = { ...a, internalReviewerNote: note, updatedAt: now(), audit: audit(a, row(me, 'note-saved')) };
       else {
@@ -111,7 +152,12 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
   const fresh = () => ({ userId: me, verificationStatus: 'draft', step: 1, createdAt: now(), updatedAt: now(), audit: [row(me, 'started')] });
   const cur = get(appPath(me));
   const view = (a) => res(200, { ok: true, application: applicantView(a, payOf(me)) });
-  if (path === '/api/fund/me') return res(200, { application: applicantView(cur, payOf(me)) });
+  if (path === '/api/fund/me') {
+    const view = applicantView(cur, payOf(me));
+    const p = get('fundPool/current');
+    if (view && p?.totalCents && isActiveParticipant(me, cur, REVIEWERS)) view.pool = { totalCents: p.totalCents, shareCents: p.shareCents, activeCount: p.activeCount, asOf: p.updatedAt };
+    return res(200, { application: view });
+  }
   if (path === '/api/fund/draft') {
     const a = cur || fresh();
     if (!EDITABLE.has(a.verificationStatus)) return res(409, { error: 'This application has been sent for review, so it cannot be changed right now.' });
