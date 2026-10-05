@@ -9,7 +9,7 @@
 
 import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
-  FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
+  FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO, VERIFY_CHECKS_REFUSAL, verifyChecked,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView,
   isActiveParticipant, shareOf, checkTo, dollars, fundTotals, sentAndOwed, TOTALS_LIMIT,
 } from '../fund-rules.js';
@@ -128,6 +128,7 @@ export async function fundDemo({ path, q, body, init, role, store, real }) {
       const action = body.action;
       if (!ACTIONS.has(action)) return res(400, { error: 'That action is not available.' });
       if ((action === 'verify' || action === 'reverify') && uid === me) return res(403, { error: SELF_VERIFY_REFUSAL });
+      if ((action === 'verify' || action === 'reverify') && !verifyChecked(body.checks)) return res(400, { error: VERIFY_CHECKS_REFUSAL });
       const reason = clean(body.reason, 1000);
       const message = clean(body.message, 1000);
       const note = clean(body.note, 4000);

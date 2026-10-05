@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.28';
+export const VERSION = '7.29';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.28';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DOCUMENTS' RULE (Eric, 2026-10-05: "The medical document must
+    // demonstrate disability due to illness as well as match the full name on
+    // the ID type"). Admin only.
+    version: '7.29',
+    quiet: true,
+    client: [],
+    admin: [
+      'Applicants now read the rule on the landing page and the form: the medical document must show disability due to illness, and the name on it must match the full name on their ID.',
+      'Before Verify or Reverify goes through, you tick both: the document shows disability due to illness, and its name matches the ID. Both are saved in the history.',
+    ],
+  },
   {
     // DISCORD IS MANDATORY (Eric, 2026-10-04: "Discord usernames are
     // mandatory. They have to join."). Admin only.

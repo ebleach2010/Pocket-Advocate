@@ -62,6 +62,16 @@ export const DISCORD_INVITE = 'https://discord.gg/YZXYQFjUGa';
 export const NEED_MAX = 1500;
 export const CONSENT_KEYS = ['accurate', 'noGuarantee', 'notMedical', 'reviewerView', 'formula'];
 export const SELF_VERIFY_REFUSAL = 'Your verification must be completed by another authorized reviewer.';
+// Eric, 2026-10-05: "The medical document must demonstrate disability due to
+// illness as well as match the full name on the ID type". The applicant reads
+// the rule; the reviewer confirms both before Verify or Reverify goes through.
+export const DOC_RULE = 'Your medical document must show disability due to illness, and the name on it must match the full name on your ID.';
+export const VERIFY_CHECKS = [
+  ['disability', 'The medical document shows disability due to illness.'],
+  ['nameMatch', 'The name on the medical document matches the full name on the ID.'],
+];
+export const VERIFY_CHECKS_REFUSAL = 'Confirm both before verifying: the medical document shows disability due to illness, and its name matches the full name on the ID.';
+export const verifyChecked = (checks) => VERIFY_CHECKS.every(([k]) => checks?.[k] === true);
 // Eric, 2026-10-04: reverification "Every 6 months".
 export const REVERIFY_MONTHS = 6;
 export const DOC_MAX_BYTES = 25 * 1024 * 1024;

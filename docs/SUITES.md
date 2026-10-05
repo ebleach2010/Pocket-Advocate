@@ -266,6 +266,15 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The documents' rule (2026-10-05, v7.29)
+
+Eric: "The medical document must demonstrate disability due to illness as well
+as match the full name on the ID type". `DOC_RULE` is read on the landing and
+on Steps 2 and 3; Verify and Reverify need `checks: { disability, nameMatch }`
+(`VERIFY_CHECKS` in `fund-rules.js`), refused by the Worker after the
+self-verification refusal, recorded in the history. `fund.mjs` F33 RUNS it (33
+checks); the verify calls carry `CHECKS`. `drive-fund.mjs` B5a (37 checks).
+
 ### Discord is mandatory (2026-10-04, v7.28)
 
 Eric: "Discord usernames are mandatory. They have to join." Step 1 asks for

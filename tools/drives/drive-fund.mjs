@@ -156,6 +156,13 @@ check('B4 Decline with no reason for the applicant is stopped', /Write why it wa
 await adm.click('#fq-cancel');
 await adm.click('[data-act="verify"]');
 await adm.click('#fq-go');
+// v7.29: Eric, "The medical document must demonstrate disability due to illness as well as match the full
+// name on the ID type". Verify waits for both confirmations.
+check('B5a Verify without confirming the document shows disability due to illness and the matching name is stopped', /Confirm both before verifying/.test((await adm.textContent('#fq-act-error')) || '')
+  && !/Verified/.test((await adm.textContent('.fq-head')) || ''));
+await adm.check('[data-vcheck="disability"]');
+await adm.check('[data-vcheck="nameMatch"]');
+await adm.click('#fq-go');
 await adm.waitForFunction(() => /Verified/.test(document.querySelector('.fq-head')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
 const vv = (await adm.textContent('#fq')) || '';
 check('B5 Verify on someone else\'s application verifies it, sets a reverification date and writes the history', /Verified/.test(vv) && /Reverification due/.test(vv) && /You Verified/.test(vv));

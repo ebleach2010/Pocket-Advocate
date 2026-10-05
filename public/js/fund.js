@@ -17,7 +17,7 @@
 import { requireUser } from './auth.js';
 import { auth, signOut } from './firebase.js';
 import { enablePush, pushSupported, pushInstalled } from './push.js';
-import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, nextPayout, payoutWords, chaseLine } from './fund-rules.js';
+import { DISCORD_INVITE, CHECK_NOTE, NEED_MAX, dollars, nextPayout, payoutWords, chaseLine, DOC_RULE } from './fund-rules.js';
 
 const HELP = 'office@pocketadvocacy.com';
 const box = document.getElementById('fund');
@@ -193,9 +193,11 @@ function stepBody(n) {
   if (n === 2) return `
     <p class="fund-measure">Upload one identity document, such as a driver’s license, a state ID, a passport or other government-issued identification.</p>
     <div class="fund-note">${esc(ID_REDACT)}</div>
+    <p class="fund-hint">Leave your full name visible. It must match the name on your medical document.</p>
     ${uploader('id')}`;
   if (n === 3) return `
     <div class="fund-note">${esc(MED_REDACT)}</div>
+    <div class="fund-note fund-warn">${esc(DOC_RULE)}</div>
     <p class="fund-measure">Upload at least one document that reasonably shows you are currently affected by a significant medical condition or disability, for example:</p>
     <ul class="fund-dim fund-small">
       <li>Physician/provider letter</li><li>After-visit summary</li><li>Hospital discharge paperwork</li>

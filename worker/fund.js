@@ -39,7 +39,7 @@ import { sendEmail } from './email.js';
 import { requireUser } from './firebase-auth.js';
 import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
-  FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO,
+  FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO, VERIFY_CHECKS, VERIFY_CHECKS_REFUSAL, verifyChecked,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView, sniff,
   isActiveParticipant, shareOf, dollars, CHECK_NOTE, checkTo, nextPayout, payoutWords,
   fundTotals, sentAndOwed, chaseLine, TOTALS_LIMIT,
@@ -469,6 +469,10 @@ async function handleAct(request, env, rev, ctx) {
   if (!okUid(uid) || !ACTIONS.has(action)) return json({ error: 'That action is not available.' }, 400);
   // The rule, before anything is read: nobody verifies their own application.
   if ((action === 'verify' || action === 'reverify') && uid === rev.uid) return json({ error: SELF_VERIFY_REFUSAL }, 403);
+  // And the documents' rule (Eric, 2026-10-05): the medical document shows
+  // disability due to illness, and its name matches the full name on the ID.
+  // The reviewer confirms both, or nothing changes.
+  if ((action === 'verify' || action === 'reverify') && !verifyChecked(body?.checks)) return json({ error: VERIFY_CHECKS_REFUSAL }, 400);
   // Eric, 2026-10-04: "I approve or deny their application (if denied, I give
   // a message why). Then their application approval or denial with the
   // reason is sent to their email." So a denial, and a request for more, each
@@ -498,7 +502,8 @@ async function handleAct(request, env, rev, ctx) {
     if (action === 'request_info' || action === 'decline') patch.applicantMessage = message || null;
     if (action === 'decline' || action === 'inactive') patch.participationActive = false;
     if (note) patch.internalReviewerNote = note;
-    patch.audit = withAudit(cur, { ...auditRow(rev.uid, action, from, ACT_TO[action]), ...(reason ? { reason } : {}), ...(message ? { msg: message } : {}) });
+    const checked = action === 'verify' || action === 'reverify' ? { checks: VERIFY_CHECKS.map(([k]) => k) } : {};
+    patch.audit = withAudit(cur, { ...auditRow(rev.uid, action, from, ACT_TO[action]), ...(reason ? { reason } : {}), ...(message ? { msg: message } : {}), ...checked });
     return { patch };
   });
   if (out.error) return json({ error: out.error }, out.status || 400);

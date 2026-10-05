@@ -117,6 +117,9 @@ const FULL = {
   consents: { accurate: true, noGuarantee: true, notMedical: true, reviewerView: true, formula: true },
   payment: { method: 'check', accountName: 'Ann Doe', address: { line1: '12 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' } },
 };
+// RE-PINNED 2026-10-05 (v7.29): Verify and Reverify carry the reviewer's two confirmations (Eric: "The medical
+// document must demonstrate disability due to illness as well as match the full name on the ID type").
+const CHECKS = { disability: true, nameMatch: true };
 async function readyToSubmit(w, uid = 'ann', extra = {}) {
   await call(w, uid, '/api/fund/draft', { method: 'POST', json: { ...FULL, ...extra } });
   await up(w, uid, 'id');
@@ -264,7 +267,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   w.setDoc('fundApplications/eric', JSON.parse(before));
   const stillSubmitted = app(w, 'eric').verificationStatus === 'submitted' && !app(w, 'eric').verifiedAt;
   w.api.FUND_REVIEWER_UIDS.push('zoe');
-  const other = await call(w, 'zoe', '/api/admin/fund/act', { method: 'POST', json: { uid: 'eric', action: 'verify' } });
+  const other = await call(w, 'zoe', '/api/admin/fund/act', { method: 'POST', json: { uid: 'eric', action: 'verify', checks: CHECKS } });
   const idx = SRC.indexOf("if ((action === 'verify' || action === 'reverify') && uid === rev.uid)");
   check('F6 nobody verifies their own application: Eric\'s verify and reverify on his own are refused with 403 and his exact sentence and change nothing, before anything is read; a second reviewer, once listed, can verify it; and the page greys both buttons with the same sentence',
     self.status === 403 && self.out.error === 'Your verification must be completed by another authorized reviewer.' && selfRe.status === 403 && stillSubmitted
@@ -318,8 +321,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   await readyToSubmit(w, 'cy', { participationRequested: false });
   for (const u of ['ann', 'cy']) await call(w, u, '/api/fund/submit', { method: 'POST', json: {} });
   const t0 = Date.now();
-  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify' } });
-  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'cy', action: 'verify' } });
+  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify', checks: CHECKS } });
+  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'cy', action: 'verify', checks: CHECKS } });
   const a = app(w);
   const daysOut = (new Date(a.reverificationDueAt).getTime() - t0) / 86_400_000;
   const inact = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'inactive' } });
@@ -375,7 +378,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   await readyToSubmit(w2);
   await call(w2, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
   w2.setDoc('fundApplications/ann', { ...app(w2), accountEmail: 'ann@example.test' });
-  await call(w2, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify' } });
+  await call(w2, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify', checks: CHECKS } });
   const ok = w2.emails[0];
   const all = JSON.stringify([w.pushes, w.emails, w2.emails]);
   check('F10 what leaves about an applicant is only what they need: the reviewer\'s push names no one; the decision email goes to the address they gave with the decision and the reviewer\'s message and nothing else from the application, approved or denied; a push goes too when they turned notifications on; and the Worker module logs nothing at all',
@@ -457,7 +460,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   await up(w, 'ann', 'photo', PNG(), 'image/png');
   await call(w, 'ann', '/api/fund/draft', { method: 'POST', json: { photoPublicConsent: true } });
   await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
-  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify' } });
+  await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify', checks: CHECKS } });
   const out = await w.api.minimizeFundApplication(env, 'ann', { note: 'Documents removed at the applicant\'s request.' });
   const left = app(w);
   check('F13 the minimal record is ready and unreachable: it deletes every file and the payment details and leaves only who, the status, when verified, by whom, when due and a short note; no route, no cron and no other module calls it',
@@ -1086,6 +1089,40 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && /<dt>Username may be published<\/dt>/.test(ADMINPAGE)
     && f('public/index.html').includes('Applicants must be members of our Discord community. A Discord username is required.'),
     JSON.stringify({ held: held.status, stamped: !!stamped, ok: ok.status, status: sentStatus, seen: [seen?.usernamePublicConsent, seen?.usernameConsentAt], w2: [app(w2).usernamePublicConsent, app(w2).usernameConsentAt], unstamped }));
+}
+
+// ---- F33: the documents' rule, confirmed before Verify (2026-10-05, v7.29) ----------------
+// Eric: "The medical document must demonstrate disability due to illness as well as match the full name
+// on the ID type". The applicant reads the rule on the landing and on Steps 2 and 3; the reviewer ticks
+// both points before Verify or Reverify, and the Worker refuses either without both, after the
+// self-verification refusal and before anything changes. RUN against the Worker module.
+// NEGATIVE CONTROL (run 2026-10-05): handleAct's `!verifyChecked(body?.checks)` line removed made this read
+//   FAIL  F33 the documents' rule: the applicant reads it on the landing and on Steps 2 and 3, the reviewer confirms disability due to illness and the matching name before Verify or Reverify, the Worker refuses either without both and changes nothing, the history records both, and his own application is still refused first
+{
+  const w = world();
+  await readyToSubmit(w, 'ann');
+  await call(w, 'ann', '/api/fund/submit', { method: 'POST', json: {} });
+  const none = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify' } });
+  const half = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify', checks: { disability: true } } });
+  const before = app(w).verificationStatus;
+  const ok = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify', checks: CHECKS } });
+  const row = app(w).audit.filter((r) => r.act === 'verify').slice(-1)[0];
+  const reNone = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'reverify', checks: { nameMatch: true } } });
+  const self = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'eric', action: 'verify' } });
+  const IDX = f('public/index.html');
+  check('F33 the documents\' rule: the applicant reads it on the landing and on Steps 2 and 3, the reviewer confirms disability due to illness and the matching name before Verify or Reverify, the Worker refuses either without both and changes nothing, the history records both, and his own application is still refused first',
+    none.status === 400 && none.out.error === RULES.VERIFY_CHECKS_REFUSAL && half.status === 400 && before !== 'verified'
+    && ok.status === 200 && app(w).verificationStatus === 'verified' && row?.checks?.join() === 'disability,nameMatch'
+    && reNone.status === 400 && self.status === 403 && self.out.error === RULES.SELF_VERIFY_REFUSAL
+    && RULES.DOC_RULE === 'Your medical document must show disability due to illness, and the name on it must match the full name on your ID.'
+    && RULES.VERIFY_CHECKS.map(([, t]) => t).join(' | ') === 'The medical document shows disability due to illness. | The name on the medical document matches the full name on the ID.'
+    && IDX.includes('Your medical document must show disability due to illness, and the name on it must match the full name on your ID.')
+    && /<div class="fund-note fund-warn">\$\{esc\(DOC_RULE\)\}<\/div>/.test(PAGE) && PAGE.includes('Leave your full name visible. It must match the name on your medical document.')
+    && /data-vcheck="\$\{k\}"/.test(ADMINPAGE) && /checks \} \}\);/.test(ADMINPAGE) && /err\.textContent = VERIFY_CHECKS_REFUSAL;/.test(ADMINPAGE)
+    && ADMINPAGE.includes('The medical document must show disability due to illness, and the name on it must match the full name on the ID.')
+    && /!verifyChecked\(body\.checks\)\) return res\(400, \{ error: VERIFY_CHECKS_REFUSAL \}\)/.test(DEMO)
+    && !DASH.test(IDX) && !DASH.test(PAGE) && !DASH.test(ADMINPAGE),
+    JSON.stringify({ none: none.status, half: half.status, ok: ok.status, checks: row?.checks, reNone: reNone.status, self: self.status }));
 }
 
 const failed = results.filter((r) => !r.pass);

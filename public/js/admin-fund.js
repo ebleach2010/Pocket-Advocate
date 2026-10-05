@@ -9,7 +9,7 @@
 // refuses them there whatever this page does.
 
 import { requireAdmin, hydrateNav } from './auth.js';
-import { dollars, CHECK_NOTE, checkTo } from './fund-rules.js';
+import { dollars, CHECK_NOTE, checkTo, VERIFY_CHECKS, VERIFY_CHECKS_REFUSAL } from './fund-rules.js';
 import { enablePush, pushSupported, pushInstalled, initPushPrompt } from './push.js';
 
 hydrateNav();
@@ -332,6 +332,7 @@ function paint(a, me) {
     </dl>
 
     <h3>Documents</h3>
+    <p class="dim small">The medical document must show disability due to illness, and the name on it must match the full name on the ID.</p>
     ${docs.length ? `<ul class="fq-docs">${docs.join('')}</ul>` : '<p class="dim">No documents yet.</p>'}
     ${a.photo ? `<h3>GoFundMe photo</h3><ul class="fq-docs">${docRow(a, a.photo, 'photo')}</ul>
       <p class="small ${a.photoPublicConsent ? '' : 'error'}">${a.photoPublicConsent ? `Public-use consent given${a.photoConsentAt ? ` ${day(a.photoConsentAt)}` : ''}.` : 'No public-use consent: do not use this photo.'}</p>` : ''}
@@ -394,7 +395,9 @@ function actForm(a, act) {
           <textarea class="fq-text" id="fq-message" maxlength="1000"></textarea></label>
         <label class="small">Private note for the history <span class="dim">(optional, only you see it)</span>
           <textarea class="fq-text" id="fq-reason" maxlength="1000"></textarea></label>` : ''}
-      ${act === 'verify' || act === 'reverify' ? '<p class="dim small">The applicant gets an email saying they are approved.</p>' : ''}
+      ${act === 'verify' || act === 'reverify' ? `${VERIFY_CHECKS.map(([k, w]) => `
+        <label class="small fq-tick"><input type="checkbox" data-vcheck="${k}"> ${esc(w)}</label>`).join('')}
+        <p class="dim small">The applicant gets an email saying they are approved.</p>` : ''}
       <p class="row"><button type="button" class="btn glow" id="fq-go">${ACT_WORDS[act]}</button>
         <button type="button" class="btn quiet" id="fq-cancel">Cancel</button></p>
     </div>`;
@@ -404,6 +407,12 @@ function actForm(a, act) {
     err.hidden = true;
     const reason = box.querySelector('#fq-reason')?.value.trim() || '';
     const message = box.querySelector('#fq-message')?.value.trim() || '';
+    const checks = Object.fromEntries([...box.querySelectorAll('[data-vcheck]')].map((c) => [c.dataset.vcheck, c.checked]));
+    if ((act === 'verify' || act === 'reverify') && !VERIFY_CHECKS.every(([k]) => checks[k] === true)) {
+      err.textContent = VERIFY_CHECKS_REFUSAL;
+      err.hidden = false;
+      return;
+    }
     if (needsReason && message.length < 2) {
       err.textContent = act === 'decline' ? 'Write why it was denied first. It is emailed to them.' : 'Write what you need first. It is emailed to them.';
       err.hidden = false;
@@ -412,7 +421,7 @@ function actForm(a, act) {
     }
     e.currentTarget.disabled = true;
     try {
-      const out = await api('/api/admin/fund/act', { method: 'POST', body: { uid: a.uid, action: act, reason, message } });
+      const out = await api('/api/admin/fund/act', { method: 'POST', body: { uid: a.uid, action: act, reason, message, checks } });
       paint(out.application, out.me);
     } catch (x) {
       err.textContent = x.message;
