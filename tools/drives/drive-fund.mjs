@@ -21,6 +21,9 @@
 //    which opens Clients and Services.
 // C: nothing on either page is wider than a 390px screen.
 // D (v7.25): a client who opens /services.html lands on the fund page.
+// v7.30: PR 1 is live again, so Services stays Services and the landing is
+// the advocacy site. The applicant's walk (A) runs in the demo, which still
+// opens the hidden form on a preview host.
 // v7.26: the queue takes the GoFundMe and Zazzle totals, each row says what
 // is owed, the Friday post copies for Discord, and the landing shows the
 // GoFundMe button and what Eric's post says.
@@ -203,19 +206,15 @@ await adm.click('#fq-test');
 await adm.waitForFunction(() => /Sent to/.test(document.querySelector('#fq-alert-said')?.textContent || ''), null, { timeout: 8000 }).catch(() => {});
 check('B9 the alerts card says every application notifies him and emails him, and the test reports where it went', /Application alerts/.test(al) && /Every new application sends a notification to your phone and an email to your inbox\./.test(al)
   && /Sent to your email\. No device has alerts on yet/.test((await adm.textContent('#fq-alert-said')) || ''));
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." PR 1 is live again: the queue
+// carries the advocacy tabs, Clients opens, and the Clients page keeps a quiet door back to the queue.
 const navs = await adm.$$eval('nav.tabs > a', (as) => as.map((a) => a.getAttribute('href')));
-await adm.goto(`${P}${navs[1]}`, { waitUntil: 'networkidle' });
-const hub = (await adm.textContent('main')) || '';
-await adm.screenshot({ path: `${SHOTS}/fund-pr1.png`, fullPage: true });
-await adm.click('.pr1-doors a:has-text("Services")');
-await adm.waitForLoadState('networkidle');
-const svcUrl = adm.url();
-await adm.goto(`${P}${navs[1]}`, { waitUntil: 'networkidle' });
-await adm.click('.pr1-doors a:has-text("Clients")');
-await adm.waitForLoadState('networkidle');
-check('B10 the queue\'s nav is Fund and PR 1; PR 1 opens the hub, and the hub opens Services and Clients', navs.join() === '/admin-fund.html,/admin-pr1.html'
-  && /Parked\. Everything that is not the fund\. Nothing was deleted\./.test(hub) && /\/services(\.html)?$/.test(new URL(svcUrl).pathname) && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname),
-  JSON.stringify({ navs, svcUrl, clients: adm.url() }));
+await adm.goto(`${P}${navs[0]}`, { waitUntil: 'networkidle' });
+await adm.waitForSelector('a:has-text("Fund queue")', { timeout: 8000 }).catch(() => {});
+const door = await adm.getAttribute('a:has-text("Fund queue")', 'href').catch(() => null);
+check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with a quiet door back to the Fund queue', navs.join() === '/admin.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html'
+  && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname) && door === '/admin-fund.html',
+  JSON.stringify({ navs, clients: adm.url(), door }));
 
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForSelector('.fund-pill', { timeout: 8000 }).catch(() => {});
@@ -240,18 +239,17 @@ check('B12 every amount on the fund card shows whole, inside the card', clipped.
 check('C1 nothing is wider than the screen on the form or the queue', !wideClient && !wideAdmin && !(await wide(page)));
 check('C2 no script error on either page', errors.length === 0, errors.join(' | '));
 
-// ---- D: the old public pages, as a client (v7.25) --------------------------------
+// ---- D: the public pages, as a client (v7.25; RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only.") ----
 const cctx = await b.newContext({ viewport: { width: 390, height: 844 } });
 await cctx.addCookies([{ name: 'pa_demo', value: 'client', domain: '127.0.0.1', path: '/' }]);
 const cp = await cctx.newPage();
 await cp.goto(`${P}/services.html`, { waitUntil: 'networkidle' });
-check('D1 a client who opens Services lands on the fund page', new URL(cp.url()).pathname === '/' && /Community Assistance Fund/.test((await cp.textContent('h1')) || ''), cp.url());
+check('D1 a client who opens Services stays on Services', /\/services(\.html)?$/.test(new URL(cp.url()).pathname), cp.url());
+await cp.goto(`${P}/`, { waitUntil: 'networkidle' });
 const land = (await cp.textContent('main')) || '';
-const give = await cp.getAttribute('[data-gofundme] a', 'href').catch(() => null);
-await cp.screenshot({ path: `${SHOTS}/fund-landing.png`, fullPage: true });
-check('D2 the landing shows the GoFundMe button and says how it works and what is published', give === 'https://gofund.me/7f301549b' && /Recommended/.test(land)
-  && /How it works/.test(land) && /One shared fund, divided equally among verified recipients\./.test(land) && /Transparency/.test(land) && /Every Friday, these are posted in the Discord:/.test(land)
-  && !(await wide(cp)), JSON.stringify({ give }));
+await cp.screenshot({ path: `${SHOTS}/advocacy-landing.png`, fullPage: true });
+check('D2 the landing is the advocacy site, with no fund on it', /Ready when you are\./.test(land) && !/Community Assistance Fund|GoFundMe/.test(land)
+  && !(await cp.$('a[href*="fund"]')) && !(await wide(cp)));
 await b.close();
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

@@ -16,13 +16,11 @@ const ok = (n, c, d = '') => { c ? (pass++, console.log(`  ok    ${n}${d ? ' —
 
 async function open(width, scheme) {
   const ctx = await b.newContext({ viewport: { width, height: 844 }, deviceScaleFactor: 2 });
-  // 2026-10-04 (v7.25): the landing this drives is parked in PR 1 at admin-pr1-landing.html (the
-  // public landing is the Community Assistance Fund since v7.23), so it is opened as Eric opens it.
-  await ctx.addCookies([{ name: 'pa_demo', value: 'admin', domain: '127.0.0.1', path: '/' }]);
+  await ctx.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
   const page = await ctx.newPage();
   const errs = [];
   page.on('pageerror', (e) => errs.push(String(e).slice(0, 200)));
-  await page.goto(`${P}/admin-pr1-landing.html?demo=admin`, { waitUntil: 'networkidle' });
+  await page.goto(`${P}/?demo=1`, { waitUntil: 'networkidle' });
   if (scheme) {
     await page.evaluate((s) => localStorage.setItem('pa-scheme', s), scheme);
     await page.reload({ waitUntil: 'networkidle' });

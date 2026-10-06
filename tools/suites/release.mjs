@@ -101,9 +101,17 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry729 = (CL.match(/\{\n\s+\/\/ THE DOCUMENTS' RULE \(Eric, 2026-10-05[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-05, v7.29): the worker's BUILD_TAG left at the fund-discord tag made this read
   //   FAIL  R1 both versions read 7.29 with the new tag, the 7.29 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.29 with the new tag, the 7.29 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.29';/.test(CL) && /const VERSION = '7\.29';/.test(W) && /const BUILD_TAG = 'v2026-10-05-fund-docrule';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.29'
+  // RE-PINNED 2026-10-06 (v7.30): both versions read 7.30 with the advocacy-only tag, and the 7.30 entry says
+  // PR 1 is the live site again, the fund is hidden with its data kept, and PR 420 stays deleted.
+  const entry730 = (CL.match(/\{\n\s+\/\/ PATIENT ADVOCACY ONLY \(Eric, 2026-10-06[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-06, v7.30): changelog.js's VERSION left at '7.29' made this read
+  //   FAIL  R1 both versions read 7.30 with the new tag, the 7.30 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.30 with the new tag, the 7.30 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.30';/.test(CL) && /const VERSION = '7\.30';/.test(W) && /const BUILD_TAG = 'v2026-10-06-advocacy-only';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.30'
+    && /version: '7\.30',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry730)
+    && /PR 1 is back as the live site/.test(entry730) && /The Community Assistance Fund is hidden\./.test(entry730) && /PR 420 stays deleted\./.test(entry730)
+    && !DASH.test(entry730) && !HARD.some((re) => re.test(entry730))
     && /version: '7\.29',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry729)
     && /disability due to illness/.test(entry729) && /Before Verify or Reverify goes through/.test(entry729)
     && !DASH.test(entry729) && !HARD.some((re) => re.test(entry729))

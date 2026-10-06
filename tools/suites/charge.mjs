@@ -436,7 +436,11 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // joined the list: stat130 on all eight.
     // NEGATIVE CONTROL (run 2026-10-04, v7.25): admin-pr1.html put back to stat129 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund', 'admin-pr1'].every((p) => /admin\.css\?v=stat130/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-06 (v7.30): PR 1 is live again, so the hub is gone and its rules left the stylesheet:
+    // stat131 on the seven admin pages.
+    // NEGATIVE CONTROL (run 2026-10-06, v7.30): admin-fund.html put back to stat130 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat131/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

@@ -48,7 +48,8 @@ function check(name, cond, detail = '') {
 
 // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
 // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
-const IDX = f('public/admin-pr1-landing.html');
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again.
+const IDX = f('public/index.html');
 const GLOW = f('public/css/glowup.css');
 const SITE = f('public/css/site.css');
 // The page without its scripts and HTML comments: what a person reads.
@@ -246,7 +247,7 @@ console.log('\n--- D. the audit fixes ---');
   check('D7 "Ready when you are." closes exactly one page, and about.html says the legal part once in main and once in the site footer',
   readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html'))
     // RE-PINNED 2026-10-04 (v7.23): the page it closes is the parked landing, PR 1.
-    .filter((n) => /<h2>Ready when you are\.<\/h2>/.test(f(`public/${n}`))).join() === 'admin-pr1-landing.html' // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
+    .filter((n) => /<h2>Ready when you are\.<\/h2>/.test(f(`public/${n}`))).join() === 'index.html' // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again. // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
   && !/<footer class="legal">/.test(f('public/about.html'))
   && (f('public/about.html').match(/<h2>The legal basics<\/h2>/g) || []).length === 1
   && (f('public/about.html').match(/If you are having a medical emergency, call 911\./g) || []).length === 1);
@@ -271,9 +272,14 @@ check('E2 not one term from the blindness list, in the page or the new styleshee
 // guard, stays on the public landing, which is the fund's now.
 // RE-PINNED 2026-10-04 (v7.25): his device opens on the Fund queue now (Eric: everything but the fund is
 // parked in PR 1), so the public landing's redirect goes to admin-fund.html.
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The
+// landing is public at index.html again, with its maintenance notice and the redirect that sends his
+// device to the Clients page, guarded against the demo.
+// NEGATIVE CONTROL (run 2026-10-06, v7.30): the redirect's target put back to `%2Fadmin-fund.html` made this read
+//   FAIL  E3 the landing still wears the maintenance notice and the demo never redirects an admin device
 check('E3 the landing still wears the maintenance notice and the demo never redirects an admin device',
-  /src="\/js\/maintenance\.js"/.test(IDX) && !/pa-admin-device/.test(IDX)
-  && /sessionStorage\.getItem\('pa-demo'\)\)\) return;/.test(f('public/index.html')) && /location\.replace\('\/signin\.html\?to=%2Fadmin-fund\.html'\);/.test(f('public/index.html')));
+  /src="\/js\/maintenance\.js"/.test(IDX) && /localStorage\.getItem\('pa-admin-device'\) === '1'/.test(IDX)
+  && /sessionStorage\.getItem\('pa-demo'\)\)\) return;/.test(IDX) && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(IDX));
 
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);

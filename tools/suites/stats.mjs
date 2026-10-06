@@ -321,7 +321,8 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
   const js = f('public/js/stats.js');
   // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
   // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
-  const idx = f('public/admin-pr1-landing.html');
+  // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again.
+  const idx = f('public/index.html');
   const strip = idx.slice(idx.indexOf('id="numbers"'), idx.indexOf('The whole ledger') + 40);
   const fresh = [page, js, strip];
   check('D1 the page carries the four tiles, the ledger, the floor line and loads stats.js',
@@ -356,7 +357,8 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
     && /ctx\.waitUntil\(computePublicStats\(env\)\)/.test(CODE)
     // RE-PINNED 2026-10-04 (v7.25): By the numbers is parked in PR 1, so the audit crawls it among the
     // parked pages, through the admin demo.
-    && /'\/stats'/.test((code('tools/blindness-audit.mjs').match(/const PARKED_PAGES = \[([\s\S]*?)\];/) || [])[1] || '')
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again, so the audit crawls /stats as a client page once more.
+    && /'\/stats'/.test((code('tools/blindness-audit.mjs').match(/const CLIENT_PAGES = \[([\s\S]*?)\];/) || [])[1] || '')
     && /path === '\/api\/stats'/.test(code('public/js/demo/api.js')));
   // Pin updated 2026-09-03 on the landing branch: Look A moved every page to
   // sp7, so the pin asks for "at least sp6" rather than sp6 exactly.

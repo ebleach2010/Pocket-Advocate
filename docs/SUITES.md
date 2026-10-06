@@ -266,6 +266,25 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Patient advocacy only (2026-10-06, v7.30)
+
+Eric: "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to
+hide the fund and keep what was submitted, and to send old fund links to the
+advocacy landing. The v7.22 public pages, sign-in and Clients page are back
+(PR 1, word for word, is `index.html` again); the PR 1 hub and its parked copy
+are deleted; the parking gate is gone. `FUND_OPEN` in `fund-rules.js` is
+false: `FUND_PAGE` in `worker/index.js` sends strangers from `/fund` to `/`,
+and the applicant's routes answer 404, while his queue and the data stay.
+PR 420 was already deleted in v7.21.
+
+The landing pins in landing, checkins, defects, fitcall, maintenance and stats
+read `index.html` again (E3, D8 re-pinned); CH7 moves to stat131. `fund.mjs`
+F16 to F19, F26, F27, F29, F31 to F33 are re-pinned; the route checks run the
+fund open through `world()`, and new F34 runs it closed (34 checks). The audit
+crawls the form as a hidden page and asserts the 302. `drive-fund.mjs` B10, D1
+and D2 re-pinned; `drive-landing.mjs` and `drive-nosideways.mjs` are back to
+their v7.22 lists.
+
 ### The documents' rule (2026-10-05, v7.29)
 
 Eric: "The medical document must demonstrate disability due to illness as well

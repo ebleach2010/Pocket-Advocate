@@ -91,23 +91,27 @@ const CODE_ONLY = [
 // handling serves /about.html at /about and redirects the .html spelling, so
 // these are the canonical forms.
 const CLIENT_PAGES = [
-  '/', '/case', '/chat', '/signin',
-  '/subscription', '/return',
-  // 2026-10-04: the Community Assistance Fund's verification form and status
-  // page. A stranger signs in and lands here.
-  '/fund',
+  '/', '/about', '/book', '/case', '/chat', '/signin', '/subscribe',
+  '/subscription', '/return', '/reviews',
+  // 2026-08-26: the landing split into a real site. These three are new public
+  // pages, and a public page this list does not name is a page nobody ever
+  // checks for leaked admin language. Added in the same commit that creates
+  // them, deliberately: the gap between "shipped" and "audited" is exactly
+  // where a leak would sit unnoticed.
+  '/services', '/faq', '/contact',
+  // 2026-09-02: the free 15-minute call. A public page with a form on it, and
+  // the first page a stranger is now sent to.
+  '/fit',
+  // 2026-09-02: By the numbers. Measured figures and the words around them.
+  '/stats',
 ];
 
-// 2026-10-04 (v7.25): the old public site, parked in PR 1. A stranger is sent
-// to the fund page (section 2 asserts it); Eric still opens them. Their bytes
-// are still crawled and scanned here, through the admin demo, which only a
-// preview host serves; on the live host they answer the redirect and the
-// crawl skips them. History: '/about', '/book', '/subscribe' and '/reviews'
-// were client pages from the start, '/services', '/faq' and '/contact' from
-// 2026-08-26, '/fit' and '/stats' from 2026-09-02.
-const PARKED_PAGES = [
-  '/about', '/advocate', '/book', '/contact', '/faq', '/fit', '/reviews', '/services', '/stats', '/subscribe',
-];
+// 2026-10-06 (v7.30): the Community Assistance Fund's form, hidden (Eric:
+// "Revert back to PR 1. Remove PR 420. Patient advocacy only."). A stranger
+// on the live host is sent to the landing (section 2 asserts it); its bytes
+// are still crawled and scanned here through the demo, which only a preview
+// host serves. It was a client page from 2026-10-04.
+const HIDDEN_PAGES = ['/fund'];
 
 // Reachable without any page linking to them.
 const EXTRA = [
@@ -128,11 +132,8 @@ const EXTRA = [
 const ADMIN_PAGES = [
   '/admin', '/admin.html', '/admin-case', '/admin-chats', '/admin-calendar',
   '/admin-availability', '/admin-dictionary',
-  // 2026-10-04: the fund's verification queue, and PR 1, the landing that
-  // stood before the fund's, parked behind the gate.
-  '/admin-fund', '/admin-pr1',
-  // 2026-10-04 (v7.25): PR 1 became the hub; the old landing moved here.
-  '/admin-pr1-landing',
+  // 2026-10-04: the fund's verification queue.
+  '/admin-fund',
 ];
 const ADMIN_ASSETS = [
   '/js/admin.js', '/js/admin-case.js', '/js/admin-chats.js', '/js/admin-calendar.js',
@@ -291,7 +292,7 @@ console.log(`blindness audit — ${ORIGIN}\n`);
 
 // ---- 1. every byte a client's browser downloads --------------------------
 console.log('\n1. everything reachable from a client page');
-const queue = [...CLIENT_PAGES, ...EXTRA, ...PARKED_PAGES.map((p) => `${p}?demo=admin`)];
+const queue = [...CLIENT_PAGES, ...EXTRA, ...HIDDEN_PAGES.map((p) => `${p}?demo=1`)];
 const visited = new Set();
 let files = 0;
 let hits = 0;
@@ -364,9 +365,9 @@ for (const path of ADMIN_ASSETS) {
 }
 console.log(`  ${ADMIN_PAGES.length} pages redirect, ${ADMIN_ASSETS.length} assets 404`);
 
-// The old public site, parked (2026-10-04, v7.25): a stranger on the live
-// host is sent to the fund page from every one, in both spellings.
-for (const path of PARKED_PAGES.flatMap((p) => [p, `${p}.html`])) {
+// The fund's form, hidden (2026-10-06, v7.30): a stranger on the live host is
+// sent to the advocacy landing from it, in both spellings.
+for (const path of HIDDEN_PAGES.flatMap((p) => [p, `${p}.html`])) {
   const res = await new Promise((resolve, reject) => {
     const u = new URL(path, ORIGIN);
     const lib = u.protocol === 'https:' ? https : http;
@@ -375,9 +376,9 @@ for (const path of PARKED_PAGES.flatMap((p) => [p, `${p}.html`])) {
     req.on('error', reject);
     req.end();
   });
-  if (res.status !== 302 || !/^(https?:\/\/[^/]+)?\/$/.test(res.location)) fail(`${path}: ${res.status} ${res.location}, expected a 302 to the fund page`);
+  if (res.status !== 302 || !/^(https?:\/\/[^/]+)?\/$/.test(res.location)) fail(`${path}: ${res.status} ${res.location}, expected a 302 to the landing`);
 }
-console.log(`  ${PARKED_PAGES.length * 2} parked public paths send a stranger to the fund page`);
+console.log(`  ${HIDDEN_PAGES.length * 2} hidden fund paths send a stranger to the landing`);
 
 // A gate that bounces you onto a page that leaks is not a gate.
 {

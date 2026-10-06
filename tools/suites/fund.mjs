@@ -32,7 +32,7 @@ const HARD = [/advisor/i, /differential/i, /working diagnos/i, /dxOverride/, /wo
 // ---- the world ------------------------------------------------------------------
 // What Firestore hands back: timestamps as ISO strings, a fresh copy each read.
 const thaw = (v) => JSON.parse(JSON.stringify(v ?? null));
-function world({ putFails = false } = {}) {
+function world({ putFails = false, closed = false } = {}) {
   const docs = new Map();
   const files = new Map();
   const pushes = [];
@@ -70,6 +70,9 @@ function world({ putFails = false } = {}) {
       return m ? { uid: m[1], email: `${m[1]}@example.test` } : null;
     },
     ...RULES,
+    // RE-PINNED 2026-10-06 (v7.30): the fund is hidden (FUND_OPEN false in fund-rules.js, Eric: "Patient
+    // advocacy only"), so every route check runs it open, as it ran before, and F34 runs it closed.
+    FUND_OPEN: !closed,
   };
   const body = SRC
     .replace(/^import [\s\S]*?from '[^']+';\n/gm, '')
@@ -532,7 +535,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     // RE-PINNED 2026-10-04 (v7.24): the cron's notice drain comes from the same module.
     && (W.match(/handleFund\(/g) || []).length === 1 && /import \{ handleFund, drainFundNotices \} from '\.\/fund\.js';/.test(W)
     && RE.test('/admin-fund.html') && RE.test('/admin-fund') && RE.test('/js/admin-fund.js') && !RE.test('/fund.html') && !RE.test('/js/fund.js')
-    && /'\/fund',/.test(AUDIT) && /'\/admin-fund',/.test(AUDIT) && /'\/js\/admin-fund\.js',/.test(AUDIT) && /'\/js\/fund-rules\.js'/.test(AUDIT)
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted. The audit names the form among its hidden pages.
+    && /const HIDDEN_PAGES = \['\/fund'\];/.test(AUDIT) && /'\/admin-fund',/.test(AUDIT) && /'\/js\/admin-fund\.js',/.test(AUDIT) && /'\/js\/fund-rules\.js'/.test(AUDIT)
     && /'\/fund\.html\?demo=1'/.test(NOSIDE) && /'\/admin-fund\.html\?demo=admin'/.test(NOSIDE)
     && /from '\.\.\/fund-rules\.js';/.test(DEMO) && /from '\.\.\/public\/js\/fund-rules\.js';/.test(SRC)
     && self.status === 403 && selfOut.error === RULES.SELF_VERIFY_REFUSAL && asClient.status === 404 && docs.get('fundApplications/demo-admin').verificationStatus === 'submitted',
@@ -545,35 +549,19 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // the ways to give, the help email and one quiet door for existing clients; nothing that sells.
 // NEGATIVE CONTROL (run 2026-10-04): a `<a href="/services.html">Services</a>` added under the card made this read
 //   FAIL  F17 the landing is the fund alone: his card word for word with Apply for Verification into the form, the dates said plainly, Zazzle second with its cut explained, the help email and a quiet sign-in for existing clients, and no other door, price, booking or maintenance notice; no dash, no word from the blindness list
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted.
+// The fund's landing is retired (its words are in git, v7.29); index.html is the advocacy landing again.
+// NEGATIVE CONTROL (run 2026-10-06, v7.30): `<a href="/fund.html">Apply</a>` added under the hero made this read
+//   FAIL  F17 the landing is the advocacy site again: the PR 1 landing word for word at index.html, sending his device to the Clients page, with no door, word or link of the fund's; no dash, no word from the blindness list
 {
   const IDX = f('public/index.html');
-  const READ = IDX.replace(/<script[\s\S]*?<\/script>/g, '').replace(/<!--[\s\S]*?-->/g, '');
-  const links = [...IDX.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]).sort();
-  check('F17 the landing is the fund alone: his card word for word with Apply for Verification into the form, the dates said plainly, Zazzle second with its cut explained, the help email and a quiet sign-in for existing clients, and no other door, price, booking or maintenance notice; no dash, no word from the blindness list',
-    /<title>Community Assistance Fund<\/title>/.test(IDX) && /<h1>Community Assistance Fund<\/h1>/.test(IDX)
-    && READ.includes('Members of our community experiencing significant illness or disability may apply to become verified participants in our community assistance fund. Verification exists to protect members and donors while requiring as little sensitive information as possible.')
-    && /<a class="fund-btn fl-apply" href="\/fund\.html">Apply for Verification<\/a>/.test(IDX)
-    // RE-PINNED 2026-10-04 (v7.25): Eric, "Fundraiser runs through Christmas Eve with monthly payout
-    // distributions. With first payout November 1."
-    && READ.includes('The fundraiser runs from now through Christmas Eve, December 24, 2026.')
-    // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
-    // RE-PINNED 2026-10-04 (v7.27): his sentence word for word, "January 1st, 2027".
-    && READ.includes('Verified applicants will receive payouts via Mercury Business Check on January 1st, 2027.') && !READ.includes('November') && !/each month|monthly/i.test(READ)
-    // RE-PINNED 2026-10-04 (v7.26): Zazzle's cut and the help line in the words of Eric's post ("I receive
-    // only a creator royalty/commission", "If you have questions or want to request a Zazzle design,
-    // email me ... I'll respond within three business days.").
-    && READ.includes('The full purchase price of an item does not go to the fund: Zazzle charges for producing and selling the products, and only the creator royalty is donated. If your goal is simply to maximize how much reaches recipients, donating directly through GoFundMe is better.')
-    && /Questions, or want to request a Zazzle design\? Email <a href="mailto:office@pocketadvocacy\.com">office@pocketadvocacy\.com<\/a>\. You’ll get a reply within three business days\./.test(IDX)
-    // RE-PINNED 2026-10-04 (v7.25): Book is parked, so the client's sign-in lands on their case.
-    && /<a href="\/signin\.html\?to=%2Fcase\.html">Existing clients: sign in<\/a>/.test(IDX)
-    // RE-PINNED 2026-10-04 (v7.24): Eric, "They should also be linked to the discord", so the Discord
-    // invite is the one door added.
-    // RE-PINNED 2026-10-04 (v7.26): the help email is also the address for a check that has not come.
-    && links.join() === ['/fund.html', '/signin.html?to=%2Fcase.html', 'https://discord.gg/YZXYQFjUGa', 'https://www.zazzle.com/store/rooftop_and_reed', 'mailto:office@pocketadvocacy.com', 'mailto:office@pocketadvocacy.com'].sort().join()
-    && READ.includes('Applicants must be members of our Discord community.')
-    && !/\$\d|maintenance\.js|book\.html|services\.html|fit\.html|nav class="tabs"/.test(IDX) && /src="\/js\/fund-landing\.js"/.test(IDX)
-    && !DASH.test(IDX) && !HARD.some((re) => re.test(IDX)) && !HARD.some((re) => re.test(f('public/js/fund-landing.js'))) && !DASH.test(f('public/js/fund-landing.js')),
-    JSON.stringify(links));
+  const links = [...IDX.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+  check('F17 the landing is the advocacy site again: the PR 1 landing word for word at index.html, sending his device to the Clients page, with no door, word or link of the fund\'s; no dash, no word from the blindness list',
+    /<title>Pocket Advocate<\/title>/.test(IDX) && /<h2>Ready when you are\.<\/h2>/.test(IDX) && /class="land-sec hero"/.test(IDX) && /src="\/js\/maintenance\.js"/.test(IDX)
+    && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(IDX)
+    && !links.some((l) => /fund|gofund\.me|zazzle|discord\.gg/i.test(l)) && !/Community Assistance Fund|fund-landing\.js|fund\.css/.test(IDX)
+    && !DASH.test(IDX) && !HARD.some((re) => re.test(IDX)),
+    JSON.stringify(links.filter((l) => /fund|gofund|zazzle|discord/i.test(l))));
 }
 
 // ---- F18: the ways to give, on the clock (2026-10-04, v7.23) ---------------------
@@ -614,7 +602,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && beforeState === 'open-no-link' && before.box.innerHTML === 'ORIGINAL' && before.slot.hidden === true && before.slot.innerHTML === ''
     && afterState === 'ended' && after.box.innerHTML === '<h2>Support the fund</h2><p>This fundraiser ended December 24.</p>'
     && linkedState === 'open' && linked.slot.hidden === false && /href="https:\/\/www\.gofundme\.com\/f\/example"/.test(linked.slot.innerHTML) && /Give on GoFundMe/.test(linked.slot.innerHTML) && /Recommended/.test(linked.slot.innerHTML)
-    && /<p class="fl-give-row" data-gofundme hidden><\/p>/.test(support) && !/fund\.html/.test(support),
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted. The landing that carried the support block is retired, so its markup is no longer pinned.
+    && !support.includes('data-gofundme'),
     JSON.stringify({ beforeState, afterState, linkedState }));
 }
 
@@ -629,25 +618,18 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // admin-pr1-landing.html; the door to PR 1 is a tab in the nav, so the Clients page button is gone.
 // NEGATIVE CONTROL (run 2026-10-04, v7.25): the Book door taken out of the hub made this read
 //   FAIL  F19 PR 1 is the hub and the old landing sits inside it: the hub lists every parked page and the advocacy app, noindex, on the admin sheet; the old landing is word for word at its new path but for its name, the noindex and the redirect it no longer has; both behind the admin gate; both named in the audit's gated pages and measured by the sideways drive
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted.
+// NEGATIVE CONTROL (run 2026-10-06, v7.30): the Clients page's Fund queue door taken out made this read
+//   FAIL  F19 PR 1 is live again: no hub and no parked copy, nothing in the pages, the Worker or the lists names either, and the Clients page keeps a quiet door to the Fund queue
 {
-  const PR1 = f('public/admin-pr1.html');
-  const LAND = f('public/admin-pr1-landing.html');
-  const gate = (W.match(/const ADMIN_ASSET =\n\s+(\/.*\/);/) || [])[1];
-  const RE = gate ? new Function(`return ${gate}`)() : /$^/;
-  const doors = [...PR1.matchAll(/<li><a class="btn" href="([^"]+)">/g)].map((m) => m[1]);
-  const want = ['/admin.html', '/admin-calendar.html', '/admin-chats.html', '/admin-availability.html', '/admin-dictionary.html',
-    '/admin-pr1-landing.html', '/services.html', '/about.html', '/advocate.html', '/book.html', '/fit.html', '/faq.html', '/reviews.html', '/stats.html', '/contact.html', '/subscribe.html'];
-  check('F19 PR 1 is the hub and the old landing sits inside it: the hub lists every parked page and the advocacy app, noindex, on the admin sheet; the old landing is word for word at its new path but for its name, the noindex and the redirect it no longer has; both behind the admin gate; both named in the audit\'s gated pages and measured by the sideways drive',
-    /<title>PR 1 · Pocket Advocate<\/title>/.test(PR1) && /<meta name="robots" content="noindex">/.test(PR1) && /admin\.css\?v=stat130/.test(PR1)
-    && PR1.includes('Parked. Everything that is not the fund. Nothing was deleted.') && want.every((d) => doors.includes(d)) && doors.length === want.length
-    && /<a href="\/admin-pr1\.html" class="active">PR 1<\/a>/.test(PR1) && !DASH.test(PR1)
-    && /<title>Old landing · PR 1 · Pocket Advocate<\/title>/.test(LAND) && /<meta name="robots" content="noindex">/.test(LAND) && !/pa-admin-device|location\.replace/.test(LAND)
-    && /<h2>Ready when you are\.<\/h2>/.test(LAND) && /src="\/js\/maintenance\.js"/.test(LAND) && /class="land-sec hero"/.test(LAND)
-    && ['/admin-pr1.html', '/admin-pr1', '/admin-pr1-landing.html', '/admin-pr1-landing'].every((p) => RE.test(p))
-    && !/admin-pr1\.html|admin-fund\.html/.test(f('public/js/admin.js'))
-    && /'\/admin-pr1',/.test(f('tools/blindness-audit.mjs')) && /'\/admin-pr1-landing',/.test(f('tools/blindness-audit.mjs'))
-    && /'\/admin-pr1\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')) && /'\/admin-pr1-landing\.html\?demo=admin'/.test(f('tools/drives/drive-nosideways.mjs')),
-    JSON.stringify({ doors: doors.length, land: LAND.length }));
+  const { existsSync, readdirSync } = await import('node:fs');
+  const pages = readdirSync(j(ROOT, 'public')).filter((n) => n.endsWith('.html'));
+  const named = [...pages.map((n) => f(`public/${n}`)), W, f('public/js/admin.js'), f('tools/blindness-audit.mjs'), f('tools/drives/drive-nosideways.mjs')]
+    .filter((t) => /admin-pr1/.test(t.replace(/^\s*(\/\/|\*).*$/gm, '')));
+  check('F19 PR 1 is live again: no hub and no parked copy, nothing in the pages, the Worker or the lists names either, and the Clients page keeps a quiet door to the Fund queue',
+    !existsSync(j(ROOT, 'public/admin-pr1.html')) && !existsSync(j(ROOT, 'public/admin-pr1-landing.html')) && named.length === 0
+    && /<a class="btn quiet" href="\/admin-fund\.html">🤝 Fund queue<\/a>/.test(f('public/js/admin.js')),
+    JSON.stringify({ named: named.length }));
 }
 
 // ---- F20: why they are in need (2026-10-04, v7.24) ----------------------------
@@ -849,22 +831,23 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // home. The client's own pages link to nothing that is parked.
 // NEGATIVE CONTROL (run 2026-10-04): the password door's `location.href = '/admin-fund.html';` put back to '/admin.html' made this read
 //   FAIL  F26 his home is the fund: both admin doors on the sign-in page go to the Fund queue, sign-in otherwise defaults to the fund page, his device's landing goes to the queue, the queue's nav is the Fund and PR 1 alone, every parked admin page leads with both, the queue keeps his alerts registered, and the client's own pages link to nothing parked
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted.
+// NEGATIVE CONTROL (run 2026-10-06, v7.30): the password door's `location.href = '/admin.html';` changed to '/admin-fund.html' made this read
+//   FAIL  F26 his home is the Clients page again: both admin doors on the sign-in page go to Clients, sign-in otherwise defaults to Book, his device's landing goes to Clients, every admin page carries the advocacy tabs and no Fund or PR 1 tab, the queue still keeps his alerts registered, and the client's own pages carry their tabs again
 {
   const SIGNIN = f('public/signin.html');
-  const AF = f('public/admin-fund.html');
   const tabs = (html) => [...(html.match(/<nav class="tabs">([\s\S]*?)<\/nav>/) || ['', ''])[1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
-  const parkedAdmin = ['admin', 'admin-case', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary'];
-  const PARKED = /href="\/(about|advocate|book|contact|faq|fit|reviews|services|stats|subscribe)(\.html)?["#?]/;
-  const clientPages = ['signin', 'case', 'chat', 'subscription', 'return', 'fund', 'index'];
-  check('F26 his home is the fund: both admin doors on the sign-in page go to the Fund queue, sign-in otherwise defaults to the fund page, his device\'s landing goes to the queue, the queue\'s nav is the Fund and PR 1 alone, every parked admin page leads with both, the queue keeps his alerts registered, and the client\'s own pages link to nothing parked',
-    (SIGNIN.match(/location\.href = '\/admin-fund\.html';/g) || []).length === 2 && !/location\.href = '\/admin\.html'/.test(SIGNIN)
-    && /const returnTo = params\.get\('to'\) \|\| '\/fund\.html';/.test(SIGNIN)
-    && /location\.replace\('\/signin\.html\?to=%2Fadmin-fund\.html'\);/.test(f('public/index.html'))
-    && tabs(AF).join() === '/admin-fund.html,/admin-pr1.html' && /<a href="\/admin-fund\.html" class="active">🤝 Fund<\/a>/.test(AF)
-    && parkedAdmin.every((n) => tabs(f(`public/${n}.html`)).slice(0, 2).join() === '/admin-fund.html,/admin-pr1.html')
+  const ADV = '/admin.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html';
+  const adminPages = ['admin', 'admin-case', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-fund'];
+  check('F26 his home is the Clients page again: both admin doors on the sign-in page go to Clients, sign-in otherwise defaults to Book, his device\'s landing goes to Clients, every admin page carries the advocacy tabs and no Fund or PR 1 tab, the queue still keeps his alerts registered, and the client\'s own pages carry their tabs again',
+    (SIGNIN.match(/location\.href = '\/admin\.html';/g) || []).length === 2 && !/admin-fund/.test(SIGNIN)
+    && /const returnTo = params\.get\('to'\) \|\| '\/book\.html';/.test(SIGNIN)
+    && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(f('public/index.html'))
+    && adminPages.every((n) => tabs(f(`public/${n}.html`)).join() === ADV)
     && /initPushPrompt\(user, null\)/.test(ADMINPAGE)
-    && clientPages.every((n) => !PARKED.test(f(`public/${n}.html`))),
-    JSON.stringify({ fundTabs: tabs(AF), adminTabs: tabs(f('public/admin.html')) }));
+    && ['case', 'chat', 'subscription', 'return'].every((n) => tabs(f(`public/${n}.html`)).join() === '/,/about.html,/reviews.html')
+    && /<a href="\/services\.html">Services<\/a>/.test(SIGNIN),
+    JSON.stringify({ fund: tabs(f('public/admin-fund.html')), admin: tabs(f('public/admin.html')), cases: tabs(f('public/case.html')) }));
 }
 
 // ---- F27: the old public pages are hidden (2026-10-04, v7.25) ----------------------
@@ -873,34 +856,35 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 // and so is the gate itself, against a stranger, against him, and against the admin demo.
 // NEGATIVE CONTROL (run 2026-10-04): `|services` taken out of PARKED_PUBLIC made this read
 //   FAIL  F27 the old public pages are hidden: all ten in both spellings are behind the gate and the client's own pages, the fund and the admin pages are not; the gate sits before the admin gate, sends a stranger to the fund page with a 302 and serves him the page privately; the three inline redirects are gone; the audit lists all ten as parked and none as a client page
+// RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted.
+// NEGATIVE CONTROL (run 2026-10-06, v7.30): `&& !FUND_OPEN` taken out of the fund page's gate made this read
+//   FAIL  F27 the old public pages are public again and the fund's form is hidden: the parking gate is gone and the inline redirects are back; the fund page's gate matches its spellings and nothing else, sends a stranger on the live site to the landing with a 302, serves him privately, and steps aside for the demo and for an open fund; the audit lists the ten as client pages and the form as hidden
 {
-  const lit = (W.match(/const PARKED_PUBLIC = (\/.*\/);/) || [])[1];
+  const lit = (W.match(/const FUND_PAGE = (\/.*\/);/) || [])[1];
   const RE = lit ? new Function(`return ${lit}`)() : /$^/;
   const TEN = ['about', 'advocate', 'book', 'contact', 'faq', 'fit', 'reviews', 'services', 'stats', 'subscribe'];
-  const inside = TEN.flatMap((n) => [`/${n}`, `/${n}.html`, `/${n}/`]);
-  const outside = ['/', '/index.html', '/fund', '/fund.html', '/case', '/case.html', '/chat.html', '/signin', '/signin.html', '/subscription.html', '/return.html',
-    '/admin-fund', '/admin-pr1.html', '/admin-pr1-landing.html', '/js/book.js', '/css/site.css', '/booking', '/servicesx.html'];
-  const at = W.indexOf('    if (PARKED_PUBLIC.test(assetPath)) {');
-  const block = at > 0 ? W.slice(at, W.indexOf('\n    }\n', at) + 6) : '';
-  const gateRun = new Function('assetPath', 'demo', 'request', 'env', 'url', 'adminCookieUid', 'demoCookie', 'PARKED_PUBLIC',
-    `return (async () => { ${block} return null; })();`);
-  const env2 = { ASSETS: { fetch: async () => new Response('<h1>Services</h1>', { headers: { 'cache-control': 'public, max-age=3600' } }) } };
-  const u = new URL('https://thepocketadvocates.com/services.html');
-  const stranger = await gateRun('/services.html', '', {}, env2, u, async () => null, () => 'pa_demo=x', RE);
-  const him = await gateRun('/services.html', '', {}, env2, u, async () => 'eric', () => 'pa_demo=x', RE);
-  const demoAdmin = await gateRun('/services.html', 'admin', {}, env2, new URL('http://127.0.0.1:9377/services.html?demo=admin'), async () => null, () => 'pa_demo=admin', RE);
+  const at = W.indexOf('    if (FUND_PAGE.test(assetPath) && !FUND_OPEN && !demo) {');
+  const blockSrc = at > 0 ? W.slice(at, W.indexOf('\n    }\n', at) + 6) : '';
+  const gateRun = new Function('assetPath', 'demo', 'request', 'env', 'url', 'adminCookieUid', 'FUND_PAGE', 'FUND_OPEN',
+    `return (async () => { ${blockSrc} return null; })();`);
+  const env2 = { ASSETS: { fetch: async () => new Response('<h1>Fund</h1>', { headers: { 'cache-control': 'public, max-age=3600' } }) } };
+  const u = new URL('https://thepocketadvocates.com/fund.html');
+  const stranger = await gateRun('/fund.html', '', {}, env2, u, async () => null, RE, false);
+  const him = await gateRun('/fund.html', '', {}, env2, u, async () => 'eric', RE, false);
+  const demo = await gateRun('/fund.html', 'client', {}, env2, u, async () => null, RE, false);
+  const open = await gateRun('/fund.html', '', {}, env2, u, async () => null, RE, true);
   const AUDIT = f('tools/blindness-audit.mjs');
-  const parkedList = (AUDIT.match(/const PARKED_PAGES = \[([\s\S]*?)\];/) || [])[1] || '';
   const clientList = (AUDIT.match(/const CLIENT_PAGES = \[([\s\S]*?)\];/) || [])[1] || '';
-  check('F27 the old public pages are hidden: all ten in both spellings are behind the gate and the client\'s own pages, the fund and the admin pages are not; the gate sits before the admin gate, sends a stranger to the fund page with a 302 and serves him the page privately; the three inline redirects are gone; the audit lists all ten as parked and none as a client page',
-    inside.every((p) => RE.test(p)) && !outside.some((p) => RE.test(p))
-    && at > 0 && at < W.indexOf('    if (ADMIN_ASSET.test(assetPath)) {\n      const isPage') && at > W.indexOf('if ((ADMIN_ASSET.test(assetPath) || DEMO_ASSET.test(assetPath)) && demo) {')
+  check('F27 the old public pages are public again and the fund\'s form is hidden: the parking gate is gone and the inline redirects are back; the fund page\'s gate matches its spellings and nothing else, sends a stranger on the live site to the landing with a 302, serves him privately, and steps aside for the demo and for an open fund; the audit lists the ten as client pages and the form as hidden',
+    !/PARKED_PUBLIC/.test(W) && ['contact', 'faq', 'services'].every((n) => /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(f(`public/${n}.html`)))
+    && ['/fund', '/fund.html', '/fund/'].every((p) => RE.test(p)) && !['/', '/fundx', '/admin-fund', '/js/fund.js', '/css/fund.css', '/services.html'].some((p) => RE.test(p))
+    && at > 0 && at < W.indexOf('    if (ADMIN_ASSET.test(assetPath)) {\n      const isPage')
     && stranger?.status === 302 && stranger.headers.get('location') === 'https://thepocketadvocates.com/'
-    && him?.status === 200 && him.headers.get('cache-control') === 'private, no-store' && him.headers.get('vary') === 'Cookie'
-    && demoAdmin?.status === 200 && /pa_demo=admin/.test(demoAdmin.headers.get('set-cookie') || '')
-    && ['contact', 'faq', 'services'].every((n) => !/pa-admin-device|location\.replace/.test(f(`public/${n}.html`)))
-    && TEN.every((n) => parkedList.includes(`'/${n}'`) && !clientList.includes(`'/${n}'`)),
-    JSON.stringify({ lit: !!lit, stranger: stranger?.status, him: him?.status, demoAdmin: demoAdmin?.status }));
+    && him?.status === 200 && him.headers.get('cache-control') === 'private, no-store' && demo === null && open === null
+    && /import \{ FUND_OPEN \} from '\.\.\/public\/js\/fund-rules\.js';/.test(W)
+    // The about-your-advocate page was never in the list; the crawl reaches it from the landing.
+    && TEN.filter((n) => n !== 'advocate').every((n) => clientList.includes(`'/${n}'`)) && !clientList.includes("'/fund'") && /const HIDDEN_PAGES = \['\/fund'\];/.test(AUDIT),
+    JSON.stringify({ lit: !!lit, stranger: stranger?.status, him: him?.status, demo, open }));
 }
 
 // ---- F28: sure alerts for applications (2026-10-04, v7.25) -------------------------
@@ -972,7 +956,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && RULES.payoutWords(RULES.PAYOUTS[0]) === 'January 1, 2027' && RULES.payoutWords(null) === ''
     && RULES.chaseLine(RULES.PAYOUTS[0].at) === 'If you do not receive your check by January 10, please email office@pocketadvocacy.com.'
     // RE-PINNED 2026-10-04 (v7.27): his sentence word for word, "January 1st, 2027".
-    && f('public/index.html').includes('on January 1st, 2027.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE)
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted. The landing that said it is retired; the form still does.
+    && PAGE.includes('on January 1st, 2027.') && /const next = nextPayout\(\);/.test(PAGE) && /import \{[^}]*nextPayout, payoutWords[^}]*\} from '\.\/fund-rules\.js';/.test(PAGE)
     && !/November|each month|monthly/i.test(PAGE.replace(/^\s*\/\/.*$/gm, '')),
     JSON.stringify(['2026-10-04T18:00:00Z', '2026-11-02T12:00:00Z', '2027-01-01T06:59:59Z', '2027-01-01T07:00:00Z', '2027-01-02T12:00:00Z'].map(at)));
 }
@@ -1031,26 +1016,18 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const mail = w.emails.find((x) => x.to === 'bob@example.test');
   const chase = (iso) => RULES.chaseLine(Date.parse(iso));
   check('F31 what his post says is on the pages: the landing says how it works and what is published every Friday and before payout, the form says what stays private, that a photo is optional and that usernames are published, both pages promise a reply in three business days, and a check that has not come by the 10th is chased, in the check email too',
-    ['One shared fund, divided equally among verified recipients.',
-      'All net proceeds from the GoFundMe plus any Zazzle creator earnings contributed during the fundraiser will be split equally among every approved participant. The organizer will not receive any portion of the payout.',
-      'If you do not receive your check by January 10, please email office@pocketadvocacy.com.', // RE-PINNED 2026-10-04 (v7.26): Eric, "Verified applicants will receive monthly payouts via Mercury Business Check on January 1st, 2027. Not monthly."
-      'Your diagnosis, legal name and medical documents will not be made public.',
-      'Photos will only be posted with your consent. Not submitting one will not affect approval or your share.',
-      'including a running total of your payout.',
-      'Every Friday, these are posted in the Discord:', 'Number of approved recipients', 'Net GoFundMe proceeds so far', 'Zazzle creator earnings being added', 'Combined total in the fund',
-      'Before payout, the Discord usernames of every approved recipient are published in both text and video, along with the final amount raised and the equal payout amount. No medical information or legal names are published.',
-      'Please feel free to share the GoFundMe, the Discord, this page or the store with friends and family.',
-    ].every((l) => READ.includes(l))
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted. The fund's landing that carried the post's sentences is retired; the form keeps its own.
+    true
     && PAGE.includes('Your diagnosis, legal name and medical documents will not be made public.')
     && PAGE.includes('Photos are completely optional and will only be posted with your consent. Not submitting one will not affect approval or your share.')
     // RE-PINNED 2026-10-04 (v7.28): the notice became a required tick on Step 4 (Eric: "Discord usernames
     // are mandatory. They have to join."), held by F32.
     && PAGE.includes('I understand that if I am approved, my Discord username will be published in text and video before payout.') && PAGE.includes('No medical information or legal names are published.')
-    && /You’ll get a reply within three business days\./.test(HTML) && /You’ll get a reply within three business days\./.test(IDX)
+    && /You’ll get a reply within three business days\./.test(HTML)
     && chase('2026-11-01T06:00:00Z') === 'If you do not receive your check by November 10, please email office@pocketadvocacy.com.'
     && /by November 10,/.test(chase('2026-10-31T20:00:00Z')) && /by January 10,/.test(chase('2026-12-28T12:00:00Z')) && chase('nope') === ''
     && /If you do not receive your check by \w+ 10, please email office@pocketadvocacy\.com\./.test(mail?.html || '')
-    && /chaseLine\(next\.at\)/.test(PAGE) && !DASH.test(IDX) && !DASH.test(PAGE) && !HARD.some((re) => re.test(READ)),
+    && /chaseLine\(next\.at\)/.test(PAGE) && !DASH.test(PAGE),
     JSON.stringify({ mail: !!mail, nov: chase('2026-11-01T06:00:00Z') }));
 }
 
@@ -1086,8 +1063,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && /check\('usernamePublicConsent', 'I understand that if I am approved, my Discord username will be published in text and video before payout\.', form\.usernamePublicConsent\)/.test(PAGE)
     && /if \(!form\.usernamePublicConsent\) return \['Tick the box that says your Discord username will be published if you are approved\.'\];/.test(PAGE)
     && /usernamePublicConsent: form\.usernamePublicConsent/.test(PAGE) && !/display name\./.test(PAGE.replace(/not a display name\./, ''))
-    && /<dt>Username may be published<\/dt>/.test(ADMINPAGE)
-    && f('public/index.html').includes('Applicants must be members of our Discord community. A Discord username is required.'),
+    && /<dt>Username may be published<\/dt>/.test(ADMINPAGE), // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted. The landing line is retired with the fund's landing.
     JSON.stringify({ held: held.status, stamped: !!stamped, ok: ok.status, status: sentStatus, seen: [seen?.usernamePublicConsent, seen?.usernameConsentAt], w2: [app(w2).usernamePublicConsent, app(w2).usernameConsentAt], unstamped }));
 }
 
@@ -1116,13 +1092,36 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && reNone.status === 400 && self.status === 403 && self.out.error === RULES.SELF_VERIFY_REFUSAL
     && RULES.DOC_RULE === 'Your medical document must show disability due to illness, and the name on it must match the full name on your ID.'
     && RULES.VERIFY_CHECKS.map(([, t]) => t).join(' | ') === 'The medical document shows disability due to illness. | The name on the medical document matches the full name on the ID.'
-    && IDX.includes('Your medical document must show disability due to illness, and the name on it must match the full name on your ID.')
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to hide the fund and keep what was submitted. The landing line is retired with the fund's landing.
     && /<div class="fund-note fund-warn">\$\{esc\(DOC_RULE\)\}<\/div>/.test(PAGE) && PAGE.includes('Leave your full name visible. It must match the name on your medical document.')
     && /data-vcheck="\$\{k\}"/.test(ADMINPAGE) && /checks \} \}\);/.test(ADMINPAGE) && /err\.textContent = VERIFY_CHECKS_REFUSAL;/.test(ADMINPAGE)
     && ADMINPAGE.includes('The medical document must show disability due to illness, and the name on it must match the full name on the ID.')
     && /!verifyChecked\(body\.checks\)\) return res\(400, \{ error: VERIFY_CHECKS_REFUSAL \}\)/.test(DEMO)
-    && !DASH.test(IDX) && !DASH.test(PAGE) && !DASH.test(ADMINPAGE),
+    && !DASH.test(PAGE) && !DASH.test(ADMINPAGE),
     JSON.stringify({ none: none.status, half: half.status, ok: ok.status, checks: row?.checks, reNone: reNone.status, self: self.status }));
+}
+
+// ---- F34: the fund is hidden, its data kept (2026-10-06, v7.30) ------------------------
+// Eric: "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose "Hide it, keep data": the
+// applicant's routes answer 404 so nothing new comes in, while his queue still lists, opens and acts on
+// what was submitted. RUN against the Worker module with the fund closed, as it ships.
+// NEGATIVE CONTROL (run 2026-10-06): `export const FUND_OPEN = false;` changed to `true` made this read
+//   FAIL  F34 the fund is hidden and its data kept: it ships closed, every applicant route answers 404 to a signed-in applicant and stores nothing, and his queue still lists, opens and verifies what was submitted
+{
+  const w = world({ closed: true });
+  w.setDoc('fundApplications/ann', { userId: 'ann', verificationStatus: 'submitted', preferredName: 'Ann', discordUsername: 'ann_d', audit: [] });
+  const shut = [];
+  for (const [path, opts] of [['/api/fund/me', {}], ['/api/fund/draft', { method: 'POST', json: { preferredName: 'Bo' } }], ['/api/fund/submit', { method: 'POST', json: {} }], ['/api/fund/remove', { method: 'POST', json: {} }]])
+    shut.push((await call(w, 'bo', path, opts)).status);
+  const upload = (await up(w, 'bo', 'id')).status;
+  const listed = (await call(w, 'eric', '/api/admin/fund/list')).out?.applications?.map((a) => a.uid) || [];
+  const opened = (await call(w, 'eric', '/api/admin/fund/view?uid=ann')).status;
+  const verified = await call(w, 'eric', '/api/admin/fund/act', { method: 'POST', json: { uid: 'ann', action: 'verify', checks: CHECKS } });
+  check('F34 the fund is hidden and its data kept: it ships closed, every applicant route answers 404 to a signed-in applicant and stores nothing, and his queue still lists, opens and verifies what was submitted',
+    RULES.FUND_OPEN === false && shut.every((x) => x === 404) && upload === 404 && !w.docs.has('fundApplications/bo') && w.files.size === 0
+    && listed.join() === 'ann' && opened === 200 && verified.status === 200 && w.docs.get('fundApplications/ann').data.verificationStatus === 'verified'
+    && /if \(!FUND_OPEN\) return json\(\{ error: 'Not found' \}, 404\);/.test(SRC),
+    JSON.stringify({ shut, upload, listed, opened, verified: verified.status }));
 }
 
 const failed = results.filter((r) => !r.pass);

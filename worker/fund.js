@@ -39,7 +39,7 @@ import { sendEmail } from './email.js';
 import { requireUser } from './firebase-auth.js';
 import {
   EDITABLE, KINDS, DOC_TYPES, PHOTO_TYPES, DOC_MAX_BYTES, PHOTO_MAX_BYTES, MEDICAL_MAX_COUNT, CONSENT_KEYS,
-  FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO, VERIFY_CHECKS, VERIFY_CHECKS_REFUSAL, verifyChecked,
+  FUND_STATUSES, SELF_VERIFY_REFUSAL, REVERIFY_MONTHS, ACTIONS, ACT_FROM, ACT_TO, VERIFY_CHECKS, VERIFY_CHECKS_REFUSAL, verifyChecked, FUND_OPEN,
   addMonths, clean, cleanDraft, cleanPayment, submitGaps, applicantView, reviewerView, sniff,
   isActiveParticipant, shareOf, dollars, CHECK_NOTE, checkTo, nextPayout, payoutWords,
   fundTotals, sentAndOwed, chaseLine, TOTALS_LIMIT,
@@ -692,6 +692,9 @@ export async function handleFund(request, env, url, ctx) {
     if (p === '/api/admin/fund/test-alert' && request.method === 'POST') return handleTestAlert(env);
     return json({ error: 'Not found' }, 404);
   }
+  // Hidden (Eric, 2026-10-06: "Patient advocacy only"): nothing new is taken
+  // in. What was submitted stays, for his queue alone.
+  if (!FUND_OPEN) return json({ error: 'Not found' }, 404);
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Please sign in again.' }, 401);
   if (p === '/api/fund/me' && request.method === 'GET') return handleMe(env, user);

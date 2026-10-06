@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.29';
+export const VERSION = '7.30';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.29';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PATIENT ADVOCACY ONLY (Eric, 2026-10-06: "Revert back to PR 1. Remove
+    // PR 420. Patient advocacy only." He chose to hide the fund and keep what
+    // was submitted, and to send old fund links to the advocacy landing).
+    // Admin only.
+    version: '7.30',
+    quiet: true,
+    client: [],
+    admin: [
+      'PR 1 is back as the live site: the patient advocacy landing is the home page again, and Services, About, Book, FAQ, Reviews and the rest are public again.',
+      'Signing in opens your Clients page again, with the usual tabs.',
+      'The Community Assistance Fund is hidden. Nobody can apply, and the old fund link lands on the advocacy home page. What was already submitted stays private, and the Fund queue button is on your Clients page.',
+      'PR 420 stays deleted.',
+    ],
+  },
   {
     // THE DOCUMENTS' RULE (Eric, 2026-10-05: "The medical document must
     // demonstrate disability due to illness as well as match the full name on

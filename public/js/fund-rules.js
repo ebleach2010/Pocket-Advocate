@@ -61,6 +61,12 @@ export const DISCORD_INVITE = 'https://discord.gg/YZXYQFjUGa';
 // Eric, 2026-10-04: "a short blurb from them for why they are in need. Max 1500 characters."
 export const NEED_MAX = 1500;
 export const CONSENT_KEYS = ['accurate', 'noGuarantee', 'notMedical', 'reviewerView', 'formula'];
+// Eric, 2026-10-06: "Revert back to PR 1. Remove PR 420. Patient advocacy
+// only." He chose to hide the fund and keep what was submitted. While this is
+// false, the form's page sends everyone to the advocacy landing, the
+// applicant's routes answer 404, and only his queue stays, behind the admin
+// gate. true brings the fund back.
+export const FUND_OPEN = false;
 export const SELF_VERIFY_REFUSAL = 'Your verification must be completed by another authorized reviewer.';
 // Eric, 2026-10-05: "The medical document must demonstrate disability due to
 // illness as well as match the full name on the ID type". The applicant reads

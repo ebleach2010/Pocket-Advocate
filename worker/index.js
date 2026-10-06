@@ -63,6 +63,7 @@ import { validateAction } from './advisor-acts.js';
 // The Community Assistance Fund's verification (2026-10-04): every route,
 // the applicant's and the reviewer's, lives in worker/fund.js.
 import { handleFund, drainFundNotices } from './fund.js';
+import { FUND_OPEN } from '../public/js/fund-rules.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
@@ -647,14 +648,13 @@ const ADMIN_ASSET =
 const DEMO_ASSET = /^\/js\/demo\//;
 
 /**
- * The old public site, parked in PR 1 (Eric, 2026-10-04: "I want everything
- * but information about the fundraiser and applicants HIDDEN in a parked
- * PR 1"). He still opens these from PR 1; everyone else is sent to the fund
- * page. Both spellings and a trailing slash, as with the admin gate. The
- * client's own pages (sign-in, case, chat, subscription, return) and the fund
- * pages are not in it.
+ * The Community Assistance Fund's form, hidden (Eric, 2026-10-06: "Revert
+ * back to PR 1. Remove PR 420. Patient advocacy only."). The old public site
+ * is public again (the PR 1 parking gate that stood here, 2026-10-04, is
+ * gone); while FUND_OPEN is false the form's page sends everyone but him to
+ * the advocacy landing. The demo still opens it, on a preview host only.
  */
-const PARKED_PUBLIC = /^\/(about|advocate|book|contact|faq|fit|reviews|services|stats|subscribe)(\.html)?\/?$/;
+const FUND_PAGE = /^\/fund(\.html)?\/?$/;
 
 /**
  * The path the ASSET SERVER will resolve, not the one in the request line.
@@ -1303,16 +1303,16 @@ export default {
       return out;
     }
 
-    // The old public pages, parked. A redirect rather than the 404: these were
-    // public pages, so saying where the front door is now confirms nothing.
-    if (PARKED_PUBLIC.test(assetPath)) {
-      const his = demo === 'admin' || !!(await adminCookieUid(request, env).catch(() => null));
+    // The fund's form, hidden. A redirect rather than the 404: the page was
+    // public and linked from his post, so saying where the front door is now
+    // confirms nothing.
+    if (FUND_PAGE.test(assetPath) && !FUND_OPEN && !demo) {
+      const his = !!(await adminCookieUid(request, env).catch(() => null));
       if (!his) return Response.redirect(new URL('/', url).toString(), 302);
       const res = await env.ASSETS.fetch(request);
       const out = new Response(res.body, res);
       out.headers.set('cache-control', 'private, no-store');
       out.headers.set('vary', 'Cookie');
-      if (demo && url.searchParams.get('demo')) out.headers.append('set-cookie', demoCookie(demo));
       return out;
     }
 
@@ -2066,7 +2066,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-05-fund-docrule';
+const BUILD_TAG = 'v2026-10-06-advocacy-only';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2074,7 +2074,7 @@ const BUILD_TAG = 'v2026-10-05-fund-docrule';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.29';
+const VERSION = '7.30';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

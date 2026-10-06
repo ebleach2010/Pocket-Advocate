@@ -306,7 +306,8 @@ check('W7 the landing sells with his phrase, and the value math is on the servic
   (() => {
     // RE-PINNED 2026-10-04 (v7.23): the landing this pins is parked whole as PR 1 (Eric: "take what's on the landing page and park it as PR 1; hidden from view"), so it reads admin-pr1.html; the public landing is the Community Assistance Fund alone, pinned in fund.mjs.
     // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
-    const idx = readFileSync(`${ROOT}/public/admin-pr1-landing.html`, 'utf8');
+    // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again.
+    const idx = readFileSync(`${ROOT}/public/index.html`, 'utf8');
     const svc = readFileSync(`${ROOT}/public/services.html`, 'utf8');
     // His words, on the page a stranger arrives at.
     const hisPhrase = /5 years' worth of boots on the ground experience/.test(idx);
