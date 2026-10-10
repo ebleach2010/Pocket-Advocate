@@ -840,8 +840,8 @@ export default {
       ctx.waitUntil(pollFlightsNow(env).catch(() => {}));
     }
     try {
-      // Maintenance: refuse the two routes that spend money, before either
-      // handler can reach Stripe. Deliberately above everything else and
+      // Maintenance: refuse case checkout, before its handler can reach
+      // Stripe. Deliberately above everything else and
       // deliberately narrow — an existing client's case, chat, uploads and
       // sign-in all carry on through this window untouched.
       //
@@ -851,8 +851,11 @@ export default {
       // blocked by the maintenance block"). Nothing is protected by refusing
       // here: a preview's checkout is open outside a window anyway, so this
       // returns it to its normal state rather than opening a new door.
-      if (maintenanceUntil() && !DEMO_HOST.test(url.hostname)
-        && (url.pathname === '/api/checkout' || url.pathname === '/api/subscribe'))
+      //
+      // NEVER the chat line (Eric, 2026-10-10: "make sure that even if my
+      // schedule is blocked off 24/7 chat is always available"). Only case
+      // checkout is refused; /api/subscribe answers at every hour.
+      if (maintenanceUntil() && !DEMO_HOST.test(url.hostname) && url.pathname === '/api/checkout')
         return json({ error: maintenanceMessage(), maintenanceUntil: MAINTENANCE_UNTIL }, 503);
       if (url.pathname === '/api/checkout' && request.method === 'POST')
         return await handleCheckout(request, env);
@@ -1512,9 +1515,11 @@ async function readBookingClosure(env) {
  * together, because a page saying "back at 1pm" while checkout still answers
  * is exactly how somebody gets charged inside a window meant to be shut.
  *
- * Only the two routes that spend money are refused. Everything an existing
- * client touches - their case, chat, uploads, files, sign-in - is untouched,
- * which was the condition Eric set.
+ * Only case checkout is refused. Everything an existing client touches -
+ * their case, chat, uploads, files, sign-in - is untouched, which was the
+ * condition Eric set; and since 2026-10-10 the 24/7 chat line can always be
+ * started, window or not ("even if my schedule is blocked off 24/7 chat is
+ * always available").
  */
 const MAINTENANCE_UNTIL = '2026-08-26T03:00:00Z';   // 8PM MST, 2026-08-25
 function maintenanceUntil() {
@@ -2066,7 +2071,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-06-advocacy-only';
+const BUILD_TAG = 'v2026-10-10-landing-black';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2074,7 +2079,7 @@ const BUILD_TAG = 'v2026-10-06-advocacy-only';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.30';
+const VERSION = '7.31';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

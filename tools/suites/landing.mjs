@@ -102,9 +102,11 @@ check('A5 "Who you\'re hiring" is his about.html paragraph, his story line, and 
     return s.includes('I work with patients facing complicated neurological conditions across the US and Canada. I came to advocacy after living through autoimmune encephalitis myself and learning how hard it is to make a complicated medical story understandable to the people treating you. My role is to stay on your side of the table and help you make the strongest use of the care you already have.')
       && s.includes('My story: why I became an advocate') && s.includes('href="/advocate.html"') && s.includes('/img/advocate-eric.jpg');
   })());
+// RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+// The price section is the options section now, at the top; his sentences are unchanged.
 check('A6 the price section: his line, the reframe, his three card sentences, the 20 included hours',
   (() => {
-    const s = sectionAt('class="land-sec ruled cost"');
+    const s = sectionAt('class="land-sec options cost"');
     return s.includes('Three ways to work with me, each a flat price you see before you pay.')
       && s.includes('Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.')
       && s.includes('One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days.')
@@ -121,7 +123,11 @@ check('A7 the questions and the closing are his',
 // ---------------------------------------------------------------------------
 console.log('\n--- B. the shape ---');
 {
-  const order = ['land-sec hero', 'ruled needs', 'ruled how', 'ruled who', 'ruled proof', 'id="numbers"', 'ruled cost', 'ruled faq', 'ruled closing'];
+  // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+  // The options come straight after the hero; the rest keeps its order.
+  // NEGATIVE CONTROL (run 2026-10-10, v7.31): the options section moved back below the numbers made this read
+  //   FAIL  B1 the nine slots, in the order the sweep settled on
+  const order = ['land-sec hero', 'land-sec options cost', 'ruled needs', 'ruled how', 'ruled who', 'ruled proof', 'id="numbers"', 'ruled faq', 'ruled closing'];
   const idx = order.map((k) => main.indexOf(k));
   // NEGATIVE CONTROL (run 2026-09-02): moving the price section above the
   // proof made this read
@@ -131,13 +137,20 @@ console.log('\n--- B. the shape ---');
 }
 {
   const hero = sectionAt('land-sec hero');
-  const acts = [...hero.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
-  // NEGATIVE CONTROL (run 2026-09-02): retargeting the first door at
-  // /book.html made this read
-  //   FAIL  B2 the free call is the first door at full weight; the case the second at card weight, with its live price
-  check('B2 the free call is the first door at full weight; the case the second at card weight, with its live price',
-    acts.length === 2 && /\bact-c\b/.test(acts[0][0]) && acts[0][1] === '/fit.html'
-    && /\bact-m\b/.test(acts[1][0]) && acts[1][1] === '/book.html' && /data-rate="case"/.test(hero));
+  const opts = sectionAt('land-sec options cost');
+  const cards = [...opts.matchAll(/<div class="opt ([^"]*)"[^>]*>([\s\S]*?)(?=<div class="opt |<\/div>\s*<p class="hero-fine")/g)].map((m) => [m[1], m[2]]);
+  const doors = [...opts.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
+  // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+  // The chat line is first and lit, its button to the subscribe page; the two he is not offering carry his
+  // words and no link; the free call is a card-weight door under them.
+  // NEGATIVE CONTROL (run 2026-10-10, v7.31): a `<a href="/book.html">Book a case</a>` added to the Advocacy Case card made this read
+  //   FAIL  B2 the chat line is the first option, lit, with Start chatting; the case and the full service say Not currently offering and take no tap; the free call is a door at card weight under them
+  check('B2 the chat line is the first option, lit, with Start chatting; the case and the full service say Not currently offering and take no tap; the free call is a door at card weight under them',
+    cards.length === 3 && /opt-live/.test(cards[0][0]) && /24\/7 Priority Chat/.test(cards[0][1]) && /<a class="btn glow cta opt-go" href="\/subscribe\.html">Start chatting<\/a>/.test(cards[0][1])
+    && cards.slice(1).every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
+    && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1]) && /data-rate="case"/.test(cards[1][1])
+    && doors.length === 1 && /\bact-m\b/.test(doors[0][0]) && doors[0][1] === '/fit.html' && !/class="act /.test(hero),
+    JSON.stringify({ cards: cards.map(([c]) => c), doors }));
   check('B3 the tile is small at the top left of a paper card, and the halo is gone',
     /<img class="hero-logo"[^>]*width="56"/.test(hero) && !/hero-halo/.test(IDX)
     && /body\.landing \.land-sec\.hero \{[^}]*box-shadow: none;/.test(GLOW));
@@ -146,26 +159,44 @@ check('B4 the closing carries the free call, the case, and the number to press',
   (() => {
     const s = sectionAt('ruled closing');
     const hrefs = [...s.matchAll(/<a class="btn [^"]*" href="([^"]+)">/g)].map((m) => m[1]);
-    return hrefs.join() === '/fit.html,/book.html,tel:+12086708608';
+    // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The closing leads with the chat line.
+    return hrefs.join() === '/subscribe.html,/fit.html,tel:+12086708608';
   })());
-check('B5 the dock leads with the free call and the footer lists every door',
-  /id="sticky-book"[\s\S]{0,120}href="\/fit\.html"/.test(IDX)
+// RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+check('B5 the dock leads with the chat line and the footer lists every door',
+  /id="sticky-book"[\s\S]{0,120}href="\/subscribe\.html"/.test(IDX) && /getElementById\('options'\)/.test(IDX)
   && ['/fit.html', '/book.html', '/advocate.html', '/stats.html', '/reviews.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`)));
-check('B6 the three price cards go to three different places on the services page, and the anchors exist',
+// RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+check('B6 the chat card goes to the subscribe page and to its place on the services page, the other two go nowhere, and the anchors exist',
   (() => {
-    const s = sectionAt('class="land-sec ruled cost"');
-    const hrefs = [...s.matchAll(/<a class="svc-card[^"]*" href="([^"]+)">/g)].map((m) => m[1]);
+    const s = sectionAt('class="land-sec options cost"');
+    const hrefs = [...s.matchAll(/<div class="opt-acts">([\s\S]*?)<\/div>/g)].flatMap((m) => [...m[1].matchAll(/href="([^"]+)"/g)].map((x) => x[1]));
     const svc = f('public/services.html');
-    return hrefs.join() === '/services.html#case,/services.html#full,/services.html#chat'
+    return hrefs.join() === '/subscribe.html,/services.html#chat' && (s.match(/<div class="opt-acts">/g) || []).length === 1
       && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id));
   })());
+// RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The sheet is the chat line's.
+// The landing offers no way to buy the case it says it is not offering, apart from the shared Book tab
+// that every page carries (reviewer's fix, 2026-10-10: the footer's "Book a case" went).
+// NEGATIVE CONTROL (run 2026-10-10): the footer's `<a href="/book.html">Book a case</a>` put back made this read
+//   FAIL  B10 the only door to booking on the landing is the shared Book tab
+check('B10 the only door to booking on the landing is the shared Book tab',
+  (IDX.match(/href="\/book\.html"/g) || []).length === 1 && /<nav class="tabs">\s*<a href="\/book\.html">Book<\/a>/.test(IDX));
 check('B7 the About sheet still opens from the page',
-  /data-about="case"/.test(main) && /wireAboutButtons\(\)/.test(IDX));
+  /data-about="chat"/.test(main) && /wireAboutButtons\(\)/.test(IDX));
 check('B8 "This is a web app" moved to the footer, with its explainer',
   IDX.indexOf('id="webapp-note"') > IDX.indexOf('<footer class="site-foot">') && /helpButton\('app'/.test(IDX));
-check('B9 the page reads as Paper by default on a light device and says so to theme.js; a stored scheme still wins',
-  /<html lang="en" data-default-scheme="paper">/.test(IDX)
-  && /matches\) \? 'calm' : 'paper';/.test(IDX) && /localStorage\.getItem\('pa-scheme'\)/.test(IDX)
+// RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+// The page is black on every device (Night base, turned black by landing.css, which only index.html loads);
+// High contrast, chosen for somebody's eyes, still wins.
+// NEGATIVE CONTROL (run 2026-10-10, v7.31): the landing's `<link rel="stylesheet" href="/css/landing.css?v=b1">` taken out made this read
+//   FAIL  B9 the page is black on every device and says so to theme.js; a stored High contrast still wins
+check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
+  /<html lang="en" data-default-scheme="calm">/.test(IDX)
+  && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b1">/.test(IDX)
+  && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && n !== 'index.html').every((n) => !/landing\.css/.test(f(`public/${n}`)))
+  && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   && /dataset\.defaultScheme/.test(code('public/js/theme.js')));
 
 // ---------------------------------------------------------------------------

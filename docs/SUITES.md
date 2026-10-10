@@ -266,6 +266,31 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The landing, black, chat first (2026-10-10, v7.31)
+
+Eric: "Reorganize the landing page so all three options are at the top. Have
+it be a more sleek black style with some color pop." Then: "make sure that
+even if my schedule is blocked off 24/7 chat is always available. In fact make
+the chat the highlight option. Put 'not currently offering' and gray out the
+two options outside of chat." `index.html` leads with the hero and `#options`
+(chat first and lit, the case and the full service greyed with his badge and
+no links); `public/css/landing.css`, loaded by the landing alone, makes it
+black with a cyan accent (High contrast still wins). The maintenance gate now
+refuses only `/api/checkout`; the notice keeps chat links live and offers
+Start chatting; `subscribe.html` no longer loads it. The demo's `/api/subscribe`
+opens the subscription and lands on `/subscription.html`, as the Worker's
+success_url does.
+
+`landing.mjs` A6, B1, B2, B4 to B7, B9, `fitcall.mjs` F8 and F9, and
+`maintenance.mjs` M4, M13, M17 are re-pinned; new M23 (the notice keeps chat
+open) and M24 (the demo's chat sign-up lands on the chat), each with a recorded
+negative control. `drive-landing.mjs` checks the black ground, the option
+cards and their contrast. Two checker agents and a reviewing agent then went
+over the landing and the payment code: Stripe is unchanged since v7.21, chat is
+always open, and their three fixes landed with M25 (the Chat tab's empty state
+starts the chat line), B10 (the landing's only door to booking is the shared
+Book tab) and corrected comments.
+
 ### Patient advocacy only (2026-10-06, v7.30)
 
 Eric: "Revert back to PR 1. Remove PR 420. Patient advocacy only." He chose to

@@ -106,9 +106,17 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry730 = (CL.match(/\{\n\s+\/\/ PATIENT ADVOCACY ONLY \(Eric, 2026-10-06[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-06, v7.30): changelog.js's VERSION left at '7.29' made this read
   //   FAIL  R1 both versions read 7.30 with the new tag, the 7.30 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.30 with the new tag, the 7.30 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.30';/.test(CL) && /const VERSION = '7\.30';/.test(W) && /const BUILD_TAG = 'v2026-10-06-advocacy-only';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.30'
+  // RE-PINNED 2026-10-10 (v7.31): both versions read 7.31 with the landing-black tag, and the 7.31 entry says
+  // the landing is black with the options first, chat lit and always open, the other two greyed.
+  const entry731 = (CL.match(/\{\n\s+\/\/ THE LANDING, BLACK, CHAT FIRST \(Eric, 2026-10-10[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-10, v7.31): the worker's BUILD_TAG left at the advocacy-only tag made this read
+  //   FAIL  R1 both versions read 7.31 with the new tag, the 7.31 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.31 with the new tag, the 7.31 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.31';/.test(CL) && /const VERSION = '7\.31';/.test(W) && /const BUILD_TAG = 'v2026-10-10-landing-black';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.31'
+    && /version: '7\.31',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry731)
+    && /Not currently offering/.test(entry731) && /Chat can always be started/.test(entry731)
+    && !DASH.test(entry731) && !HARD.some((re) => re.test(entry731))
     && /version: '7\.30',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry730)
     && /PR 1 is back as the live site/.test(entry730) && /The Community Assistance Fund is hidden\./.test(entry730) && /PR 420 stays deleted\./.test(entry730)
     && !DASH.test(entry730) && !HARD.some((re) => re.test(entry730))

@@ -6,9 +6,14 @@
 //   1. This file greys the page and says when it will be back. It is a
 //      courtesy. A stale tab, a bookmarked /book.html, or somebody with
 //      scripting off never sees it.
-//   2. worker/index.js refuses /api/checkout and /api/subscribe outright for
-//      the same window. THAT is the gate, and it is the one that decides
-//      whether money can move.
+//   2. worker/index.js refuses /api/checkout outright for the same window.
+//      THAT is the gate, and it is the one that decides whether a case can
+//      be bought.
+//
+// NEVER THE CHAT LINE (Eric, 2026-10-10: "make sure that even if my schedule
+// is blocked off 24/7 chat is always available"). The Worker never refuses
+// /api/subscribe, the subscribe page does not load this module, and the
+// notice below carries a live way to start chatting.
 //
 // The two carry the same timestamp and a test pins them together, because a
 // page that says "back at 1pm" while checkout still answers is exactly the
@@ -105,7 +110,7 @@ export function initMaintenance() {
     .pa-maint-box p { margin: 0 0 .5rem; color: #AFB8C9; font-size: .95rem; }
     .pa-maint-box p.last { margin-bottom: 1.1rem; }
     .pa-maint-box a {
-      display: inline-block; padding: .6rem 1.1rem; min-height: 44px;
+      display: inline-block; margin: .25rem; padding: .6rem 1.1rem; min-height: 44px;
       box-sizing: border-box; line-height: 1.9;
       border-radius: 999px; text-decoration: none; font-weight: 600;
       border: 1px solid rgba(255, 255, 255, .30); color: #E8ECF4;
@@ -130,13 +135,15 @@ export function initMaintenance() {
       <p class="last"><strong>If you are already a client, nothing has changed.</strong>
         Your case, your files and your chat are open as normal.</p>
       <a href="/signin.html">Sign in to your case</a>
+      <a href="/subscribe.html">Start chatting</a>
     </div>`;
   document.body.appendChild(el);
   document.documentElement.classList.add('pa-maint-on');
 
   // The scrim covers the page, but a link is still a link to a keyboard and
-  // to a screen reader. Neuter the two that spend money, at the source.
-  for (const a of document.querySelectorAll('a[href*="/book.html"], a[href*="/subscribe.html"]')) {
+  // to a screen reader. Neuter the one that buys a case, at the source; the
+  // chat line stays open.
+  for (const a of document.querySelectorAll('a[href*="/book.html"]')) {
     a.removeAttribute('href');
     a.setAttribute('aria-disabled', 'true');
     a.setAttribute('tabindex', '-1');
@@ -145,7 +152,7 @@ export function initMaintenance() {
   document.addEventListener('click', (e) => {
     const a = e.target.closest?.('a[href]');
     if (!a || !underMaintenance()) return;
-    if (/\/(book|subscribe)\.html/.test(a.getAttribute('href') || '')) {
+    if (/\/book\.html/.test(a.getAttribute('href') || '')) {
       e.preventDefault();
       e.stopPropagation();
     }

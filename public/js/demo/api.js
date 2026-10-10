@@ -1302,6 +1302,21 @@ export function demoApi(role, store) {
         return ok({ ok: true, state: 'pending', at });
       }
       // /api/subscribe: straight past Stripe to where paying would have landed.
+      // The Worker's success_url is the subscriber's chat, and the webhook is
+      // what opens the subscription; the demo does both (2026-10-10: it used
+      // to land on the case return page, which is not where a chat
+      // subscriber goes, so the chat flow could not be walked).
+      if (path === '/api/subscribe') {
+        const uid = role === 'admin' ? 'demo-admin' : 'demo-client';
+        const now = Date.now();
+        store.docs.set(`subscriptions/${uid}`, {
+          uid, status: 'active', termsAckAt: body?.termsAckAt || now,
+          createdAt: new Date(now), currentPeriodEnd: new Date(now + 30 * 86_400_000), stripeCustomerId: 'cus_demo',
+        });
+        store.persist?.();
+        store.fire?.(`subscriptions/${uid}`);
+        return ok({ ok: true, url: `/subscription.html?session_id=cs_demo_sub&demo=${role}` });
+      }
       return ok({ ok: true, url: `/return.html?session_id=demo&demo=${role}` });
     }
     // ready, not just the id: the return page polls on that flag, and without

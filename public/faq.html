@@ -50,8 +50,9 @@
 })();
 </script>
 <script type="module" src="/js/nav-menu.js"></script>
-<!-- Maintenance notice. The Worker refuses /api/checkout and /api/subscribe
-     for the same window; this only greys the page and says when it lifts. -->
+<!-- Maintenance notice. The Worker refuses /api/checkout (never /api/subscribe:
+     the chat line stays open) for the same window; this only greys the page
+     and says when it lifts. -->
 <script type="module" src="/js/maintenance.js"></script>
 </head>
 <body>

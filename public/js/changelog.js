@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.30';
+export const VERSION = '7.31';
 
 /**
  * Newest first.
@@ -51,6 +51,23 @@ export const VERSION = '7.30';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE LANDING, BLACK, CHAT FIRST (Eric, 2026-10-10: "Reorganize the
+    // landing page so all three options are at the top. Have it be a more
+    // sleek black style with some color pop." "make sure that even if my
+    // schedule is blocked off 24/7 chat is always available. In fact make the
+    // chat the highlight option. Put 'not currently offering' and gray out
+    // the two options outside of chat"). Admin only.
+    version: '7.31',
+    quiet: true,
+    client: [],
+    admin: [
+      'The landing page is black with a cyan accent, and the three options sit right under the headline.',
+      '24/7 Priority Chat is the highlighted option, with a Start chatting button. The Advocacy Case and Full-Service Case Management say Not currently offering and are greyed out.',
+      'Chat can always be started, at any hour and even when your schedule is blocked off. A maintenance window no longer shuts it.',
+      'The closing and the floating button now lead with Start chatting. The free 15-minute call stays under the options.',
+    ],
+  },
   {
     // PATIENT ADVOCACY ONLY (Eric, 2026-10-06: "Revert back to PR 1. Remove
     // PR 420. Patient advocacy only." He chose to hide the fund and keep what

@@ -58,7 +58,7 @@ async function load() {
 
   if (!threads.length) {
     chatEl.innerHTML = `<p class="dim">No conversations yet.</p>
-      <p><a class="btn" href="/book.html">Book an Advocacy Case →</a> to start chatting with me.</p>`;
+      <p><a class="btn" href="/subscribe.html">Start chatting →</a></p>`;
     return;
   }
 

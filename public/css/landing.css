@@ -1,0 +1,212 @@
+/* LOOK B, BLACK (Eric, 2026-10-10: "Reorganize the landing page so all three
+   options are at the top. Have it be a more sleek black style with some
+   color pop." Then: "make the chat the highlight option. Put 'not currently
+   offering' and gray out the two options outside of chat.")
+
+   The landing page alone, loaded only by index.html after glowup.css, so no
+   other page moves. One visual world on every device: a black ground, white
+   ink, and one electric cyan that belongs to the chat line and its button.
+   High contrast is still honoured: the colour rules below step aside for it,
+   and only the layout rules (unscoped) apply there.
+
+   Palette: ground #0A0A0C, raised #131317, raised-2 #1B1B21, ink #F5F5F7,
+   soft #D2D2D9, dim #9C9CA8, the pop #3DDCF5 (the wordmark's cyan, turned
+   up), and a faint violet only in the ground's light. */
+
+/* ---- the tokens, black ------------------------------------------------- */
+:root:not([data-scheme="contrast"]):has(body.landing) {
+  background: #0A0A0C;
+  color-scheme: dark;
+}
+:root:not([data-scheme="contrast"]) body.landing {
+  --bg: #0A0A0C;
+  --bg-deep: #050506;
+  --panel: #131317;
+  --panel-2: #1B1B21;
+  --ink: #F5F5F7;
+  --soft: #D2D2D9;
+  --dim: #9C9CA8;
+  --muted: #73737F;
+  --line: #26262E;
+  --cyan: #3DDCF5;
+  --cyan-dim: #1E8FA3;
+  --magenta: #B9A6FF;
+  --blue: #8FB4FF;
+  --green: #4FD69C;
+  --gold: #F2C14E;
+  --danger: #FF7A7A;
+  --on-accent: #02161A;
+  --sur-quiet: #0F0F12;
+  --sur-base: #131317;
+  --sur-lit: #1B1B21;
+  --sur-floating: #17171C;
+  --sur-inset: #0D0D10;
+  --edge-quiet: rgba(255, 255, 255, .06);
+  --edge-base: rgba(255, 255, 255, .10);
+  --edge-lit: rgba(255, 255, 255, .18);
+  --edge-focus: #3DDCF5;
+  --el-1: none;
+  --el-2: 0 18px 50px rgba(0, 0, 0, .5);
+  --el-3: 0 24px 70px rgba(0, 0, 0, .6);
+  --el-cta: 0 10px 30px rgba(61, 220, 245, .28), 0 0 0 1px rgba(61, 220, 245, .55);
+  --glow-c: 0 10px 30px rgba(61, 220, 245, .25);
+  --glow-m: none;
+  --bar: rgba(10, 10, 12, .82);
+  --deep: #050506;
+  --deep-2: #050506;
+  --deep-ink: #F5F5F7;
+  --deep-dim: #9C9CA8;
+  --deep-line: rgba(255, 255, 255, .08);
+  background-color: #0A0A0C;
+  background-image:
+    radial-gradient(900px 420px at 88% -6%, rgba(61, 220, 245, .11), transparent 62%),
+    radial-gradient(700px 380px at -12% 26%, rgba(139, 123, 255, .07), transparent 60%);
+  color: var(--ink);
+}
+
+/* ---- the hero: no card, just the line, kept short so the options sit in
+   the first screen of a phone ------------------------------------------- */
+body.landing main { padding-top: var(--s-2); }
+body.landing .land-sec.hero {
+  gap: var(--s-2);
+  padding: var(--s-2) 0 0;
+  border: 0;
+  background: none;
+}
+body.landing .land-sec.hero h1 {
+  font-size: clamp(2.3rem, 9.4vw, 3.8rem);
+  line-height: 1.02;
+}
+body.landing .land-sec.hero + .options { margin-top: calc(var(--s-3) * -1); }
+/* The wordmark is right above it in the bar; on a phone the tile is the
+   space the options need. */
+@media (max-width: 639px) {
+  body.landing .land-sec.hero > .hero-logo { display: none; }
+  body.landing .land-sec.hero .hero-sub { font-size: 1rem; }
+}
+:root:not([data-scheme="contrast"]) body.landing .hero-eyebrow {
+  color: var(--cyan);
+  letter-spacing: .14em;
+}
+
+/* ---- the three options ------------------------------------------------- */
+body.landing .options {
+  display: grid;
+  gap: var(--s-3);
+  padding-top: var(--s-2);
+}
+body.landing .options > h2 {
+  margin: 0;
+  font-family: 'Source Sans 3', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-size: var(--t-micro);
+  font-weight: 700;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+body.landing .opt-lede { margin: 0; color: var(--soft); font-size: 1.12rem; line-height: 1.45; }
+body.landing .opt-grid { display: grid; gap: var(--s-2); }
+body.landing .opt {
+  display: grid;
+  align-content: start;
+  gap: .5rem;
+  padding: 1.3rem 1.25rem;
+  border: 1px solid var(--edge-base);
+  border-radius: var(--r-3);
+  background: var(--sur-base);
+}
+body.landing .opt h3 {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  margin: 0;
+  font-size: 1.35rem;
+  line-height: 1.2;
+}
+body.landing .opt-ic {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid var(--edge-quiet);
+  border-radius: var(--r-1);
+  background: var(--sur-quiet);
+  color: var(--soft);
+}
+body.landing .opt .svc-price { font-size: 1.6rem; }
+body.landing .opt .svc-line { color: var(--soft); font-size: var(--t-small); line-height: 1.5; }
+body.landing .opt-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .9rem;
+  margin-top: .45rem;
+}
+body.landing .opt-go {
+  min-height: 48px;
+  padding: .7rem 1.5rem;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 700;
+}
+body.landing .opt-more {
+  color: var(--cyan);
+  font-size: var(--t-small);
+  font-weight: 700;
+  text-decoration: none;
+}
+body.landing .opt-more::after { content: " \203A"; }
+body.landing .opt-tag,
+body.landing .opt-badge {
+  justify-self: start;
+  padding: .22rem .65rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+body.landing .opt-tag { border: 1px solid var(--cyan); color: var(--cyan); }
+body.landing .opt-badge { border: 1px solid var(--edge-lit); color: var(--soft); }
+
+/* The chat line, lit: the one option open, at every hour. */
+:root:not([data-scheme="contrast"]) body.landing .opt-live {
+  border-color: rgba(61, 220, 245, .62);
+  background:
+    linear-gradient(180deg, rgba(61, 220, 245, .11), rgba(61, 220, 245, .02) 58%),
+    var(--sur-base);
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .22), 0 22px 60px rgba(61, 220, 245, .12);
+}
+:root:not([data-scheme="contrast"]) body.landing .opt-live .svc-price { color: var(--cyan); font-size: 2rem; }
+:root:not([data-scheme="contrast"]) body.landing .opt-live .opt-ic { border-color: rgba(61, 220, 245, .4); color: var(--cyan); }
+:root:not([data-scheme="contrast"]) body.landing .opt-live .opt-tag { background: var(--cyan); color: var(--on-accent); }
+
+/* The two he is not offering: greyed, his words on them, no tap. */
+body.landing .opt-off {
+  border-style: dashed;
+  background: var(--sur-quiet);
+  cursor: default;
+}
+body.landing .opt-off > :not(.opt-badge) { opacity: .5; filter: grayscale(1); }
+
+body.landing .options .hero-fine,
+body.landing .options .reframe { margin: 0; color: var(--dim); font-size: var(--t-small); line-height: 1.5; }
+body.landing .options .actions { margin: 0; }
+body.landing .options .acts { margin: 0; }
+
+/* ---- the rest, on black ------------------------------------------------ */
+body.landing .who .hero-cred { margin: 0 0 var(--s-1); color: var(--soft); }
+:root:not([data-scheme="contrast"]) body.landing .num { color: var(--cyan); border-color: rgba(61, 220, 245, .4); }
+:root:not([data-scheme="contrast"]) body.landing .land-sec.ruled > h2 { color: #FFFFFF; }
+
+@media (min-width: 900px) {
+  body.landing .opt-grid { grid-template-columns: 1.3fr 1fr 1fr; align-items: stretch; }
+  body.landing .opt-live .opt-acts { margin-top: auto; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  body.landing .opt-go { transition: filter .15s ease, transform .12s ease; }
+  body.landing .opt-go:hover { filter: brightness(1.08); }
+  body.landing .opt-go:active { transform: translateY(1px); }
+}

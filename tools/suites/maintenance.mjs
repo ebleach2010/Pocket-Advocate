@@ -37,8 +37,12 @@ check('M2 that instant is 8PM MST on 2026-08-25 (MST is a fixed UTC-7)',
 // The gate itself.
 check('M3 the Worker refuses checkout during the window',
   /maintenanceUntil\(\)[\s\S]{0,200}'\/api\/checkout'/.test(SRC));
-check('M4 and subscribe too',
-  /maintenanceUntil\(\)[\s\S]{0,200}'\/api\/subscribe'/.test(SRC));
+// RE-PINNED 2026-10-10 (v7.31): Eric, "make sure that even if my schedule is blocked off 24/7 chat is always available."
+// The chat line is never refused: the guard names checkout alone.
+// NEGATIVE CONTROL (run 2026-10-10, v7.31): `|| url.pathname === '/api/subscribe'` put back into the guard made this read
+//   FAIL  M4 and never the chat line: the guard does not name subscribe
+check('M4 and never the chat line: the guard does not name subscribe',
+  !/maintenanceUntil\(\)[^;]*'\/api\/subscribe'/.test(SRC));
 check('M5 it answers 503, not a silent 200',
   /maintenanceMessage\(\), maintenanceUntil: MAINTENANCE_UNTIL \}, 503\)/.test(SRC));
 
@@ -91,7 +95,8 @@ const has = (f) => readFileSync(`${ROOT}/public/${f}`, 'utf8').includes('/js/mai
 // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again.
 check('M11 on the landing page', has('index.html'));
 check('M12 on the booking page', has('book.html'));
-check('M13 on the subscribe page', has('subscribe.html'));
+// RE-PINNED 2026-10-10 (v7.31): Eric, "make sure that even if my schedule is blocked off 24/7 chat is always available." The subscribe page no longer loads the notice.
+check('M13 NOT on the subscribe page: the chat line is always open', !has('subscribe.html'));
 for (const f of ['case.html', 'chat.html', 'signin.html', 'subscription.html'])
   check(`M14 NOT on ${f} — existing clients are unaffected`, !has(f));
 
@@ -107,12 +112,13 @@ check('M16 and says plainly that current clients are unaffected',
 // allows that clause while still requiring exactly these two routes and
 // nothing else. Widened deliberately, not relaxed: M17b below pins the host
 // test itself, and M17c pins that it is still only two routes.
-check('M17 the guard names exactly two routes, both of them purchases',
-  (SRC.match(/maintenanceUntil\(\)[^;]*?&& \(url\.pathname === '\/api\/checkout' \|\| url\.pathname === '\/api\/subscribe'\)/) || []).length === 1);
+// RE-PINNED 2026-10-10 (v7.31): Eric, "make sure that even if my schedule is blocked off 24/7 chat is always available." One route now: case checkout.
+check('M17 the guard names exactly one route, case checkout',
+  (SRC.match(/maintenanceUntil\(\) && !DEMO_HOST\.test\(url\.hostname\) && url\.pathname === '\/api\/checkout'\)/) || []).length === 1);
 check('M17b and it stands down on a preview host, which exists to be reviewed',
   /maintenanceUntil\(\) && !DEMO_HOST\.test\(url\.hostname\)/.test(SRC));
 check('M17c no third route was smuggled into the guard',
-  !/maintenanceUntil\(\)[^;]*?url\.pathname === '\/api\/(?!checkout|subscribe)/.test(SRC));
+  !/maintenanceUntil\(\)[^;]*?url\.pathname === '\/api\/(?!checkout)/.test(SRC)); // RE-PINNED 2026-10-10 (v7.31): Eric, "make sure that even if my schedule is blocked off 24/7 chat is always available."
 
 // The demo drives booking end to end; a scrim would turn a real failure green.
 // The page half has to stand down on the same hosts the Worker does, or the
@@ -129,13 +135,44 @@ check('M21 the page also stands down on a preview host',
 check('M18 the demo is exempt', /pa-demo|demo/.test(CLIENT.split('export function initMaintenance')[1] || ''));
 
 // Purchase links are neutered for keyboard and screen-reader users too.
-check('M19 book/subscribe links lose their href, not just their clicks',
+check('M19 book links lose their href, not just their clicks', // renamed 2026-10-10 (v7.31): the chat line's links are never neutered
   /removeAttribute\('href'\)/.test(CLIENT) && /aria-disabled/.test(CLIENT));
 
 // The filter must sit on the overlay's SIBLINGS. On an ancestor it would
 // become the containing block for position:fixed and move the notice.
 check('M20 the grey is applied to siblings, not an ancestor',
   /body > \*:not\(\.pa-maint\)[\s\S]{0,120}grayscale/.test(CLIENT));
+
+// The chat line stays open through a window (Eric, 2026-10-10: "make sure that even if my schedule is
+// blocked off 24/7 chat is always available"): the notice neuters only the case's links, never the
+// chat line's, and carries a live way to start chatting.
+// NEGATIVE CONTROL (run 2026-10-10): `a[href*="/subscribe.html"]` put back into the neutered selector made this read
+//   FAIL  M23 the notice neuters only the case's links and carries a live Start chatting
+check('M23 the notice neuters only the case\'s links and carries a live Start chatting',
+  /querySelectorAll\('a\[href\*="\/book\.html"\]'\)/.test(CLIENT) && !/subscribe\.html"\]/.test(CLIENT)
+  && /\/\\\/book\\\.html\//.test(CLIENT) && /<a href="\/subscribe\.html">Start chatting<\/a>/.test(CLIENT));
+
+// The chat flow can be walked in the demo the way it runs live: a sign-up lands on the subscriber's chat,
+// where the Worker's success_url sends a real one, with the subscription open, as the webhook would leave
+// it (2026-10-10: the demo used to land it on the case return page).
+// NEGATIVE CONTROL (run 2026-10-10): the demo's subscribe URL put back to `/return.html?session_id=demo&demo=${role}` made this read
+//   FAIL  M24 the demo's chat sign-up lands where the live one does, on the chat, with the subscription open
+{
+  const DEMO = readFileSync(`${ROOT}/public/js/demo/api.js`, 'utf8');
+  check('M24 the demo\'s chat sign-up lands where the live one does, on the chat, with the subscription open',
+    /success_url: `\$\{env\.PUBLIC_BASE_URL\}\/subscription\.html\?session_id=\{CHECKOUT_SESSION_ID\}`/.test(SRC)
+    && /if \(path === '\/api\/subscribe'\) \{[\s\S]{0,700}store\.docs\.set\(`subscriptions\/\$\{uid\}`, \{[\s\S]{0,120}status: 'active'[\s\S]{0,400}return ok\(\{ ok: true, url: `\/subscription\.html\?session_id=cs_demo_sub&demo=\$\{role\}` \}\);/.test(DEMO));
+}
+
+// Someone signed in with no case and no chat yet, who opens the Chat tab, is sent to start chatting, not to
+// book the case Eric is not offering (reviewer's fix, 2026-10-10).
+// NEGATIVE CONTROL (run 2026-10-10): the empty state put back to `href="/book.html">Book an Advocacy Case` made this read
+//   FAIL  M25 the Chat tab's empty state starts the chat line, not a case
+{
+  const CP = readFileSync(`${ROOT}/public/js/chat-page.js`, 'utf8');
+  check('M25 the Chat tab\'s empty state starts the chat line, not a case',
+    /<p><a class="btn" href="\/subscribe\.html">Start chatting →<\/a><\/p>/.test(CP) && !/href="\/book\.html"/.test(CP));
+}
 
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} checks passed`);

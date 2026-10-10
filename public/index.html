@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-default-scheme="paper">
+<html lang="en" data-default-scheme="calm">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -9,29 +9,26 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#F3EEE3">
+<meta name="theme-color" content="#0A0A0C">
 <title>Pocket Advocate</title>
 <script>
-// Paint in the stored colour scheme before the stylesheet lands, so a scheme
-// never flashes on the way in. Mirrors theme.js, which owns the choosing and
-// persisting; this only applies what is already stored. A stored choice
-// always wins. With nothing stored, this page reads as Paper on a light
-// device (Look A, "Clinic Note", 2026-09) and Night on a dark one; every
-// other page keeps Daylight, and data-default-scheme above tells theme.js.
+// The landing is black (Eric, 2026-10-10: "Have it be a more sleek black
+// style with some color pop"). One visual world on every device, with one
+// exception kept on purpose: somebody who chose High contrast for their eyes
+// keeps it here too. Everything else paints on the Night base, which
+// landing.css turns black; data-default-scheme above tells theme.js.
 (function () {
   try {
-    var s = localStorage.getItem('pa-scheme');
-    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
-      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'paper';
-    if (s !== 'neon') document.documentElement.dataset.scheme = s;
-    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
+    document.documentElement.dataset.scheme = s;
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m && c) m.setAttribute('content', c);
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp15">
 <link rel="stylesheet" href="/css/glowup.css?v=sp8">
+<link rel="stylesheet" href="/css/landing.css?v=b1">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -51,8 +48,9 @@
 })();
 </script>
 <script type="module" src="/js/nav-menu.js"></script>
-<!-- Maintenance notice. The Worker refuses /api/checkout and /api/subscribe
-     for the same window; this only greys the page and says when it lifts. -->
+<!-- Maintenance notice. The Worker refuses /api/checkout (never /api/subscribe:
+     the chat line stays open) for the same window; this only greys the page
+     and says when it lifts. -->
 <script type="module" src="/js/maintenance.js"></script>
 </head>
 <body class="landing">
@@ -71,12 +69,15 @@
   </div>
 </header>
 
-<!-- LOOK A, "CLINIC NOTE" (Eric, 2026-09-02: "I like A best"). Nine slots in
-     the order the landing sweep settled on: what is wrong, how the work gets
-     done, who I am, proof, price, the ask. EVERY SENTENCE BELOW IS FROM THE
-     COPY DECK HE APPROVED WORD FOR WORD ("Use it as is", 2026-09-02): his
-     own lines from the live site and his story, plus the handful he read as
-     NEW and accepted. Change the deck, then this; never this alone.
+<!-- LOOK B, BLACK (Eric, 2026-10-10: "Reorganize the landing page so all
+     three options are at the top. Have it be a more sleek black style with
+     some color pop." Then: "make the chat the highlight option. Put 'not
+     currently offering' and gray out the two options outside of chat.").
+     The three options lead, the chat line first and lit, the two he is not
+     offering greyed with his words on them. EVERY OTHER SENTENCE IS STILL
+     FROM THE COPY DECK HE APPROVED WORD FOR WORD ("Use it as is",
+     2026-09-02), or from services.html; only the order moved. Look A,
+     "Clinic Note" (2026-09-02), stood here before; it is in git.
      The icons come from /img/icons.svg, drawn once for the whole site. -->
 <main>
   <section class="land-sec hero">
@@ -84,25 +85,47 @@
     <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
     <h1>Go into your next appointment with a plan.</h1>
     <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
-    <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
-    <div class="hero-pocket">
-      <div class="acts">
-        <!-- The free call is the first door at full weight and the case the
-             second at card weight (Eric, 2026-09-01: "Yes, add the free fit
-             call"). Two different weights is what keeps this from being the
-             two-equal-buttons hero he called confusing (2026-08-26). -->
-        <a class="act act-c cta" href="/fit.html">
-          <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>
-          <span class="act-label">Book a free 15-minute call</span>
-          <svg class="ico act-chev" aria-hidden="true"><use href="/img/icons.svg#i-chev"/></svg>
-        </a>
-        <a class="act act-m" href="/book.html">
-          <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-brief"/></svg></span>
-          <span class="act-label">Book a case, <span data-rate="case">$1,200</span></span>
-          <svg class="ico act-chev" aria-hidden="true"><use href="/img/icons.svg#i-chev"/></svg>
-        </a>
+  </section>
+
+  <!-- The three options, at the top. The chat line is always open (Eric,
+       2026-10-10: "even if my schedule is blocked off 24/7 chat is always
+       available"); the other two say so and take no tap. -->
+  <section class="land-sec options cost" id="options">
+    <h2>What it costs</h2>
+    <p class="opt-lede measure">Three ways to work with me, each a flat price you see before you pay.</p>
+    <div class="opt-grid">
+      <div class="opt opt-live">
+        <span class="opt-tag">ON THE GO</span>
+        <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>24/7 Priority Chat</h3>
+        <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
+        <span class="svc-line">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.</span>
+        <div class="opt-acts">
+          <a class="btn glow cta opt-go" href="/subscribe.html">Start chatting</a>
+          <a class="opt-more" href="/services.html#chat">What is included</a>
+        </div>
       </div>
-      <p class="hero-fine">No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.</p>
+      <div class="opt opt-off" aria-disabled="true">
+        <span class="opt-badge">Not currently offering</span>
+        <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-brief"/></svg></span>Advocacy Case</h3>
+        <span class="svc-price" data-rate="case">$1,200</span>
+        <span class="svc-line">One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days.</span>
+      </div>
+      <div class="opt opt-off" aria-disabled="true">
+        <span class="opt-badge">Not currently offering</span>
+        <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-lock"/></svg></span>Full-Service Case Management</h3>
+        <span class="svc-price"><span data-rate="full">$4,400</span><span class="svc-per">/month</span></span>
+        <span class="svc-line">Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.</span>
+      </div>
+    </div>
+    <p class="hero-fine">No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.</p>
+    <p class="reframe measure">Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.</p>
+    <div class="actions"><button type="button" class="btn ghost" data-about="chat">About the chat line</button></div>
+    <div class="acts">
+      <a class="act act-m" href="/fit.html">
+        <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>
+        <span class="act-label">Book a free 15-minute call</span>
+        <svg class="ico act-chev" aria-hidden="true"><use href="/img/icons.svg#i-chev"/></svg>
+      </a>
     </div>
   </section>
 
@@ -130,6 +153,7 @@
 
   <section class="land-sec ruled who">
     <h2>Who you're hiring</h2>
+    <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
     <!-- The face IS the link (Eric, 2026-08-30): tap it and his story opens. -->
     <a class="who-row" href="/advocate.html">
       <img class="portrait" src="/img/advocate-eric.jpg" alt="Eric, founder of Pocket Advocate" loading="lazy" width="72" height="72">
@@ -180,39 +204,6 @@
     <p class="dim small"><a class="pill" href="/stats.html">The whole ledger</a></p>
   </section>
 
-  <section class="land-sec ruled cost">
-    <h2>What it costs</h2>
-    <p class="dim measure">Three ways to work with me, each a flat price you see before you pay.</p>
-    <p class="reframe measure">Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.</p>
-    <div class="svc-grid">
-      <a class="svc-card svc-feat" href="/services.html#case">
-        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-brief"/></svg></span>
-        <h3>Advocacy Case</h3>
-        <span class="svc-price" data-rate="case">$1,200</span>
-        <span class="svc-line">One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days.</span>
-        <span class="svc-go">What is included</span>
-      </a>
-      <a class="svc-card" href="/services.html#full">
-        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-lock"/></svg></span>
-        <h3>Full-Service Case Management</h3>
-        <span class="svc-price"><span data-rate="full">$4,400</span><span class="svc-per">/month</span></span>
-        <span class="svc-line">Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.</span>
-        <span class="svc-go">What is included</span>
-      </a>
-      <a class="svc-card" href="/services.html#chat">
-        <span class="svc-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>
-        <h3>24/7 Priority Chat</h3>
-        <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
-        <span class="svc-line">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.</span>
-        <span class="svc-go">What is included</span>
-      </a>
-    </div>
-    <!-- Eric, 2026-08-25: "Underneath the 'book' button is an 'about' button
-         that explains EVERYTHING they get." The sheet lives on; it opens
-         from the price now, which is where the question gets asked. -->
-    <div class="actions"><button type="button" class="btn ghost" data-about="case">About the Advocacy Case</button></div>
-  </section>
-
   <section class="land-sec ruled faq">
     <h2>Straight answers</h2>
     <a class="q" href="/faq.html">Is this medical advice? <span>›</span></a>
@@ -224,25 +215,28 @@
   <section class="land-sec ruled closing" id="closing">
     <p class="close-line"><strong>You don't have to navigate this alone.</strong></p>
     <h2>Ready when you are.</h2>
+    <!-- The chat line leads here too, and the case it is not offering is not
+         offered (Eric, 2026-10-10). -->
     <div class="actions">
-      <a class="btn glow cta" href="/fit.html">Book a free 15-minute call</a>
-      <a class="btn ghost" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+      <a class="btn glow cta" href="/subscribe.html">Start chatting</a>
+      <a class="btn ghost" href="/fit.html">Book a free 15-minute call</a>
       <a class="btn quiet" href="tel:+12086708608">📞 Call 208 670 8608</a>
     </div>
   </section>
 </main>
 
-<!-- The booking dock: appears only once the hero's own button has scrolled
-     away, leaves again at the closing, and never blocks content. -->
+<!-- The dock: appears only once the options have scrolled away, leaves
+     again at the closing, and never blocks content. It carries the chat line,
+     the one option always open (Eric, 2026-10-10). -->
 <div class="sticky-book" id="sticky-book" aria-hidden="true">
-  <a class="cta" href="/fit.html">Book a free 15-minute call</a>
+  <a class="cta" href="/subscribe.html">Start chatting</a>
 </div>
 <script type="module">
   const dock = document.getElementById('sticky-book');
-  const hero = document.querySelector('.land-sec.hero');
+  const hero = document.getElementById('options');
   const closing = document.getElementById('closing');
   if (dock && hero && closing && 'IntersectionObserver' in window) {
-    // Hidden while ANY of the hero is on screen (its own button is there),
+    // Hidden while ANY of the options is on screen (its own button is there),
     // and hidden again once the closing approaches. Not before the page has
     // been read a little, not over the thing it duplicates.
     const seen = { hero: true, closing: false };
@@ -268,7 +262,6 @@
     <nav class="foot-col" aria-label="Explore">
       <h2>Explore</h2>
       <a href="/fit.html">Book a free call</a>
-      <a href="/book.html">Book a case</a>
       <a href="/services.html">Services and pricing</a>
       <a href="/about.html">About</a>
       <a href="/advocate.html">Meet your advocate</a>

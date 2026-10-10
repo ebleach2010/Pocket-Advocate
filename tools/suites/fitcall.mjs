@@ -500,14 +500,20 @@ check('F5 fit.js lists fit slots and only fit slots',
   const acts = [...hero.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
   // NEGATIVE CONTROL (run 2026-09-02): swapping the two hero anchors made this read
   //   FAIL  F8 the hero's first door is the free call at full weight; the case is second at card weight
-  check('F8 the hero\'s first door is the free call at full weight; the case is second at card weight',
-    acts.length === 2 && /act-c/.test(acts[0][0]) && acts[0][1] === '/fit.html'
-    && /act-m/.test(acts[1][0]) && acts[1][1] === '/book.html'
-    && /Book a free 15-minute call/.test(hero) && /data-rate="case"/.test(hero));
+  // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
+  // The free call is still offered, at card weight under the three options; the chat line leads the dock
+  // and the closing, and the case he is not offering is not offered there.
+  // NEGATIVE CONTROL (run 2026-10-10, v7.31): the options' free-call door retargeted at /book.html made this read
+  //   FAIL  F8 the free call is offered under the three options at card weight, and the case is not
+  const opts = idx.slice(idx.indexOf('<section class="land-sec options cost" id="options">'), idx.indexOf('<section class="land-sec ruled needs">'));
+  const doors = [...opts.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
+  check('F8 the free call is offered under the three options at card weight, and the case is not',
+    doors.length === 1 && /act-m/.test(doors[0][0]) && doors[0][1] === '/fit.html' && /Book a free 15-minute call/.test(opts)
+    && !/href="\/book\.html"/.test(opts));
   const dock = idx.slice(idx.indexOf('id="sticky-book"'), idx.indexOf('id="sticky-book"') + 200);
-  check('F9 the dock and the closing lead with the free call and keep the case beside it',
-    /href="\/fit\.html"/.test(dock)
-    && /<a class="btn glow cta" href="\/fit\.html">Book a free 15-minute call<\/a>\s*<a class="btn ghost" href="\/book\.html">Book a case/.test(idx));
+  check('F9 the dock and the closing lead with the chat line and keep the free call beside it',
+    /href="\/subscribe\.html">Start chatting/.test(dock)
+    && /<a class="btn glow cta" href="\/subscribe\.html">Start chatting<\/a>\s*<a class="btn ghost" href="\/fit\.html">Book a free 15-minute call<\/a>/.test(idx));
   check('F10 the footer lists the free call', /<a href="\/fit\.html">Book a free call<\/a>/.test(idx));
 }
 {
