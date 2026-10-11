@@ -189,6 +189,18 @@ check('B6 no option card links anywhere, and the services anchors still exist',
 // that every page carries (reviewer's fix, 2026-10-10: the footer's "Book a case" went).
 // NEGATIVE CONTROL (run 2026-10-10): the footer's `<a href="/book.html">Book a case</a>` put back made this read
 //   FAIL  B10 the only door to booking on the landing is the shared Book tab
+// RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything."
+// Sora for the headings at 600 and Manrope for the reading at 500, both self-hosted, both on the landing alone.
+// NEGATIVE CONTROL (run 2026-10-11, v7.33): the Sora @font-face taken out of landing.css made this read
+//   FAIL  B11 the landing reads in a semibold pair: Sora headings at 600, Manrope text at 500, both self-hosted
+{
+  const L = f('public/css/landing.css');
+  check('B11 the landing reads in a semibold pair: Sora headings at 600, Manrope text at 500, both self-hosted',
+    /font-family: 'Sora';[\s\S]{0,120}url\('\/fonts\/sora-latin\.woff2'\)/.test(L) && /font-family: 'Manrope';[\s\S]{0,120}url\('\/fonts\/manrope-latin\.woff2'\)/.test(L)
+    && existsSync(__j(__REPO, 'public/fonts/sora-latin.woff2')) && existsSync(__j(__REPO, 'public/fonts/manrope-latin.woff2'))
+    && /body\.landing \{\s*font-family: 'Manrope'[^}]*font-weight: 500;/.test(L) && /body\.landing h1,[\s\S]{0,160}font-family: 'Sora'[^}]*font-weight: 600;/.test(L)
+    && !/fonts\.googleapis|fonts\.gstatic/.test(L + IDX));
+}
 check('B10 the only door to booking on the landing is the shared Book tab',
   (IDX.match(/href="\/book\.html"/g) || []).length === 1 && /<nav class="tabs">\s*<a href="\/book\.html">Book<\/a>/.test(IDX));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". With nothing offered, no About sheet is offered either; the wiring stays for when one returns.
@@ -204,7 +216,7 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b2">/.test(IDX) // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b3">/.test(IDX) // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
   && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && n !== 'index.html').every((n) => !/landing\.css/.test(f(`public/${n}`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   && /dataset\.defaultScheme/.test(code('public/js/theme.js')));

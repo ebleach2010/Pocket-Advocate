@@ -266,6 +266,16 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Semibold type (2026-10-11, v7.33)
+
+Eric: "And change the font to something semibold. You tend to use the same
+font for everything." The landing alone now sets Sora (headings, 600) and
+Manrope (text, 500; buttons, badges and his notice 600), self-hosted in
+`public/fonts/` and declared in `landing.css` (now v=b3). `landing.mjs` B9
+re-pinned and new B11 pins the pair and the weights, both with controls;
+`drive-landing.mjs` checks the headline renders in Sora; release R1 moved to
+7.33.
+
 ### Out of service (2026-10-11, v7.32)
 
 Eric: "Mark chat out of service as well. Banner at the top that's highlighted:

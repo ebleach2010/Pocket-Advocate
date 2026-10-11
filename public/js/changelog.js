@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.32';
+export const VERSION = '7.33';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '7.32';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // SEMIBOLD TYPE (Eric, 2026-10-11: "change the font to something
+    // semibold. You tend to use the same font for everything."). Admin only.
+    version: '7.33',
+    quiet: true,
+    client: [],
+    admin: [
+      'The landing page has new type: Sora for the headings and Manrope for the text, both semibold.',
+    ],
+  },
   {
     // OUT OF SERVICE (Eric, 2026-10-11: "Mark chat out of service as well.
     // Banner at the top that's highlighted"). Admin only.

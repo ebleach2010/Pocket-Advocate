@@ -116,9 +116,16 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry732 = (CL.match(/\{\n\s+\/\/ OUT OF SERVICE \(Eric, 2026-10-11[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-11, v7.32): changelog.js's VERSION left at '7.31' made this read
   //   FAIL  R1 both versions read 7.32 with the new tag, the 7.32 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.32 with the new tag, the 7.32 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.32';/.test(CL) && /const VERSION = '7\.32';/.test(W) && /const BUILD_TAG = 'v2026-10-11-out-of-service';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.32'
+  // RE-PINNED 2026-10-11 (v7.33): both versions read 7.33 with the semibold-type tag, and the 7.33 entry names
+  // the two new faces.
+  // NEGATIVE CONTROL (run 2026-10-11, v7.33): the worker's BUILD_TAG left at the out-of-service tag made this read
+  //   FAIL  R1 both versions read 7.33 with the new tag, the 7.33 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry733 = (CL.match(/\{\n\s+\/\/ SEMIBOLD TYPE \(Eric, 2026-10-11[\s\S]*?\n  \},/) || [''])[0];
+  check('R1 both versions read 7.33 with the new tag, the 7.33 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.33';/.test(CL) && /const VERSION = '7\.33';/.test(W) && /const BUILD_TAG = 'v2026-10-11-semibold-type';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.33'
+    && /version: '7\.33',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry733)
+    && /Sora for the headings and Manrope for the text/.test(entry733) && !DASH.test(entry733) && !HARD.some((re) => re.test(entry733))
     && /version: '7\.32',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry732)
     && /Your notice is the first thing/.test(entry732) && !DASH.test(entry732) && !HARD.some((re) => re.test(entry732))
     && /version: '7\.31',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry731)

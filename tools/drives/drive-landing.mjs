@@ -48,7 +48,8 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     needs: document.querySelectorAll('.needs-list li').length,
   }));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
-  ok('his headline, in the serif, on black', shape.h1 === 'Go into your next appointment with a plan.' && /Fraunces/.test(shape.serif) && shape.scheme === 'calm' && shape.bg === 'rgb(10, 10, 12)', `${shape.scheme} / ${shape.bg} / ${shape.serif}`);
+  // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything."
+  ok('his headline, in Sora, on black', shape.h1 === 'Go into your next appointment with a plan.' && /^Sora/.test(shape.serif) && shape.scheme === 'calm' && shape.bg === 'rgb(10, 10, 12)', `${shape.scheme} / ${shape.bg} / ${shape.serif}`);
   ok('the eight headings after the hero, in order, the options first',
     shape.h2s.join('|') === "What it costs|You might need an advocate if|How it works|Who you're hiring|What clients say|By the numbers|Straight answers|Ready when you are.", shape.h2s.join('|'));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".

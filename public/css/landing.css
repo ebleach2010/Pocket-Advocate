@@ -13,6 +13,51 @@
    soft #D2D2D9, dim #9C9CA8, the pop #3DDCF5 (the wordmark's cyan, turned
    up), and a faint violet only in the ground's light. */
 
+/* ---- the type: semibold (Eric, 2026-10-11: "change the font to something
+   semibold. You tend to use the same font for everything.") Sora for the
+   headings at 600, Manrope for the reading at 500 with 600 for anything that
+   is pressed or labelled. Self-hosted latin subsets, Google Fonts' own woff2
+   files fetched 2026-10-11; variable, so one file each carries every weight.
+   The Fraunces and Source Sans 3 of Look A stay in glowup.css, unused here. */
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/sora-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/manrope-latin.woff2') format('woff2');
+}
+body.landing {
+  font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 500;
+}
+body.landing h1,
+body.landing h2,
+body.landing h3,
+body.landing .num,
+body.landing .svc-price,
+body.landing .who-quote p {
+  font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 600;
+  font-variation-settings: normal;
+  letter-spacing: -.025em;
+}
+body.landing .land-sec.hero h1 { letter-spacing: -.035em; }
+body.landing .btn,
+body.landing .act,
+body.landing .eyebrow,
+body.landing .opt-badge,
+body.landing strong,
+body.landing .out-banner p { font-weight: 600; }
+body.landing .eyebrow { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; }
+body.landing .options > h2 { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-weight: 700; letter-spacing: .16em; }
+
 /* ---- the tokens, black ------------------------------------------------- */
 :root:not([data-scheme="contrast"]):has(body.landing) {
   background: #0A0A0C;
@@ -114,7 +159,6 @@ body.landing .options {
 }
 body.landing .options > h2 {
   margin: 0;
-  font-family: 'Source Sans 3', -apple-system, 'Segoe UI', system-ui, sans-serif;
   font-size: var(--t-micro);
   font-weight: 700;
   letter-spacing: .16em;
