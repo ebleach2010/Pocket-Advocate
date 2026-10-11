@@ -40,6 +40,7 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     live: [...document.querySelectorAll('#options .opt-live a')].map((a) => a.getAttribute('href')),
     off: [...document.querySelectorAll('#options .opt-off')].map((c) => [c.querySelector('.opt-badge')?.textContent, c.querySelectorAll('a, button').length]),
     bg: getComputedStyle(document.body).backgroundColor,
+    banner: (() => { const b = document.querySelector('main > .out-banner'); return !!b && b === document.querySelector('main').firstElementChild && /out of remission and going through chemo/.test(b.textContent); })(),
     closing: [...document.querySelectorAll('#closing .actions a')].map((a) => a.getAttribute('href')),
     serif: getComputedStyle(document.querySelector('main h1')).fontFamily,
     scheme: document.documentElement.dataset.scheme || 'neon',
@@ -50,20 +51,23 @@ console.log('\n--- A. the slots and the doors, 390px ---');
   ok('his headline, in the serif, on black', shape.h1 === 'Go into your next appointment with a plan.' && /Fraunces/.test(shape.serif) && shape.scheme === 'calm' && shape.bg === 'rgb(10, 10, 12)', `${shape.scheme} / ${shape.bg} / ${shape.serif}`);
   ok('the eight headings after the hero, in order, the options first',
     shape.h2s.join('|') === "What it costs|You might need an advocate if|How it works|Who you're hiring|What clients say|By the numbers|Straight answers|Ready when you are.", shape.h2s.join('|'));
-  ok('the chat line lit with its two links, the other two greyed with his words and nothing to tap, the free call under them',
-    shape.live.join() === '/subscribe.html,/services.html#chat' && shape.off.length === 2 && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
+// RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
+  ok('his notice first, all three options greyed with his words and nothing to tap, the free call under them',
+    shape.live.length === 0 && shape.off.length === 3 && shape.banner && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
     && shape.acts.length === 1 && /act-m/.test(shape.acts[0][0]) && shape.acts[0][1] === '/fit.html', JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
   ok('five reasons, five steps', shape.needs === 5 && shape.steps === 5);
-  ok('the closing: the chat line, the free call, the number', shape.closing.join() === '/subscribe.html,/fit.html,tel:+12086708608');
+  ok('the closing: the free call, the number', shape.closing.join() === '/fit.html,tel:+12086708608');
   // The greyed cards are meant to read as unavailable, but the words on them and everything on the chat
   // card stay legible: his badge and the chat line clear 4.5:1 on their own card.
   const legible = await page.evaluate(() => {
     const lum = (c) => { const m = c.match(/\d+(\.\d+)?/g).map(Number); const f = (v) => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
     const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); };
     const ground = 'rgb(19, 19, 23)';
-    return ['.opt-live .svc-line', '.opt-live h3', '.opt-off .opt-badge'].map((q) => ratio(getComputedStyle(document.querySelector(q)).color, ground));
+    const banner = document.querySelector('.out-banner');
+    return [ratio(getComputedStyle(banner.querySelector('p')).color, getComputedStyle(banner).backgroundColor), ratio(getComputedStyle(document.querySelector('.opt-off .opt-badge')).color, ground)];
   });
-  ok('the chat card and the "Not currently offering" badges clear 4.5:1', legible.every((r) => r >= 4.5), legible.map((r) => r.toFixed(1)).join(' / '));
+  // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
+  ok('his notice and the "Not currently offering" badges clear 4.5:1', legible.every((r) => r >= 4.5), legible.map((r) => r.toFixed(1)).join(' / '));
   if (SHOTS) {
     await page.screenshot({ path: `${SHOTS}/01-hero.png` });
     for (const [name, sel] of [['02-options', '#options'], ['03-needs', '.needs'], ['04-how', '.how'], ['05-who', '.who'], ['06-proof', '.proof'], ['07-numbers', '#numbers'], ['08-close', '#closing']]) {

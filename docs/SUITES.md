@@ -266,6 +266,18 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Out of service (2026-10-11, v7.32)
+
+Eric: "Mark chat out of service as well. Banner at the top that's highlighted:
+'I am currently out of remission and going through chemo. Services will be
+available again once I can cognitively perform to the standard necessary for
+advocacy. - Eric'". His notice is the first thing in main (`.out-banner`, in
+`landing.css`, now v=b2); all three option cards are greyed with "Not currently
+offering"; the dock, the About sheet button and every Start chatting link are
+gone from the landing. `landing.mjs` B2, B4 to B7, B9 and `fitcall.mjs` F9
+re-pinned with controls; `drive-landing.mjs` checks the notice comes first and
+clears 4.5:1.
+
 ### The landing, black, chat first (2026-10-10, v7.31)
 
 Eric: "Reorganize the landing page so all three options are at the top. Have

@@ -28,7 +28,7 @@
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp15">
 <link rel="stylesheet" href="/css/glowup.css?v=sp8">
-<link rel="stylesheet" href="/css/landing.css?v=b1">
+<link rel="stylesheet" href="/css/landing.css?v=b2">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -80,6 +80,12 @@
      "Clinic Note" (2026-09-02), stood here before; it is in git.
      The icons come from /img/icons.svg, drawn once for the whole site. -->
 <main>
+  <!-- Eric's notice, his words exactly (2026-10-11). Highlighted and first,
+       above everything, while no service is offered. -->
+  <aside class="out-banner" role="note">
+    <p>I am currently out of remission and going through chemo. Services will be available again once I can cognitively perform to the standard necessary for advocacy. - Eric</p>
+  </aside>
+
   <section class="land-sec hero">
     <img class="hero-logo" src="/img/logo-192.png" alt="" width="56" height="56">
     <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
@@ -87,22 +93,18 @@
     <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
   </section>
 
-  <!-- The three options, at the top. The chat line is always open (Eric,
-       2026-10-10: "even if my schedule is blocked off 24/7 chat is always
-       available"); the other two say so and take no tap. -->
+  <!-- The three options, at the top (Eric, 2026-10-10). Since 2026-10-11 none
+       is offered ("Mark chat out of service as well"): every card says so and
+       takes no tap. -->
   <section class="land-sec options cost" id="options">
     <h2>What it costs</h2>
     <p class="opt-lede measure">Three ways to work with me, each a flat price you see before you pay.</p>
     <div class="opt-grid">
-      <div class="opt opt-live">
-        <span class="opt-tag">ON THE GO</span>
+      <div class="opt opt-off" aria-disabled="true">
+        <span class="opt-badge">Not currently offering</span>
         <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>24/7 Priority Chat</h3>
         <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
         <span class="svc-line">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.</span>
-        <div class="opt-acts">
-          <a class="btn glow cta opt-go" href="/subscribe.html">Start chatting</a>
-          <a class="opt-more" href="/services.html#chat">What is included</a>
-        </div>
       </div>
       <div class="opt opt-off" aria-disabled="true">
         <span class="opt-badge">Not currently offering</span>
@@ -119,7 +121,6 @@
     </div>
     <p class="hero-fine">No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.</p>
     <p class="reframe measure">Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.</p>
-    <div class="actions"><button type="button" class="btn ghost" data-about="chat">About the chat line</button></div>
     <div class="acts">
       <a class="act act-m" href="/fit.html">
         <span class="act-ico"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>
@@ -215,46 +216,15 @@
   <section class="land-sec ruled closing" id="closing">
     <p class="close-line"><strong>You don't have to navigate this alone.</strong></p>
     <h2>Ready when you are.</h2>
-    <!-- The chat line leads here too, and the case it is not offering is not
-         offered (Eric, 2026-10-10). -->
+    <!-- Nothing he is not offering is offered here (Eric, 2026-10-10 and
+         2026-10-11). -->
     <div class="actions">
-      <a class="btn glow cta" href="/subscribe.html">Start chatting</a>
       <a class="btn ghost" href="/fit.html">Book a free 15-minute call</a>
       <a class="btn quiet" href="tel:+12086708608">📞 Call 208 670 8608</a>
     </div>
   </section>
 </main>
 
-<!-- The dock: appears only once the options have scrolled away, leaves
-     again at the closing, and never blocks content. It carries the chat line,
-     the one option always open (Eric, 2026-10-10). -->
-<div class="sticky-book" id="sticky-book" aria-hidden="true">
-  <a class="cta" href="/subscribe.html">Start chatting</a>
-</div>
-<script type="module">
-  const dock = document.getElementById('sticky-book');
-  const hero = document.getElementById('options');
-  const closing = document.getElementById('closing');
-  if (dock && hero && closing && 'IntersectionObserver' in window) {
-    // Hidden while ANY of the options is on screen (its own button is there),
-    // and hidden again once the closing approaches. Not before the page has
-    // been read a little, not over the thing it duplicates.
-    const seen = { hero: true, closing: false };
-    const paint = () => {
-      const on = !seen.hero && !seen.closing;
-      dock.classList.toggle('on', on);
-      dock.setAttribute('aria-hidden', on ? 'false' : 'true');
-    };
-    new IntersectionObserver((es) => {
-      for (const e of es) seen.hero = e.isIntersecting;
-      paint();
-    }).observe(hero);
-    new IntersectionObserver((es) => {
-      for (const e of es) seen.closing = e.isIntersecting;
-      paint();
-    }, { rootMargin: '120px' }).observe(closing);
-  }
-</script>
 
 <footer class="site-foot">
   <div class="foot-inner">

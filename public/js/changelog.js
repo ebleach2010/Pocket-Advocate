@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.31';
+export const VERSION = '7.32';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.31';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // OUT OF SERVICE (Eric, 2026-10-11: "Mark chat out of service as well.
+    // Banner at the top that's highlighted"). Admin only.
+    version: '7.32',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your notice is the first thing on the landing page, highlighted, in your words.',
+      '24/7 Priority Chat now says Not currently offering and is greyed out like the other two. The Start chatting buttons are gone from the landing page.',
+    ],
+  },
   {
     // THE LANDING, BLACK, CHAT FIRST (Eric, 2026-10-10: "Reorganize the
     // landing page so all three options are at the top. Have it be a more

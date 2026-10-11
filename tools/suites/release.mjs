@@ -111,9 +111,16 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry731 = (CL.match(/\{\n\s+\/\/ THE LANDING, BLACK, CHAT FIRST \(Eric, 2026-10-10[\s\S]*?\n  \},/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-10, v7.31): the worker's BUILD_TAG left at the advocacy-only tag made this read
   //   FAIL  R1 both versions read 7.31 with the new tag, the 7.31 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
-  check('R1 both versions read 7.31 with the new tag, the 7.31 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.31';/.test(CL) && /const VERSION = '7\.31';/.test(W) && /const BUILD_TAG = 'v2026-10-10-landing-black';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.31'
+  // RE-PINNED 2026-10-11 (v7.32): both versions read 7.32 with the out-of-service tag, and the 7.32 entry says
+  // his notice leads the landing and the chat line is greyed too.
+  const entry732 = (CL.match(/\{\n\s+\/\/ OUT OF SERVICE \(Eric, 2026-10-11[\s\S]*?\n  \},/) || [''])[0];
+  // NEGATIVE CONTROL (run 2026-10-11, v7.32): changelog.js's VERSION left at '7.31' made this read
+  //   FAIL  R1 both versions read 7.32 with the new tag, the 7.32 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  check('R1 both versions read 7.32 with the new tag, the 7.32 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.32';/.test(CL) && /const VERSION = '7\.32';/.test(W) && /const BUILD_TAG = 'v2026-10-11-out-of-service';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.32'
+    && /version: '7\.32',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry732)
+    && /Your notice is the first thing/.test(entry732) && !DASH.test(entry732) && !HARD.some((re) => re.test(entry732))
     && /version: '7\.31',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry731)
     && /Not currently offering/.test(entry731) && /Chat can always be started/.test(entry731)
     && !DASH.test(entry731) && !HARD.some((re) => re.test(entry731))

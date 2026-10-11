@@ -64,6 +64,23 @@
   color: var(--ink);
 }
 
+/* ---- Eric's notice (2026-10-11): highlighted, first, his words --------- */
+body.landing .out-banner {
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--cyan);
+  border-left-width: 4px;
+  border-radius: var(--r-2);
+  background: color-mix(in srgb, var(--cyan) 14%, var(--sur-base));
+}
+body.landing .out-banner p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+body.landing .out-banner + .land-sec.hero { padding-top: 0; }
+
 /* ---- the hero: no card, just the line, kept short so the options sit in
    the first screen of a phone ------------------------------------------- */
 body.landing main { padding-top: var(--s-2); }

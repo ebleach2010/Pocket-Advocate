@@ -145,10 +145,17 @@ console.log('\n--- B. the shape ---');
   // words and no link; the free call is a card-weight door under them.
   // NEGATIVE CONTROL (run 2026-10-10, v7.31): a `<a href="/book.html">Book a case</a>` added to the Advocacy Case card made this read
   //   FAIL  B2 the chat line is the first option, lit, with Start chatting; the case and the full service say Not currently offering and take no tap; the free call is a door at card weight under them
-  check('B2 the chat line is the first option, lit, with Start chatting; the case and the full service say Not currently offering and take no tap; the free call is a door at card weight under them',
-    cards.length === 3 && /opt-live/.test(cards[0][0]) && /24\/7 Priority Chat/.test(cards[0][1]) && /<a class="btn glow cta opt-go" href="\/subscribe\.html">Start chatting<\/a>/.test(cards[0][1])
-    && cards.slice(1).every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
-    && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1]) && /data-rate="case"/.test(cards[1][1])
+  // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
+  // All three options say Not currently offering and take no tap; his notice comes first on the page, word
+  // for word; the free call is still a door at card weight under the cards.
+  // NEGATIVE CONTROL (run 2026-10-11, v7.32): a `<a href="/subscribe.html">Start chatting</a>` added to the chat card made this read
+  //   FAIL  B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; the free call is a door at card weight under them
+  check('B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; the free call is a door at card weight under them',
+    main.indexOf('class="out-banner"') >= 0 && main.indexOf('class="out-banner"') < main.indexOf('land-sec hero')
+    && READ.includes('I am currently out of remission and going through chemo. Services will be available again once I can cognitively perform to the standard necessary for advocacy. - Eric')
+    && cards.length === 3 && cards.every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
+    && /24\/7 Priority Chat/.test(cards[0][1]) && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1])
+    && !/href="\/subscribe\.html"/.test(IDX)
     && doors.length === 1 && /\bact-m\b/.test(doors[0][0]) && doors[0][1] === '/fit.html' && !/class="act /.test(hero),
     JSON.stringify({ cards: cards.map(([c]) => c), doors }));
   check('B3 the tile is small at the top left of a paper card, and the halo is gone',
@@ -160,19 +167,21 @@ check('B4 the closing carries the free call, the case, and the number to press',
     const s = sectionAt('ruled closing');
     const hrefs = [...s.matchAll(/<a class="btn [^"]*" href="([^"]+)">/g)].map((m) => m[1]);
     // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The closing leads with the chat line.
-    return hrefs.join() === '/subscribe.html,/fit.html,tel:+12086708608';
+    // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". Nothing he is not offering is offered in the closing.
+    return hrefs.join() === '/fit.html,tel:+12086708608';
   })());
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
-check('B5 the dock leads with the chat line and the footer lists every door',
-  /id="sticky-book"[\s\S]{0,120}href="\/subscribe\.html"/.test(IDX) && /getElementById\('options'\)/.test(IDX)
+// RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The dock carried the chat line alone, so it went with it.
+check('B5 no dock offers anything, and the footer lists every door',
+  !/id="sticky-book"/.test(IDX)
   && ['/fit.html', '/book.html', '/advocate.html', '/stats.html', '/reviews.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`)));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
-check('B6 the chat card goes to the subscribe page and to its place on the services page, the other two go nowhere, and the anchors exist',
+// RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
+check('B6 no option card links anywhere, and the services anchors still exist',
   (() => {
     const s = sectionAt('class="land-sec options cost"');
-    const hrefs = [...s.matchAll(/<div class="opt-acts">([\s\S]*?)<\/div>/g)].flatMap((m) => [...m[1].matchAll(/href="([^"]+)"/g)].map((x) => x[1]));
     const svc = f('public/services.html');
-    return hrefs.join() === '/subscribe.html,/services.html#chat' && (s.match(/<div class="opt-acts">/g) || []).length === 1
+    return !/<div class="opt-acts">/.test(s) && !/<a [^>]*href="(\/subscribe|\/book|\/services)/.test(s)
       && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id));
   })());
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The sheet is the chat line's.
@@ -182,8 +191,9 @@ check('B6 the chat card goes to the subscribe page and to its place on the servi
 //   FAIL  B10 the only door to booking on the landing is the shared Book tab
 check('B10 the only door to booking on the landing is the shared Book tab',
   (IDX.match(/href="\/book\.html"/g) || []).length === 1 && /<nav class="tabs">\s*<a href="\/book\.html">Book<\/a>/.test(IDX));
-check('B7 the About sheet still opens from the page',
-  /data-about="chat"/.test(main) && /wireAboutButtons\(\)/.test(IDX));
+// RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". With nothing offered, no About sheet is offered either; the wiring stays for when one returns.
+check('B7 no About sheet is offered while nothing is, and the wiring is still there',
+  !/data-about=/.test(main) && /wireAboutButtons\(\)/.test(IDX));
 check('B8 "This is a web app" moved to the footer, with its explainer',
   IDX.indexOf('id="webapp-note"') > IDX.indexOf('<footer class="site-foot">') && /helpButton\('app'/.test(IDX));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
@@ -194,7 +204,7 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b1">/.test(IDX)
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b2">/.test(IDX) // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
   && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && n !== 'index.html').every((n) => !/landing\.css/.test(f(`public/${n}`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   && /dataset\.defaultScheme/.test(code('public/js/theme.js')));

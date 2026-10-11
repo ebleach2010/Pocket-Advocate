@@ -511,9 +511,12 @@ check('F5 fit.js lists fit slots and only fit slots',
     doors.length === 1 && /act-m/.test(doors[0][0]) && doors[0][1] === '/fit.html' && /Book a free 15-minute call/.test(opts)
     && !/href="\/book\.html"/.test(opts));
   const dock = idx.slice(idx.indexOf('id="sticky-book"'), idx.indexOf('id="sticky-book"') + 200);
-  check('F9 the dock and the closing lead with the chat line and keep the free call beside it',
-    /href="\/subscribe\.html">Start chatting/.test(dock)
-    && /<a class="btn glow cta" href="\/subscribe\.html">Start chatting<\/a>\s*<a class="btn ghost" href="\/fit\.html">Book a free 15-minute call<\/a>/.test(idx));
+  // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
+  // NEGATIVE CONTROL (run 2026-10-11, v7.32): `<a class="btn glow cta" href="/subscribe.html">Start chatting</a>` put back into the closing made this read
+  //   FAIL  F9 no dock, and the closing leads with the free call and the number
+  check('F9 no dock, and the closing leads with the free call and the number',
+    !/id="sticky-book"/.test(idx) && !/href="\/subscribe\.html"/.test(idx)
+    && /<div class="actions">\s*<a class="btn ghost" href="\/fit\.html">Book a free 15-minute call<\/a>\s*<a class="btn quiet" href="tel:\+12086708608">/.test(idx));
   check('F10 the footer lists the free call', /<a href="\/fit\.html">Book a free call<\/a>/.test(idx));
 }
 {
