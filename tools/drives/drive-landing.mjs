@@ -26,7 +26,9 @@ async function open(width, scheme) {
     await page.reload({ waitUntil: 'networkidle' });
   }
   await page.waitForTimeout(1800);
-  await page.evaluate(() => { const x = [...document.querySelectorAll('button')].find((e) => /^(Got it|Not now|Skip|Close)$/i.test((e.textContent || '').trim())); if (x) x.click(); });
+  // RE-PINNED 2026-10-12 (v7.34): the waitlist sheet carries a hidden Close button, which this used to find first
+  // and click to no effect, leaving the intro over the page. Only a button on screen counts now.
+  await page.evaluate(() => { const x = [...document.querySelectorAll('button')].find((e) => e.checkVisibility() && /^(Got it|Not now|Skip|Close)$/i.test((e.textContent || '').trim())); if (x) x.click(); });
   return { ctx, page, errs };
 }
 
@@ -34,13 +36,16 @@ console.log('\n--- A. the slots and the doors, 390px ---');
 {
   const { ctx, page, errs } = await open(390);
   const shape = await page.evaluate(() => ({
-    h2s: [...document.querySelectorAll('main h2')].map((h) => h.textContent.trim()),
+    h2s: [...document.querySelectorAll('main h2')].filter((h) => !h.closest('dialog')).map((h) => h.textContent.trim()),
     h1: document.querySelector('main h1')?.textContent.trim(),
     acts: [...document.querySelectorAll('#options a.act')].map((a) => [a.className, a.getAttribute('href')]),
     live: [...document.querySelectorAll('#options .opt-live a')].map((a) => a.getAttribute('href')),
     off: [...document.querySelectorAll('#options .opt-off')].map((c) => [c.querySelector('.opt-badge')?.textContent, c.querySelectorAll('a, button').length]),
     bg: getComputedStyle(document.body).backgroundColor,
-    banner: (() => { const b = document.querySelector('main > .out-banner'); return !!b && b === document.querySelector('main').firstElementChild && /out of remission and going through chemo/.test(b.textContent); })(),
+    // RE-PINNED 2026-10-12 (v7.34): Eric, "a small 'join the waitlist' that's in a shining text bubble at the top
+    // right of the screen". The bubble's row and its closed sheet come first; his notice is the first thing after them.
+    banner: (() => { const b = document.querySelector('main > .out-banner'); const m = document.querySelector('main'); return !!b && m.firstElementChild.classList.contains('wl-row') && m.firstElementChild.nextElementSibling.matches('dialog.wl-sheet:not([open])') && b === m.firstElementChild.nextElementSibling.nextElementSibling && /out of remission and going through chemo/.test(b.textContent); })(),
+    bubble: (() => { const r = document.querySelector('.wl-bubble').getBoundingClientRect(); const n = document.querySelector('.out-banner').getBoundingClientRect(); return { right: Math.round(innerWidth - r.right), gap: Math.round(n.top - r.bottom), h: Math.round(r.height) }; })(),
     closing: [...document.querySelectorAll('#closing .actions a')].map((a) => a.getAttribute('href')),
     serif: getComputedStyle(document.querySelector('main h1')).fontFamily,
     scheme: document.documentElement.dataset.scheme || 'neon',
@@ -56,6 +61,10 @@ console.log('\n--- A. the slots and the doors, 390px ---');
   ok('his notice first, all three options greyed with his words and nothing to tap, the free call under them',
     shape.live.length === 0 && shape.off.length === 3 && shape.banner && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
     && shape.acts.length === 1 && /act-m/.test(shape.acts[0][0]) && shape.acts[0][1] === '/fit.html', JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
+  // NEGATIVE CONTROL (run 2026-10-12): `justify-content: flex-end` on .wl-row turned to flex-start made this read
+  //   FAIL  the waitlist bubble sits at the top right, above his notice, a full tap high
+  ok('the waitlist bubble sits at the top right, above his notice, a full tap high',
+    shape.bubble.right <= 24 && shape.bubble.gap >= 0 && shape.bubble.gap < 60 && shape.bubble.h >= 44, JSON.stringify(shape.bubble));
   ok('five reasons, five steps', shape.needs === 5 && shape.steps === 5);
   ok('the closing: the free call, the number', shape.closing.join() === '/fit.html,tel:+12086708608');
   // The greyed cards are meant to read as unavailable, but the words on them and everything on the chat

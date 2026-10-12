@@ -9,6 +9,8 @@
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
 //   POST   /api/fit-call           book the free 15-minute call (public, no account)
 //   GET/POST /api/admin/fit-calls  the free calls: list, join link, done, no-show, cancel (admin)
+//   POST   /api/waitlist           join the waitlist: name, email, phone, package (public, no account)
+//   GET/POST /api/admin/waitlist   the waitlist: list, mark contacted, remove (admin)
 //   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
 //   POST   /api/admin/stats        recompute the figures now (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
@@ -879,6 +881,10 @@ export default {
         return await handleFitCall(request, env);
       if (url.pathname === '/api/admin/fit-calls')
         return await handleAdminFitCalls(request, env);
+      if (url.pathname === '/api/waitlist' && request.method === 'POST')
+        return await handleWaitlist(request, env);
+      if (url.pathname === '/api/admin/waitlist')
+        return await handleAdminWaitlist(request, env);
       if (url.pathname === '/api/admin/personal')
         return await handlePersonal(request, env, url);
       if (url.pathname === '/api/admin/personal/file' && request.method === 'GET')
@@ -2071,7 +2077,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-11-semibold-type';
+const BUILD_TAG = 'v2026-10-12-waitlist';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2079,7 +2085,7 @@ const BUILD_TAG = 'v2026-10-11-semibold-type';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.33';
+const VERSION = '7.34';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9009,6 +9015,114 @@ async function handleAdminFitCalls(request, env) {
       html: `<p>Hi ${escHtml(first)}, I have to cancel our call on ${when}, and I am sorry for the trouble.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/fit.html">Pick another time</a>. It takes a minute.</p>`,
     }).catch(() => {});
+    return json({ ok: true });
+  }
+  return json({ error: 'Bad action' }, 400);
+}
+
+/**
+ * THE WAITLIST (Eric, 2026-10-12: "Create a small 'join the waitlist' that's
+ * in a shining text bubble at the top right of the screen. Have them fill out
+ * their first and last name, email, and phone number and desired package in a
+ * dropdown. Once submitted, a short message that I'll get back to them soon.")
+ *
+ * POST /api/waitlist   public, no account
+ * Body: { first, last, email, phone, package, website }
+ *
+ * Shaped like the free call with no slot: the same per-connection throttle
+ * counted before the body is read, the same honeypot, the same refusals in
+ * plain words. The person goes to waitlist/{id}, which sits under the rules'
+ * deny tail and is read by the Worker alone, so no rules change. The id is
+ * a hash of the email, so one person is one row: a second submission updates
+ * the first instead of stacking. Eric gets a push and an email with their
+ * details every time, because the whole point is that he gets back to them.
+ */
+const WAITLIST_PACKAGES = { chat: '24/7 Priority Chat', case: 'Advocacy Case', full: 'Full-Service Case Management' };
+const WAITLIST_IP_LIMIT = 5;
+
+/** Same edge-cache count as fitThrottled, its own bucket. */
+async function waitlistThrottled(ip) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return false;
+  const key = new Request(`https://waitlist-throttle.internal/${encodeURIComponent(ip)}`);
+  const prior = await cache.match(key);
+  const n = prior ? parseInt(await prior.text(), 10) || 0 : 0;
+  if (n >= WAITLIST_IP_LIMIT) return true;
+  await cache.put(key, new Response(String(n + 1), { headers: { 'cache-control': 'max-age=3600' } }));
+  return false;
+}
+
+async function handleWaitlist(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (await waitlistThrottled(ip))
+    return json({ error: 'Too many tries from this connection. Wait a while, or use the contact page.' }, 429);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
+  if (str(body.website, 200)) return json({ ok: true });
+
+  const first = str(body.first, 60);
+  const last = str(body.last, 60);
+  const email = str(body.email, 120).toLowerCase();
+  const phone = str(body.phone, 40);
+  const pkg = typeof body.package === 'string' ? body.package : '';
+  if (!first) return json({ error: 'Your first name, please.' }, 400);
+  if (!last) return json({ error: 'Your last name, please.' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return json({ error: 'A working email address, please.' }, 400);
+  if (!/^\+?[\d\s().-]{7,20}$/.test(phone)) return json({ error: 'A valid phone number, please.' }, 400);
+  if (!Object.hasOwn(WAITLIST_PACKAGES, pkg)) return json({ error: 'Pick the package you want.' }, 400);
+
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
+  const id = [...new Uint8Array(digest)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
+  const now = new Date();
+  const prior = await getDoc(env, `waitlist/${id}`);
+  const entry = { first, last, email, phone, package: pkg, state: 'waiting', updatedAt: now };
+  await patchDoc(env, `waitlist/${id}`, prior ? entry : { ...entry, createdAt: now });
+  await waitlistNotify(env, entry, !!prior);
+  return json({ ok: true, first });
+}
+
+/** A push and an email to Eric, with what he needs to get back to them. */
+async function waitlistNotify(env, w, again) {
+  const pkgName = WAITLIST_PACKAGES[w.package];
+  await pingAdmins(env, `${w.first} ${again ? 'updated their waitlist entry' : 'joined the waitlist'}: ${pkgName}.`, '/admin.html#waitlist');
+  if (env.ADMIN_EMAIL) {
+    await sendEmail(env, {
+      to: env.ADMIN_EMAIL,
+      subject: `${again ? 'Waitlist update' : 'New on the waitlist'}: ${w.first} ${w.last}`,
+      html: `<p><strong>${escHtml(w.first)} ${escHtml(w.last)}</strong> ${again ? 'updated their waitlist entry' : 'joined the waitlist'}.</p>
+        <p>Package: <strong>${escHtml(pkgName)}</strong></p>
+        <p>${escHtml(w.email)} &middot; ${escHtml(w.phone)}</p>
+        <p><a href="${env.PUBLIC_BASE_URL}/admin.html#waitlist">Open your waitlist</a></p>`,
+    }).catch(() => {});
+  }
+}
+
+/**
+ * GET  /api/admin/waitlist     everyone on it, newest first
+ * POST /api/admin/waitlist     Body: { id, action: 'contacted' | 'waiting' | 'remove' }
+ *
+ * The only reader of waitlist/. Strangers get the same 404 as every admin route.
+ */
+async function handleAdminWaitlist(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'GET') {
+    const rows = await listDocs(env, 'waitlist', { pageSize: 300 }).catch(() => []);
+    const people = rows.map((r) => ({ id: r.id, ...r.data }))
+      .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    return json({ people });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const id = typeof body?.id === 'string' ? body.id : '';
+  if (!/^[0-9a-f]{32}$/.test(id)) return json({ error: 'Bad id' }, 400);
+  if (!(await getDoc(env, `waitlist/${id}`))) return json({ error: 'Not on the list' }, 404);
+  if (body.action === 'remove') {
+    await deleteDoc(env, `waitlist/${id}`);
+    return json({ ok: true });
+  }
+  if (body.action === 'contacted' || body.action === 'waiting') {
+    await patchDoc(env, `waitlist/${id}`, { state: body.action, stateAt: new Date() }, { mask: ['state', 'stateAt'] });
     return json({ ok: true });
   }
   return json({ error: 'Bad action' }, 400);

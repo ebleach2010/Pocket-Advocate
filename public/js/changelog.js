@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.33';
+export const VERSION = '7.34';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.33';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE WAITLIST (Eric, 2026-10-12: "Create a small 'join the waitlist'
+    // that's in a shining text bubble at the top right of the screen.").
+    // Admin only.
+    version: '7.34',
+    quiet: true,
+    client: [],
+    admin: [
+      'A shining Join the waitlist bubble sits at the top right of the landing page. It asks for first and last name, email, phone and the package they want, then tells them you will get back to them soon.',
+      'Each one sends you a push and an email with their details, and your Clients page lists everyone on the waitlist with Contacted and Remove.',
+    ],
+  },
   {
     // SEMIBOLD TYPE (Eric, 2026-10-11: "change the font to something
     // semibold. You tend to use the same font for everything."). Admin only.

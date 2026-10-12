@@ -216,7 +216,7 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b3">/.test(IDX) // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b4">/.test(IDX) // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
   && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && n !== 'index.html').every((n) => !/landing\.css/.test(f(`public/${n}`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   && /dataset\.defaultScheme/.test(code('public/js/theme.js')));

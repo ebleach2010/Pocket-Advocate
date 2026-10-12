@@ -28,7 +28,7 @@
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp15">
 <link rel="stylesheet" href="/css/glowup.css?v=sp8">
-<link rel="stylesheet" href="/css/landing.css?v=b3">
+<link rel="stylesheet" href="/css/landing.css?v=b4">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -80,6 +80,46 @@
      "Clinic Note" (2026-09-02), stood here before; it is in git.
      The icons come from /img/icons.svg, drawn once for the whole site. -->
 <main>
+  <!-- THE WAITLIST (Eric, 2026-10-12: "a small 'join the waitlist' that's in
+       a shining text bubble at the top right of the screen. Have them fill
+       out their first and last name, email, and phone number and desired
+       package in a dropdown. Once submitted, a short message that I'll get
+       back to them soon."). The bubble opens the sheet; /js/waitlist.js
+       sends it to /api/waitlist, which tells him by push and email. -->
+  <div class="wl-row">
+    <button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog"><span class="wl-spark" aria-hidden="true">&#10022;</span>Join the waitlist</button>
+  </div>
+  <dialog class="wl-sheet" id="waitlist" aria-labelledby="wl-title">
+    <div class="wl-head">
+      <h2 id="wl-title">Join the waitlist</h2>
+      <button type="button" class="wl-x" data-waitlist-close aria-label="Close">&times;</button>
+    </div>
+    <form class="wl-form" novalidate>
+      <div class="wl-pair">
+        <label>First name<input name="first" type="text" autocomplete="given-name" maxlength="60" required></label>
+        <label>Last name<input name="last" type="text" autocomplete="family-name" maxlength="60" required></label>
+      </div>
+      <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="120" required></label>
+      <label>Phone<input name="phone" type="tel" autocomplete="tel" inputmode="tel" maxlength="40" required></label>
+      <label>Package
+        <select name="package" required>
+          <option value="" selected disabled>Choose one</option>
+          <option value="chat">24/7 Priority Chat</option>
+          <option value="case">Advocacy Case</option>
+          <option value="full">Full-Service Case Management</option>
+        </select>
+      </label>
+      <div class="wl-trap" aria-hidden="true"><label>Website<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
+      <p class="wl-err" role="alert" hidden></p>
+      <button type="submit" class="btn glow wl-go">Join the waitlist</button>
+    </form>
+    <div class="wl-done" role="status" hidden>
+      <p class="wl-done-h">Thank you, <span data-wl-first></span>.</p>
+      <p>You're on the waitlist. I'll get back to you soon.</p>
+      <button type="button" class="btn quiet" data-waitlist-close>Close</button>
+    </div>
+  </dialog>
+
   <!-- Eric's notice, his words exactly (2026-10-11). Highlighted and first,
        above everything, while no service is offered. -->
   <aside class="out-banner" role="note">
@@ -334,6 +374,7 @@
     initSetupGuide(u, document.querySelector('main'), { welcome: false });
   }).catch(() => {});
 </script>
+<script type="module" src="/js/waitlist.js?v=1"></script>
 <script type="module">
   // The About sheets (Eric, 2026-08-25). Its own module with no Firebase
   // dependency, so the sheets open even on a day the app cannot.

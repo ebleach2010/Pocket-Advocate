@@ -145,6 +145,7 @@ const ADMIN_ASSETS = [
   // to re-check.
   '/js/admin-hours.js', '/js/admin-presence.js', '/js/admin-ledger.js',
   '/js/admin-fit.js',
+  '/js/admin-waitlist.js',
   '/js/admin-personal.js',
   // 2026-10-04: the fund's verification queue.
   '/js/admin-fund.js',

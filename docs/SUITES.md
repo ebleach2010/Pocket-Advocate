@@ -266,6 +266,21 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The waitlist (2026-10-12, v7.34)
+
+Eric: "Create a small 'join the waitlist' that's in a shining text bubble at
+the top right of the screen. Have them fill out their first and last name,
+email, and phone number and desired package in a dropdown. Once submitted, a
+short message that I'll get back to them soon." The bubble leads the
+landing's main (`.wl-row`, `landing.css` now v=b4) and opens a native dialog;
+`public/js/waitlist.js` posts to the new public `POST /api/waitlist`, which
+throttles per connection, keeps a honeypot, writes one row per email to
+Worker-only `waitlist/`, and sends Eric a push and an email with the details.
+`GET/POST /api/admin/waitlist` feeds the new list on his Clients page
+(`admin-waitlist.js`, gated in the audit). New suite `waitlist.mjs` lifts the
+handlers and runs them: 21 checks, every one with its control recorded.
+`landing.mjs` B9 and release R1 re-pinned.
+
 ### Semibold type (2026-10-11, v7.33)
 
 Eric: "And change the font to something semibold. You tend to use the same

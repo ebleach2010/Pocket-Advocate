@@ -271,3 +271,141 @@ body.landing .who .hero-cred { margin: 0 0 var(--s-1); color: var(--soft); }
   body.landing .opt-go:hover { filter: brightness(1.08); }
   body.landing .opt-go:active { transform: translateY(1px); }
 }
+
+/* ---- the waitlist (Eric, 2026-10-12: "a small 'join the waitlist' that's
+   in a shining text bubble at the top right of the screen") -------------
+   A chat bubble, its tail at the bottom right, in the pop with a sheen that
+   crosses it every few seconds. The sheen and the glow are motion, so they
+   only run for people who have not asked for less of it. */
+body.landing .wl-row {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 var(--s-2);
+}
+body.landing .wl-bubble {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  min-height: 44px;
+  padding: .55rem 1.1rem;
+  border: 0;
+  border-radius: 20px 20px 4px 20px;
+  background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
+  color: #02161A;
+  font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-size: .95rem;
+  font-weight: 700;
+  letter-spacing: .01em;
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 26px rgba(61, 220, 245, .32);
+  cursor: pointer;
+}
+/* The tail. */
+body.landing .wl-bubble::after {
+  content: "";
+  position: absolute;
+  right: -7px;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  background: #B9A6FF;
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+/* The sheen. */
+body.landing .wl-bubble::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .8) 50%, transparent 62%) no-repeat;
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  pointer-events: none;
+}
+body.landing .wl-spark { font-size: .85em; }
+body.landing .wl-bubble:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 3px; }
+@media (prefers-reduced-motion: no-preference) {
+  body.landing .wl-bubble::before { animation: wl-shine 3.6s ease-in-out infinite; }
+  body.landing .wl-bubble { animation: wl-glow 3.6s ease-in-out infinite; }
+  body.landing .wl-spark { display: inline-block; animation: wl-twinkle 3.6s ease-in-out infinite; }
+}
+@keyframes wl-shine {
+  0%, 52% { background-position: 130% 0; }
+  100% { background-position: -30% 0; }
+}
+@keyframes wl-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 26px rgba(61, 220, 245, .32); }
+  50% { box-shadow: 0 0 0 1px rgba(61, 220, 245, .8), 0 8px 34px rgba(61, 220, 245, .55); }
+}
+@keyframes wl-twinkle {
+  0%, 60%, 100% { transform: scale(1) rotate(0); }
+  75% { transform: scale(1.35) rotate(45deg); }
+}
+
+/* The sheet. Tokens, so the high-contrast scheme gets its own colours. */
+body.landing .wl-sheet {
+  width: min(28rem, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  margin: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--edge-lit);
+  border-radius: var(--r-3);
+  background: var(--sur-floating);
+  color: var(--ink);
+  box-shadow: var(--el-3);
+}
+body.landing .wl-sheet::backdrop { background: rgba(0, 0, 0, .62); backdrop-filter: blur(3px); }
+body.landing .wl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+body.landing .wl-head h2 { margin: 0; font-size: 1.35rem; }
+body.landing .wl-x {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--edge-base);
+  border-radius: 999px;
+  background: none;
+  color: var(--soft);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+body.landing .wl-form { display: grid; gap: .85rem; }
+body.landing .wl-pair { display: grid; grid-template-columns: 1fr 1fr; gap: .75rem; }
+body.landing .wl-form label {
+  display: grid;
+  gap: .35rem;
+  min-width: 0;
+  color: var(--soft);
+  font-size: .9rem;
+  font-weight: 600;
+}
+body.landing .wl-form input,
+body.landing .wl-form select {
+  width: 100%;
+  min-height: 48px;
+  padding: .6rem .8rem;
+  border: 1px solid var(--edge-base);
+  border-radius: var(--r-1);
+  background: var(--sur-inset);
+  color: var(--ink);
+  font: 500 16px/1.3 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+}
+body.landing .wl-form input:focus-visible,
+body.landing .wl-form select:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; border-color: var(--cyan); }
+body.landing .wl-trap { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+body.landing .wl-err { margin: 0; color: var(--danger); font-size: .92rem; font-weight: 600; }
+body.landing .wl-go { min-height: 48px; margin-top: .25rem; border-radius: 999px; font-size: 1rem; font-weight: 700; }
+body.landing .wl-done { display: grid; gap: .6rem; }
+body.landing .wl-done[hidden], body.landing .wl-form[hidden] { display: none; }
+body.landing .wl-done p { margin: 0; color: var(--soft); font-size: 1.05rem; line-height: 1.5; }
+body.landing .wl-done .wl-done-h { color: var(--ink); font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-size: 1.3rem; font-weight: 600; }
+body.landing .wl-done .btn { justify-self: start; margin-top: .4rem; }
+@media (max-width: 359px) {
+  body.landing .wl-pair { grid-template-columns: 1fr; }
+}

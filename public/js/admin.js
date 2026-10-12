@@ -11,6 +11,7 @@ import {
 import { unseenBadges } from './seen.js';
 import { mountOfficeControl } from './admin-hours.js';
 import { mountFitCalls } from './admin-fit.js';
+import { mountWaitlist } from './admin-waitlist.js';
 import { mountPersonal } from './admin-personal.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -38,6 +39,8 @@ if (user) {
   mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
   // The free calls, off the Worker-only leads collection.
   mountFitCalls(document.getElementById('fit-calls'), { getToken: () => user.getIdToken() });
+  // The waitlist from the landing page's bubble (Eric, 2026-10-12).
+  mountWaitlist(document.getElementById('waitlist'), { getToken: () => user.getIdToken() });
   // Personal Uploads, across every case (Eric, 2026-09-03).
   mountPersonal(document.getElementById('personal'), { getToken: () => user.getIdToken(), scope: 'all' });
   load();

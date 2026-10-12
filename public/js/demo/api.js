@@ -378,6 +378,43 @@ export function demoApi(role, store) {
     // refusals in the same order, the slot taken with only a leadId on it,
     // the person written to leads/ where no client page looks. A demo that
     // waved a bad form through would show him a door the Worker keeps shut.
+    // The waitlist (2026-10-12). Mirrors handleWaitlist: the same refusals in
+    // the same order, one row per email, to waitlist/ where no client page looks.
+    if (path === '/api/waitlist' && init.method === 'POST') {
+      if (typeof body?.website === 'string' && body.website.trim()) return ok({ ok: true });
+      const first = String(body?.first || '').trim().slice(0, 60);
+      const last = String(body?.last || '').trim().slice(0, 60);
+      const email = String(body?.email || '').trim().toLowerCase();
+      const phone = String(body?.phone || '').trim();
+      if (!first) return fail(400, 'Your first name, please.');
+      if (!last) return fail(400, 'Your last name, please.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return fail(400, 'A working email address, please.');
+      if (!/^\+?[\d\s().-]{7,20}$/.test(phone)) return fail(400, 'A valid phone number, please.');
+      if (!['chat', 'case', 'full'].includes(body?.package)) return fail(400, 'Pick the package you want.');
+      await beat(500);
+      const key = `waitlist/${email.replace(/[^a-z0-9]/g, '').padEnd(32, '0').slice(0, 32)}`;
+      const prior = store.docs.get(key);
+      const now = new Date();
+      store.docs.set(key, { ...(prior || { createdAt: now }), first, last, email, phone, package: body.package, state: 'waiting', updatedAt: now });
+      return ok({ ok: true, first });
+    }
+    if (path === '/api/admin/waitlist') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      if (init.method !== 'POST') {
+        const people = [...store.docs.entries()].filter(([k]) => k.startsWith('waitlist/'))
+          .map(([k, v]) => ({ id: k.slice(9), ...v }))
+          .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+        return ok({ people });
+      }
+      const k = `waitlist/${body?.id || ''}`;
+      if (!store.docs.get(k)) return fail(404, 'Not on the list');
+      if (body.action === 'remove') { store.docs.delete(k); return ok({ ok: true }); }
+      if (body.action === 'contacted' || body.action === 'waiting') {
+        store.docs.set(k, { ...store.docs.get(k), state: body.action, stateAt: new Date() });
+        return ok({ ok: true });
+      }
+      return fail(400, 'Bad action');
+    }
     if (path === '/api/fit-call' && init.method === 'POST') {
       if (typeof body?.website === 'string' && body.website.trim()) return ok({ ok: true });
       const name = String(body?.name || '').trim();

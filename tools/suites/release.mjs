@@ -121,9 +121,16 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // NEGATIVE CONTROL (run 2026-10-11, v7.33): the worker's BUILD_TAG left at the out-of-service tag made this read
   //   FAIL  R1 both versions read 7.33 with the new tag, the 7.33 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
   const entry733 = (CL.match(/\{\n\s+\/\/ SEMIBOLD TYPE \(Eric, 2026-10-11[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.33 with the new tag, the 7.33 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.33';/.test(CL) && /const VERSION = '7\.33';/.test(W) && /const BUILD_TAG = 'v2026-10-11-semibold-type';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.33'
+  // RE-PINNED 2026-10-12 (v7.34): both versions read 7.34 with the waitlist tag, and the 7.34 entry says
+  // where the bubble is and where its people go.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.34): changelog.js's VERSION left at '7.33' made this read
+  //   FAIL  R1 both versions read 7.34 with the new tag, the 7.34 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry734 = (CL.match(/\{\n\s+\/\/ THE WAITLIST \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
+  check('R1 both versions read 7.34 with the new tag, the 7.34 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.34';/.test(CL) && /const VERSION = '7\.34';/.test(W) && /const BUILD_TAG = 'v2026-10-12-waitlist';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.34'
+    && /version: '7\.34',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry734)
+    && /Join the waitlist bubble/.test(entry734) && /lists everyone on the waitlist/.test(entry734) && !DASH.test(entry734) && !HARD.some((re) => re.test(entry734))
     && /version: '7\.33',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry733)
     && /Sora for the headings and Manrope for the text/.test(entry733) && !DASH.test(entry733) && !HARD.some((re) => re.test(entry733))
     && /version: '7\.32',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry732)
