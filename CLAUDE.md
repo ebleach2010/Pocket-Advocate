@@ -27,6 +27,21 @@ necessary.
 
 A plain "push to main" with no mode stated follows the silent pattern.
 
+## "/open" (Eric, 2026-10-12, his words: "/open means open up all packages, remove the banner saying I'm sick. But leave the waitlist button for if my schedule is blocked off.")
+
+When Eric sends `/open`, ship one versioned push that:
+- sets `SALES_OPEN = true` in `public/js/sales.js` (the Worker's purchase
+  routes and the closed notice on book, subscribe and services follow it);
+- makes all three landing cards live again in `public/index.html`: drop
+  `opt-off`, `aria-disabled` and the "Not currently offering" badge, and give
+  each its door (chat to `/subscribe.html`, the case to `/book.html`, full
+  service to the same door `services.html` gives it; `git show 2b749a6`
+  has the v7.31 card markup with its chat door);
+- removes Eric's out-of-remission notice (`.out-banner`) from the landing;
+- KEEPS the "Join the waitlist" bubble and everything behind it;
+- does NOT bring back the free 15-minute call (removed 2026-10-12).
+Re-pin the tests that pin the closed state, with dated notes.
+
 ## Deploy ritual
 
 Cloudflare Workers Builds deploys every push to main to production in about

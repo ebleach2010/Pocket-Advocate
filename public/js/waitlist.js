@@ -36,6 +36,12 @@ function wire() {
   const go = dlg.querySelector('.wl-go');
   const say = (msg) => { err.textContent = msg; err.hidden = !msg; };
 
+  // The closed pages send people to /#waitlist (2026-10-12): open it for them.
+  if (location.hash === '#waitlist') {
+    dlg.showModal();
+    form.elements.first.focus();
+  }
+
   for (const b of document.querySelectorAll('[data-waitlist-open]')) {
     b.addEventListener('click', () => {
       dlg.showModal();

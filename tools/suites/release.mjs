@@ -126,9 +126,17 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // NEGATIVE CONTROL (run 2026-10-12, v7.34): changelog.js's VERSION left at '7.33' made this read
   //   FAIL  R1 both versions read 7.34 with the new tag, the 7.34 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
   const entry734 = (CL.match(/\{\n\s+\/\/ THE WAITLIST \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.34 with the new tag, the 7.34 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.34';/.test(CL) && /const VERSION = '7\.34';/.test(W) && /const BUILD_TAG = 'v2026-10-12-waitlist';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.34'
+  // RE-PINNED 2026-10-12 (v7.35): both versions read 7.35 with the sales-closed tag, and the 7.35 entry says
+  // nothing can be bought, the free call is gone, and what /open does.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): the worker's BUILD_TAG left at the waitlist tag made this read
+  //   FAIL  R1 both versions read 7.35 with the new tag, the 7.35 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
+  check('R1 both versions read 7.35 with the new tag, the 7.35 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.35';/.test(CL) && /const VERSION = '7\.35';/.test(W) && /const BUILD_TAG = 'v2026-10-12-sales-closed';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.35'
+    && /version: '7\.35',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry735)
+    && /Nothing can be bought anywhere/.test(entry735) && /free 15-minute call is gone/.test(entry735) && /Send \/open/.test(entry735)
+    && !DASH.test(entry735) && !HARD.some((re) => re.test(entry735))
     && /version: '7\.34',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry734)
     && /Join the waitlist bubble/.test(entry734) && /lists everyone on the waitlist/.test(entry734) && !DASH.test(entry734) && !HARD.some((re) => re.test(entry734))
     && /version: '7\.33',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry733)

@@ -58,15 +58,17 @@ console.log('\n--- A. the slots and the doors, 390px ---');
   ok('the eight headings after the hero, in order, the options first',
     shape.h2s.join('|') === "What it costs|You might need an advocate if|How it works|Who you're hiring|What clients say|By the numbers|Straight answers|Ready when you are.", shape.h2s.join('|'));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
-  ok('his notice first, all three options greyed with his words and nothing to tap, the free call under them',
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the cards is a door.
+  ok('his notice first, all three options greyed with his words and nothing to tap, nothing under them',
     shape.live.length === 0 && shape.off.length === 3 && shape.banner && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
-    && shape.acts.length === 1 && /act-m/.test(shape.acts[0][0]) && shape.acts[0][1] === '/fit.html', JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
+    && shape.acts.length === 0, JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
   // NEGATIVE CONTROL (run 2026-10-12): `justify-content: flex-end` on .wl-row turned to flex-start made this read
   //   FAIL  the waitlist bubble sits at the top right, above his notice, a full tap high
   ok('the waitlist bubble sits at the top right, above his notice, a full tap high',
     shape.bubble.right <= 24 && shape.bubble.gap >= 0 && shape.bubble.gap < 60 && shape.bubble.h >= 44, JSON.stringify(shape.bubble));
-  ok('five reasons, five steps', shape.needs === 5 && shape.steps === 5);
-  ok('the closing: the free call, the number', shape.closing.join() === '/fit.html,tel:+12086708608');
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The step that promised it and its closing button went with it.
+  ok('five reasons, four steps', shape.needs === 5 && shape.steps === 4);
+  ok('the closing: the number alone', shape.closing.join() === 'tel:+12086708608');
   // The greyed cards are meant to read as unavailable, but the words on them and everything on the chat
   // card stay legible: his badge and the chat line clear 4.5:1 on their own card.
   const legible = await page.evaluate(() => {

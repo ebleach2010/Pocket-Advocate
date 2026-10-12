@@ -7,7 +7,7 @@
 //   POST   /api/stripe/webhook     payments + subscription lifecycle -> Firestore
 //   POST   /api/admin/slots        open availability slots (admin)
 //   DELETE /api/admin/slots/:id    remove an open slot (admin)
-//   POST   /api/fit-call           book the free 15-minute call (public, no account)
+//   POST   /api/fit-call           retired 2026-10-12: answers 410 (the free call is no longer offered)
 //   GET/POST /api/admin/fit-calls  the free calls: list, join link, done, no-show, cancel (admin)
 //   POST   /api/waitlist           join the waitlist: name, email, phone, package (public, no account)
 //   GET/POST /api/admin/waitlist   the waitlist: list, mark contacted, remove (admin)
@@ -66,6 +66,7 @@ import { validateAction } from './advisor-acts.js';
 // the applicant's and the reviewer's, lives in worker/fund.js.
 import { handleFund, drainFundNotices } from './fund.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
+import { SALES_OPEN, SALES_CLOSED_MESSAGE } from '../public/js/sales.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
@@ -657,6 +658,18 @@ const DEMO_ASSET = /^\/js\/demo\//;
  * the advocacy landing. The demo still opens it, on a preview host only.
  */
 const FUND_PAGE = /^\/fund(\.html)?\/?$/;
+// The free call, retired (Eric, 2026-10-12: "Remove free call."). The page
+// and its booking route stay in git; the page sends people home and the
+// route answers 410. His Free calls list still reads leads/ for the record.
+const FIT_PAGE = /^\/fit(\.html)?\/?$/;
+// Every route that starts a purchase. While SALES_OPEN is false (Eric,
+// 2026-10-12: "Stop sales everywhere.") the router refuses them all before a
+// handler can reach Stripe. His own admin charges are not here: those are
+// his decisions, made by hand.
+const SALES_ROUTES = new Set([
+  '/api/checkout', '/api/subscribe', '/api/chat-unlock', '/api/upgrade',
+  '/api/followup', '/api/extend', '/api/telehealth',
+]);
 
 /**
  * The path the ASSET SERVER will resolve, not the one in the request line.
@@ -859,6 +872,11 @@ export default {
       // checkout is refused; /api/subscribe answers at every hour.
       if (maintenanceUntil() && !DEMO_HOST.test(url.hostname) && url.pathname === '/api/checkout')
         return json({ error: maintenanceMessage(), maintenanceUntil: MAINTENANCE_UNTIL }, 503);
+      // Sales closed (Eric, 2026-10-12: "Stop sales everywhere."). This
+      // overrides the 2026-10-10 rule that chat answers at every hour: he
+      // closed it himself. Preview and local hosts are spared, as above.
+      if (!SALES_OPEN && SALES_ROUTES.has(url.pathname) && !DEMO_HOST.test(url.hostname))
+        return json({ error: SALES_CLOSED_MESSAGE, salesClosed: true }, 409);
       if (url.pathname === '/api/checkout' && request.method === 'POST')
         return await handleCheckout(request, env);
       if (url.pathname === '/api/case-for-session' && request.method === 'GET')
@@ -878,7 +896,7 @@ export default {
       if (url.pathname === '/api/admin/slots-clear' && request.method === 'POST')
         return await handleClearSlots(request, env);
       if (url.pathname === '/api/fit-call' && request.method === 'POST')
-        return await handleFitCall(request, env);
+        return json({ error: 'The free call is no longer offered.' }, 410);
       if (url.pathname === '/api/admin/fit-calls')
         return await handleAdminFitCalls(request, env);
       if (url.pathname === '/api/waitlist' && request.method === 'POST')
@@ -1311,6 +1329,9 @@ export default {
       out.headers.append('set-cookie', demoCookie(demo));
       return out;
     }
+
+    // The free call's page, retired (2026-10-12): home, for everyone.
+    if (FIT_PAGE.test(assetPath)) return Response.redirect(new URL('/', url).toString(), 302);
 
     // The fund's form, hidden. A redirect rather than the 404: the page was
     // public and linked from his post, so saying where the front door is now
@@ -2077,7 +2098,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-12-waitlist';
+const BUILD_TAG = 'v2026-10-12-sales-closed';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2085,7 +2106,7 @@ const BUILD_TAG = 'v2026-10-12-waitlist';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.34';
+const VERSION = '7.35';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9088,10 +9109,12 @@ async function waitlistNotify(env, w, again) {
   if (env.ADMIN_EMAIL) {
     await sendEmail(env, {
       to: env.ADMIN_EMAIL,
-      subject: `${again ? 'Waitlist update' : 'New on the waitlist'}: ${w.first} ${w.last}`,
+      // His subject, in capitals (2026-10-12): "NEW CLIENT ON WAITLIST FOR [service type]".
+      subject: `NEW CLIENT ON WAITLIST FOR ${pkgName.toUpperCase()}`,
       html: `<p><strong>${escHtml(w.first)} ${escHtml(w.last)}</strong> ${again ? 'updated their waitlist entry' : 'joined the waitlist'}.</p>
-        <p>Package: <strong>${escHtml(pkgName)}</strong></p>
-        <p>${escHtml(w.email)} &middot; ${escHtml(w.phone)}</p>
+        <p>First name: ${escHtml(w.first)}<br>Last name: ${escHtml(w.last)}<br>
+          Email: ${escHtml(w.email)}<br>Phone: ${escHtml(w.phone)}<br>
+          Package: <strong>${escHtml(pkgName)}</strong></p>
         <p><a href="${env.PUBLIC_BASE_URL}/admin.html#waitlist">Open your waitlist</a></p>`,
     }).catch(() => {});
   }

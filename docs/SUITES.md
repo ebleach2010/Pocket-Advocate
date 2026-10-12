@@ -266,6 +266,23 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Sales closed, free call gone (2026-10-12, v7.35)
+
+Eric: "Remove free call. Stop sales everywhere. There are no chat
+subscribers. /open means open up all packages, remove the banner saying I'm
+sick. But leave the waitlist button for if my schedule is blocked off." And
+the waitlist email's subject: "NEW CLIENT ON WAITLIST FOR [service type]".
+One switch, `SALES_OPEN` in `public/js/sales.js`: while it is false the
+router refuses every client purchase route (`SALES_ROUTES`) with a 409 and
+his message, and `sales-closed.js` puts "Not currently offering" and a
+waitlist button on book, subscribe and services (the first two hide their
+flow). `/fit` sends everyone home and `/api/fit-call` answers 410. `/open`
+is written down in CLAUDE.md. New suite `sales.mjs` (12 checks, the gate
+lifted and run, every check with its control); `fitcall.mjs` F3, F8 to F10,
+`landing.mjs` A4, B2, B4, B5, `waitlist.mjs` A3, A4, D5 (and new A3b),
+`maintenance.mjs` M4 and M13 names, release R1 and the landing drive
+re-pinned with dated notes.
+
 ### The waitlist (2026-10-12, v7.34)
 
 Eric: "Create a small 'join the waitlist' that's in a shining text bubble at

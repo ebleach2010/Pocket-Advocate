@@ -86,11 +86,15 @@ check('A3 the five "you might need an advocate if" lines, in order',
       && lines[3] === 'You are explaining the same history again while sick, scared, cognitively overloaded, or simply too tired to keep managing the logistics of your own care.'
       && lines[4] === 'Your symptoms are being called anxiety.';
   })());
-check('A4 the five steps, his sentences from about.html and services.html',
+// RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The first step was the free call, so it went with it; his other four sentences stand, renumbered.
+// NEGATIVE CONTROL (run 2026-10-12, v7.35): the free-call step put back as step 1 made this read
+//   FAIL  A4 the four steps, his sentences from about.html and services.html, the free call gone
+check('A4 the four steps, his sentences from about.html and services.html, the free call gone',
   (() => {
     const s = sectionAt('class="land-sec ruled how"');
-    return (s.match(/<li>/g) || []).length === 5
-      && s.includes('You tell me what is going on and I tell you honestly whether I can help.')
+    const nums = [...s.matchAll(/<span class="num">(\d)<\/span>/g)].map((m) => m[1]).join();
+    return (s.match(/<li>/g) || []).length === 4 && nums === '1,2,3,4'
+      && !s.includes('A free 15-minute call.')
       && s.includes('Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.')
       && s.includes('Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.')
       && s.includes('We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck.')
@@ -150,31 +154,40 @@ console.log('\n--- B. the shape ---');
   // for word; the free call is still a door at card weight under the cards.
   // NEGATIVE CONTROL (run 2026-10-11, v7.32): a `<a href="/subscribe.html">Start chatting</a>` added to the chat card made this read
   //   FAIL  B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; the free call is a door at card weight under them
-  check('B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; the free call is a door at card weight under them',
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." No door under the cards at all now.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): the free-call door put back under the cards made this read
+  //   FAIL  B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; nothing under them is a door
+  check('B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; nothing under them is a door',
     main.indexOf('class="out-banner"') >= 0 && main.indexOf('class="out-banner"') < main.indexOf('land-sec hero')
     && READ.includes('I am currently out of remission and going through chemo. Services will be available again once I can cognitively perform to the standard necessary for advocacy. - Eric')
     && cards.length === 3 && cards.every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
     && /24\/7 Priority Chat/.test(cards[0][1]) && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1])
     && !/href="\/subscribe\.html"/.test(IDX)
-    && doors.length === 1 && /\bact-m\b/.test(doors[0][0]) && doors[0][1] === '/fit.html' && !/class="act /.test(hero),
+    && doors.length === 0 && !/class="act /.test(hero),
     JSON.stringify({ cards: cards.map(([c]) => c), doors }));
   check('B3 the tile is small at the top left of a paper card, and the halo is gone',
     /<img class="hero-logo"[^>]*width="56"/.test(hero) && !/hero-halo/.test(IDX)
     && /body\.landing \.land-sec\.hero \{[^}]*box-shadow: none;/.test(GLOW));
 }
-check('B4 the closing carries the free call, the case, and the number to press',
+// NEGATIVE CONTROL (run 2026-10-12, v7.35): the closing's free-call button put back made this read
+//   FAIL  B4 the closing carries the number to press, and nothing else
+check('B4 the closing carries the number to press, and nothing else',
   (() => {
     const s = sectionAt('ruled closing');
     const hrefs = [...s.matchAll(/<a class="btn [^"]*" href="([^"]+)">/g)].map((m) => m[1]);
     // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The closing leads with the chat line.
     // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". Nothing he is not offering is offered in the closing.
-    return hrefs.join() === '/fit.html,tel:+12086708608';
+    // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The number is all that is left.
+    return hrefs.join() === 'tel:+12086708608';
   })());
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The dock carried the chat line alone, so it went with it.
-check('B5 no dock offers anything, and the footer lists every door',
-  !/id="sticky-book"/.test(IDX)
-  && ['/fit.html', '/book.html', '/advocate.html', '/stats.html', '/reviews.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`)));
+// RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The footer lists every door but that one.
+// NEGATIVE CONTROL (run 2026-10-12, v7.35): `<a href="/fit.html">Book a free call</a>` put back in the footer made this read
+//   FAIL  B5 no dock offers anything, and the footer lists every door but the free call
+check('B5 no dock offers anything, and the footer lists every door but the free call',
+  !/id="sticky-book"/.test(IDX) && !IDX.includes('href="/fit.html"')
+  && ['/book.html', '/advocate.html', '/stats.html', '/reviews.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`)));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
 check('B6 no option card links anywhere, and the services anchors still exist',

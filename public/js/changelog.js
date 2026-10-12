@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.34';
+export const VERSION = '7.35';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.34';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // SALES CLOSED (Eric, 2026-10-12: "Remove free call. Stop sales
+    // everywhere." And the waitlist email's subject in his capitals.)
+    // Admin only.
+    version: '7.35',
+    quiet: true,
+    client: [],
+    admin: [
+      'Nothing can be bought anywhere on the site: cases, chat, add-ons, follow-ups, extensions and telehealth all say Not currently offering and point to the waitlist.',
+      'The free 15-minute call is gone. Its page now goes to the home page.',
+      'Waitlist emails now arrive as NEW CLIENT ON WAITLIST FOR the package, with everything they typed.',
+      'Send /open when you are ready and all three packages open again, your notice comes down, and the waitlist button stays.',
+    ],
+  },
   {
     // THE WAITLIST (Eric, 2026-10-12: "Create a small 'join the waitlist'
     // that's in a shining text bubble at the top right of the screen.").

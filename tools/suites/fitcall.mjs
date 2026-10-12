@@ -462,9 +462,16 @@ console.log('\n--- F. the rest of the site ---');
   check('F2 the admin scheduler refuses a fit slot too',
     /slot\.data\.kind === FIT_KIND/.test(sched));
 }
-check('F3 both routes are registered, the public POST and the admin one',
-  /url\.pathname === '\/api\/fit-call' && request\.method === 'POST'\)\s*return await handleFitCall/.test(CODE)
-  && /url\.pathname === '\/api\/admin\/fit-calls'\)\s*return await handleAdminFitCalls/.test(CODE));
+// RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The public POST answers 410 and never reaches
+// handleFitCall; his list of past calls keeps its route, and the page itself sends everyone home.
+// NEGATIVE CONTROL (run 2026-10-12, v7.35): the route put back to `return await handleFitCall(request, env);` made this read
+//   FAIL  F3 the public POST is retired with a 410, his admin list keeps its route, and /fit sends everyone home
+check('F3 the public POST is retired with a 410, his admin list keeps its route, and /fit sends everyone home',
+  /url\.pathname === '\/api\/fit-call' && request\.method === 'POST'\)\s*return json\(\{ error: 'The free call is no longer offered\.' \}, 410\);/.test(CODE)
+  && !/return await handleFitCall\(/.test(CODE)
+  && /url\.pathname === '\/api\/admin\/fit-calls'\)\s*return await handleAdminFitCalls/.test(CODE)
+  && /const FIT_PAGE = \/\^\\\/fit\(\\\.html\)\?\\\/\?\$\/;/.test(CODE)
+  && /if \(FIT_PAGE\.test\(assetPath\)\) return Response\.redirect\(new URL\('\/', url\)\.toString\(\), 302\);/.test(CODE));
 // NEGATIVE CONTROL (run 2026-09-02): deleting the skip line in book.js made this read
 //   FAIL  F4 the paid picker skips fit slots
 check('F4 the paid picker skips fit slots',
@@ -507,17 +514,27 @@ check('F5 fit.js lists fit slots and only fit slots',
   //   FAIL  F8 the free call is offered under the three options at card weight, and the case is not
   const opts = idx.slice(idx.indexOf('<section class="land-sec options cost" id="options">'), idx.indexOf('<section class="land-sec ruled needs">'));
   const doors = [...opts.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
-  check('F8 the free call is offered under the three options at card weight, and the case is not',
-    doors.length === 1 && /act-m/.test(doors[0][0]) && doors[0][1] === '/fit.html' && /Book a free 15-minute call/.test(opts)
-    && !/href="\/book\.html"/.test(opts));
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the three options is a door now.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): the free-call door put back under the options made this read
+  //   FAIL  F8 nothing under the three options is a door: no free call, no case
+  check('F8 nothing under the three options is a door: no free call, no case',
+    doors.length === 0 && !/free 15-minute call/i.test(opts) && !/href="\/(fit|book|subscribe)\.html"/.test(opts));
   const dock = idx.slice(idx.indexOf('id="sticky-book"'), idx.indexOf('id="sticky-book"') + 200);
   // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // NEGATIVE CONTROL (run 2026-10-11, v7.32): `<a class="btn glow cta" href="/subscribe.html">Start chatting</a>` put back into the closing made this read
   //   FAIL  F9 no dock, and the closing leads with the free call and the number
-  check('F9 no dock, and the closing leads with the free call and the number',
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The closing carries the number alone.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): the closing's free-call button put back made this read
+  //   FAIL  F9 no dock, and the closing carries the number alone
+  check('F9 no dock, and the closing carries the number alone',
     !/id="sticky-book"/.test(idx) && !/href="\/subscribe\.html"/.test(idx)
-    && /<div class="actions">\s*<a class="btn ghost" href="\/fit\.html">Book a free 15-minute call<\/a>\s*<a class="btn quiet" href="tel:\+12086708608">/.test(idx));
-  check('F10 the footer lists the free call', /<a href="\/fit\.html">Book a free call<\/a>/.test(idx));
+    && /<div class="actions">\s*<a class="btn quiet" href="tel:\+12086708608">[^<]*<\/a>\s*<\/div>/.test(idx));
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." No page links to it: not the landing, its footer, or the numbers page.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): `<a href="/fit.html">Book a free call</a>` put back in the footer made this read
+  //   FAIL  F10 nothing public links to the free call any more
+  check('F10 nothing public links to the free call any more',
+    !/href="\/fit\.html"/.test(idx) && !/href="\/fit\.html"/.test(f('public/stats.html'))
+    && !/href="\/fit\.html"/.test(f('public/services.html')) && !/href="\/fit\.html"/.test(f('public/faq.html')));
 }
 {
   const page = f('public/fit.html');

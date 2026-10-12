@@ -113,11 +113,24 @@ reset();
     && pushes[0].link === '/admin.html#waitlist', JSON.stringify(pushes));
   // NEGATIVE CONTROL (run 2026-10-12): the phone line taken out of the email made this read
   //   FAIL  A3 and one email to his address with the full name, the package, the email and the phone
+  // RE-PINNED 2026-10-12 (v7.35): Eric, "When someone joins the waitlist, email me with their inputted information
+  // with a all caps subject line 'NEW CLIENT ON WAITLIST FOR [service type]'". Every answer they typed, labelled.
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): `.toUpperCase()` taken off the package in the subject made this read
+  //   FAIL  A3 and one email to his address, subject NEW CLIENT ON WAITLIST FOR the package in capitals, with every answer they typed
   const e = emails[0];
-  check('A3 and one email to his address with the full name, the package, the email and the phone',
-    emails.length === 1 && e.to === 'eric@example.com' && /New on the waitlist: Riley Test/.test(e.subject)
-    && /Riley<\/strong>|Riley Test/.test(e.html) && /24\/7 Priority Chat/.test(e.html)
-    && /riley@example\.com/.test(e.html) && /\+1 208 555 0100/.test(e.html), JSON.stringify(emails));
+  check('A3 and one email to his address, subject NEW CLIENT ON WAITLIST FOR the package in capitals, with every answer they typed',
+    emails.length === 1 && e.to === 'eric@example.com' && e.subject === 'NEW CLIENT ON WAITLIST FOR 24/7 PRIORITY CHAT'
+    && /First name: Riley<br>/.test(e.html) && /Last name: Test<br>/.test(e.html) && /Email: riley@example\.com<br>/.test(e.html)
+    && /Phone: \+1 208 555 0100<br>/.test(e.html) && /Package: <strong>24\/7 Priority Chat<\/strong>/.test(e.html), JSON.stringify(emails));
+  const subjects = [];
+  for (const [k, name] of Object.entries(W.WAITLIST_PACKAGES)) {
+    emails = [];
+    await join({ ...GOOD, email: `${k}@example.com`, package: k });
+    subjects.push(emails[0]?.subject === `NEW CLIENT ON WAITLIST FOR ${name.toUpperCase()}`);
+  }
+  // NEGATIVE CONTROL (run 2026-10-12, v7.35): the subject built from the package key instead of its name made this read
+  //   FAIL  A3b each package names itself in the subject, in capitals
+  check('A3b each package names itself in the subject, in capitals', subjects.length === 3 && subjects.every(Boolean));
 }
 reset();
 {
@@ -130,7 +143,7 @@ reset();
   check('A4 the same email twice is still one row, updated, with its first joined date kept and an "updated" notice',
     r.status === 200 && w.length === 1 && w[0].data.package === 'full' && w[0].data.phone === '208-555-0199'
     && w[0].data.createdAt === before && /updated their waitlist entry/.test(pushes[1]?.body || '')
-    && /Waitlist update/.test(emails[1]?.subject || ''), JSON.stringify(w));
+    && emails[1]?.subject === 'NEW CLIENT ON WAITLIST FOR FULL-SERVICE CASE MANAGEMENT' && /updated their waitlist entry/.test(emails[1]?.html || ''), JSON.stringify(w)); // RE-PINNED 2026-10-12 (v7.35): his capitals subject on an update too; the body says it is an update
 }
 reset();
 {
@@ -272,7 +285,7 @@ console.log('\n--- D. the wiring ---');
   //   FAIL  D5 once sent, the sheet says thank you by first name and that he will get back to them soon
   check('D5 once sent, the sheet says thank you by first name and that he will get back to them soon',
     /<div class="wl-done" role="status" hidden>\s*<p class="wl-done-h">Thank you, <span data-wl-first><\/span>\.<\/p>\s*<p>You're on the waitlist\. I'll get back to you soon\.<\/p>/.test(html)
-    && /<script type="module" src="\/js\/waitlist\.js\?v=1"><\/script>/.test(html));
+    && /<script type="module" src="\/js\/waitlist\.js\?v=2"><\/script>/.test(html)); // RE-PINNED 2026-10-12 (v7.35): v=2, it opens itself on /#waitlist
 }
 {
   const js = f('public/js/waitlist.js');

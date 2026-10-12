@@ -41,7 +41,9 @@ check('M3 the Worker refuses checkout during the window',
 // The chat line is never refused: the guard names checkout alone.
 // NEGATIVE CONTROL (run 2026-10-10, v7.31): `|| url.pathname === '/api/subscribe'` put back into the guard made this read
 //   FAIL  M4 and never the chat line: the guard does not name subscribe
-check('M4 and never the chat line: the guard does not name subscribe',
+// RE-PINNED 2026-10-12 (v7.35): Eric, "Stop sales everywhere." The chat line is closed now, but by the sales
+// switch (sales.mjs), never by a maintenance window; the name says which gate this is about.
+check('M4 and the maintenance window never closes the chat line: its guard does not name subscribe',
   !/maintenanceUntil\(\)[^;]*'\/api\/subscribe'/.test(SRC));
 check('M5 it answers 503, not a silent 200',
   /maintenanceMessage\(\), maintenanceUntil: MAINTENANCE_UNTIL \}, 503\)/.test(SRC));
@@ -96,7 +98,9 @@ const has = (f) => readFileSync(`${ROOT}/public/${f}`, 'utf8').includes('/js/mai
 check('M11 on the landing page', has('index.html'));
 check('M12 on the booking page', has('book.html'));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "make sure that even if my schedule is blocked off 24/7 chat is always available." The subscribe page no longer loads the notice.
-check('M13 NOT on the subscribe page: the chat line is always open', !has('subscribe.html'));
+// RE-PINNED 2026-10-12 (v7.35): Eric, "Stop sales everywhere." The subscribe page says so through sales-closed.js
+// (sales.mjs); the maintenance notice still stays off it.
+check('M13 NOT on the subscribe page: a maintenance window never greys the chat line', !has('subscribe.html'));
 for (const f of ['case.html', 'chat.html', 'signin.html', 'subscription.html'])
   check(`M14 NOT on ${f} — existing clients are unaffected`, !has(f));
 
