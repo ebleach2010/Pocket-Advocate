@@ -53,8 +53,7 @@ body.landing .btn,
 body.landing .act,
 body.landing .eyebrow,
 body.landing .opt-badge,
-body.landing strong,
-body.landing .out-banner p { font-weight: 600; }
+body.landing strong { font-weight: 600; }
 body.landing .eyebrow { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; }
 body.landing .options > h2 { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-weight: 700; letter-spacing: .16em; }
 
@@ -109,22 +108,8 @@ body.landing .options > h2 { font-family: 'Manrope', -apple-system, 'Segoe UI', 
   color: var(--ink);
 }
 
-/* ---- Eric's notice (2026-10-11): highlighted, first, his words --------- */
-body.landing .out-banner {
-  padding: 1rem 1.15rem;
-  border: 1px solid var(--cyan);
-  border-left-width: 4px;
-  border-radius: var(--r-2);
-  background: color-mix(in srgb, var(--cyan) 14%, var(--sur-base));
-}
-body.landing .out-banner p {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1.05rem;
-  font-weight: 600;
-  line-height: 1.5;
-}
-body.landing .out-banner + .land-sec.hero { padding-top: 0; }
+/* Eric's notice (2026-10-11) came down on 2026-10-14 ("remove banner"); its
+   rules went with it and are in git. */
 
 /* ---- the hero: no card, just the line, kept short so the options sit in
    the first screen of a phone ------------------------------------------- */
@@ -409,3 +394,250 @@ body.landing .wl-done .btn { justify-self: start; margin-top: .4rem; }
 @media (max-width: 359px) {
   body.landing .wl-pair { grid-template-columns: 1fr; }
 }
+
+/* ==== v7.36: the chat line ringed, the home on one screen, the menu, and
+   the question box (Eric, 2026-10-14) ==================================== */
+
+/* ---- the chat card's ring (Eric: "Have a yellow shiny outline around it
+   with an animated ease in ease out bright spot circling around the line",
+   then: "make the glowing line around the chat ... the same gradient and
+   effect as the waitlist button is right now"). The bubble's gradient,
+   cyan to pale cyan to violet, as a 2px ring; a white spot rides round it
+   on the bubble's 3.6s ease-in-out beat, and the card breathes the
+   bubble's glow. The angle is a registered property so it can animate;
+   where it cannot, the ring is still there, just still. */
+@property --pa-ring {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+:root:not([data-scheme="contrast"]) body.landing .opt-gold {
+  position: relative;
+  isolation: isolate;
+  border-color: transparent;
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 26px rgba(61, 220, 245, .32);
+}
+body.landing .opt-gold::before,
+body.landing .opt-gold::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  z-index: -1;
+  padding: 2.5px;
+  border-radius: inherit;
+  background:
+    conic-gradient(from var(--pa-ring), transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg),
+    linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+}
+/* The line itself rides above the card's own fill, or the fill hides it;
+   it is only ever the edge, so nothing inside is covered. */
+body.landing .opt-gold::before { z-index: 1; }
+/* The same ring again, blurred and behind: the shine around the line. */
+body.landing .opt-gold::after { inset: -3px; padding: 5px; filter: blur(7px); opacity: .85; }
+@media (prefers-reduced-motion: no-preference) {
+  body.landing .opt-gold::before,
+  body.landing .opt-gold::after { animation: pa-ring 3.6s ease-in-out infinite; }
+  :root:not([data-scheme="contrast"]) body.landing .opt-gold { animation: wl-glow 3.6s ease-in-out infinite; }
+}
+@keyframes pa-ring { to { --pa-ring: 360deg; } }
+
+/* ---- the home, one screen (Eric: "Reorient everything so everything on the
+   main page fits without scrolling"). The hero and the three options are
+   the home; every other section is a screen of its own behind the menu.
+   What the home carries steps down with the height it has, so a phone in
+   Safari, with its bars showing, still never scrolls. */
+/* site.css's old .landing column put a gap and a top pad round the bar. */
+body.landing { gap: 0; padding-top: 0; min-height: 0; }
+body.landing main { padding-top: .6rem; padding-bottom: .6rem; }
+body.landing .land-sec.hero { gap: .5rem; padding-top: .25rem; }
+body.landing .hero-top {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: .75rem;
+}
+:root:not([data-scheme="contrast"]) body.landing .hero-top .hero-eyebrow,
+body.landing .hero-top .hero-eyebrow { font-size: .8rem; line-height: 1.35; letter-spacing: 0; text-transform: none; }
+body.landing .hero-top .wl-bubble { min-height: 44px; padding: .4rem .85rem; font-size: .8rem; }
+body.landing .land-sec.hero h1 { font-size: clamp(1.8rem, min(7.8vw, 5.4svh), 3.6rem); line-height: 1.03; }
+body.landing .land-sec.hero .hero-sub { margin: 0; font-size: .98rem; line-height: 1.45; }
+body.landing .land-sec.hero + .options { margin-top: 0; }
+body.landing .options { gap: .55rem; padding-top: .9rem; }
+body.landing .opt-lede { font-size: 1rem; }
+body.landing .opt-grid { gap: .5rem; }
+body.landing .opt { gap: .3rem; padding: .75rem .95rem; }
+body.landing .opt h3 { font-size: 1.12rem; }
+body.landing .opt-ic { width: 1.6rem; height: 1.6rem; }
+body.landing .opt h3 { gap: .45rem; }
+body.landing .opt .svc-line { font-size: .84rem; line-height: 1.38; }
+body.landing .opt-acts { flex-wrap: nowrap; margin-top: .2rem; gap: .9rem; }
+body.landing .opt-live .opt-go { flex: 0 0 auto; width: auto; min-height: 44px; padding: .55rem 1.3rem; }
+body.landing .opt-live .opt-more { white-space: nowrap; }
+/* The open card: the name and the price on one line. */
+body.landing .opt-live {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: .75rem;
+}
+body.landing .opt-live > .svc-line,
+body.landing .opt-live > .opt-acts { grid-column: 1 / -1; }
+:root:not([data-scheme="contrast"]) body.landing .opt-live .svc-price { font-size: 1.3rem; }
+body.landing .opt .svc-per { font-size: .7em; }
+/* The closed cards, one tight block each: the badge, then the name and the
+   price on one line. Their sentences are on the services page. */
+/* The price and the badge sit left, so the corner the question button
+   rides is empty. */
+body.landing .opt-off {
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "name name" "price badge";
+  justify-items: start;
+  align-items: baseline;
+  column-gap: .75rem;
+  row-gap: .15rem;
+  padding: .6rem .95rem;
+}
+body.landing .opt-off > h3 { grid-area: name; }
+body.landing .opt-off > .svc-price { grid-area: price; }
+body.landing .opt-off > .svc-line { grid-column: 1 / -1; }
+body.landing .opt-off > .opt-badge { grid-area: badge; padding: 0; border: 0; font-size: .62rem; letter-spacing: .08em; }
+body.landing .opt-off .svc-price { font-size: .95rem; }
+body.landing .opt-off .opt-ic { display: none; }
+body.landing .opt-off h3 { font-size: 1rem; }
+@media (max-width: 899px) {
+  body.landing .opt-off > .svc-line { display: none; }
+}
+body.landing .home-fine { margin: .1rem 0 0; padding-right: 4.2rem; color: var(--dim); font-size: .72rem; line-height: 1.35; }
+body.landing .home-fine a { color: var(--soft); }
+/* Height, stepping down: each line goes when the screen is too short to
+   hold it as well, the least needed first. */
+@media (max-height: 1000px) { body.landing .options .reframe { display: none; } }
+@media (max-height: 940px) { body.landing .options .hero-fine { display: none; } }
+@media (max-height: 900px) { body.landing .land-sec.hero .hero-sub { display: none; } }
+@media (max-height: 760px) { body.landing .opt-lede { display: none; } }
+@media (max-height: 700px) { body.landing .options > h2 { display: none; } }
+/* A narrow phone wraps every line sooner, so it gets smaller type. */
+@media (max-width: 389px) {
+  body.landing .land-sec.hero h1 { font-size: clamp(1.5rem, 7.4vw, 1.9rem); }
+  :root:not([data-scheme="contrast"]) body.landing .hero-top .hero-eyebrow,
+  body.landing .hero-top .hero-eyebrow { font-size: .72rem; }
+  body.landing .hero-top .wl-bubble { padding: .35rem .7rem; font-size: .74rem; }
+  body.landing .opt h3 { font-size: 1rem; }
+  body.landing .opt-off h3 { font-size: .9rem; }
+  body.landing .opt .svc-line { font-size: .8rem; }
+  body.landing .opt-live .opt-go { padding: .5rem 1rem; }
+}
+@media (max-width: 389px) and (max-height: 700px) {
+  body.landing .opt-live > .svc-line { display: none; }
+}
+@media (max-width: 359px) {
+  body.landing .opt-acts { flex-wrap: wrap; row-gap: .3rem; }
+}
+@media (max-width: 340px) {
+  body.landing .hero-top .hero-eyebrow { display: none; }
+  body.landing .hero-top { grid-template-columns: 1fr; justify-items: end; }
+  body.landing .home-fine { display: none; }
+}
+/* A wide screen lays the cards side by side and has the room for more. */
+@media (min-width: 900px) and (min-height: 700px) {
+  body.landing .land-sec.hero .hero-sub,
+  body.landing .opt-lede,
+  body.landing .options > h2 { display: block; }
+}
+@media (max-height: 620px) {
+  body.landing .opt-live > .svc-line,
+  body.landing .home-fine { display: none; }
+  body.landing .land-sec.hero h1 { font-size: clamp(1.6rem, 7.2vw, 2.2rem); }
+  body.landing .options { padding-top: .5rem; }
+  body.landing .opt { padding-top: .6rem; padding-bottom: .6rem; }
+}
+
+/* ---- every other section, a screen of its own (Eric: "a hamburger menu
+   symbol at the top right where tabs for every other section appears").
+   The menu's links are anchors; the section they name is the :target and
+   lays itself over the home under the bar. Back, or the Back link, puts
+   the home back. No script needed for any of it; landing-tabs.js only adds
+   the Back links and makes Back a real step back. */
+body.landing main > .land-sec.ruled,
+body.landing .site-foot { display: none; }
+body.landing main > .land-sec.ruled:target,
+body.landing .site-foot:target {
+  position: fixed;
+  inset: var(--bar-h, 60px) 0 0;
+  z-index: 4;
+  display: grid;
+  align-content: start;
+  gap: var(--s-3);
+  margin: 0;
+  padding: var(--s-3) max(16px, calc((100vw - 42rem) / 2)) 7rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-top: 0;
+  background: var(--bg);
+}
+body.landing .site-foot:target { display: block; }
+body.landing .panel-back {
+  justify-self: start;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 1rem;
+  border: 1px solid var(--edge-base);
+  border-radius: 999px;
+  color: var(--soft);
+  font-size: .92rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+body.landing .site-foot .panel-back { margin-bottom: var(--s-3); }
+/* The menu's two headings. */
+body.landing .tabs-label {
+  padding: .55rem .9rem .2rem;
+  color: var(--dim);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+body.landing .bar-inner:not(.collapsed) .tabs-label { display: none; }
+body.landing .bar-inner.collapsed .tabs a { padding: .55rem .9rem; }
+
+/* ---- the question box (Eric: "Have a chat box icon at the bottom right of
+   the screen and it opens up a window"). The button rides the corner of
+   every screen of the landing; the sheet is the waitlist's, with a box for
+   the question. */
+body.landing .ask-fab {
+  position: fixed;
+  right: max(16px, env(safe-area-inset-right));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
+  color: #02161A;
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 10px 28px rgba(0, 0, 0, .45);
+  cursor: pointer;
+}
+body.landing .ask-fab svg { width: 26px; height: 26px; }
+body.landing .ask-fab:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 3px; }
+body.landing .wl-form textarea {
+  width: 100%;
+  min-height: 7.5rem;
+  padding: .7rem .8rem;
+  border: 1px solid var(--edge-base);
+  border-radius: var(--r-1);
+  background: var(--sur-inset);
+  color: var(--ink);
+  font: 500 16px/1.4 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  resize: vertical;
+}
+body.landing .wl-form textarea:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; border-color: var(--cyan); }
+body.landing .ask-lede { margin: -.4rem 0 1rem; color: var(--soft); font-size: 1rem; line-height: 1.5; }

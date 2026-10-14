@@ -37,20 +37,27 @@ function sfn(name) {
 }
 
 const sales = await import('../../public/js/sales.js');
-const GATE = (SRC.match(/\n\s+if \([^\n]*SALES_ROUTES\.has\(url\.pathname\)[^\n]*\n[^\n]*\n/) || [''])[0];
-const gateFor = (open) => new Function('SALES_OPEN', 'SALES_CLOSED_MESSAGE',
-  `${konst('SALES_ROUTES')}${konst('DEMO_HOST')}${sfn('json')}
-   return (url) => { ${GATE} return null; };`)(open, sales.SALES_CLOSED_MESSAGE);
+// RE-PINNED 2026-10-14 (v7.36): the gate runs over two lines now, so it is lifted through its return.
+const GATE = (SRC.match(/\n\s+if \([^\n]*SALES_ROUTES\.has\(url\.pathname\)[\s\S]*?return json\([^\n]*\);\n/) || [''])[0];
+// RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat". The chat line has its own switch, so the
+// lifted gate takes both.
+const gateFor = (open, chat = sales.CHAT_OPEN) => new Function('SALES_OPEN', 'CHAT_OPEN', 'SALES_CLOSED_MESSAGE',
+  `${konst('SALES_ROUTES')}${konst('CHAT_ROUTE')}${konst('DEMO_HOST')}${sfn('json')}
+   return (url) => { ${GATE} return null; };`)(open, chat, sales.SALES_CLOSED_MESSAGE);
 
 console.log('\n--- A. the switch and the gate ---');
 // NEGATIVE CONTROL (run 2026-10-12): SALES_OPEN set to true made this read
 //   FAIL  A1 the switch is off, and the message offers the waitlist in plain words with no dash
-check('A1 the switch is off, and the message offers the waitlist in plain words with no dash',
-  sales.SALES_OPEN === false && /not currently offering/.test(sales.SALES_CLOSED_MESSAGE)
+// RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat". Sales stay off; the chat line's switch is on.
+// NEGATIVE CONTROL (run 2026-10-14, v7.36): CHAT_OPEN set to false made this read
+//   FAIL  A1 sales are off and the chat line is on, and the message offers the waitlist in plain words with no dash
+check('A1 sales are off and the chat line is on, and the message offers the waitlist in plain words with no dash',
+  sales.SALES_OPEN === false && sales.CHAT_OPEN === true && /not currently offering/.test(sales.SALES_CLOSED_MESSAGE)
   && /Join the waitlist/.test(sales.SALES_CLOSED_MESSAGE) && !DASH.test(sales.SALES_CLOSED_MESSAGE)
-  && /import \{ SALES_OPEN, SALES_CLOSED_MESSAGE \} from '\.\.\/public\/js\/sales\.js';/.test(SRC));
+  && /import \{ SALES_OPEN, CHAT_OPEN, SALES_CLOSED_MESSAGE \} from '\.\.\/public\/js\/sales\.js';/.test(SRC));
 
-const ROUTES = ['/api/checkout', '/api/subscribe', '/api/chat-unlock', '/api/upgrade', '/api/followup', '/api/extend', '/api/telehealth'];
+// RE-PINNED 2026-10-14 (v7.36): /api/subscribe moved to its own switch; these are the case's routes.
+const ROUTES = ['/api/checkout', '/api/chat-unlock', '/api/upgrade', '/api/followup', '/api/extend', '/api/telehealth'];
 {
   const gate = gateFor(false);
   const live = [];
@@ -67,6 +74,15 @@ const ROUTES = ['/api/checkout', '/api/subscribe', '/api/chat-unlock', '/api/upg
   // NEGATIVE CONTROL (run 2026-10-12): '/api/waitlist' added to SALES_ROUTES made this read
   //   FAIL  A3 the waitlist, reviews, the billing portal and his own admin charges are not touched
   check('A3 the waitlist, reviews, the billing portal and his own admin charges are not touched', others.every((r) => r === null));
+  // Eric, 2026-10-14: "Unlock priority chat". The chat line answers on its own switch, either way round.
+  const chatOpen = gate(new URL('https://thepocketadvocates.com/api/subscribe'));
+  const shut = gateFor(false, false)(new URL('https://thepocketadvocates.com/api/subscribe'));
+  const shutCase = gateFor(false, false)(new URL('https://thepocketadvocates.com/api/checkout'));
+  const openAll = gateFor(true, false)(new URL('https://thepocketadvocates.com/api/subscribe'));
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): '/api/subscribe' put back into SALES_ROUTES made this read
+  //   FAIL  A3b the chat line answers to its own switch: open now with the case shut, refused when its switch is off, and opening the case does not open it
+  check('A3b the chat line answers to its own switch: open now with the case shut, refused when its switch is off, and opening the case does not open it',
+    chatOpen === null && shut?.status === 409 && shutCase?.status === 409 && openAll?.status === 409);
   const preview = ROUTES.map((r) => gate(new URL(`http://127.0.0.1:8787${r}`)));
   // NEGATIVE CONTROL (run 2026-10-12): `&& !DEMO_HOST.test(url.hostname)` taken out of the gate made this read
   //   FAIL  A4 a preview or local host is spared, as the maintenance window spares it
@@ -75,12 +91,12 @@ const ROUTES = ['/api/checkout', '/api/subscribe', '/api/chat-unlock', '/api/upg
   // NEGATIVE CONTROL (run 2026-10-12): `!SALES_OPEN &&` taken out of the gate made this read
   //   FAIL  A5 with the switch on, nothing is refused: /open is one line
   check('A5 with the switch on, nothing is refused: /open is one line',
-    ROUTES.every((r) => open(new URL(`https://thepocketadvocates.com${r}`)) === null));
+    ROUTES.concat('/api/subscribe').every((r) => open(new URL(`https://thepocketadvocates.com${r}`)) === null));
 }
 {
   // Above every one of the routes it guards, so no handler can reach Stripe first.
-  const at = SRC.indexOf('if (!SALES_OPEN && SALES_ROUTES.has(url.pathname)');
-  const firsts = ROUTES.map((r) => SRC.indexOf(`url.pathname === '${r}' && request.method`));
+  const at = SRC.indexOf('SALES_ROUTES.has(url.pathname)');
+  const firsts = ROUTES.concat('/api/subscribe').map((r) => SRC.indexOf(`url.pathname === '${r}' && request.method`));
   // NEGATIVE CONTROL (run 2026-10-12): the gate moved below the /api/checkout route made this read
   //   FAIL  A6 the gate sits above every route it guards, and each of them is a real route
   check('A6 the gate sits above every route it guards, and each of them is a real route',
@@ -104,16 +120,39 @@ console.log('\n--- B. the pages ---');
   const svc = f('public/services.html');
   // NEGATIVE CONTROL (run 2026-10-12): the sales-closed.js script tag taken off subscribe.html made this read
   //   FAIL  B1 book and subscribe hide their buying flow behind the notice, and services leads with it
-  check('B1 book and subscribe hide their buying flow behind the notice, and services leads with it',
-    /<main data-sales="buy">/.test(book) && /<main data-sales="buy">/.test(sub)
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat". Each buying page names its package, so the
+  // subscribe page opens with the chat line and book stays behind the notice.
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): subscribe.html's main marked data-sales="case" made this read
+  //   FAIL  B1 book names the case and subscribe names the chat line, both load the notice before their flow, and services loads it too
+  check('B1 book names the case and subscribe names the chat line, both load the notice before their flow, and services loads it too',
+    /<main data-sales="case">/.test(book) && /<main data-sales="chat">/.test(sub)
     && [book, sub, svc].every((h) => /<script type="module" src="\/js\/sales-closed\.js"><\/script>/.test(h))
     && book.indexOf('sales-closed.js') < book.indexOf('/js/book.js"') && sub.indexOf('sales-closed.js') < sub.indexOf('/js/subscribe.js"')
-    && /main\[data-sales="buy"\]\.pa-closed-on > :not\(\.pa-closed\)/.test(closed));
+    && /main\.pa-closed-on > :not\(\.pa-closed\)/.test(closed));
   // NEGATIVE CONTROL (run 2026-10-12): `if (SALES_OPEN || inDemo()) return;` changed to `if (inDemo()) return;` made this read
   //   FAIL  B2 the notice follows the switch, says Not currently offering, and sends people to the waitlist
-  check('B2 the notice follows the switch, says Not currently offering, and sends people to the waitlist',
-    /import \{ SALES_OPEN \} from '\.\/sales\.js';/.test(closed) && /if \(SALES_OPEN \|\| inDemo\(\)\) return;/.test(closed)
+  // RE-PINNED 2026-10-14 (v7.36): package by package. packageOpen is lifted and run against both switches.
+  const lift = (chat, sales) => new Function('CHAT_OPEN', 'SALES_OPEN',
+    `${(closed.match(/export function packageOpen\([\s\S]*?\n\}/) || [''])[0].replace('export ', '')}; return packageOpen;`)(chat, sales);
+  const now = lift(true, false);
+  const allOpen = lift(true, true);
+  const allShut = lift(false, false);
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): packageOpen made to answer SALES_OPEN for every package made this read
+  //   FAIL  B2 each page follows its own package's switch, says Not currently offering, and sends people to the waitlist
+  check('B2 each page follows its own package\'s switch, says Not currently offering, and sends people to the waitlist',
+    /import \{ SALES_OPEN, CHAT_OPEN \} from '\.\/sales\.js';/.test(closed)
+    && now('chat') === true && now('case') === false && now('full') === false
+    && ['chat', 'case', 'full'].every((p) => allOpen(p) === true && allShut(p) === false)
+    && /if \(packageOpen\(pkg\)\) return;/.test(closed)
     && /<h2>Not currently offering<\/h2>/.test(closed) && /href="\/#waitlist">Join the waitlist<\/a>/.test(closed) && !DASH.test(closed));
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): `card.removeAttribute('href');` swapped for a data attribute made this read
+  //   FAIL  B2b on services each closed package's card says so and takes no tap; the notice leads only when every package is closed
+  check('B2b on services each closed package\'s card says so and takes no tap; the notice leads only when every package is closed',
+    /const closed = \['case', 'full', 'chat'\]\.filter\(\(p\) => !packageOpen\(p\)\);/.test(closed)
+    && /tag\.insertAdjacentHTML\('afterend', '<span class="pa-off-badge">Not currently offering<\/span>'\);/.test(closed)
+    && /if \(card\.tagName === 'A'\) \{ card\.removeAttribute\('href'\);/.test(closed)
+    && /if \(closed\.length === 3\) main\.insertAdjacentHTML\('afterbegin', NOTICE\);/.test(closed)
+    && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id)));
   const wl = f('public/js/waitlist.js');
   // NEGATIVE CONTROL (run 2026-10-12): the #waitlist opener deleted made this read
   //   FAIL  B3 the landing opens the waitlist itself when sent to /#waitlist

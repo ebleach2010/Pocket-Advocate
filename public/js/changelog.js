@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.35';
+export const VERSION = '7.36';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.35';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // CHAT OPEN, ONE SCREEN (Eric, 2026-10-14: "Unlock priority chat and
+    // remove banner." The ring, the one-screen home, the menu, the question
+    // box and the Leads tab.) Admin only.
+    version: '7.36',
+    quiet: true,
+    client: [],
+    admin: [
+      '24/7 Priority Chat is open again and leads the list, ringed in the waitlist button\'s glow with a bright spot circling it. Your notice is down. The case and full service still say Not currently offering.',
+      'The home page fits on one screen. Everything else opens from the menu at the top right.',
+      'A chat icon at the bottom right takes questions. Each one is emailed to you, and replying sends your answer straight to them.',
+      'A new Leads tab lists everyone who has given you their details, one row each, with Download CSV.',
+    ],
+  },
   {
     // SALES CLOSED (Eric, 2026-10-12: "Remove free call. Stop sales
     // everywhere." And the waitlist email's subject in his capitals.)

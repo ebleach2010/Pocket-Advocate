@@ -517,8 +517,12 @@ check('F5 fit.js lists fit slots and only fit slots',
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the three options is a door now.
   // NEGATIVE CONTROL (run 2026-10-12, v7.35): the free-call door put back under the options made this read
   //   FAIL  F8 nothing under the three options is a door: no free call, no case
-  check('F8 nothing under the three options is a door: no free call, no case',
-    doors.length === 0 && !/free 15-minute call/i.test(opts) && !/href="\/(fit|book|subscribe)\.html"/.test(opts));
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." The chat card links to the chat line again; still no free call, no case.
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): `<a href="/book.html">Book a case</a>` added to the Advocacy Case card made this read
+  //   FAIL  F8 nothing under the three options is a door, no free call and no case anywhere in them; only the chat card links, to the chat line
+  check('F8 nothing under the three options is a door, no free call and no case anywhere in them; only the chat card links, to the chat line',
+    doors.length === 0 && !/free 15-minute call/i.test(opts) && !/href="\/(fit|book)\.html"/.test(opts)
+    && (opts.match(/href="\/subscribe\.html"/g) || []).length === 1);
   const dock = idx.slice(idx.indexOf('id="sticky-book"'), idx.indexOf('id="sticky-book"') + 200);
   // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // NEGATIVE CONTROL (run 2026-10-11, v7.32): `<a class="btn glow cta" href="/subscribe.html">Start chatting</a>` put back into the closing made this read
@@ -526,8 +530,9 @@ check('F5 fit.js lists fit slots and only fit slots',
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The closing carries the number alone.
   // NEGATIVE CONTROL (run 2026-10-12, v7.35): the closing's free-call button put back made this read
   //   FAIL  F9 no dock, and the closing carries the number alone
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." The one subscribe link is the chat card's.
   check('F9 no dock, and the closing carries the number alone',
-    !/id="sticky-book"/.test(idx) && !/href="\/subscribe\.html"/.test(idx)
+    !/id="sticky-book"/.test(idx) && (idx.match(/href="\/subscribe\.html"/g) || []).length === 1
     && /<div class="actions">\s*<a class="btn quiet" href="tel:\+12086708608">[^<]*<\/a>\s*<\/div>/.test(idx));
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." No page links to it: not the landing, its footer, or the numbers page.
   // NEGATIVE CONTROL (run 2026-10-12, v7.35): `<a href="/fit.html">Book a free call</a>` put back in the footer made this read

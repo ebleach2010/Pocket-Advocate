@@ -28,7 +28,7 @@
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp15">
 <link rel="stylesheet" href="/css/glowup.css?v=sp8">
-<link rel="stylesheet" href="/css/landing.css?v=b4">
+<link rel="stylesheet" href="/css/landing.css?v=b5">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -55,9 +55,23 @@
 </head>
 <body class="landing">
 <header class="bar">
-  <div class="bar-inner">
+  <div class="bar-inner" data-always-menu>
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <!-- THE MENU (Eric, 2026-10-14: "Reorient everything so everything on the
+         main page fits without scrolling. Then add a hamburger menu symbol at
+         the top right where tabs for every other section appears"). Every
+         section below the options opens from here as its own screen; the
+         pages follow. -->
     <nav class="tabs">
+      <span class="tabs-label">On this page</span>
+      <a href="#needs">Who it's for</a>
+      <a href="#how">How it works</a>
+      <a href="#who">Who you're hiring</a>
+      <a href="#proof">What clients say</a>
+      <a href="#faq">Straight answers</a>
+      <a href="#closing">Ready when you are</a>
+      <a href="#more">Contact and fine print</a>
+      <span class="tabs-label">More</span>
       <a href="/book.html">Book</a>
       <a href="/services.html">Services</a>
       <a href="/about.html">About</a>
@@ -86,9 +100,6 @@
        package in a dropdown. Once submitted, a short message that I'll get
        back to them soon."). The bubble opens the sheet; /js/waitlist.js
        sends it to /api/waitlist, which tells him by push and email. -->
-  <div class="wl-row">
-    <button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog"><span class="wl-spark" aria-hidden="true">&#10022;</span>Join the waitlist</button>
-  </div>
   <dialog class="wl-sheet" id="waitlist" aria-labelledby="wl-title">
     <div class="wl-head">
       <h2 id="wl-title">Join the waitlist</h2>
@@ -120,31 +131,39 @@
     </div>
   </dialog>
 
-  <!-- Eric's notice, his words exactly (2026-10-11). Highlighted and first,
-       above everything, while no service is offered. -->
-  <aside class="out-banner" role="note">
-    <p>I am currently out of remission and going through chemo. Services will be available again once I can cognitively perform to the standard necessary for advocacy. - Eric</p>
-  </aside>
+  <!-- Eric's notice (2026-10-11) came down on 2026-10-14: "Unlock priority
+       chat and remove banner." It is in git. -->
 
   <section class="land-sec hero">
     <img class="hero-logo" src="/img/logo-192.png" alt="" width="56" height="56">
-    <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
+    <!-- The waitlist bubble keeps the top right (2026-10-12), now sharing its
+         row with the eyebrow so the home fits one screen (2026-10-14). -->
+    <div class="hero-top">
+      <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
+      <button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog"><span class="wl-spark" aria-hidden="true">&#10022;</span>Join the waitlist</button>
+    </div>
     <h1>Go into your next appointment with a plan.</h1>
     <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
   </section>
 
-  <!-- The three options, at the top (Eric, 2026-10-10). Since 2026-10-11 none
-       is offered ("Mark chat out of service as well"): every card says so and
-       takes no tap. -->
+  <!-- The three options, at the top (Eric, 2026-10-10). The chat line is
+       open again (2026-10-14: "Unlock priority chat"), ringed in gold with a
+       bright spot easing round it ("Have a yellow shiny outline around it
+       with an animated ease in ease out bright spot circling around the
+       line"); the case and the full service still say Not currently
+       offering and take no tap. -->
   <section class="land-sec options cost" id="options">
     <h2>What it costs</h2>
     <p class="opt-lede measure">Three ways to work with me, each a flat price you see before you pay.</p>
     <div class="opt-grid">
-      <div class="opt opt-off" aria-disabled="true">
-        <span class="opt-badge">Not currently offering</span>
+      <div class="opt opt-live opt-gold">
         <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></span>24/7 Priority Chat</h3>
         <span class="svc-price"><span data-rate="sub">$50</span><span class="svc-per">/month</span></span>
         <span class="svc-line">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.</span>
+        <div class="opt-acts">
+          <a class="btn glow cta opt-go" href="/subscribe.html">Start chatting</a>
+          <a class="opt-more" href="/services.html#chat">What is included</a>
+        </div>
       </div>
       <div class="opt opt-off" aria-disabled="true">
         <span class="opt-badge">Not currently offering</span>
@@ -161,9 +180,10 @@
     </div>
     <p class="hero-fine">No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.</p>
     <p class="reframe measure">Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.</p>
+    <p class="home-fine">Not medical care. In an emergency, call 911.</p>
   </section>
 
-  <section class="land-sec ruled needs">
+  <section class="land-sec ruled needs" id="needs">
     <h2>You might need an advocate if</h2>
     <ul class="needs-list">
       <li>You sit in front of a physician with ten important questions and leave having asked two.</li>
@@ -174,7 +194,7 @@
     </ul>
   </section>
 
-  <section class="land-sec ruled how">
+  <section class="land-sec ruled how" id="how">
     <h2>How it works</h2>
     <ol class="steps">
       <li><span class="num">1</span><div><span>Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</span></div></li>
@@ -184,7 +204,7 @@
     </ol>
   </section>
 
-  <section class="land-sec ruled who">
+  <section class="land-sec ruled who" id="who">
     <h2>Who you're hiring</h2>
     <p class="hero-cred measure">I'm a professional patient advocate with 5 years' worth of boots on the ground experience, and an autoimmune encephalitis survivor. I know what it is like to have a complicated case that does not fit neatly into a box.</p>
     <!-- The face IS the link (Eric, 2026-08-30): tap it and his story opens. -->
@@ -196,7 +216,7 @@
     <blockquote class="who-quote"><p>I became an advocate because, for three years, I learned exactly how badly I needed one.</p></blockquote>
   </section>
 
-  <section class="land-sec ruled proof">
+  <section class="land-sec ruled proof" id="proof">
     <h2>What clients say</h2>
     <!-- The Google header (Eric, 2026-09-02, from the widget he sent): the
          wordmark, the real average and count, the write link, the read link.
@@ -237,7 +257,7 @@
     <p class="dim small"><a class="pill" href="/stats.html">The whole ledger</a></p>
   </section>
 
-  <section class="land-sec ruled faq">
+  <section class="land-sec ruled faq" id="faq">
     <h2>Straight answers</h2>
     <a class="q" href="/faq.html">Is this medical advice? <span>›</span></a>
     <a class="q" href="/faq.html">Can I stop? <span>›</span></a>
@@ -258,7 +278,7 @@
 </main>
 
 
-<footer class="site-foot">
+<footer class="site-foot" id="more">
   <div class="foot-inner">
   <div class="foot-cols">
     <nav class="foot-col" aria-label="Explore">
@@ -365,7 +385,36 @@
     initSetupGuide(u, document.querySelector('main'), { welcome: false });
   }).catch(() => {});
 </script>
+<!-- THE QUESTION BOX (Eric, 2026-10-14: "Have a chat box icon at the bottom
+     right of the screen and it opens up a window that says 'questions? Type
+     them down below and I'll get back to you within two days.' They put
+     their name and email and question and press send to have it sent to my
+     inbox. Once sent, remind them to check their spam box in case my reply
+     gets sent there."). /js/question.js sends it to /api/question. -->
+<button type="button" class="ask-fab" data-ask-open aria-haspopup="dialog" aria-label="Questions? Send me a message"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></button>
+<dialog class="wl-sheet ask-sheet" id="ask" aria-labelledby="ask-title">
+  <div class="wl-head">
+    <h2 id="ask-title">Questions?</h2>
+    <button type="button" class="wl-x" data-ask-close aria-label="Close">&times;</button>
+  </div>
+  <form class="wl-form" novalidate>
+    <p class="ask-lede">Type them down below and I'll get back to you within two days.</p>
+    <label>Name<input name="name" type="text" autocomplete="name" maxlength="80" required></label>
+    <label>Email<input name="email" type="email" autocomplete="email" inputmode="email" maxlength="120" required></label>
+    <label>Question<textarea name="question" maxlength="2000" required></textarea></label>
+    <div class="wl-trap" aria-hidden="true"><label>Website<input name="website" type="text" tabindex="-1" autocomplete="off"></label></div>
+    <p class="wl-err" role="alert" hidden></p>
+    <button type="submit" class="btn glow wl-go">Send</button>
+  </form>
+  <div class="wl-done" role="status" hidden>
+    <p class="wl-done-h">Sent. Thank you, <span data-ask-first></span>.</p>
+    <p>I'll get back to you within two days. Please check your spam folder too, in case my reply gets sent there.</p>
+    <button type="button" class="btn quiet" data-ask-close>Close</button>
+  </div>
+</dialog>
 <script type="module" src="/js/waitlist.js?v=2"></script>
+<script type="module" src="/js/question.js?v=1"></script>
+<script type="module" src="/js/landing-tabs.js?v=1"></script>
 <script type="module">
   // The About sheets (Eric, 2026-08-25). Its own module with no Firebase
   // dependency, so the sheets open even on a day the app cannot.

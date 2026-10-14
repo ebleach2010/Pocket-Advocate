@@ -157,12 +157,17 @@ console.log('\n--- B. the shape ---');
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." No door under the cards at all now.
   // NEGATIVE CONTROL (run 2026-10-12, v7.35): the free-call door put back under the cards made this read
   //   FAIL  B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; nothing under them is a door
-  check('B2 his notice comes first, word for word; all three options say Not currently offering and take no tap; nothing under them is a door',
-    main.indexOf('class="out-banner"') >= 0 && main.indexOf('class="out-banner"') < main.indexOf('land-sec hero')
-    && READ.includes('I am currently out of remission and going through chemo. Services will be available again once I can cognitively perform to the standard necessary for advocacy. - Eric')
-    && cards.length === 3 && cards.every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
-    && /24\/7 Priority Chat/.test(cards[0][1]) && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1])
-    && !/href="\/subscribe\.html"/.test(IDX)
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner."
+  // His notice is gone; the chat line is first and open, ringed, with Start chatting; the case and the full
+  // service still say Not currently offering and take no tap; nothing under them is a door.
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): the notice put back above the hero made this read
+  //   FAIL  B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering and take no tap; nothing under them is a door
+  check('B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering and take no tap; nothing under them is a door',
+    !/class="out-banner"/.test(IDX) && !READ.includes('I am currently out of remission')
+    && cards.length === 3 && /opt-live opt-gold/.test(cards[0][0]) && /24\/7 Priority Chat/.test(cards[0][1])
+    && /<a class="btn glow cta opt-go" href="\/subscribe\.html">Start chatting<\/a>/.test(cards[0][1]) && !/opt-badge/.test(cards[0][1])
+    && cards.slice(1).every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
+    && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1])
     && doors.length === 0 && !/class="act /.test(hero),
     JSON.stringify({ cards: cards.map(([c]) => c), doors }));
   check('B3 the tile is small at the top left of a paper card, and the halo is gone',
@@ -190,11 +195,15 @@ check('B5 no dock offers anything, and the footer lists every door but the free 
   && ['/book.html', '/advocate.html', '/stats.html', '/reviews.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`)));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
-check('B6 no option card links anywhere, and the services anchors still exist',
+// RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." Only the chat card links: to the chat line and to what it includes.
+// NEGATIVE CONTROL (run 2026-10-14, v7.36): an opt-acts row with `<a class="opt-more" href="/services.html#case">What is included</a>` added to the Advocacy Case card made this read
+//   FAIL  B6 only the chat card links, to the chat line and its services anchor, and the services anchors still exist
+check('B6 only the chat card links, to the chat line and its services anchor, and the services anchors still exist',
   (() => {
     const s = sectionAt('class="land-sec options cost"');
     const svc = f('public/services.html');
-    return !/<div class="opt-acts">/.test(s) && !/<a [^>]*href="(\/subscribe|\/book|\/services)/.test(s)
+    const links = [...s.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
+    return (s.match(/<div class="opt-acts">/g) || []).length === 1 && links.join() === '/subscribe.html,/services.html#chat'
       && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id));
   })());
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The sheet is the chat line's.
@@ -214,8 +223,10 @@ check('B6 no option card links anywhere, and the services anchors still exist',
     && /body\.landing \{\s*font-family: 'Manrope'[^}]*font-weight: 500;/.test(L) && /body\.landing h1,[\s\S]{0,160}font-family: 'Sora'[^}]*font-weight: 600;/.test(L)
     && !/fonts\.googleapis|fonts\.gstatic/.test(L + IDX));
 }
+// RE-PINNED 2026-10-14 (v7.36): Eric, "add a hamburger menu symbol at the top right where tabs for every other section appears".
+// The page's own screens lead the menu; the Book tab heads its "More" half.
 check('B10 the only door to booking on the landing is the shared Book tab',
-  (IDX.match(/href="\/book\.html"/g) || []).length === 1 && /<nav class="tabs">\s*<a href="\/book\.html">Book<\/a>/.test(IDX));
+  (IDX.match(/href="\/book\.html"/g) || []).length === 1 && /<span class="tabs-label">More<\/span>\s*<a href="\/book\.html">Book<\/a>/.test(IDX));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". With nothing offered, no About sheet is offered either; the wiring stays for when one returns.
 check('B7 no About sheet is offered while nothing is, and the wiring is still there',
   !/data-about=/.test(main) && /wireAboutButtons\(\)/.test(IDX));
@@ -229,7 +240,7 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b4">/.test(IDX) // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b5">/.test(IDX) // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
   && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && n !== 'index.html').every((n) => !/landing\.css/.test(f(`public/${n}`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   && /dataset\.defaultScheme/.test(code('public/js/theme.js')));

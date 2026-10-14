@@ -57,8 +57,11 @@ function fit() {
     const wasCollapsed = barInner.classList.contains('collapsed');
     barInner.classList.remove('collapsed');
     closeMenu();
-    // Read after the write, so the browser has laid the row back out.
-    const over = tabs.scrollWidth > tabs.clientWidth + 4;
+    // Read after the write, so the browser has laid the row back out. A bar
+    // marked data-always-menu (the landing, 2026-10-14: "add a hamburger menu
+    // symbol at the top right where tabs for every other section appears")
+    // keeps its links in the menu at every width.
+    const over = barInner.hasAttribute('data-always-menu') || tabs.scrollWidth > tabs.clientWidth + 4;
     barInner.classList.toggle('collapsed', over);
     if (over !== wasCollapsed) closeMenu();
   } finally {

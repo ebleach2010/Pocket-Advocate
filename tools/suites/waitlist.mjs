@@ -269,9 +269,15 @@ console.log('\n--- D. the wiring ---');
   const opts = [...sel.matchAll(/<option value="(\w*)"[^>]*>([^<]+)<\/option>/g)].map((m) => [m[1], m[2]]);
   // NEGATIVE CONTROL (run 2026-10-12): an empty div put ahead of the bubble row made this read
   //   FAIL  D3 the bubble is the first thing in main, ahead of his notice, and opens the sheet
-  check('D3 the bubble is the first thing in main, ahead of his notice, and opens the sheet',
-    /^<main>\s*<!--[\s\S]*?-->\s*<div class="wl-row">\s*<button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog">[\s\S]*?Join the waitlist<\/button>/.test(main)
-    && main.indexOf('wl-bubble') < main.indexOf('out-banner') && /<dialog class="wl-sheet" id="waitlist"/.test(main));
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Reorient everything so everything on the main page fits without scrolling."
+  // The bubble keeps the top right, now on the hero's first row beside the eyebrow; its sheet leads main.
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): the bubble moved below the h1 made this read
+  //   FAIL  D3 the bubble sits at the top right of the hero, on its first row, and opens the sheet that leads main
+  const heroTop = (main.match(/<div class="hero-top">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  check('D3 the bubble sits at the top right of the hero, on its first row, and opens the sheet that leads main',
+    /^<main>\s*<!--[\s\S]*?-->\s*<dialog class="wl-sheet" id="waitlist"/.test(main)
+    && /^\s*<p class="hero-eyebrow eyebrow">[^<]+<\/p>\s*<button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog">[\s\S]*?Join the waitlist<\/button>\s*$/.test(heroTop)
+    && main.indexOf('class="hero-top"') < main.indexOf('<h1>'));
   // NEGATIVE CONTROL (run 2026-10-12): the Full-Service option deleted made this read
   //   FAIL  D4 the sheet asks for first name, last name, email, phone and a package from a dropdown of the three, named as the cards name them
   const cards = [...html.matchAll(/<h3><span class="opt-ic">[\s\S]*?<\/span>([^<]+)<\/h3>/g)].map((m) => m[1]);
@@ -302,16 +308,21 @@ console.log('\n--- D. the wiring ---');
 }
 {
   const css = f('public/css/landing.css');
-  const block = css.slice(css.indexOf('/* ---- the waitlist'));
+  // RE-PINNED 2026-10-14 (v7.36): the waitlist's own block ends where the v7.36 rules begin.
+  const block = css.slice(css.indexOf('/* ---- the waitlist'), css.indexOf('/* ==== v7.36'));
+  const rowRule = css.slice(css.indexOf('/* ==== v7.36'));
   // NEGATIVE CONTROL (run 2026-10-12): the shine animation moved out of the reduced-motion guard made this read
   //   FAIL  D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion
+  // RE-PINNED 2026-10-14 (v7.36): "at the right" is now the hero row's last column, an auto-width one after the eyebrow's.
+  // NEGATIVE CONTROL (run 2026-10-14, v7.36): `grid-template-columns: minmax(0, 1fr) auto;` on .hero-top turned to `auto minmax(0, 1fr)` made this read
+  //   FAIL  D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion
   check('D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion',
-    /\.wl-row \{\s*display: flex;\s*justify-content: flex-end;/.test(block)
+    /body\.landing \.hero-top \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\) auto;/.test(rowRule)
     && /\.wl-bubble \{[\s\S]*?border-radius: 20px 20px 4px 20px;/.test(block) && /\.wl-bubble::after \{[\s\S]*?clip-path/.test(block)
     && /@keyframes wl-shine/.test(block)
     && (block.match(/animation:/g) || []).length === 3
     && /@media \(prefers-reduced-motion: no-preference\) \{\n(  body\.landing [^\n]*animation:[^\n]*\n){3}\}/.test(block)
-    && /landing\.css\?v=b4/.test(f('public/index.html')));
+    && /landing\.css\?v=b5/.test(f('public/index.html')));
 }
 {
   const a = f('public/js/admin.js');

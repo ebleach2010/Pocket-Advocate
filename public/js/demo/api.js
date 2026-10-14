@@ -415,6 +415,54 @@ export function demoApi(role, store) {
       }
       return fail(400, 'Bad action');
     }
+    // The question box (2026-10-14). Mirrors handleQuestion's refusals, and
+    // keeps the question in questions/ for the Leads tab.
+    if (path === '/api/question' && init.method === 'POST') {
+      if (typeof body?.website === 'string' && body.website.trim()) return ok({ ok: true });
+      const name = String(body?.name || '').trim().slice(0, 80);
+      const email = String(body?.email || '').trim().toLowerCase();
+      const question = String(body?.question || '').trim();
+      if (!name) return fail(400, 'Your name, please.');
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return fail(400, 'A working email address, please. My answer goes there.');
+      if (question.length < 2) return fail(400, 'Type your question, please.');
+      if (question.length > 2000) return fail(400, 'Keep it under 2000 characters, please.');
+      await beat(500);
+      store.docs.set(`questions/q-${Date.now()}`, { name, email, question, createdAt: new Date() });
+      return ok({ ok: true });
+    }
+    // Leads (2026-10-14): one row per email across every route, as the Worker builds it.
+    if (path === '/api/admin/leads') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const names = { chat: '24/7 Priority Chat', case: 'Advocacy Case', full: 'Full-Service Case Management' };
+      const rows = [];
+      for (const [k, d] of store.docs.entries()) {
+        const coll = k.split('/')[0];
+        if (k.split('/').length !== 2) continue;
+        if (coll === 'waitlist') rows.push({ when: d.createdAt, name: `${d.first} ${d.last}`, email: d.email, phone: d.phone, interest: names[d.package], words: '', source: 'Waitlist' });
+        else if (coll === 'questions') rows.push({ when: d.createdAt, name: d.name, email: d.email, phone: '', interest: '', words: d.question, source: 'Question' });
+        else if (coll === 'leads') rows.push({ when: d.createdAt, name: d.name, email: d.email, phone: d.phone, interest: 'Free call', words: d.note, source: 'Free call' });
+        else if (coll === 'cases' && d.clientEmail && !d.self && !d.showcase) rows.push({ when: d.createdAt, name: d.clientName, email: d.clientEmail, phone: d.clientPhone, interest: d.fullAccess ? names.full : names.case, words: '', source: 'Booked a case' });
+        else if (coll === 'subscriptions' && d.email) rows.push({ when: d.startedAt, name: '', email: d.email, phone: '', interest: names.chat, words: '', source: 'Priority Chat' });
+      }
+      const by = new Map();
+      for (const r of rows) {
+        const e = String(r.email).toLowerCase();
+        const t = new Date(r.when || 0).getTime() || 0;
+        const p = by.get(e) || { email: e, name: '', phone: '', first: t, last: t, sources: [], interests: [], words: [] };
+        if (r.name && (!p.name || t >= p.last)) p.name = r.name;
+        if (r.phone && (!p.phone || t >= p.last)) p.phone = r.phone;
+        p.first = Math.min(p.first || t, t || p.first); p.last = Math.max(p.last, t);
+        if (!p.sources.includes(r.source)) p.sources.push(r.source);
+        if (r.interest && !p.interests.includes(r.interest)) p.interests.push(r.interest);
+        if (r.words) p.words.push(r.words);
+        by.set(e, p);
+      }
+      const leads = [...by.values()].sort((a, b) => b.last - a.last).map((p) => ({
+        firstContact: p.first ? new Date(p.first).toISOString() : null, lastContact: p.last ? new Date(p.last).toISOString() : null,
+        name: p.name, email: p.email, phone: p.phone, interestedIn: p.interests.join('; '), cameThrough: p.sources.join('; '), notes: p.words.join(' | '),
+      }));
+      return ok({ leads, missing: [] });
+    }
     if (path === '/api/fit-call' && init.method === 'POST') {
       if (typeof body?.website === 'string' && body.website.trim()) return ok({ ok: true });
       const name = String(body?.name || '').trim();

@@ -31,16 +31,18 @@ A plain "push to main" with no mode stated follows the silent pattern.
 
 When Eric sends `/open`, ship one versioned push that:
 - sets `SALES_OPEN = true` in `public/js/sales.js` (the Worker's purchase
-  routes and the closed notice on book, subscribe and services follow it);
-- makes all three landing cards live again in `public/index.html`: drop
-  `opt-off`, `aria-disabled` and the "Not currently offering" badge, and give
-  each its door (chat to `/subscribe.html`, the case to `/book.html`, full
-  service to the same door `services.html` gives it; `git show 2b749a6`
-  has the v7.31 card markup with its chat door);
-- removes Eric's out-of-remission notice (`.out-banner`) from the landing;
+  routes and the closed notice on book and services follow it);
+- makes the Advocacy Case and Full-Service cards live again in
+  `public/index.html`: drop `opt-off`, `aria-disabled` and the "Not
+  currently offering" badge, and give each its door (the case to
+  `/book.html`, full service to the same door `services.html` gives it);
+- removes Eric's out-of-remission notice (`.out-banner`) from the landing
+  if it is back (it came down 2026-10-14);
 - KEEPS the "Join the waitlist" bubble and everything behind it;
 - does NOT bring back the free 15-minute call (removed 2026-10-12).
-Re-pin the tests that pin the closed state, with dated notes.
+24/7 Priority Chat is already open on its own switch, `CHAT_OPEN` (Eric,
+2026-10-14: "Unlock priority chat"). Re-pin the tests that pin the closed
+state, with dated notes.
 
 ## Deploy ritual
 

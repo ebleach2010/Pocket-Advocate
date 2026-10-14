@@ -83,7 +83,7 @@ export function unmailable(to) {
   return /@example\.(com|org|net)$|\.invalid$|\.test$|\.example$/i.test(String(to || '').trim());
 }
 
-export async function sendEmail(env, { to, subject, html }) {
+export async function sendEmail(env, { to, subject, html, replyTo }) {
   if (!env.RESEND_API_KEY || !env.EMAIL_FROM || !to) return false;
   if (unmailable(to)) return false;
   try {
@@ -96,6 +96,9 @@ export async function sendEmail(env, { to, subject, html }) {
       body: JSON.stringify({
         from: env.EMAIL_FROM,
         to: [to],
+        // A reply goes to the person who wrote in (the question box,
+        // 2026-10-14), not back to the sending address.
+        ...(replyTo ? { reply_to: replyTo } : {}),
         subject,
         html: `<div style="font-family:-apple-system,Segoe UI,sans-serif; max-width:540px; margin:0 auto; line-height:1.6; color:#222;">${html}${FOOTER}</div>`,
       }),

@@ -266,6 +266,33 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Chat open, one screen, questions, Leads (2026-10-14, v7.36)
+
+Eric: "Unlock priority chat and remove banner. Have a yellow shiny outline
+around it with an animated ease in ease out bright spot circling around the
+line. Reorient everything so everything on the main page fits without
+scrolling. Then add a hamburger menu symbol at the top right where tabs for
+every other section appears. Have a chat box icon at the bottom right of the
+screen and it opens up a window that says 'questions? Type them down below
+and I'll get back to you within two days.' ... Once the admin side, any
+person who has submitted their information through any route gets added to
+a 'leads' tab. This is a simple exportable csv that goes row by row for each
+potential client." Then: the ring is "the same gradient and effect as the
+waitlist button". `CHAT_OPEN` in `sales.js` opens `/api/subscribe` on its own
+switch; `sales-closed.js` works package by package. The notice is gone; the
+chat card leads, ringed (`.opt-gold`, a registered `--pa-ring` angle on the
+bubble's 3.6s ease-in-out). The home is the hero and the options, stepped down
+by height; every other section is a `:target` screen opened from the menu
+(`data-always-menu`), with `landing-tabs.js` adding Back. The question box is
+`question.js` to `POST /api/question` (Reply-To the person, kept in
+`questions/`); `GET /api/admin/leads` merges the waitlist, questions, free
+calls, cases and subscriptions by email; `admin-leads.html` shows it and
+saves the CSV. New suite `leads.mjs` (19 checks, routes and the CSV lifted
+and run, every check with its control); the landing drive measures the home
+at nine sizes and opens every menu screen; `sales.mjs`, `landing.mjs`,
+`waitlist.mjs`, `fitcall.mjs`, `fund.mjs` F26 and release R1 re-pinned with
+dated notes and controls.
+
 ### Sales closed, free call gone (2026-10-12, v7.35)
 
 Eric: "Remove free call. Stop sales everywhere. There are no chat

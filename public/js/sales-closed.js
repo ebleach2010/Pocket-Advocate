@@ -1,10 +1,20 @@
-// The page half of the sales switch (sales.js). A courtesy, not the gate: the
-// Worker refuses every purchase route while SALES_OPEN is false. On a page
-// whose <main> carries data-sales="buy" (book, subscribe) the buying flow is
-// hidden behind the notice; anywhere else (services) the notice leads the
-// page and the rest reads as before. Skipped in the demo, which drives the
-// buying flows end to end.
-import { SALES_OPEN } from './sales.js';
+// The page half of the sales switches (sales.js). A courtesy, not the gate:
+// the Worker refuses every closed purchase route whatever a page says.
+//
+// Package by package (Eric, 2026-10-14: "Unlock priority chat"):
+//   - a page whose <main> carries data-sales="case" (book) or "chat"
+//     (subscribe) hides its buying flow behind the notice while that
+//     package is closed, and is left alone while it is open;
+//   - services marks each closed package's card "Not currently offering"
+//     and takes the tap off it, and leads with the notice only when every
+//     package is closed.
+// Skipped in the demo, which drives the buying flows end to end.
+import { SALES_OPEN, CHAT_OPEN } from './sales.js';
+
+/** Whether a package can be bought right now. */
+export function packageOpen(pkg) {
+  return pkg === 'chat' ? CHAT_OPEN : SALES_OPEN;
+}
 
 function inDemo() {
   try {
@@ -13,12 +23,18 @@ function inDemo() {
   } catch { return false; }
 }
 
-export function closeSales() {
-  if (SALES_OPEN || inDemo()) return;
-  const main = document.querySelector('main');
-  if (!main || main.querySelector('.pa-closed')) return;
-  const style = document.createElement('style');
-  style.textContent = `
+const NOTICE = `
+    <section class="pa-closed" role="note">
+      <h2>Not currently offering</h2>
+      <p>I'm not taking on new work right now. Join the waitlist and I'll get back to you soon.</p>
+      <a class="btn glow" href="/#waitlist">Join the waitlist</a>
+    </section>`;
+
+function style() {
+  if (document.getElementById('pa-closed-style')) return;
+  const el = document.createElement('style');
+  el.id = 'pa-closed-style';
+  el.textContent = `
     .pa-closed {
       display: grid; gap: .6rem; margin: 0 0 1.5rem; padding: 1.1rem 1.15rem;
       border: 1px solid var(--edge-lit, rgba(255, 255, 255, .18)); border-left-width: 4px;
@@ -27,15 +43,46 @@ export function closeSales() {
     .pa-closed h2 { margin: 0; font-size: 1.25rem; }
     .pa-closed p { margin: 0; color: var(--soft, #D2D2D9); line-height: 1.5; }
     .pa-closed .btn { justify-self: start; }
-    main[data-sales="buy"].pa-closed-on > :not(.pa-closed):not(.footer-disclaimer) { display: none !important; }`;
-  document.head.appendChild(style);
-  main.insertAdjacentHTML('afterbegin', `
-    <section class="pa-closed" role="note">
-      <h2>Not currently offering</h2>
-      <p>I'm not taking on new work right now. Join the waitlist and I'll get back to you soon.</p>
-      <a class="btn glow" href="/#waitlist">Join the waitlist</a>
-    </section>`);
-  main.classList.add('pa-closed-on');
+    main.pa-closed-on > :not(.pa-closed):not(.footer-disclaimer) { display: none !important; }
+    .pack.pa-off { opacity: .55; filter: grayscale(1); cursor: default; }
+    .pa-off-badge {
+      display: inline-block; justify-self: start; margin: .7rem 0 .4rem; padding: .2rem .6rem;
+      border: 1px solid currentColor; border-radius: 999px;
+      font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+    }`;
+  document.head.appendChild(el);
+}
+
+export function closeSales() {
+  if (inDemo()) return;
+  const main = document.querySelector('main');
+  if (!main || main.querySelector('.pa-closed')) return;
+  const pkg = main.dataset.sales;
+  if (pkg) {
+    if (packageOpen(pkg)) return;
+    style();
+    main.insertAdjacentHTML('afterbegin', NOTICE);
+    main.classList.add('pa-closed-on');
+    return;
+  }
+  // Services: the cards, one at a time.
+  const closed = ['case', 'full', 'chat'].filter((p) => !packageOpen(p));
+  if (!closed.length) return;
+  style();
+  for (const id of closed) {
+    const card = document.getElementById(id);
+    if (!card) continue;
+    card.classList.add('pa-off');
+    card.setAttribute('aria-disabled', 'true');
+    // After the card's own tag, which hangs off its top edge, so the two never overlap.
+    const tag = card.querySelector('.tag');
+    if (tag) tag.insertAdjacentHTML('afterend', '<span class="pa-off-badge">Not currently offering</span>');
+    else card.insertAdjacentHTML('afterbegin', '<span class="pa-off-badge">Not currently offering</span>');
+    if (card.tagName === 'A') { card.removeAttribute('href'); card.setAttribute('tabindex', '-1'); }
+    const cta = card.querySelector('.pack-cta');
+    if (cta) cta.textContent = 'Not currently offering';
+  }
+  if (closed.length === 3) main.insertAdjacentHTML('afterbegin', NOTICE);
 }
 
 closeSales();

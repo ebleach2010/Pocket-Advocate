@@ -131,7 +131,7 @@ const EXTRA = [
 // returns, so the gate does not confirm what is behind it.
 const ADMIN_PAGES = [
   '/admin', '/admin.html', '/admin-case', '/admin-chats', '/admin-calendar',
-  '/admin-availability', '/admin-dictionary',
+  '/admin-availability', '/admin-dictionary', '/admin-leads',
   // 2026-10-04: the fund's verification queue.
   '/admin-fund',
 ];
@@ -146,6 +146,7 @@ const ADMIN_ASSETS = [
   '/js/admin-hours.js', '/js/admin-presence.js', '/js/admin-ledger.js',
   '/js/admin-fit.js',
   '/js/admin-waitlist.js',
+  '/js/admin-leads.js',
   '/js/admin-personal.js',
   // 2026-10-04: the fund's verification queue.
   '/js/admin-fund.js',

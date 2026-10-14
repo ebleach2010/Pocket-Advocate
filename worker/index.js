@@ -11,6 +11,8 @@
 //   GET/POST /api/admin/fit-calls  the free calls: list, join link, done, no-show, cancel (admin)
 //   POST   /api/waitlist           join the waitlist: name, email, phone, package (public, no account)
 //   GET/POST /api/admin/waitlist   the waitlist: list, mark contacted, remove (admin)
+//   POST   /api/question           the question box: name, email, question, emailed to Eric (public, no account)
+//   GET    /api/admin/leads        everyone who has given their details by any route, one row per person (admin)
 //   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
 //   POST   /api/admin/stats        recompute the figures now (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
@@ -66,7 +68,7 @@ import { validateAction } from './advisor-acts.js';
 // the applicant's and the reviewer's, lives in worker/fund.js.
 import { handleFund, drainFundNotices } from './fund.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
-import { SALES_OPEN, SALES_CLOSED_MESSAGE } from '../public/js/sales.js';
+import { SALES_OPEN, CHAT_OPEN, SALES_CLOSED_MESSAGE } from '../public/js/sales.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
@@ -667,9 +669,12 @@ const FIT_PAGE = /^\/fit(\.html)?\/?$/;
 // handler can reach Stripe. His own admin charges are not here: those are
 // his decisions, made by hand.
 const SALES_ROUTES = new Set([
-  '/api/checkout', '/api/subscribe', '/api/chat-unlock', '/api/upgrade',
+  '/api/checkout', '/api/chat-unlock', '/api/upgrade',
   '/api/followup', '/api/extend', '/api/telehealth',
 ]);
+// 24/7 Priority Chat has its own switch (Eric, 2026-10-14: "Unlock priority
+// chat"), so it can be open while everything above stays shut.
+const CHAT_ROUTE = '/api/subscribe';
 
 /**
  * The path the ASSET SERVER will resolve, not the one in the request line.
@@ -872,10 +877,11 @@ export default {
       // checkout is refused; /api/subscribe answers at every hour.
       if (maintenanceUntil() && !DEMO_HOST.test(url.hostname) && url.pathname === '/api/checkout')
         return json({ error: maintenanceMessage(), maintenanceUntil: MAINTENANCE_UNTIL }, 503);
-      // Sales closed (Eric, 2026-10-12: "Stop sales everywhere."). This
-      // overrides the 2026-10-10 rule that chat answers at every hour: he
-      // closed it himself. Preview and local hosts are spared, as above.
-      if (!SALES_OPEN && SALES_ROUTES.has(url.pathname) && !DEMO_HOST.test(url.hostname))
+      // Sales closed (Eric, 2026-10-12: "Stop sales everywhere."), the chat
+      // line on its own switch since 2026-10-14 ("Unlock priority chat").
+      // Preview and local hosts are spared, as above.
+      if (((!SALES_OPEN && SALES_ROUTES.has(url.pathname)) || (!CHAT_OPEN && url.pathname === CHAT_ROUTE))
+        && !DEMO_HOST.test(url.hostname))
         return json({ error: SALES_CLOSED_MESSAGE, salesClosed: true }, 409);
       if (url.pathname === '/api/checkout' && request.method === 'POST')
         return await handleCheckout(request, env);
@@ -903,6 +909,10 @@ export default {
         return await handleWaitlist(request, env);
       if (url.pathname === '/api/admin/waitlist')
         return await handleAdminWaitlist(request, env);
+      if (url.pathname === '/api/question' && request.method === 'POST')
+        return await handleQuestion(request, env);
+      if (url.pathname === '/api/admin/leads')
+        return await handleAdminLeads(request, env);
       if (url.pathname === '/api/admin/personal')
         return await handlePersonal(request, env, url);
       if (url.pathname === '/api/admin/personal/file' && request.method === 'GET')
@@ -2098,7 +2108,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-12-sales-closed';
+const BUILD_TAG = 'v2026-10-14-chat-open-one-screen';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2106,7 +2116,7 @@ const BUILD_TAG = 'v2026-10-12-sales-closed';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.35';
+const VERSION = '7.36';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9149,6 +9159,149 @@ async function handleAdminWaitlist(request, env) {
     return json({ ok: true });
   }
   return json({ error: 'Bad action' }, 400);
+}
+
+/**
+ * THE QUESTION BOX (Eric, 2026-10-14: "Have a chat box icon at the bottom
+ * right of the screen and it opens up a window that says 'questions? Type
+ * them down below and I'll get back to you within two days.' They put their
+ * name and email and question and press send to have it sent to my inbox.")
+ *
+ * POST /api/question   public, no account
+ * Body: { name, email, question, website }
+ *
+ * The waitlist's shape: the per-connection throttle counted before the body
+ * is read, the honeypot, the refusals in plain words. The question goes to
+ * his inbox with Reply-To set to the person, so answering is one tap, and a
+ * copy goes to questions/ (Worker-only, under the deny tail) for his Leads.
+ */
+const QUESTION_MAX = 2000;
+const QUESTION_IP_LIMIT = 5;
+
+async function questionThrottled(ip) {
+  const cache = globalThis.caches?.default;
+  if (!cache) return false;
+  const key = new Request(`https://question-throttle.internal/${encodeURIComponent(ip)}`);
+  const prior = await cache.match(key);
+  const n = prior ? parseInt(await prior.text(), 10) || 0 : 0;
+  if (n >= QUESTION_IP_LIMIT) return true;
+  await cache.put(key, new Response(String(n + 1), { headers: { 'cache-control': 'max-age=3600' } }));
+  return false;
+}
+
+async function handleQuestion(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  if (await questionThrottled(ip))
+    return json({ error: 'Too many tries from this connection. Wait a while, or use the contact page.' }, 429);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
+  if (str(body.website, 200)) return json({ ok: true });
+
+  const name = str(body.name, 80);
+  const email = str(body.email, 120).toLowerCase();
+  const question = typeof body.question === 'string' ? body.question.trim() : '';
+  if (!name) return json({ error: 'Your name, please.' }, 400);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email))
+    return json({ error: 'A working email address, please. My answer goes there.' }, 400);
+  if (question.length < 2) return json({ error: 'Type your question, please.' }, 400);
+  if (question.length > QUESTION_MAX) return json({ error: `Keep it under ${QUESTION_MAX} characters, please.` }, 400);
+
+  const now = new Date();
+  await patchDoc(env, `questions/${crypto.randomUUID()}`, { name, email, question, createdAt: now }, { mustNotExist: true });
+  await pingAdmins(env, `${firstName(name) || 'Someone'} asked a question. It is in your email.`, '/admin-leads.html');
+  if (env.ADMIN_EMAIL) {
+    await sendEmail(env, {
+      to: env.ADMIN_EMAIL,
+      replyTo: email,
+      subject: `NEW QUESTION FROM ${name.toUpperCase()}`,
+      html: `<p>Name: ${escHtml(name)}<br>Email: ${escHtml(email)}</p>
+        <p>${escHtml(question).replace(/\r?\n/g, '<br>')}</p>
+        <p>Reply to this email and your answer goes straight to them.</p>`,
+    }).catch(() => {});
+  }
+  return json({ ok: true });
+}
+
+/**
+ * LEADS (Eric, 2026-10-14: "any person who has submitted their information
+ * through any route gets added to a 'leads' tab. This is a simple exportable
+ * csv that goes row by row for each potential client.")
+ *
+ * GET /api/admin/leads   one row per person, newest contact first
+ *
+ * Built on every read from where each route already keeps people, so there
+ * is nothing to keep in step and nobody can be missed by a route that forgot
+ * to copy them: the waitlist, the question box, the free calls (leads/),
+ * booked cases (his own and the showcase left out) and chat subscriptions.
+ * One person is one email; their routes, interests and words are gathered
+ * onto that row. A source that could not be read is named in `missing`, so
+ * an export is never quietly short.
+ */
+const LEAD_SOURCES = [
+  { coll: 'waitlist', label: 'Waitlist' },
+  { coll: 'questions', label: 'Question' },
+  { coll: 'leads', label: 'Free call' },
+  { coll: 'cases', label: 'Booked a case' },
+  { coll: 'subscriptions', label: 'Priority Chat' },
+];
+
+/** One source's rows, as { when, name, email, phone, interest, words, source }. */
+function leadRows(coll, label, rows) {
+  const pkg = (k) => WAITLIST_PACKAGES[k] || '';
+  const out = [];
+  for (const { data: d } of rows) {
+    let r = null;
+    if (coll === 'waitlist') r = { when: d.createdAt, name: `${d.first || ''} ${d.last || ''}`.trim(), email: d.email, phone: d.phone, interest: pkg(d.package), words: '' };
+    else if (coll === 'questions') r = { when: d.createdAt, name: d.name, email: d.email, phone: '', interest: '', words: d.question };
+    else if (coll === 'leads') r = { when: d.createdAt, name: d.name, email: d.email, phone: d.phone, interest: 'Free call', words: d.note };
+    else if (coll === 'cases') {
+      if (d.self || d.showcase || !d.clientEmail) continue;
+      r = { when: d.createdAt, name: d.clientName, email: d.clientEmail, phone: d.clientPhone, interest: d.fullAccess ? WAITLIST_PACKAGES.full : WAITLIST_PACKAGES.case, words: '' };
+    } else if (coll === 'subscriptions') r = { when: d.startedAt, name: '', email: d.email, phone: '', interest: WAITLIST_PACKAGES.chat, words: '' };
+    if (r && r.email) out.push({ ...r, email: String(r.email).trim().toLowerCase(), source: label });
+  }
+  return out;
+}
+
+/** Many rows into one per person, newest contact first. */
+function mergeLeads(rows) {
+  const by = new Map();
+  const add = (set, v) => { if (v && !set.includes(v)) set.push(v); };
+  for (const r of rows) {
+    const t = new Date(r.when || 0).getTime() || 0;
+    const p = by.get(r.email) || { email: r.email, name: '', phone: '', first: t, last: t, sources: [], interests: [], words: [] };
+    if (r.name && (!p.name || t >= p.last)) p.name = String(r.name).trim();
+    if (r.phone && (!p.phone || t >= p.last)) p.phone = String(r.phone).trim();
+    p.first = Math.min(p.first || t, t || p.first);
+    p.last = Math.max(p.last, t);
+    add(p.sources, r.source);
+    add(p.interests, r.interest);
+    if (r.words) p.words.push(String(r.words).trim());
+    by.set(r.email, p);
+  }
+  return [...by.values()]
+    .sort((a, b) => b.last - a.last)
+    .map((p) => ({
+      firstContact: p.first ? new Date(p.first).toISOString() : null,
+      lastContact: p.last ? new Date(p.last).toISOString() : null,
+      name: p.name, email: p.email, phone: p.phone,
+      interestedIn: p.interests.join('; '), cameThrough: p.sources.join('; '), notes: p.words.join(' | '),
+    }));
+}
+
+async function handleAdminLeads(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method !== 'GET') return json({ error: 'Not found' }, 404);
+  const got = await Promise.allSettled(LEAD_SOURCES.map((s) => listDocs(env, s.coll, { pageSize: 300, all: true })));
+  const rows = [];
+  const missing = [];
+  got.forEach((g, i) => {
+    const { coll, label } = LEAD_SOURCES[i];
+    if (g.status === 'fulfilled') rows.push(...leadRows(coll, label, g.value || []));
+    else missing.push(label);
+  });
+  return json({ leads: mergeLeads(rows), missing });
 }
 
 /**

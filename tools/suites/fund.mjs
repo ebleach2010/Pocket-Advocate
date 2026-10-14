@@ -837,7 +837,8 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
 {
   const SIGNIN = f('public/signin.html');
   const tabs = (html) => [...(html.match(/<nav class="tabs">([\s\S]*?)<\/nav>/) || ['', ''])[1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
-  const ADV = '/admin.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html';
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "any person who has submitted their information through any route gets added to a 'leads' tab". Leads sits after Clients on every admin page.
+  const ADV = '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html';
   const adminPages = ['admin', 'admin-case', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-fund'];
   check('F26 his home is the Clients page again: both admin doors on the sign-in page go to Clients, sign-in otherwise defaults to Book, his device\'s landing goes to Clients, every admin page carries the advocacy tabs and no Fund or PR 1 tab, the queue still keeps his alerts registered, and the client\'s own pages carry their tabs again',
     (SIGNIN.match(/location\.href = '\/admin\.html';/g) || []).length === 2 && !/admin-fund/.test(SIGNIN)

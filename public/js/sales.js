@@ -5,8 +5,13 @@
 // While this is false, worker/index.js refuses every route that starts a
 // purchase (SALES_ROUTES there), whatever the page says; that is the gate.
 // Book, subscribe and services load sales-closed.js, which says so and
-// offers the waitlist instead. Pure data: the Worker imports this file, so
+// offers the waitlist instead, package by package. Pure data: the Worker imports this file, so
 // nothing here may touch a page.
 export const SALES_OPEN = false;
+
+// 24/7 Priority Chat, on its own switch (Eric, 2026-10-14: "Unlock priority
+// chat"). The case, full service and every case add-on stay behind
+// SALES_OPEN; the chat line's one route, /api/subscribe, answers to this.
+export const CHAT_OPEN = true;
 
 export const SALES_CLOSED_MESSAGE = "I'm not currently offering this. Join the waitlist on the home page and I'll get back to you soon.";

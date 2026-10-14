@@ -44,8 +44,10 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     bg: getComputedStyle(document.body).backgroundColor,
     // RE-PINNED 2026-10-12 (v7.34): Eric, "a small 'join the waitlist' that's in a shining text bubble at the top
     // right of the screen". The bubble's row and its closed sheet come first; his notice is the first thing after them.
-    banner: (() => { const b = document.querySelector('main > .out-banner'); const m = document.querySelector('main'); return !!b && m.firstElementChild.classList.contains('wl-row') && m.firstElementChild.nextElementSibling.matches('dialog.wl-sheet:not([open])') && b === m.firstElementChild.nextElementSibling.nextElementSibling && /out of remission and going through chemo/.test(b.textContent); })(),
-    bubble: (() => { const r = document.querySelector('.wl-bubble').getBoundingClientRect(); const n = document.querySelector('.out-banner').getBoundingClientRect(); return { right: Math.round(innerWidth - r.right), gap: Math.round(n.top - r.bottom), h: Math.round(r.height) }; })(),
+    // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
+    // No notice; the bubble rides the hero's first row, above the headline.
+    banner: !document.querySelector('.out-banner') && !/out of remission/.test(document.body.textContent),
+    bubble: (() => { const r = document.querySelector('.wl-bubble').getBoundingClientRect(); const h = document.querySelector('main h1').getBoundingClientRect(); return { right: Math.round(innerWidth - r.right), gap: Math.round(h.top - r.bottom), h: Math.round(r.height), inTop: !!document.querySelector('.hero-top .wl-bubble') }; })(),
     closing: [...document.querySelectorAll('#closing .actions a')].map((a) => a.getAttribute('href')),
     serif: getComputedStyle(document.querySelector('main h1')).fontFamily,
     scheme: document.documentElement.dataset.scheme || 'neon',
@@ -59,13 +61,16 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     shape.h2s.join('|') === "What it costs|You might need an advocate if|How it works|Who you're hiring|What clients say|By the numbers|Straight answers|Ready when you are.", shape.h2s.join('|'));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the cards is a door.
-  ok('his notice first, all three options greyed with his words and nothing to tap, nothing under them',
-    shape.live.length === 0 && shape.off.length === 3 && shape.banner && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
+  ok('no notice; the chat line open with Start chatting, the other two greyed with his words and nothing to tap, nothing under them',
+    shape.banner && shape.live.join() === '/subscribe.html,/services.html#chat' && shape.off.length === 2
+    && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
     && shape.acts.length === 0, JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
   // NEGATIVE CONTROL (run 2026-10-12): `justify-content: flex-end` on .wl-row turned to flex-start made this read
   //   FAIL  the waitlist bubble sits at the top right, above his notice, a full tap high
-  ok('the waitlist bubble sits at the top right, above his notice, a full tap high',
-    shape.bubble.right <= 24 && shape.bubble.gap >= 0 && shape.bubble.gap < 60 && shape.bubble.h >= 44, JSON.stringify(shape.bubble));
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The bubble's row is the hero's first.
+  ok('the waitlist bubble sits at the top right, above the headline, a full tap high',
+    shape.bubble.inTop && shape.bubble.right <= 24 && shape.bubble.gap >= 0 && shape.bubble.gap < 60 && shape.bubble.h >= 44, JSON.stringify(shape.bubble));
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The step that promised it and its closing button went with it.
   ok('five reasons, four steps', shape.needs === 5 && shape.steps === 4);
   ok('the closing: the number alone', shape.closing.join() === 'tel:+12086708608');
@@ -75,19 +80,20 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     const lum = (c) => { const m = c.match(/\d+(\.\d+)?/g).map(Number); const f = (v) => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
     const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); };
     const ground = 'rgb(19, 19, 23)';
-    const banner = document.querySelector('.out-banner');
-    return [ratio(getComputedStyle(banner.querySelector('p')).color, getComputedStyle(banner).backgroundColor), ratio(getComputedStyle(document.querySelector('.opt-off .opt-badge')).color, ground)];
+    return [ratio(getComputedStyle(document.querySelector('.opt-live .svc-line')).color, ground), ratio(getComputedStyle(document.querySelector('.opt-off .opt-badge')).color, 'rgb(15, 15, 18)')];
   });
   // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
-  ok('his notice and the "Not currently offering" badges clear 4.5:1', legible.every((r) => r >= 4.5), legible.map((r) => r.toFixed(1)).join(' / '));
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The notice is gone; the chat card's line takes its place in the measure.
+  ok('the chat line\'s words and the "Not currently offering" badges clear 4.5:1', legible.every((r) => r >= 4.5), legible.map((r) => r.toFixed(1)).join(' / '));
   if (SHOTS) {
     await page.screenshot({ path: `${SHOTS}/01-hero.png` });
-    for (const [name, sel] of [['02-options', '#options'], ['03-needs', '.needs'], ['04-how', '.how'], ['05-who', '.who'], ['06-proof', '.proof'], ['07-numbers', '#numbers'], ['08-close', '#closing']]) {
-      await page.evaluate((s) => document.querySelector(s).scrollIntoView({ block: 'start', behavior: 'instant' }), sel);
-      await page.evaluate(() => window.scrollBy(0, -70));
-      await page.waitForTimeout(500);
+    // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." Each other section is a screen of its own, opened by its anchor.
+    for (const [name, id] of [['03-needs', 'needs'], ['04-how', 'how'], ['05-who', 'who'], ['06-proof', 'proof'], ['08-close', 'closing'], ['09-more', 'more']]) {
+      await page.evaluate((h) => { location.hash = h; }, id);
+      await page.waitForTimeout(400);
       await page.screenshot({ path: `${SHOTS}/${name}.png` });
     }
+    await page.evaluate(() => { location.hash = ''; });
   }
   console.log('\n--- B. the proof ---');
   const proof = await page.evaluate(() => ({
@@ -104,6 +110,9 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     proof.avg === '5.0' && proof.count >= 5 && proof.count === proof.count2 && proof.cards === 2 * (proof.count - 1), JSON.stringify(proof));
   ok('three theme lines, the write link on Google', proof.themes === 3 && /g\.page/.test(proof.write));
   ok('the stats strip is on with real figures', proof.stats && proof.figs.join('|') === '3 min|84%|4 of 4|61 hrs', proof.figs.join('|'));
+  // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The strip lives on its own screen now; open it first.
+  await page.evaluate(() => { location.hash = 'proof'; });
+  await page.waitForTimeout(500);
   const before = await page.evaluate(() => document.querySelector('#reviews-track').style.transform);
   await page.click('[data-nudge="1"]');
   await page.waitForTimeout(300);
@@ -127,6 +136,42 @@ for (const scheme of ['neon', 'calm', 'paper', 'contrast']) {
   });
   ok(`${scheme}: body text and headline clear the ground (4.5:1)`, r.body >= 4.5 && r.h1 >= 4.5, `${r.body.toFixed(1)} / ${r.h1.toFixed(1)}`);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/scheme-${scheme}.png` });
+  await ctx.close();
+}
+
+console.log('\n--- E. the home fits one screen ---');
+{
+  // Eric, 2026-10-14: "Reorient everything so everything on the main page fits without scrolling." Phones in
+  // Safari with their bars showing, a big phone, a tablet and a laptop: nothing scrolls, either way.
+  // NEGATIVE CONTROL (run 2026-10-14): the `(max-height: 900px)` rule that hides the hero's sentence taken out made this read
+  //   FAIL  the home fits on one screen at every size, with nothing below it to scroll to
+  const sizes = [[390, 664], [375, 635], [360, 640], [414, 715], [430, 740], [390, 844], [768, 1024], [1024, 700], [1440, 900]];
+  const over = [];
+  for (const [w, h] of sizes) {
+    const ctx = await b.newContext({ viewport: { width: w, height: h } });
+    const page = await ctx.newPage();
+    await page.goto(`${P}/`, { waitUntil: 'networkidle' });
+    await page.evaluate(() => document.fonts.ready);
+    const m = await page.evaluate(() => [document.documentElement.scrollHeight - innerHeight, document.documentElement.scrollWidth - innerWidth]);
+    if (m[0] > 0 || m[1] > 0) over.push(`${w}x${h}: ${m[0]}px down, ${m[1]}px across`);
+    await ctx.close();
+  }
+  ok('the home fits on one screen at every size, with nothing below it to scroll to', over.length === 0, over.join('; '));
+  // The menu reaches every other section, and each opens as its own screen with a way back.
+  const ctx = await b.newContext({ viewport: { width: 390, height: 664 } });
+  const page = await ctx.newPage();
+  await page.goto(`${P}/`, { waitUntil: 'networkidle' });
+  await page.click('.nav-toggle');
+  const hrefs = await page.$$eval('.tabs.open a[href^="#"]', (as) => as.map((a) => a.getAttribute('href')));
+  const screens = [];
+  for (const h of hrefs) {
+    await page.evaluate((x) => { location.hash = x; }, h);
+    await page.waitForTimeout(150);
+    screens.push(await page.evaluate((x) => { const s = document.querySelector(x); return getComputedStyle(s).position === 'fixed' && !!s.querySelector('.panel-back'); }, h));
+  }
+  // NEGATIVE CONTROL (run 2026-10-14): landing-tabs.js's Back link line taken out made this read
+  //   FAIL  the menu opens every other section as a screen with a Back link
+  ok('the menu opens every other section as a screen with a Back link', hrefs.length === 7 && screens.every(Boolean), `${hrefs.join()} ${screens.join()}`);
   await ctx.close();
 }
 
