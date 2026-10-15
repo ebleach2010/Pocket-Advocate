@@ -418,6 +418,10 @@ const deps = {
   json: (data, status = 200) => ({ status, body: data }),
   requireAdmin: async () => (ADMIN ? { uid: 'eric' } : null),
   officeStatus,
+  // RE-PINNED 2026-10-15 (v7.47): Eric, "Contractors have controls in settings just like me." The public route takes
+  // ?advocate=, and an active contractor's own door sign answers for their clients (worker/staffsettings.js). A
+  // stand-in for the one contractor, adv-b; anyone else reads his, as every check above does.
+  contractorSettings: async (env, uid) => (uid === 'adv-b' ? { office: { manual: 'out', responseTime: 'Back tomorrow.' } } : null),
 };
 const W = new Function(...Object.keys(deps),
   `${LIFTED}
@@ -525,6 +529,21 @@ docs.set(DOC, { responseTime: 'x'.repeat(400) });
 check('C: and is capped rather than shipped whole',
   (await W.handleAvailability(env)).body.responseTime?.length === 160,
   String((await W.handleAvailability(env)).body.responseTime).slice(0, 40));
+
+// A contractor's client (2026-10-15, v7.47).
+// NEGATIVE CONTROL (run 2026-10-15, v7.47): handleAvailability's `own ? own.office : ` taken out made this read
+//   FAIL  C: a contractor's client reads that contractor's own door sign and line; an unknown advocate, or none, reads his
+reset();
+docs.set(DOC, { manual: 'in', responseTime: 'His line.' });
+{
+  const theirs = (await W.handleAvailability(env, new URL('https://x.test/api/availability?advocate=adv-b'))).body;
+  const unknown = (await W.handleAvailability(env, new URL('https://x.test/api/availability?advocate=nobody'))).body;
+  const plain = (await W.handleAvailability(env, new URL('https://x.test/api/availability'))).body;
+  check("C: a contractor's client reads that contractor's own door sign and line; an unknown advocate, or none, reads his",
+    theirs.inOffice === false && theirs.responseTime === 'Back tomorrow.' && Object.keys(theirs).sort().join(',') === PUBLIC_KEYS.join(',')
+    && unknown.inOffice === true && unknown.responseTime === 'His line.' && plain.responseTime === 'His line.',
+    JSON.stringify({ theirs, unknown, plain }));
+}
 
 reset();
 check('C: a nonsense status is refused rather than stored',

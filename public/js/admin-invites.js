@@ -67,7 +67,7 @@ export function leadFormHtml() {
  * Wire the form inside `root`. The leads and the live price are read the
  * first time it opens (prepare), not on every visit to the page.
  */
-export function wireLeadForm(root, { getToken, onSent, leadsPath = '/api/admin/leads' }) {
+export function wireLeadForm(root, { getToken, onSent, leadsPath = '/api/admin/leads', ratesPath = '/api/rates' }) {
   const form = root.querySelector('[data-open-form="lead"]');
   if (!form) return { prepare() {} };
   const val = (k) => form.querySelector(`[data-lf="${k}"]`);
@@ -90,7 +90,8 @@ export function wireLeadForm(root, { getToken, onSent, leadsPath = '/api/admin/l
     const [got, rate] = await Promise.all([
       // His leads, or a contractor's own (2026-10-15: "any lead they themselves acquire").
       call(getToken, leadsPath).catch(() => null),
-      fetch('/api/rates').then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      // A contractor's invitations start at their own price (2026-10-15).
+      fetch(ratesPath).then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     leads = (got?.leads || []).filter((l) => l.email);
     pick.innerHTML = `<option value="">${leads.length ? 'Pick a lead, or type below' : 'No leads yet. Type their details below.'}</option>${

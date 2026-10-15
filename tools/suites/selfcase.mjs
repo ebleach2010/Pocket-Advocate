@@ -361,7 +361,9 @@ const guards = [
   ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],
   ['the missing-email repair', /if \(!c\.clientUid \|\| c\.self\) continue;/],
   ['the scheduler', /if \(c\.self\) return json\(\{ error: 'Your own case has nobody on the other end to book with\.' \}, 409\);/],
-  ['the capacity, both paths', /\]\, 200\)\)\.filter\(\(r\) => !r\.data\.self\);[\s\S]{0,200}r\.data\.status !== 'closed' && !r\.data\.self\)/],
+  // RE-PINNED 2026-10-15 (v7.47): each advocate's own count (`&& whose(r)`), his own case still out of it.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.47): the first query's `!r.data.self && ` taken out made S17 read FAIL.
+  ['the capacity, both paths', /\]\, 200\)\)\.filter\(\(r\) => !r\.data\.self && whose\(r\)\);[\s\S]{0,200}r\.data\.status !== 'closed' && !r\.data\.self && whose\(r\)\)/],
   ['the ledger', /const c = r\.data;\n[^\n]*\n[^\n]*\n[^\n]*\n\s+if \(c\.self \|\| c\.showcase\) continue;\n\s+const key = c\.clientUid \|\| r\.id;/],
   ['the public stats', /const c = r\.data;\n[^\n]*\n[^\n]*\n[^\n]*\n\s+if \(c\.self \|\| c\.showcase\) continue;\n\s+const periods = holdPeriodsOf\(c, now\);/],
 ];

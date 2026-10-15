@@ -100,6 +100,10 @@ function world({ admin = { uid: 'eric' }, user = { uid: 'u-lead' }, profiles = {
     safeJson: (s) => { try { return JSON.parse(s); } catch { return null; } },
     readRates: async () => ({ caseCents: 210000, addonCents: 32500, fullCents: 440000 }),
     raiseRates: async () => { log.push(['raise']); },
+    // RE-PINNED 2026-10-15 (v7.47): a case is sold at its own advocate's prices (ratesForCase) and only his sales
+    // climb his (raiseRatesFor); his invitations here read and raise exactly as before.
+    ratesForCase: async () => ({ caseCents: 210000, addonCents: 32500, fullCents: 440000 }),
+    raiseRatesFor: async () => { log.push(['raise']); },
     pingAdmins: async (env, body) => { log.push(['ping', body]); },
     notifyUser: async (env, uid, n) => { log.push(['notify', uid, n.body]); },
     CHARGE_COPY: CHARGE.CHARGE_COPY,

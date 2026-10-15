@@ -298,7 +298,7 @@ export async function hydrateNav() {
       location.href = '/';
     });
     markUnread(user, staff, role).catch(() => {});
-    import('./settings.js').then((m) => m.initSettings(user, admin)).catch(() => {});
+    import('./settings.js').then((m) => m.initSettings(user, admin, role === 'advocate')).catch(() => {});
     // What changed since they last opened the app. Loaded soft and shown once:
     // nothing on the page depends on it, and a changelog that fails to load is
     // not a reason for anything else to break. Nobody is shown a changelog on

@@ -5,7 +5,7 @@ import { db, doc, getDoc, setDoc } from './firebase.js';
 import { SCHEMES, currentScheme, applyScheme } from './theme.js';
 import { barActs } from './nav-menu.js';
 
-export function initSettings(user, isAdmin = false) {
+export function initSettings(user, isAdmin = false, isContractor = false) {
   if (!user) return;
   // The right-hand end of the bar, never the link strip: inside the strip the
   // cog was the last thing on a row wider than the screen, so the one control
@@ -19,10 +19,10 @@ export function initSettings(user, isAdmin = false) {
   cog.setAttribute('aria-label', 'Settings');
   cog.textContent = '⚙';
   nav.appendChild(cog);
-  cog.addEventListener('click', () => openPanel(user, isAdmin));
+  cog.addEventListener('click', () => openPanel(user, isAdmin, isContractor));
 }
 
-function openPanel(user, isAdmin = false) {
+function openPanel(user, isAdmin = false, isContractor = false) {
   const existing = document.getElementById('pa-settings');
   if (existing) { existing.remove(); return; }
   const notifOn = 'Notification' in window && Notification.permission === 'granted';
@@ -63,7 +63,7 @@ function openPanel(user, isAdmin = false) {
             <span class="scheme-blurb dim small">${x.blurb}</span>
           </button>`).join('')}
       </div>
-      ${isAdmin ? '<div data-admin-rows></div>' : ''}
+      ${isAdmin ? '<div data-admin-rows></div>' : isContractor ? '<div data-staff-rows></div>' : ''}
     </div>`;
   document.body.appendChild(overlay);
 
@@ -120,6 +120,15 @@ function openPanel(user, isAdmin = false) {
       adminRows.innerHTML = m.adminSettingsHtml();
       m.wireAdminSettings(overlay, user);
     }).catch(() => { /* his switches are missing; the client half still works */ });
+  }
+  // A contractor's own versions of his rows (2026-10-15), from the same kind
+  // of module and for the same reason.
+  const staffRows = overlay.querySelector('[data-staff-rows]');
+  if (staffRows) {
+    import('./admin-staffsettings.js').then((m) => {
+      staffRows.innerHTML = m.staffSettingsHtml();
+      m.wireStaffSettings(overlay, user);
+    }).catch(() => { /* their rows are missing; the rest still works */ });
   }
 
   const notifBtn = overlay.querySelector('[data-notif]');

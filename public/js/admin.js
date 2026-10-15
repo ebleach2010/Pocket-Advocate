@@ -536,7 +536,11 @@ function paintAddForms(cases) {
   // A contractor's + opens one form: a case from a lead of their own.
   addEl.innerHTML = advocate ? leadFormHtml() : person('self', false, pullPicker) + person('family', true) + leadFormHtml();
   if (open) addEl.querySelector(`[data-open-form="${open}"]`).hidden = false;
-  leadForm = wireLeadForm(addEl, { getToken: () => user.getIdToken(), onSent: () => invites.refresh(), leadsPath: advocate ? '/api/staff/leads' : '/api/admin/leads' });
+  leadForm = wireLeadForm(addEl, {
+    getToken: () => user.getIdToken(), onSent: () => invites.refresh(),
+    leadsPath: advocate ? '/api/staff/leads' : '/api/admin/leads',
+    ratesPath: advocate ? `/api/rates?advocate=${encodeURIComponent(user.uid)}` : '/api/rates',
+  });
   if (open === 'lead') leadForm.prepare();
   // Open sends the form to its route and walks into the case it made.
   for (const go of addEl.querySelectorAll('[data-open-go]')) {

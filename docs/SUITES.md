@@ -298,6 +298,26 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Contractors' own settings (2026-10-15, v7.47)
+
+Eric: "Contractors have controls in settings just like me." His settings are
+the business's; a contractor gets the same three for their own clients, kept on
+their own record (`advocates/{uid}.settings`) through `worker/staffsettings.js`
+(`/api/staff/settings`, their own record only, the 404 for him): in or out of
+office and a response line, their prices (Advocacy Case, follow-up,
+Full-Service month) and how many Full-Service clients they take at once.
+`/api/availability` and `/api/rates` take `?advocate=`; a case's pages name
+their advocate (`officeFor`, `readCaseRates`). A contractor's case is sold at
+their prices (`ratesForCase`), never climbs his (`raiseRatesFor`), and counts
+against their own limit (`fullAccessCapacity(env, contractor)`); his limit now
+counts only his clients. A Full-Service request pings the case's own advocate.
+
+New suite `staffsettings.mjs` (14). `availability.mjs` grew a check for a
+contractor's door sign. New drive `drive-staffsettings.mjs`. Every new check
+has its control recorded. Re-pinned with dated notes and controls: capacity
+(both lifts and C15), pricing T9i, selfcase S17, charge CH3 and its harness,
+invites harness, release R1.
+
 ### Employer mode and payroll (2026-10-15, v7.46)
 
 Eric: "Next to the big 'clients' on the all cases page, I (and only I) need a

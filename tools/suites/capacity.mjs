@@ -48,7 +48,7 @@ const slab = (src, from, to) => {
 
 // ---- C1-C8: the count and the ceiling, run ------------------------------
 {
-  const fn = (WORKER.match(/async function fullAccessCapacity\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+  const fn = (WORKER.match(/async function fullAccessCapacity\(env, contractor = ''\) \{[\s\S]*?\n\}/) || [''])[0];
   const line = (WORKER.match(/const capacityLine = \(cap\) => \([\s\S]*?\);/) || [''])[0];
   // NEGATIVE CONTROL (all runs 2026-08-28): renaming fullAccessCapacity made
   // this read
@@ -74,6 +74,11 @@ const slab = (src, from, to) => {
     '__cases', '__cfg', '__queried', '__refuse', '__dead', `
     const FULL_MAX_OPEN_DEFAULT = ${DEFAULT};
     const FULL_CAP_PATH = 'config/fullAccess';
+    // RE-PINNED 2026-10-15 (v7.47): Eric, "Contractors have controls in settings just like me." The count is each
+    // advocate's own now; every case here is his (no advocateId), so his count is the whole store, as before.
+    // staffsettings.mjs D1 runs a contractor's count.
+    const contractorOf = (data) => (data && data.advocateId ? data.advocateId : '');
+    const contractorSettings = async () => null;
     const queryDocs = async (env, coll, filters, limit) => {
       __queried.push({ filters: filters.map((x) => x.join(' ')), limit });
       if (__dead) throw new Error('firestore down');
@@ -206,7 +211,7 @@ const slab = (src, from, to) => {
 // Modelled line for line on handleBookingClosure, and run rather than read.
 {
   const fn = (WORKER.match(/async function handleFullCapacity\(request, env\) \{[\s\S]*?\n\}/) || [''])[0];
-  const cap = (WORKER.match(/async function fullAccessCapacity\(env\) \{[\s\S]*?\n\}/) || [''])[0];
+  const cap = (WORKER.match(/async function fullAccessCapacity\(env, contractor = ''\) \{[\s\S]*?\n\}/) || [''])[0];
   const line = (WORKER.match(/const capacityLine = \(cap\) => \([\s\S]*?\);/) || [''])[0];
   // NEGATIVE CONTROL: renaming handleFullCapacity read
   //   FAIL  C9 the route lifts out of the shipped Worker
@@ -219,6 +224,8 @@ const slab = (src, from, to) => {
     const make = new Function('__writes', '__store', '__admin', `
       const FULL_MAX_OPEN_DEFAULT = 2;
       const FULL_CAP_PATH = 'config/fullAccess';
+      const contractorOf = () => '';
+      const contractorSettings = async () => null;
       const json = (o, s) => ({ status: s || 200, body: o });
       const requireAdmin = async () => (__admin ? { uid: 'admin' } : null);
       const queryDocs = async () => [];
@@ -333,7 +340,10 @@ const slab = (src, from, to) => {
     !/match \/config\//.test(RULES)
     && /match \/\{document=\*\*\} \{\s*allow read, write: if false;/.test(RULES));
   // /api/rates is client-served. It may say whether he is open, never how full.
-  const rates = slab(WORKER, 'async function handleRates(env) {', '\n}');
+  // RE-PINNED 2026-10-15 (v7.47): the route takes ?advocate= (a contractor's own prices and limit), so it is
+  // handleRates(env, url) now; what it publishes about the limit is still the bare boolean.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.47): `fullOpen: cap.room !== false` made `fullOpen: cap.open < cap.max` made C15 read FAIL.
+  const rates = slab(WORKER, 'async function handleRates(env, url) {', '\n}');
   // NEGATIVE CONTROL: adding `fullOpenCount: cap.open` to handleRates made
   // this read
   //   FAIL  C15 ... -- the client endpoint publishes a count

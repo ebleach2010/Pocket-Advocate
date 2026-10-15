@@ -218,6 +218,11 @@ access another advocate's data by changing IDs or URLs."
   payroll run or sent anywhere but his payroll screen.
   Anything that records money by hand (`set-paid`, `open-full`) is his
   alone: payroll pays contractors a share of what a case says was paid.
+- Whose settings apply is the case's advocate (`contractorOf`): a contractor's
+  door sign, prices and Full-Service limit for their clients, his for his and
+  for every page that names nobody. A new place that prices a case reads
+  `ratesForCase(env, data)`, a new ratchet goes through `raiseRatesFor`, and a
+  new client page that knows its case calls `officeFor(c.advocateId)`.
 - The security rules are published by the Worker (`worker/rules-release.js`,
   cron minute 11 of each quarter hour; outcome in `/api/diag?do=rules`). After
   ANY edit to firestore.rules or storage.rules run

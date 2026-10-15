@@ -34,6 +34,23 @@ const OFFICE_ZONE = 'America/Boise';
 
 let state = null;          // the last answer, or null before one arrives
 let inflight = null;
+// Whose door sign (2026-10-15): a contractor's client reads that contractor's.
+// Empty is his, which is every page that never says otherwise.
+let who = '';
+
+/**
+ * Point the cue at a case's own advocate. A page that knows whose case it is
+ * says so once; a change of advocate drops the old answer and asks again.
+ */
+export function officeFor(advocateId) {
+  const next = /^[\w-]{1,64}$/.test(String(advocateId || '')) ? String(advocateId) : '';
+  if (next === who) return;
+  who = next;
+  state = null;
+  inflight = null;
+  paintAll();
+  readOffice();
+}
 let timer = null;
 const painters = new Set();
 
@@ -46,19 +63,22 @@ export function officeNow() { return state; }
  */
 export async function readOffice() {
   if (inflight) return inflight;
+  const asked = who;
   inflight = (async () => {
     try {
       // no-store, deliberately. The route answers 200 with no cache-control,
       // which lets a browser heuristically reuse its own copy - and a cached
       // "in office" is exactly the thing that must never outlive his tap on
       // the switch. Polling a cache is worse than not polling.
-      const res = await fetch('/api/availability', {
+      const res = await fetch(`/api/availability${asked ? `?advocate=${encodeURIComponent(asked)}` : ''}`, {
         headers: { accept: 'application/json' },
         cache: 'no-store',
       });
       if (!res.ok) throw new Error(String(res.status));
       const out = await res.json();
       if (typeof out?.inOffice !== 'boolean') throw new Error('shape');
+      // An answer about somebody the page has since moved off is dropped.
+      if (asked !== who) return state;
       state = {
         inOffice: out.inOffice,
         // The answer is in or out, and the line he has written. Nothing else is

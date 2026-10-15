@@ -15,7 +15,7 @@ import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
 import { wireHelp, openCaseHelp } from './help.js';
 import { GOOGLE_REVIEW_WRITE_URL } from './reviews-config.js';
-import { officeCueHtml } from './office.js';
+import { officeCueHtml, officeFor } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
 import {
@@ -871,6 +871,8 @@ function renderChat(el, c) {
   const opensOn = startMs ? new Intl.DateTimeFormat('en-US', {
     month: 'long', day: 'numeric',
   }).format(new Date(startMs - 7 * 86_400_000)) : '';
+  // Their own advocate's door sign (2026-10-15): a contractor's, on a contractor's case.
+  officeFor(c.advocateId);
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
     <div class="chat-who" data-chat-who>
@@ -1482,13 +1484,26 @@ const fullAccessPrice = () => fullAccessCents;
 // Named, because the upgrade card has to know when this has landed. It used
 // to be fire-and-forget, so a slow or failed fetch left the compiled-in price
 // on a card that the Worker would then refuse.
-const ratesReady = fetch('/api/rates')
-  .then((r) => (r.ok ? r.json() : null))
-  .then((d) => {
-    if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents);
-    if (Number(d?.teleCents) > 0) telehealthCents = Number(d.teleCents);
-  })
-  .catch(() => { /* the compiled-in price is right at deploy time */ });
+//
+// WHOSE PRICES (2026-10-15): a contractor's client is quoted that
+// contractor's own, so the read names the case's advocate once the case is
+// known, and an answer for an advocate the page has moved off is dropped.
+let ratesWho = null;
+let ratesReady = Promise.resolve();
+function readCaseRates(advocateId) {
+  const who = /^[\w-]{1,64}$/.test(String(advocateId || '')) ? String(advocateId) : '';
+  if (who === ratesWho) return ratesReady;
+  ratesWho = who;
+  ratesReady = fetch(`/api/rates${who ? `?advocate=${encodeURIComponent(who)}` : ''}`)
+    .then((r) => (r.ok ? r.json() : null))
+    .then((d) => {
+      if (who !== ratesWho) return;
+      if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents);
+      if (Number(d?.teleCents) > 0) telehealthCents = Number(d.teleCents);
+    })
+    .catch(() => { /* the compiled-in price is right at deploy time */ });
+  return ratesReady;
+}
 
 /**
  * True on the one page load that comes straight back from Stripe. The offer
@@ -1687,6 +1702,7 @@ function wireExtendOffer(el, c) {
 }
 
 function renderAddons(el, c) {
+  readCaseRates(c.advocateId);
   // A family member's case (2026-09-03) is free, and so is everything on it:
   // no follow-up to buy, no upgrade, no extension, no telehealth fee.
   if (c.family) {

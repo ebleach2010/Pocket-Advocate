@@ -5,7 +5,7 @@
 import { db, collection, getDocs, doc, getDoc, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
 import { mountChat, watchPresence, advocatePhoto } from './chat.js';
-import { officeCueHtml } from './office.js';
+import { officeCueHtml, officeFor } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
 import { wireHelp } from './help.js';
@@ -39,6 +39,8 @@ async function load() {
         key: `case:${d.id}`,
         label: c.status === 'closed' ? (many && when ? `${named} (closed)` : 'Case (closed)') : named,
         parentPath: ['cases', d.id],
+        // Whose door sign the pill shows while this thread is open (2026-10-15).
+        advocateId: c.advocateId || '',
         closed: c.status === 'closed',
         // A paused case's chat is paused too (Eric, 2026-10-03).
         paused: c.status !== 'closed' && !!c.hold?.pausedAt,
@@ -87,6 +89,7 @@ async function load() {
 
   function open() {
     const t = threads.find((x) => x.key === current);
+    officeFor(t.advocateId || '');
     mountChat({
       container: chatEl,
       parentPath: t.parentPath,

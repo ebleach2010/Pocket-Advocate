@@ -108,6 +108,12 @@ export function demoApi(role, store) {
   // Staff are him or an advocate (2026-10-15); `me` is whoever is signed in.
   const staff = role === 'admin' || role === 'advocate';
   const me = role === 'advocate' ? 'demo-advocate' : role === 'admin' ? 'demo-admin' : 'demo-client';
+  // A contractor's record, when the uid names an active one that is not his.
+  const demoContractor = (uid) => {
+    if (!uid || !/^[\w-]{1,64}$/.test(uid) || uid === 'demo-admin') return null;
+    const rec = store.docs.get(`advocates/${uid}`);
+    return rec && rec.active === true && rec.owner !== true ? rec : null;
+  };
 
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url || '';
@@ -157,6 +163,9 @@ export function demoApi(role, store) {
       const SEEDS = { caseCents: 210000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500 };
       const now = { ...SEEDS, ...(store.docs.get('config/rates') || {}) };
       if (path === '/api/rates') {
+        // A contractor's own prices over his, as the Worker does (2026-10-15).
+        const own = demoContractor(q.get('advocate'));
+        for (const k of ['caseCents', 'addonCents', 'fullCents']) if (Number(own?.settings?.rates?.[k]) > 0) now[k] = own.settings.rates[k];
         return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20 });
       }
       const want = { ...now };
@@ -576,7 +585,9 @@ export function demoApi(role, store) {
         store.docs.set(key, next);
         store.persist?.();
       }
-      const raw = store.docs.get(key) || {};
+      // A contractor's own door sign on their client's page (2026-10-15).
+      const own = path === '/api/availability' ? demoContractor(q.get('advocate')) : null;
+      const raw = own ? (own.settings?.office || {}) : (store.docs.get(key) || {});
       const manual = raw.manual === 'in' || raw.manual === 'out' ? raw.manual : null;
       const typed = typeof raw.responseTime === 'string' ? raw.responseTime.trim() : '';
       const responseTime = typed ? typed.slice(0, 160) : null;
@@ -2648,6 +2659,44 @@ export function demoApi(role, store) {
         return ok({ ok: true, ...view(next) });
       }
       return fail(400, 'Bad request');
+    }
+    // A contractor's own settings (2026-10-15), mirroring worker/staffsettings.js.
+    if (path === '/api/staff/settings') {
+      if (role !== 'advocate') return fail(404, 'Not found');
+      const key = `advocates/${me}`;
+      const rec = store.docs.get(key) || {};
+      const set = { office: { ...(rec.settings?.office || {}) }, rates: { ...(rec.settings?.rates || {}) }, fullCap: rec.settings?.fullCap ?? null };
+      if ((init.method || 'GET') === 'POST') {
+        if (body.office?.manual !== undefined) {
+          if (![null, 'in', 'out'].includes(body.office.manual)) return fail(400, 'In office, out of office, or follow the office hours.');
+          set.office.manual = body.office.manual;
+        }
+        if (body.office?.responseTime !== undefined) set.office.responseTime = String(body.office.responseTime ?? '').trim().slice(0, 160) || null;
+        for (const k of ['caseCents', 'addonCents', 'fullCents']) {
+          const v = body.rates?.[k];
+          if (v === undefined) continue;
+          if (v !== null && !(Number.isInteger(v) && v >= 50 && v <= 2_000_000)) return fail(400, 'A price from $0.50 to $20,000.');
+          set.rates[k] = v;
+        }
+        if (body.fullCap !== undefined) {
+          if (body.fullCap !== null && !(Number.isInteger(body.fullCap) && body.fullCap >= 0 && body.fullCap <= 99)) return fail(400, 'A number from 0 (no limit) to 99.');
+          set.fullCap = body.fullCap;
+        }
+        store.docs.set(key, { ...rec, settings: set });
+        store.persist?.();
+      }
+      const SEEDS = { caseCents: 210000, addonCents: 32500, fullCents: 440000 };
+      const std = { ...SEEDS, ...(store.docs.get('config/rates') || {}) };
+      const manual = set.office.manual || null;
+      const now = new Date();
+      const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', weekday: 'short' }).format(now);
+      const hr = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', hour: 'numeric', hour12: false }).format(now)) % 24;
+      const scheduled = !['Fri', 'Sat', 'Sun'].includes(wd) && hr >= 8 && hr < 19;
+      const rates = Object.fromEntries(Object.entries(set.rates).filter(([, v]) => Number(v) > 0));
+      return ok({
+        office: { inOffice: manual ? manual === 'in' : scheduled, scheduled, manual, responseTime: set.office.responseTime || null },
+        rates, standard: { caseCents: std.caseCents, addonCents: std.addonCents, fullCents: std.fullCents }, fullCap: set.fullCap,
+      });
     }
     if (path === '/api/staff/payout') {
       if (!staff) return fail(404, 'Not found');

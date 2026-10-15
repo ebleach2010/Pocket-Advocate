@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.46';
+export const VERSION = '7.47';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.46';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // CONTRACTORS' OWN SETTINGS (Eric, 2026-10-15: "Contractors have controls
+    // in settings just like me."). Admin only.
+    version: '7.47',
+    quiet: true,
+    client: [],
+    admin: [
+      'Contractors have their own settings in the cog: in or out of office with a response line their clients read, their own prices for their own clients, and how many Full-Service clients they take at once.',
+      'Your settings stay yours. A contractor\'s sale never moves yours, and your Full-Service limit counts only your own clients now.',
+    ],
+  },
   {
     // EMPLOYER MODE AND PAYROLL (Eric, 2026-10-15: "I (and only I) need a
     // button to enter employer mode ... I also need to be able to run payroll

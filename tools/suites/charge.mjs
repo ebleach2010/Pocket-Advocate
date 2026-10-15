@@ -131,7 +131,7 @@ const day = 86_400_000;
 {
   const body = lift(W, 'async function handleCaseCharge(request, env) {');
   const names = ['requireAdmin', 'requireStaff', 'staffSees', 'json', 'getDoc', 'chargeDecision', 'captureHold', 'readIntent', 'patchDoc',
-    'stripePost', 'caseLineItems', 'raiseRates', 'cancelHold', 'releaseSlotOfCase', 'CHARGE_COPY', 'notifyUser',
+    'stripePost', 'caseLineItems', 'raiseRates', 'raiseRatesFor', 'cancelHold', 'releaseSlotOfCase', 'CHARGE_COPY', 'notifyUser',
     'sendEmail', 'escHtml', 'console'];
   const mk = body ? new Function(...names, `return ${body}`) : null;
   const run = async (c, req, { captureFails = null, intent = null, admin = { uid: 'eric' } } = {}) => {
@@ -149,6 +149,9 @@ const day = 86_400_000;
       stripePost: async (env, path, params) => { log.push(['stripe', path, params]); return { id: 'cs_link', url: 'https://pay.test/x' }; },
       caseLineItems: (cents) => [{ price_data: { unit_amount: cents } }],
       raiseRates: async () => { log.push(['raise']); },
+      // RE-PINNED 2026-10-15 (v7.47): a contractor's sale never climbs his prices, so the route asks raiseRatesFor
+      // with the case; a case of his raises them exactly as before (staffsettings.mjs D2 pins the rule).
+      raiseRatesFor: async () => { log.push(['raise']); },
       cancelHold: async (env, pi) => { log.push(['cancel', pi]); },
       releaseSlotOfCase: async (env, id) => { log.push(['slot', id]); },
       CHARGE_COPY: mod.CHARGE_COPY,
@@ -244,7 +247,9 @@ const day = 86_400_000;
     // not a sale and raises nothing, and its mail says the time is confirmed rather than a payment.
     // NEGATIVE CONTROL (run 2026-10-15, v7.41): the raise put back to `if (created && !held) await raiseRates` made this read
     //   FAIL  CH3 the slot checkout, ...
-    && /if \(created && !held && !\(inviteId && !invitePaid\)\) await raiseRates\(env\)/.test(W)
+    // RE-PINNED 2026-10-15 (v7.47): the raise asks whose case it is (raiseRatesFor); the gate before it is unchanged.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.47): the gate put back to `if (created && !held) await raiseRatesFor` made this read FAIL.
+    && /if \(created && !held && !\(inviteId && !invitePaid\)\) await raiseRatesFor\(env, \{ advocateId \}\)/.test(W)
     && /if \(created && held\) \{\n\s+await pingAdmins\(env,\n\s+`\$\{firstName\(m\.name\) \|\| 'A client'\} booked a case\. Their card is held, not charged: approve or decline it\.`/.test(W)
     && /subject: held \? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',/.test(W)
     && /\$\{held \? escHtml\(CHARGE_COPY\.held\) : inviteId && !invitePaid \? 'Your time is confirmed\. Your case file is live\.' : 'Payment confirmed/.test(W)
@@ -272,6 +277,9 @@ const day = 86_400_000;
       notifyUser: async (env, uid, n) => { log.push(['notify', uid, n.body]); },
       readIntent: async () => intent,
       raiseRates: async () => { log.push(['raise']); },
+      // RE-PINNED 2026-10-15 (v7.47): a contractor's sale never climbs his prices, so the route asks raiseRatesFor
+      // with the case; a case of his raises them exactly as before (staffsettings.mjs D2 pins the rule).
+      raiseRatesFor: async () => { log.push(['raise']); },
       firstName: (s) => String(s || '').split(' ')[0],
       CHARGE_COPY: mod.CHARGE_COPY,
       HOLD_DAYS: mod.HOLD_DAYS,
@@ -280,7 +288,7 @@ const day = 86_400_000;
     };
     return { log, fakes };
   };
-  const names = ['queryDocs', 'tryQuery', 'READ_FAILED', 'readFailedError', 'patchDoc', 'pingAdmins', 'notifyUser', 'readIntent', 'raiseRates', 'firstName', 'CHARGE_COPY', 'HOLD_DAYS', 'HOLD_REMIND_AFTER_DAYS'];
+  const names = ['queryDocs', 'tryQuery', 'READ_FAILED', 'readFailedError', 'patchDoc', 'pingAdmins', 'notifyUser', 'readIntent', 'raiseRates', 'raiseRatesFor', 'firstName', 'CHARGE_COPY', 'HOLD_DAYS', 'HOLD_REMIND_AFTER_DAYS'];
   const runCanceled = async (row) => {
     const { log, fakes } = mkFakes(row ? [row] : [], null);
     await new Function(...names, `return ${canceled}`)(...names.map((n) => fakes[n]))({}, { id: 'pi_1' });

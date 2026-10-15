@@ -248,9 +248,12 @@ check('T9h asking for the tier charges nothing and takes no card',
   /async function handleUpgradeCheckout/.test(SRC)
   && !/stripePost[\s\S]{0,400}?kind: 'fullaccess'[\s\S]{0,200}?\n\}\n\nasync function handleFullRequestDecision/.test(SRC)
   && /state: 'pending'/.test(SRC));
+// RE-PINNED 2026-10-15 (v7.47): Eric, "Contractors have controls in settings just like me": the approval counts the
+// case's own advocate's limit (his on his cases, as before).
+// NEGATIVE CONTROL (run 2026-10-15, v7.47): the approval's cap check made `if (false && !cap.room ...` made T9i read FAIL.
 check('T9i only an approval can create a tier case, so the cap cannot be raced',
   /async function handleFullRequestDecision/.test(SRC)
-  && /const cap = await fullAccessCapacity\(env\);\n\s*if \(!cap\.room && !body\?\.overrideCap\)/.test(SRC));
+  && /const cap = await fullAccessCapacity\(env, contractorOf\(c\.data, env\)\);\n\s*if \(!cap\.room && !body\?\.overrideCap\)/.test(SRC));
 check('T9j a decline is written in his words and charges nothing',
   /Write the reason\. The client reads it word for word\./.test(SRC)
   && /state: 'declined'/.test(SRC));

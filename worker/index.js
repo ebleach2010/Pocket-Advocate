@@ -79,6 +79,7 @@ import { handleFund, drainFundNotices } from './fund.js';
 import { handleAdvocates, isStaffLogin, advocateLogin } from './advocates.js';
 import { handleEmployer } from './employer.js';
 import { handlePayroll } from './payroll.js';
+import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
 // The security rules, published by the Worker when what it carries changes.
 import { releaseRules, RULES_STATUS } from './rules-release.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
@@ -596,11 +597,35 @@ async function handleSetRates(request, env) {
   });
 }
 
-async function handleRates(env) {
-  const [r, cap] = await Promise.all([
+/**
+ * The prices a case is sold at (2026-10-15): his list, with its contractor's
+ * own prices laid over it when the case is a contractor's.
+ */
+async function ratesForCase(env, data) {
+  const base = await readRates(env);
+  const uid = contractorOf(data, env);
+  const own = uid ? await contractorSettings(env, uid).catch(() => null) : null;
+  return own ? mergeRates(base, own) : base;
+}
+
+/**
+ * His prices climb with each of HIS bookings (raiseRates). A contractor's
+ * booking is on their own list, which only they change, so it moves nothing.
+ */
+async function raiseRatesFor(env, data) {
+  if (contractorOf(data, env)) return;
+  await raiseRates(env);
+}
+
+async function handleRates(env, url) {
+  // ?advocate=<uid> (2026-10-15): a contractor's client reads that
+  // contractor's own prices and limit; anything else reads his.
+  const own = await contractorSettings(env, url?.searchParams.get('advocate') || '').catch(() => null);
+  const [base, cap] = await Promise.all([
     readRates(env),
-    fullAccessCapacity(env).catch(() => ({ room: true })),
+    fullAccessCapacity(env, own ? url.searchParams.get('advocate') : '').catch(() => ({ room: true })),
   ]);
+  const r = own ? mergeRates(base, own) : base;
   // floorCents is deliberately NOT here: it is Eric's own margin line, it has
   // no business on a client-served endpoint, and the admin reads it back
   // through POST /api/admin/rates.
@@ -999,6 +1024,9 @@ export default {
         return await handlePayroll(request, env, url, { requireAdmin, requireStaff, json });
       if (url.pathname === '/api/staff/leads' && request.method === 'GET')
         return await handleStaffLeads(request, env);
+      // A contractor's own settings (2026-10-15): their door sign, prices and limit.
+      if (url.pathname === '/api/staff/settings')
+        return await handleStaffSettings(request, env, { requireStaff, json, readRates, officeStatus });
       if (url.pathname === '/api/admin/advocates' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
         return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json });
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
@@ -1099,7 +1127,7 @@ export default {
       if (url.pathname === '/api/reviews/admin')
         return await handleReviewsAdmin(request, env);
       if (url.pathname === '/api/rates' && request.method === 'GET')
-        return await handleRates(env);
+        return await handleRates(env, url);
       // Public like /api/rates: totals and medians across every case, nothing
       // per client, computed daily by the cron and served from a cache.
       if (url.pathname === '/api/stats' && request.method === 'GET')
@@ -1111,7 +1139,7 @@ export default {
       // on handleAvailability: anonymous and polled once a minute means every
       // field it returns is a public timeline.
       if (url.pathname === '/api/availability' && request.method === 'GET')
-        return await handleAvailability(env);
+        return await handleAvailability(env, url);
       // The flight recorder's read hatch. Temporary scaffolding for the
       // advisor incident: run telemetry only, no case content anywhere in
       // the payload. Wrong or missing key answers 404 like every admin
@@ -1800,8 +1828,12 @@ async function readOfficeHours(env) {
  * he is the one person entitled to know why his own door sign says what it
  * says, and that route is behind requireAdmin.
  */
-async function handleAvailability(env) {
-  const { manual, responseTime } = await readOfficeHours(env);
+async function handleAvailability(env, url) {
+  // ?advocate=<uid> (2026-10-15): a contractor's client sees that
+  // contractor's own door sign and line, the office hours standing in for a
+  // schedule of their own. Anything else, his. Still the two keys and no more.
+  const own = await contractorSettings(env, url?.searchParams.get('advocate') || '').catch(() => null);
+  const { manual, responseTime } = own ? own.office : await readOfficeHours(env);
   const state = officeStatus(manual);
   return json({
     inOffice: state.inOffice,
@@ -2308,7 +2340,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-employer-mode';
+const BUILD_TAG = 'v2026-10-15-contractor-settings';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2316,7 +2348,7 @@ const BUILD_TAG = 'v2026-10-15-employer-mode';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.46';
+const VERSION = '7.47';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2873,7 +2905,7 @@ async function handleCaseCharge(request, env) {
   await patchDoc(env, `cases/${caseId}`, fields, { mask });
 
   if (d.op === 'cancel') await cancelHold(env, ch.paymentIntentId).catch((err) => console.warn('release hold:', err.message || err));
-  if (approved && !ch.ratedAt) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  if (approved && !ch.ratedAt) await raiseRatesFor(env, c.data).catch((err) => console.warn('rate raise:', err.message || err));
   if (next.state === 'declined') await releaseSlotOfCase(env, caseId).catch(() => {});
 
   // The client's words, the same in the push and the mail.
@@ -2944,7 +2976,7 @@ async function confirmCaseCharge(env, session) {
     paidSessionId: session.id, ratedAt: ch.ratedAt || now,
   };
   await patchDoc(env, `cases/${caseId}`, { charge: next }, { mask: ['charge'] });
-  if (!ch.ratedAt) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  if (!ch.ratedAt) await raiseRatesFor(env, c.data).catch((err) => console.warn('rate raise:', err.message || err));
   if (c.data.clientUid) {
     await notifyUser(env, c.data.clientUid, {
       title: 'Pocket Advocate', body: CHARGE_COPY.approvedCharged(cents), link: `/case.html?id=${caseId}`,
@@ -2984,7 +3016,7 @@ async function holdSweep(env) {
         await patchDoc(env, `cases/${r.id}`, {
           charge: { ...ch, state: 'captured', capturedCents: cents, capturedAt: new Date(), decidedAt: new Date(), byHand: true, ratedAt: ch.ratedAt || new Date() },
         }, { mask: ['charge'] }).catch(() => {});
-        if (!ch.ratedAt) await raiseRates(env).catch(() => {});
+        if (!ch.ratedAt) await raiseRatesFor(env, r.data).catch(() => {});
         continue;
       }
     }
@@ -3033,7 +3065,11 @@ function fullAccessWindowEnd(c) {
  * room in the world". So the fallback is the previous query with a bigger page
  * and the JS filter, never an empty list.
  */
-async function fullAccessCapacity(env) {
+async function fullAccessCapacity(env, contractor = '') {
+  // EACH ADVOCATE'S OWN (2026-10-15). His limit counts his clients and a
+  // contractor's counts theirs: a contractor's Full-Service client is not
+  // one of the slots protecting his attention, and his are not theirs.
+  const whose = (r) => contractorOf(r.data, env) === contractor;
   const openRows = async () => {
     try {
       // His own case carries fullAccess so its tools are on, and it must not
@@ -3041,12 +3077,19 @@ async function fullAccessCapacity(env) {
       return (await queryDocs(env, 'cases', [
         ['fullAccess', 'EQUAL', true],
         ['status', 'NOT_EQUAL', 'closed'],
-      ], 200)).filter((r) => !r.data.self);
+      ], 200)).filter((r) => !r.data.self && whose(r));
     } catch {
       const all = await queryDocs(env, 'cases', [['fullAccess', 'EQUAL', true]], 200);
-      return all.filter((r) => r.data.status !== 'closed' && !r.data.self);
+      return all.filter((r) => r.data.status !== 'closed' && !r.data.self && whose(r));
     }
   };
+  if (contractor) {
+    // Theirs is on their record; not chosen is no limit, the way his 0 is.
+    const [rows, own] = await Promise.all([openRows().catch(() => null), contractorSettings(env, contractor).catch(() => null)]);
+    const max = own?.fullCap ?? 0;
+    const open = rows ? rows.length : 0;
+    return { open, max, room: max === 0 || open < max, counted: rows !== null };
+  }
   const [rows, cfg] = await Promise.all([
     openRows().catch(() => null),
     getDoc(env, FULL_CAP_PATH).catch(() => null),
@@ -3839,7 +3882,8 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   // The rate as it stands at the moment this case is created. Read once and
   // used twice: written onto the case as what this client bought at, and, one
   // booking later, what the next client is quoted.
-  const rateAtBooking = await readRates(env);
+  // A contractor's case is sold at their own prices (2026-10-15).
+  const rateAtBooking = await ratesForCase(env, { advocateId });
   // Which service was bought. Carried as its own metadata field rather than a
   // Stripe `kind`, because "no kind" is what tells the webhook this session
   // creates a case at all, and both tiers do.
@@ -3944,7 +3988,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   // replay cannot bump the rate a second time. A held case raises the rate
   // when he approves it, not before: a booking he declines is not a client.
   // A case he scheduled at no charge is not a sale, so it moves nothing.
-  if (created && !held && !(inviteId && !invitePaid)) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  if (created && !held && !(inviteId && !invitePaid)) await raiseRatesFor(env, { advocateId }).catch((err) => console.warn('rate raise:', err.message || err));
   if (created && held) {
     await pingAdmins(env,
       `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
@@ -7079,7 +7123,7 @@ async function handleUpgradeCheckout(request, env) {
   if (existing?.state === 'pending')
     return json({ ok: true, state: 'pending', at: existing.at });
 
-  const live = await readRates(env);
+  const live = await ratesForCase(env, c.data);
   const req = {
     state: 'pending',
     at: new Date(),
@@ -7096,9 +7140,11 @@ async function handleUpgradeCheckout(request, env) {
     { mask: ['fullAccessRequest'], ifUpdateTime: c.updateTime });
   if (wrote === false) return json({ error: 'Try that once more.' }, 409);
 
-  const cap = await fullAccessCapacity(env);
-  for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => [])) {
-    await notifyUser(env, a.id, {
+  // The case's own advocate decides it, and counts against their own limit
+  // (2026-10-15); on his cases that is him, as it always was.
+  const cap = await fullAccessCapacity(env, contractorOf(c.data, env));
+  {
+    await notifyUser(env, advocateIdOf(c.data, env), {
       title: 'Pocket Advocate',
       // "3 of undefined" is what this printed the moment the cap could be
       // turned off, so the phrase comes from one place that has a branch for
@@ -7154,7 +7200,7 @@ async function handleFullRequestDecision(request, env) {
 
   // Approving. Capacity is checked HERE, at the only moment that can create
   // one of these, so the cap cannot be raced any more.
-  const cap = await fullAccessCapacity(env);
+  const cap = await fullAccessCapacity(env, contractorOf(c.data, env));
   if (!cap.room && !body?.overrideCap)
     return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
 
@@ -7163,7 +7209,7 @@ async function handleFullRequestDecision(request, env) {
   // (2026-09-06, "change it to any value"): any whole amount, and zero opens
   // the month at no charge with no link at all.
   const quoted = Number(req.firstMonthCents) > 0
-    ? Number(req.firstMonthCents) : upgradeCents(c.data, (await readRates(env)).fullCents);
+    ? Number(req.firstMonthCents) : upgradeCents(c.data, (await ratesForCase(env, c.data)).fullCents);
   const asked = body?.amountCents;
   const cents = asked === undefined || asked === null ? quoted : Number(asked);
   if (!Number.isInteger(cents) || cents < 0 || cents > 2_000_000)
