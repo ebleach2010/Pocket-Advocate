@@ -210,26 +210,34 @@ async function loadDrafts() {
   } catch (err) { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
 }
 
+/** The month a payroll belongs to: the month its period ends in. */
+const monthOf = (r) => new Date(`${r.end}T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+
+// PAY HISTORY, A FOLDER A MONTH (Eric, 2026-10-15: "When I press 'paid,' the
+// spreadsheet gets put in a folder for that month."). The newest month opens
+// on its own; each paid payroll inside it opens the whole report again.
 async function loadHistory() {
   const box = document.getElementById('pr-history');
   try {
     const { runs } = await payroll('GET');
-    const done = runs.filter((r) => r.status === 'confirmed');
-    if (!done.length) { box.innerHTML = '<p class="dim">Nothing confirmed yet. A payroll you confirm lands here, by month.</p>'; return; }
+    const done = runs.filter((r) => r.status !== 'draft');
+    if (!done.length) { box.innerHTML = '<p class="dim">Nothing paid yet. A payroll you mark Paid goes in a folder for its month, here.</p>'; return; }
     const byMonth = new Map();
     for (const r of done) {
-      const m = new Date(`${r.end}T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      const m = monthOf(r);
       if (!byMonth.has(m)) byMonth.set(m, []);
       byMonth.get(m).push(r);
     }
-    box.innerHTML = [...byMonth.entries()].map(([m, rs]) => `
-      <h2 class="pr-month">${esc(m)}</h2>
-      <div class="pr-list">${rs.map((r) => `
-        <div class="panel pr-item">
-          <span><span class="pr-chip done">CONFIRMED</span> ${esc(longDay(r.start))} to ${esc(longDay(r.end))}</span>
-          <span>${r.people} ${r.people === 1 ? 'person' : 'people'} · <strong>${money(r.totals?.totalCents)}</strong></span>
-          <span class="pr-acts"><button type="button" class="btn quiet" data-open="${esc(r.id)}">View</button></span>
-        </div>`).join('')}</div>`).join('');
+    box.innerHTML = [...byMonth.entries()].map(([m, rs], i) => `
+      <details class="pr-folder"${i === 0 ? ' open' : ''}>
+        <summary><span class="pr-month">${esc(m)}</span><span class="pr-folder-sum">${rs.length} ${rs.length === 1 ? 'payroll' : 'payrolls'} · ${money(rs.reduce((t, r) => t + (Number(r.totals?.totalCents) || 0), 0))}</span></summary>
+        <div class="pr-list">${rs.map((r) => `
+          <div class="pr-item">
+            <span><span class="pr-chip done">PAID</span>${r.editedAt ? ' <span class="pr-chip">EDITED</span>' : ''} ${esc(longDay(r.start))} to ${esc(longDay(r.end))}</span>
+            <span>${r.people} ${r.people === 1 ? 'person' : 'people'} · <strong>${money(r.totals?.totalCents)}</strong></span>
+            <span class="pr-acts"><button type="button" class="btn quiet" data-open="${esc(r.id)}">Open</button></span>
+          </div>`).join('')}</div>
+      </details>`).join('');
     box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', async () => {
       const { run } = await payroll('GET', null, b.dataset.open);
       showTab('payroll');
@@ -239,18 +247,26 @@ async function loadHistory() {
 }
 
 /** The report: Mangomint's columns, a row per person, the totals under them. */
+// A paid payroll he has said yes to editing, by id, for as long as it is open.
+let editingPaid = '';
+
 function showRun(run) {
   const box = document.getElementById('pr-report');
-  const draft = run.status === 'draft';
+  const paid = run.status !== 'draft';
+  if (editingPaid !== run.id) editingPaid = '';
+  // Whether the figures can be changed right now: a draft, or a paid one he said yes to.
+  const draft = !paid || editingPaid === run.id;
   const rows = run.rows || [];
   const t = run.totals || {};
   const payCell = (r) => (r.payout?.label ? `${esc(r.payout.label)}<br><span class="dim small">${esc(r.payout.hint || '')}</span>` : '<span class="dim">Not set yet</span>');
   box.innerHTML = `
     <div class="pr-head">
-      <h2>${esc(longDay(run.start))} to ${esc(longDay(run.end))} <span class="pr-chip ${draft ? 'draft' : 'done'}">${draft ? 'DRAFT' : 'CONFIRMED'}</span></h2>
+      <h2>${esc(longDay(run.start))} to ${esc(longDay(run.end))} <span class="pr-chip ${paid ? 'done' : 'draft'}">${paid ? 'PAID' : 'DRAFT'}</span>${run.editedAt ? ' <span class="pr-chip">EDITED</span>' : ''}</h2>
       <div class="pr-acts">
         <button type="button" class="btn quiet" data-dl>Download spreadsheet</button>
-        ${draft ? '<button type="button" class="btn danger" data-del>Delete</button><button type="button" class="btn glow" data-confirm>Confirm payroll</button>' : ''}
+        ${!paid ? '<button type="button" class="btn danger" data-del>Delete</button><button type="button" class="btn glow" data-confirm>Paid</button>'
+    : editingPaid === run.id ? '<button type="button" class="btn quiet" data-edit-done>Done editing</button>'
+      : '<button type="button" class="btn quiet" data-edit-paid>Edit</button>'}
       </div>
     </div>
     <div class="pr-scroll">
@@ -260,23 +276,23 @@ function showRun(run) {
           ${rows.map((r) => `
           <tr data-row="${esc(r.uid)}">
             <td><button type="button" class="pr-who" data-expand="${esc(r.uid)}" aria-expanded="false">${esc(r.name)}${r.sample ? ' <span class="pr-chip draft">SAMPLE</span>' : ''}</button><br><span class="dim small">${r.owner ? 'All yours' : `${r.commissionPct}% share`}</span></td>
-            <td>${r.cases}</td>
-            <td>${money(r.salesCents)}</td>
-            <td>${r.deductionsCents ? signed(-r.deductionsCents) : money(0)}</td>
-            <td>${money(r.commissionCents)}</td>
-            <td>${money(r.tipsCents)}</td>
-            <td>${signed(r.adjustmentsCents)}${draft ? `<button type="button" class="pr-plus" data-plus="${esc(r.uid)}" aria-label="Add a pay adjustment for ${esc(r.name)}">+</button>` : ''}</td>
-            <td>${draft ? `<button type="button" class="pr-amt" data-set="${esc(r.uid)}" aria-label="Adjust ${esc(r.name)}'s pay">${signed(r.totalCents)}</button>` : signed(r.totalCents)}</td>
-            <td style="text-align:left;">${payCell(r)}</td>
+            <td data-label="Cases">${r.cases}</td>
+            <td data-label="Client sales">${money(r.salesCents)}</td>
+            <td data-label="Deductions">${r.deductionsCents ? signed(-r.deductionsCents) : money(0)}</td>
+            <td data-label="Commission">${money(r.commissionCents)}</td>
+            <td data-label="Tips">${money(r.tipsCents)}</td>
+            <td data-label="Pay adjustments"><span>${signed(r.adjustmentsCents)}${draft ? `<button type="button" class="pr-plus" data-plus="${esc(r.uid)}" aria-label="Add a pay adjustment for ${esc(r.name)}">+</button>` : ''}</span></td>
+            <td data-label="Total" class="pr-tot-cell">${draft ? `<button type="button" class="pr-amt" data-set="${esc(r.uid)}" aria-label="Adjust ${esc(r.name)}'s pay">${signed(r.totalCents)}</button>` : signed(r.totalCents)}</td>
+            <td data-label="Payout method" class="pr-pay-cell" style="text-align:left;"><span>${payCell(r)}</span></td>
           </tr>
           <tr data-detail="${esc(r.uid)}" hidden><td class="pr-detail" colspan="9">${detailHtml(r, draft)}</td></tr>`).join('')}
-          <tr class="pr-total"><td>Total</td><td>${t.cases || 0}</td><td>${money(t.salesCents)}</td><td>${t.deductionsCents ? signed(-t.deductionsCents) : money(0)}</td><td>${money(t.commissionCents)}</td><td>${money(t.tipsCents)}</td><td>${signed(t.adjustmentsCents || 0)}</td><td>${signed(t.totalCents || 0)}</td><td></td></tr>
+          <tr class="pr-total"><td>Total</td><td data-label="Cases">${t.cases || 0}</td><td data-label="Client sales">${money(t.salesCents)}</td><td data-label="Deductions">${t.deductionsCents ? signed(-t.deductionsCents) : money(0)}</td><td data-label="Commission">${money(t.commissionCents)}</td><td data-label="Tips">${money(t.tipsCents)}</td><td data-label="Pay adjustments">${signed(t.adjustmentsCents || 0)}</td><td data-label="Total" class="pr-tot-cell">${signed(t.totalCents || 0)}</td><td class="pr-pay-cell"></td></tr>
         </tbody>
       </table>
     </div>
     ${(run.notes || []).map((n) => `<p class="pr-note">${esc(n)}</p>`).join('')}
-    ${rows.some((r) => r.sample) ? '<p class="pr-note">The sample contractor is shown so you can see the layout. Confirming leaves her out.</p>' : ''}
-    <p class="pr-note">Tap a name for every line behind it. ${draft ? 'Tap a total to correct it, or + to add a bonus, a reimbursement or a pay adjustment. A minus takes money off.' : 'Confirmed: this payroll no longer changes.'}</p>`;
+    ${rows.some((r) => r.sample) ? '<p class="pr-note">The sample contractor is shown so you can see the layout. Marking it paid leaves her out.</p>' : ''}
+    <p class="pr-note">Tap a name for every line behind it. ${draft ? 'Tap a total to correct it, or + to add a bonus, a reimbursement or a pay adjustment. A minus takes money off.' : `Paid, in the ${esc(monthOf(run))} folder in Pay history. Edit asks you first.`}</p>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   box.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', () => {
     const row = box.querySelector(`[data-detail="${CSS.escape(b.dataset.expand)}"]`);
@@ -285,7 +301,7 @@ function showRun(run) {
   }));
   box.querySelectorAll('[data-plus]').forEach((b) => b.addEventListener('click', () => adjust(run, b.dataset.plus, 'add')));
   box.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => adjust(run, b.dataset.set, 'set')));
-  box.querySelectorAll('[data-unadj]').forEach((b) => b.addEventListener('click', async () => showRun((await payroll('POST', { action: 'unadjust', id: run.id, adjId: b.dataset.unadj })).run)));
+  box.querySelectorAll('[data-unadj]').forEach((b) => b.addEventListener('click', async () => showRun((await payroll('POST', { action: 'unadjust', id: run.id, adjId: b.dataset.unadj, editPaid: paid })).run)));
   box.querySelectorAll('[data-reveal]').forEach((b) => b.addEventListener('click', () => reveal(rows.find((r) => r.uid === b.dataset.reveal))));
   box.querySelector('[data-dl]').addEventListener('click', () => download(run));
   box.querySelector('[data-del]')?.addEventListener('click', async () => {
@@ -296,12 +312,20 @@ function showRun(run) {
     loadDrafts();
   });
   box.querySelector('[data-confirm]')?.addEventListener('click', async () => {
-    const sure = await ask({ title: 'Confirm this payroll?', body: `${longDay(run.start)} to ${longDay(run.end)}, ${money(t.totalCents)} in all. It moves to Pay history and can no longer change.`, okLabel: 'Confirm payroll' });
+    const sure = await ask({ title: 'Mark this payroll paid?', body: `${longDay(run.start)} to ${longDay(run.end)}, ${money(t.totalCents)} in all. It goes in the ${monthOf(run)} folder in Pay history. You can still edit it there.`, okLabel: 'Paid' });
     if (!sure) return;
     const out = await payroll('POST', { action: 'confirm', id: run.id });
     showRun(out.run);
     loadDrafts();
   });
+  // Editing a paid payroll asks first, in his words (2026-10-15).
+  box.querySelector('[data-edit-paid]')?.addEventListener('click', async () => {
+    const sure = await ask({ title: 'Are you sure you want to edit this paid payroll?', body: 'Any change is kept on it with the date, and it stays in its month.', okLabel: 'Edit', danger: true });
+    if (!sure) return;
+    editingPaid = run.id;
+    showRun(run);
+  });
+  box.querySelector('[data-edit-done]')?.addEventListener('click', () => { editingPaid = ''; showRun(run); loadHistory(); });
 }
 
 function detailHtml(r, draft) {
@@ -349,7 +373,7 @@ function adjust(run, uid, mode) {
     const cents = mode === 'set' ? typed - r.totalCents : typed;
     if (!cents) { close(); return; }
     try {
-      const out = await payroll('POST', { action: 'adjust', id: run.id, uid, cents, type: mode === 'set' ? 'Correction' : f.type.value, note: f.note.value });
+      const out = await payroll('POST', { action: 'adjust', id: run.id, uid, cents, type: mode === 'set' ? 'Correction' : f.type.value, note: f.note.value, editPaid: run.status !== 'draft' });
       close();
       showRun(out.run);
     } catch (x) { err.textContent = x.message; err.hidden = false; }
@@ -381,7 +405,7 @@ function download(run) {
   const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const d = (c) => ((Number(c) || 0) / 100).toFixed(2);
   const out = [];
-  out.push(['Payroll', `${run.start} to ${run.end}`, run.status === 'draft' ? 'Draft' : 'Confirmed']);
+  out.push(['Payroll', `${run.start} to ${run.end}`, run.status === 'draft' ? 'Draft' : 'Paid']);
   out.push([]);
   out.push(['Staff', 'Share %', 'Cases', 'Client sales', 'Deductions', 'Commission', 'Tips', 'Pay adjustments', 'Total owed', 'Payout method']);
   for (const r of run.rows || []) {

@@ -298,6 +298,24 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Payroll: all of it, and Paid (2026-10-15, v7.49)
+
+Eric: "Payroll chart should not be cut off. The whole spreadsheet should be
+visible once run. When I press 'paid,' the spreadsheet gets put in a folder
+for that month. It can still be edited if needed but with a warning prompt of
+(are you sure you want to edit this paid payroll?)". Under 760px the report is
+a card a person (every cell carries `data-label`), the totals the last card;
+wider, the spreadsheet. Confirm is Paid, and Pay history is a manila folder a
+month (the month the period ends in), the newest open. A paid run takes an
+adjust or unadjust only with `editPaid: true`, which the page sends after his
+yes to "Are you sure you want to edit this paid payroll?"; each edit is kept
+on the run (`edits`, `editedAt`) and it shows EDITED. It is never paid twice or
+deleted.
+
+`employer.mjs` grew E5. `drive-employer.mjs` grew two checks (the whole report
+on his phone; a paid payroll locked until Edit asks) and re-pinned with dated
+notes and controls its Paid-to-folder and 320px checks. Release R1.
+
 ### Warm public pages (2026-10-15, v7.48)
 
 Eric: "try adding the same warm style from the preview suite to the landing

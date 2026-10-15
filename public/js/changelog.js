@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.48';
+export const VERSION = '7.49';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.48';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PAYROLL, ALL OF IT, AND PAID (Eric, 2026-10-15: "Payroll chart should
+    // not be cut off. The whole spreadsheet should be visible once run. When
+    // I press 'paid,' the spreadsheet gets put in a folder for that month. It
+    // can still be edited if needed but with a warning prompt"). Admin only.
+    version: '7.49',
+    quiet: true,
+    client: [],
+    admin: [
+      'The payroll report fits your phone: each person is a card with every figure on it, and the totals are the last card. On a wide screen it is still the spreadsheet.',
+      'Paid puts a payroll in a folder for its month in Pay history. A paid payroll can still be edited: Edit asks "Are you sure you want to edit this paid payroll?" first, and it is marked edited.',
+    ],
+  },
   {
     // WARM PUBLIC PAGES (Eric, 2026-10-15: "try adding the same warm style
     // from the preview suite to the landing page. Something I can easily

@@ -325,6 +325,25 @@ console.log('\n--- E. the runs ---');
     && conf.out.run.status === 'confirmed' && delConf.status === 409 && adjConf.status === 409
     && list.out.runs.length === 1 && list.out.runs[0].status === 'confirmed',
     JSON.stringify([del.status, conf.out?.run?.status, delConf.status, adjConf.status, list.out?.runs?.length]));
+  {
+  // Eric, 2026-10-15: "When I press 'paid,' the spreadsheet gets put in a folder for that month. It can still be edited
+  // if needed but with a warning prompt of (are you sure you want to edit this paid payroll?)". The prompt is the
+  // page's; the Worker takes an edit of a paid run only when the request carries his yes, and keeps it with its date.
+  const paidTotal = w.docs.get(`payrollRuns/${id}`).totals.totalCents;
+  const editPaid = await call(w, 'pay', ERIC, '/api/admin/payroll', { method: 'POST', json: { action: 'adjust', id, uid: 'adv-a', cents: 2500, type: 'Bonus', editPaid: true } });
+  const paidAgain = await call(w, 'pay', ERIC, '/api/admin/payroll', { method: 'POST', json: { action: 'confirm', id, editPaid: true } });
+  const undoPaid = await call(w, 'pay', ERIC, '/api/admin/payroll', { method: 'POST', json: { action: 'unadjust', id, adjId: editPaid.out?.run?.adjustments?.at(-1)?.id, editPaid: true } });
+  const paidDoc = w.docs.get(`payrollRuns/${id}`);
+  const listed = (await call(w, 'pay', ERIC, '/api/admin/payroll')).out.runs[0];
+  // NEGATIVE CONTROL (run 2026-10-15, v7.49): the Worker's `body.editPaid !== true` check taken out (any edit of a paid run let through) made this read
+  //   FAIL  E5 a paid payroll stays in its month and takes an edit only with his yes: the edit lands, the totals follow, each edit is kept with its date, and it is never paid twice or deleted
+  check('E5 a paid payroll stays in its month and takes an edit only with his yes: the edit lands, the totals follow, each edit is kept with its date, and it is never paid twice or deleted',
+    adjConf.status === 409 && editPaid.status === 200 && editPaid.out.run.status === 'confirmed' && editPaid.out.run.totals.totalCents === paidTotal + 2500
+    && paidAgain.status === 409 && undoPaid.status === 200 && paidDoc.totals.totalCents === paidTotal && paidDoc.status === 'confirmed'
+    && Array.isArray(paidDoc.edits) && paidDoc.edits.length === 2 && paidDoc.edits[0].action === 'adjust' && paidDoc.edits[0].cents === 2500 && paidDoc.edits[1].action === 'unadjust'
+    && !!paidDoc.editedAt && !!listed.editedAt && delConf.status === 409,
+    JSON.stringify({ e: editPaid.status, again: paidAgain.status, undo: undoPaid.status, edits: paidDoc.edits, total: [paidTotal, paidDoc.totals?.totalCents] }));
+  }
   const asAna = await call(w, 'pay', 'adv-a', '/api/admin/payroll');
   const asNobody = await call(w, 'pay', '', '/api/admin/payroll', { method: 'POST', json: { action: 'generate', start: '2026-09-01', end: '2026-09-30' } });
 // NEGATIVE CONTROL (run 2026-10-15): the payroll route asking requireStaff instead of requireAdmin made this read

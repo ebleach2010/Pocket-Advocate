@@ -200,6 +200,24 @@ const report = await adm.evaluate(() => {
   return { heads, rows, total: document.querySelector('table.pr tr.pr-total')?.textContent.replace(/\s+/g, ' ').trim() };
 });
 if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-5-payroll.png`, fullPage: true });
+// Eric, 2026-10-15: "Payroll chart should not be cut off. The whole spreadsheet should be visible once run." On his
+// phone each person is a card holding every figure, labelled, and nothing reaches past the screen.
+const whole = await adm.evaluate(() => {
+  const cards = [...document.querySelectorAll('table.pr tr[data-row], table.pr tr.pr-total')];
+  const labels = (tr) => [...tr.querySelectorAll('td[data-label]')].map((td) => getComputedStyle(td, '::before').content.replace(/"/g, ''));
+  return {
+    cards: cards.length,
+    grid: cards.every((tr) => getComputedStyle(tr).display === 'grid'),
+    labels: labels(cards[0] || document.body),
+    past: [...document.querySelectorAll('#pr-report *')].filter((e) => e.checkVisibility() && e.getBoundingClientRect().right > innerWidth + 1).map((e) => e.tagName + '.' + e.className).slice(0, 4),
+    scrolls: (() => { const f = document.querySelector('.pr-scroll'); return f ? f.scrollWidth > f.clientWidth + 1 : true; })(),
+  };
+});
+// NEGATIVE CONTROL (run 2026-10-15, v7.49): the page's phone rules (@media (max-width: 760px)) made (max-width: 10px) made this read
+//   FAIL  the whole report is on his phone's screen: a card for each person and one for the totals, every figure labelled, nothing past the edge
+ok('the whole report is on his phone\'s screen: a card for each person and one for the totals, every figure labelled, nothing past the edge',
+  whole.cards === report.rows.length + 1 && whole.grid && whole.labels.join('|') === 'Cases|Client sales|Deductions|Commission|Tips|Pay adjustments|Total|Payout method'
+  && !whole.past.length && !whole.scrolls, JSON.stringify(whole));
 // NEGATIVE CONTROL (run 2026-10-15): the report's Pay adjustments column taken out of showRun made this read
 //   FAIL  Run report lays it out the Mangomint way: Cases, Client sales, Deductions, Commission, Tips, Pay adjustments, Total and how each is paid, a row for each person, him included, and a total
 ok('Run report lays it out the Mangomint way: Cases, Client sales, Deductions, Commission, Tips, Pay adjustments, Total and how each is paid, a row for each person, him included, and a total',
@@ -245,11 +263,35 @@ await tap(adm, 'dialog.ask-sheet[open] button[value="ok"]');
 await tryStep(() => adm.waitForSelector('[data-del]', { state: 'detached', timeout: 8000 }));
 await tap(adm, '[data-emp-tab="history"]');
 await adm.waitForTimeout(1200);
-const hist = await adm.evaluate(() => ({ months: [...document.querySelectorAll('.pr-month')].map((m) => m.textContent.trim()), items: document.querySelectorAll('#pr-history .pr-item').length, drafts: document.querySelectorAll('#pr-drafts .pr-item').length }));
+const hist = await adm.evaluate(() => ({ months: [...document.querySelectorAll('.pr-folder .pr-month')].map((m) => m.textContent.trim()), open: document.querySelector('.pr-folder')?.open, items: document.querySelectorAll('#pr-history .pr-folder .pr-item').length, chip: document.querySelector('#pr-history .pr-chip')?.textContent.trim(), drafts: document.querySelectorAll('#pr-drafts .pr-item').length }));
+if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-6-folders.png`, fullPage: false });
+// RE-PINNED AND RENAMED 2026-10-15 (v7.49): Eric, "When I press 'paid,' the spreadsheet gets put in a folder for that
+// month." The button is Paid and Pay history is a folder a month.
 // NEGATIVE CONTROL (run 2026-10-15): confirm leaving the run a draft made this read
 //   FAIL  Confirm moves it to Pay history under its month; a draft deletes and leaves nothing behind
-ok('Confirm moves it to Pay history under its month; a draft deletes and leaves nothing behind',
-  hist.months.length === 1 && hist.items === 1 && hist.drafts === 0, JSON.stringify(hist));
+// NEGATIVE CONTROL (run 2026-10-15, v7.49): the demo's confirm leaving the run a draft made this read
+//   FAIL  Paid puts it in its month's folder in Pay history, the newest folder open; a draft deletes and leaves nothing behind
+ok('Paid puts it in its month\'s folder in Pay history, the newest folder open; a draft deletes and leaves nothing behind',
+  hist.months.length === 1 && hist.open === true && hist.items === 1 && hist.chip === 'PAID' && hist.drafts === 0, JSON.stringify(hist));
+// "It can still be edited if needed but with a warning prompt of (are you sure you want to edit this paid payroll?)"
+await tap(adm, '#pr-history .pr-folder [data-open]');
+await tryStep(() => adm.waitForSelector('[data-edit-paid]', { state: 'visible', timeout: 8000 }));
+const lockedFirst = await adm.evaluate(() => !document.querySelector('#pr-report [data-set]') && !document.querySelector('#pr-report [data-plus]'));
+await tap(adm, '[data-edit-paid]');
+const warned = await adm.evaluate(() => document.querySelector('dialog.ask-sheet[open] h2, dialog[open] h2')?.textContent.trim() || '');
+await tap(adm, 'dialog.ask-sheet[open] button[value="ok"]');
+await tryStep(() => adm.waitForSelector('#pr-report [data-plus="demo-advocate"]', { state: 'visible', timeout: 8000 }));
+await tap(adm, '#pr-report [data-plus="demo-advocate"]');
+await tryStep(() => adm.waitForSelector('dialog.ask-sheet[open] [name="amount"]', { timeout: 8000 }));
+await tryStep(() => adm.fill('dialog.ask-sheet [name="amount"]', '25', { timeout: 3000 }));
+await tap(adm, 'dialog.ask-sheet[open] button[value="ok"]');
+await tryStep(() => adm.waitForFunction(() => /EDITED/.test(document.querySelector('#pr-report .pr-head h2')?.textContent || ''), null, { timeout: 8000 }));
+const edited = await adm.evaluate(() => ({ head: document.querySelector('#pr-report .pr-head h2')?.textContent.replace(/\s+/g, ' ').trim(), ana: document.querySelector('#pr-report [data-set="demo-advocate"]')?.textContent.trim() }));
+// NEGATIVE CONTROL (run 2026-10-15, v7.49): the Edit button opening the figures without asking (the ask taken out) made this read
+//   FAIL  a paid payroll is locked until Edit asks "Are you sure you want to edit this paid payroll?"; after yes a change lands and it is marked EDITED
+ok('a paid payroll is locked until Edit asks "Are you sure you want to edit this paid payroll?"; after yes a change lands and it is marked EDITED',
+  lockedFirst && warned === 'Are you sure you want to edit this paid payroll?' && /PAID/.test(edited.head || '') && /EDITED/.test(edited.head || '') && edited.ana === '$1,259.50',
+  JSON.stringify({ lockedFirst, warned, edited }));
 
 console.log('\n--- F. a contractor\'s own + and pay ---');
 await ana.goto(`${P}/admin.html?demo=advocate`, { waitUntil: 'networkidle' });
@@ -294,13 +336,16 @@ const narrow = await n1.evaluate(() => {
   const frame = document.querySelector('.pr-scroll');
   return {
     past: [...document.querySelectorAll('main *')].filter((e) => e.checkVisibility() && !e.closest('.pr-scroll') && e.getBoundingClientRect().right > innerWidth + 1).map((e) => e.tagName + '.' + e.className).slice(0, 4),
-    // The table is wider than the phone, so it has to scroll inside its frame.
-    framed: !!frame && /auto|scroll/.test(getComputedStyle(frame).overflowX) && frame.scrollWidth > frame.clientWidth && frame.getBoundingClientRect().right <= innerWidth + 1,
+    // RE-PINNED 2026-10-15 (v7.49): Eric, "The whole spreadsheet should be visible once run." On a phone it is a card
+    // a person, so the frame holds everything and scrolls nowhere.
+    framed: !!frame && frame.scrollWidth <= frame.clientWidth + 1 && frame.getBoundingClientRect().right <= innerWidth + 1 && [...frame.querySelectorAll('*')].every((e) => !e.checkVisibility() || e.getBoundingClientRect().right <= innerWidth + 1),
   };
 });
 // NEGATIVE CONTROL (run 2026-10-15): `.pr-scroll { overflow-x: auto }` made `visible` made this read
 //   FAIL  at 320px nothing runs off the screen; the table scrolls inside its own frame
-ok('at 320px nothing runs off the screen; the table scrolls inside its own frame', !narrow.past.length && narrow.framed, JSON.stringify(narrow));
+// NEGATIVE CONTROL (run 2026-10-15, v7.49): the one-column rule for the narrowest phones (max-width: 380px) taken out made this read
+//   FAIL  at 320px nothing runs off the screen; every figure fits inside the report, nothing scrolls sideways
+ok('at 320px nothing runs off the screen; every figure fits inside the report, nothing scrolls sideways', !narrow.past.length && narrow.framed, JSON.stringify(narrow));
 // NEGATIVE CONTROL (run 2026-10-15): a `null.x` put at the top of admin-employer.js made this read
 //   FAIL  no page threw
 ok('no page threw', !errs.length, JSON.stringify(errs.slice(0, 3)));

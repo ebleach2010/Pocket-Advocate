@@ -162,6 +162,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // tan again with its glow, the client side is warm with his photo, Progress celebrates, and the preview has its tour.
   // NEGATIVE CONTROL (run 2026-10-15, v7.45): changelog.js's VERSION left at '7.44' made this read
   //   FAIL  R1 both versions read 7.45 with the new tag, the 7.45 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.49): both versions read 7.49 with the payroll-paid tag, and the 7.49 entry says the
+  // report fits his phone, Paid files it by month, and editing a paid one asks first in his words.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.49): the worker's VERSION left at '7.48' made this read
+  //   FAIL  R1 both versions read 7.49 with the new tag, the 7.49 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry749 = (CL.match(/\{\n\s+\/\/ PAYROLL, ALL OF IT, AND PAID \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.48): both versions read 7.48 with the warm-public tag, and the 7.48 entry says what
   // wears the warm look and how to undo it.
   // NEGATIVE CONTROL (run 2026-10-15, v7.48): changelog.js's VERSION left at '7.47' made this read
@@ -196,9 +201,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.48 with the new tag, the 7.48 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.48';/.test(CL) && /const VERSION = '7\.48';/.test(W) && /const BUILD_TAG = 'v2026-10-15-warm-public';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.48'
+  check('R1 both versions read 7.49 with the new tag, the 7.49 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.49';/.test(CL) && /const VERSION = '7\.49';/.test(W) && /const BUILD_TAG = 'v2026-10-15-payroll-paid';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.49'
+    && /version: '7\.49',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry749)
+    && /fits your phone/.test(entry749) && /Paid puts a payroll in a folder for its month/.test(entry749)
+    && /Are you sure you want to edit this paid payroll\?/.test(entry749)
+    && !DASH.test(entry749) && !HARD.some((re) => re.test(entry749))
     && /version: '7\.48',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry748)
     && /wear the warm look/.test(entry748) && /turn off Warm public pages in your settings/.test(entry748)
     && !DASH.test(entry748) && !HARD.some((re) => re.test(entry748))

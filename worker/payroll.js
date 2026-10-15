@@ -307,7 +307,7 @@ async function staffPayout(request, env, h) {
 // ---- the runs -------------------------------------------------------------------
 
 const summary = (id, d) => ({
-  id, status: d.status, start: d.start, end: d.end, preset: d.preset || 'custom', createdAt: d.createdAt, confirmedAt: d.confirmedAt || null,
+  id, status: d.status, start: d.start, end: d.end, preset: d.preset || 'custom', createdAt: d.createdAt, confirmedAt: d.confirmedAt || null, editedAt: d.editedAt || null,
   totals: d.totals || null, people: Array.isArray(d.rows) ? d.rows.filter((r) => !r.sample).length : 0,
 });
 
@@ -360,11 +360,19 @@ async function payrollRoute(request, env, url, h) {
   const run = doc.data;
 
   if (body.action === 'delete') {
-    if (run.status !== 'draft') return h.json({ error: 'A confirmed payroll stays in the history.' }, 409);
+    if (run.status !== 'draft') return h.json({ error: 'A paid payroll stays in its month.' }, 409);
     await deleteDoc(env, `payrollRuns/${id}`);
     return h.json({ ok: true });
   }
-  if (run.status !== 'draft') return h.json({ error: 'This payroll is confirmed and can no longer change.' }, 409);
+  // PAID, AND STILL EDITABLE (Eric, 2026-10-15: "When I press 'paid,' the
+  // spreadsheet gets put in a folder for that month. It can still be edited
+  // if needed but with a warning prompt of (are you sure you want to edit
+  // this paid payroll?)"). A paid run takes an adjustment only when the
+  // request says he answered yes (editPaid), and every such edit is kept on
+  // the run with when it happened.
+  const paid = run.status !== 'draft';
+  if (paid && body.action === 'confirm') return h.json({ error: 'This payroll is already paid.' }, 409);
+  if (paid && body.editPaid !== true) return h.json({ error: 'This payroll is paid. Say you are sure you want to edit it first.', paid: true }, 409);
 
   const withPayouts = async (rows) => { const p = await payoutMap(env); return rows.map((r) => ({ ...r, payout: p.get(r.uid) || null })); };
   const recompute = (adjustments) => {
@@ -376,6 +384,11 @@ async function payrollRoute(request, env, url, h) {
     return { rows, totals: totalsOf(rows) };
   };
 
+  // What an edit of a paid run leaves behind: when, and what was done.
+  const editStamp = (what) => (paid
+    ? { editedAt: new Date(), edits: [...(Array.isArray(run.edits) ? run.edits : []), { at: new Date().toISOString(), ...what }].slice(-100) }
+    : {});
+  const editMask = paid ? ['editedAt', 'edits'] : [];
   if (body.action === 'adjust') {
     const uid = String(body.uid || '');
     if (!(run.rows || []).some((r) => r.uid === uid)) return h.json({ error: 'Not on this payroll.' }, 400);
@@ -385,14 +398,17 @@ async function payrollRoute(request, env, url, h) {
     const adj = { id: crypto.randomUUID().slice(0, 8), uid, type, cents, note: line(body.note, 200), at: new Date().toISOString() };
     const adjustments = [...(run.adjustments || []), adj];
     const next = recompute(adjustments);
-    await patchDoc(env, `payrollRuns/${id}`, { adjustments, rows: next.rows, totals: next.totals }, { mask: ['adjustments', 'rows', 'totals'] });
-    return h.json({ run: { id, ...run, adjustments, ...next, rows: await withPayouts(next.rows) } });
+    const stamp = editStamp({ action: 'adjust', uid, cents, type });
+    await patchDoc(env, `payrollRuns/${id}`, { adjustments, rows: next.rows, totals: next.totals, ...stamp }, { mask: ['adjustments', 'rows', 'totals', ...editMask] });
+    return h.json({ run: { id, ...run, adjustments, ...next, ...stamp, rows: await withPayouts(next.rows) } });
   }
   if (body.action === 'unadjust') {
+    const gone = (run.adjustments || []).find((a) => a.id === String(body.adjId || ''));
     const adjustments = (run.adjustments || []).filter((a) => a.id !== String(body.adjId || ''));
     const next = recompute(adjustments);
-    await patchDoc(env, `payrollRuns/${id}`, { adjustments, rows: next.rows, totals: next.totals }, { mask: ['adjustments', 'rows', 'totals'] });
-    return h.json({ run: { id, ...run, adjustments, ...next, rows: await withPayouts(next.rows) } });
+    const stamp = editStamp({ action: 'unadjust', uid: gone?.uid || '', cents: gone ? -gone.cents : 0, type: gone?.type || '' });
+    await patchDoc(env, `payrollRuns/${id}`, { adjustments, rows: next.rows, totals: next.totals, ...stamp }, { mask: ['adjustments', 'rows', 'totals', ...editMask] });
+    return h.json({ run: { id, ...run, adjustments, ...next, ...stamp, rows: await withPayouts(next.rows) } });
   }
   if (body.action === 'confirm') {
     // The sample contractor is never paid: her row goes before it is kept.

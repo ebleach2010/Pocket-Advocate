@@ -2751,7 +2751,7 @@ export function demoApi(role, store) {
       if ((init.method || 'GET') === 'GET') {
         const id = q.get('id');
         if (id) { const r = store.docs.get(`payrollRuns/${id}`); return r ? ok({ run: shown({ id, ...r }) }) : fail(404, 'Not found'); }
-        return ok({ runs: runs().map(({ id, data: r }) => ({ id, status: r.status, start: r.start, end: r.end, preset: r.preset, createdAt: r.createdAt, confirmedAt: r.confirmedAt || null, totals: r.totals, people: (r.rows || []).filter((x) => !x.sample).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+        return ok({ runs: runs().map(({ id, data: r }) => ({ id, status: r.status, start: r.start, end: r.end, preset: r.preset, createdAt: r.createdAt, confirmedAt: r.confirmedAt || null, editedAt: r.editedAt || null, totals: r.totals, people: (r.rows || []).filter((x) => !x.sample).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
       }
       if (body.action === 'generate') {
         const s = new Date(`${body.start}T00:00:00-07:00`).getTime();
@@ -2790,11 +2790,14 @@ export function demoApi(role, store) {
       const run = store.docs.get(`payrollRuns/${id}`);
       if (!run) return fail(404, 'Not found');
       if (body.action === 'delete') {
-        if (run.status !== 'draft') return fail(409, 'A confirmed payroll stays in the history.');
+        if (run.status !== 'draft') return fail(409, 'A paid payroll stays in its month.');
         store.docs.delete(`payrollRuns/${id}`); store.persist?.();
         return ok({ ok: true });
       }
-      if (run.status !== 'draft') return fail(409, 'This payroll is confirmed and can no longer change.');
+      // Paid, and still editable once he says he is sure (2026-10-15), as the Worker does.
+      const paid = run.status !== 'draft';
+      if (paid && body.action === 'confirm') return fail(409, 'This payroll is already paid.');
+      if (paid && body.editPaid !== true) return fail(409, 'This payroll is paid. Say you are sure you want to edit it first.');
       const recompute = (adjustments) => {
         const rows = run.rows.map((r) => { const mine = adjustments.filter((a) => a.uid === r.uid); const adj = mine.reduce((t, a) => t + a.cents, 0); return { ...r, adjustments: mine, adjustmentsCents: adj, totalCents: r.commissionCents + r.tipsCents - r.deductionsCents + adj }; });
         return { rows, totals: totalsOf(rows) };
@@ -2806,7 +2809,8 @@ export function demoApi(role, store) {
           if (!Number.isFinite(cents) || !cents) return fail(400, 'An amount, please. A minus sign takes it off.');
           adjustments = [...adjustments, { id: Date.now().toString(36), uid: String(body.uid), type: body.type || 'Pay adjustment', cents, note: String(body.note || '').slice(0, 200), at: new Date().toISOString() }];
         } else adjustments = adjustments.filter((a) => a.id !== body.adjId);
-        const next = { ...run, adjustments, ...recompute(adjustments) };
+        const stamp = paid ? { editedAt: new Date().toISOString(), edits: [...(run.edits || []), { at: new Date().toISOString(), action: body.action }] } : {};
+        const next = { ...run, adjustments, ...recompute(adjustments), ...stamp };
         store.docs.set(`payrollRuns/${id}`, next); store.persist?.();
         return ok({ run: shown({ id, ...next }) });
       }
