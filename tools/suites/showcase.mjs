@@ -114,7 +114,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
     const pend = [];
     let n = 0;
     const api = new Function('deps', `
-      const { queryDocs, patchDoc, batchCreate, putFile, patchObjectMeta, markPending, BUCKET, crypto, JOE, CHAT, docsFor, textPdf, MILESTONES, WORK_LOG, AUTHORITY, DAY } = deps;
+      const { queryDocs, patchDoc, batchCreate, putFile, patchObjectMeta, markPending, BUCKET, crypto, JOE, CHAT, docsFor, textPdf, MILESTONES, WORK_LOG, AUTHORITY, AGENDA, TELEHEALTH, DAY } = deps;
       ${atSrc}
       ${lift(SRC, 'function authorityItem(now, [days, hour, kind, fields]) {')}
       ${buildSrc}
@@ -128,7 +128,8 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
       markPending: async (env, kind, id, opts) => { pend.push([kind, id, opts]); },
       BUCKET: 'bucket.appspot.com',
       crypto: { randomUUID: () => `u${++n}` },
-      JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: pdf.textPdf, MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, DAY: 86_400_000,
+      // The next-call list and the telehealth visit joined the build on 2026-10-15 (v7.41); opencases.mjs checks them.
+      JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: pdf.textPdf, MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, AGENDA: mod.AGENDA, TELEHEALTH: mod.TELEHEALTH, DAY: 86_400_000,
     });
     const out = await api({}, { adminUid: 'eric-uid' });
     return { out, writes, puts, metas, created, pend };
@@ -270,14 +271,22 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
 check('X6 Delete sits beside pause and close on a case with nobody behind it and on his own case\'s card, both confirm and post to the delete route, the shelf builds the showcase from one door and marks its row, and the demo mirrors both routes',
   /\$\{c\.showcase \|\| c\.self \? `\n\s+<hr[^\n]*\n\s+<p class="dim small"[^\n]*\$\{c\.showcase\n\s+\? 'This is the showcase case/.test(CASE)
   && /<button class="btn quiet danger" data-delete-case>Delete this case<\/button>/.test(CASE)
-  && /<button type="button" class="btn quiet danger" data-delete-case>Delete it<\/button>/.test(CASE)
-  && /async function deleteCase\(btn\) \{\n\s+if \(!confirm\('Delete this case, whole\?/.test(CASE)
+  // RE-PINNED 2026-10-15 (v7.41): Eric, "let me delete my own cases". On his own case Delete moved to the top of
+  // the Overview, open or closed, and it asks in the app's own sheet instead of the browser's grey box.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.41): the sheet's title changed to 'Delete it?' made this read
+  //   FAIL  X6 Delete sits beside pause and close on a case with nobody behind it and on his own case's card, ...
+  && /<p class="row self-del-row"><button type="button" class="btn quiet danger tiny" data-delete-case>Delete this case<\/button><\/p>\n\s+<div class="facts self-facts">/.test(CASE)
+  && !/data-delete-case>Delete it</.test(CASE)
+  && /async function deleteCase\(btn\) \{\n[^\n]*\n\s+const yes = await ask\(\{\n\s+title: 'Delete this case\?',[\s\S]{0,300}?danger: true,\n\s+\}\);\n\s+if \(!yes\) return;/.test(CASE)
+  && !/confirm\('Delete this case/.test(CASE)
   && /fetch\('\/api\/admin\/delete-case', \{/.test(CASE) && /location\.href = '\/admin\.html';/.test(CASE)
   // Re-pinned 2026-09-22 (v6.0): back to two. The desk left the folder, and
   // deleting it is a row in its own Settings sheet now.
   && (CASE.match(/\[data-delete-case\]'\)\?\.addEventListener\('click', \(e\) => deleteCase\(e\.currentTarget\)\);/g) || []).length === 2
-  && /data-showcase-door>Build the showcase case \(Joe Bloe\)<\/button>/.test(ADMIN)
-  && /cases\.some\(\(c\) => c\.showcase\) \? '' :/.test(ADMIN)
+  // RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says
+  // 'showcase'". The door is the + menu's first item, always there: it builds Joe Bloe or walks into him.
+  && /<button type="button" role="menuitem" data-showcase-door>Showcase<\/button>/.test(f('public/admin.html'))
+  && /menu\.querySelector\('\[data-showcase-door\]'\)\?\.addEventListener\('click'/.test(ADMIN)
   && /fetch\('\/api\/admin\/showcase-case', \{/.test(ADMIN)
   && /SHOWCASE, nobody behind it/.test(ADMIN)
   && /path === '\/api\/admin\/showcase-case'/.test(DEMO) && /path === '\/api\/admin\/delete-case'/.test(DEMO)

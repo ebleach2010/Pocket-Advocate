@@ -53,15 +53,19 @@ const before = await page.evaluate(() => ({
   shelf: [...document.querySelectorAll('h2')].some((h) => /MY OWN CASE/.test(h.textContent)),
   count: (document.body.textContent.match(/(\d+) cases?, every one backed/) || [])[1],
 }));
-ok('with no case of his own, the shelf offers the two purple doors, forms folded', before.button && before.text === 'Open a case for myself' && before.family && before.formHidden === true && !before.shelf, before.text);
-const btnColor = await purple(page, '[data-open-door="self"]');
-ok('and the button is the purple', !!btnColor && btnColor.color === hex2rgb(btnColor.want), btnColor ? `${btnColor.color} vs ${btnColor.want}` : '');
+// RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says
+// 'showcase', 'my own case' and 'schedule a case from a lead'". The two doors are the + menu's "My own case" and
+// "Family case"; the purple moved to the button that opens his case, inside the form.
+ok('with no case of his own, the + carries his door and the family door, forms folded', before.button && before.text === 'My own case' && before.family && before.formHidden === true && !before.shelf, before.text);
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/01-shelf-button.png` });
 
 console.log('\n--- B. opening it, with his own details ---');
+await page.click('[data-add-open]');
 await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 ok('the door unfolds the form', await page.evaluate(() => document.querySelector('[data-open-form="self"]')?.hidden === false));
+const btnColor = await purple(page, '[data-open-go="self"]');
+ok('and the button that opens it is the purple', !!btnColor && btnColor.color === hex2rgb(btnColor.want), btnColor ? `${btnColor.color} vs ${btnColor.want}` : '');
 await page.fill('[data-of="self:firstName"]', 'Eric');
 await page.fill('[data-of="self:lastName"]', 'Bleach');
 await page.fill('[data-of="self:dob"]', '1985-02-03');
@@ -243,7 +247,9 @@ console.log('\n--- F. a family case ---');
 // Re-pinned 2026-09-22: the own-case door has stayed since 2026-09-05 (more
 // than one case for himself, in sequence), reading as a plus once he has
 // one; this step had been asserting the older shelf.
-ok('the own-case door reads as a plus once he has a case, and the family door stays', await page.evaluate(() => (document.querySelector('[data-open-door="self"]')?.textContent || '').trim() === '+ Open another case for myself' && !!document.querySelector('[data-open-door="family"]')));
+// RE-PINNED 2026-10-15 (v7.41): the doors are the + menu's, the same words whether or not he has a case.
+ok('the own-case door stays once he has a case, and the family door stays', await page.evaluate(() => (document.querySelector('[data-open-door="self"]')?.textContent || '').trim() === 'My own case' && !!document.querySelector('[data-open-door="family"]')));
+await page.click('[data-add-open]');
 await page.click('[data-open-door="family"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="family:firstName"]', 'Ann');

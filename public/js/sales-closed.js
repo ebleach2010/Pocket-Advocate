@@ -50,6 +50,9 @@ function style() {
 
 export function closeSales() {
   if (inDemo()) return;
+  // An invitation he sent (2026-10-15) is not a sale anyone can start: the
+  // booking page opened from one is his time at his price, open or closed.
+  if (document.querySelector('main')?.dataset.sales === 'case' && new URLSearchParams(location.search).get('invite')) return;
   const main = document.querySelector('main');
   if (!main || main.querySelector('.pa-closed')) return;
   const pkg = main.dataset.sales;

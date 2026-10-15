@@ -37,6 +37,11 @@
 //   POST   /api/admin/case-charge    approve a held case at the amount he sets (zero included) or decline it and release the hold (admin)
 //   POST   /api/chat/reply         his answer to a question the read put in his own chat (admin)
 //   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
+//   POST   /api/admin/lead-invite  schedule a case from a lead: a time and a price, one email with a link (admin)
+//   POST   /api/admin/lead-invites the invitations still waiting on the person (admin)
+//   POST   /api/admin/lead-invite/cancel  withdraw one (admin)
+//   POST   /api/invite             the invitation's time and price, for the address it went to
+//   POST   /api/invite/confirm     confirm it: Stripe checkout at his price, or the case at once when free
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
@@ -958,6 +963,18 @@ export default {
         return await handleDeleteCase(request, env);
       if (url.pathname === '/api/admin/family-case' && request.method === 'POST')
         return await handleFamilyCase(request, env);
+      // Schedule a case from a lead (2026-10-15): his invitation and their
+      // confirm. Not sales routes: nobody can start one but him.
+      if (url.pathname === '/api/admin/lead-invite' && request.method === 'POST')
+        return await handleLeadInvite(request, env);
+      if (url.pathname === '/api/admin/lead-invites' && request.method === 'POST')
+        return await handleLeadInvites(request, env);
+      if (url.pathname === '/api/admin/lead-invite/cancel' && request.method === 'POST')
+        return await handleLeadInviteCancel(request, env);
+      if (url.pathname === '/api/invite' && request.method === 'POST')
+        return await handleInviteRead(request, env);
+      if (url.pathname === '/api/invite/confirm' && request.method === 'POST')
+        return await handleInviteConfirm(request, env);
       if (url.pathname === '/api/admin/case-update' && request.method === 'POST')
         return await handleCaseUpdate(request, env);
       if (url.pathname === '/api/admin/client-alert' && request.method === 'POST')
@@ -2137,7 +2154,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-two-weeks';
+const BUILD_TAG = 'v2026-10-15-the-plus';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2145,7 +2162,7 @@ const BUILD_TAG = 'v2026-10-15-two-weeks';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.40';
+const VERSION = '7.41';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3644,9 +3661,14 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   const acks = safeJson(m.acks) || {};
   const now = new Date();
   const allFormsDone = REQUIRED_ACKS.every((f) => typeof acks[f] === 'number');
-  const isRequest = !m.slotId && !!m.requestedStart;
-  const start = isRequest ? new Date(m.requestedStart) : slot ? new Date(slot.data.start) : null;
-  const caseId = crypto.randomUUID();
+  // A case he scheduled from a lead (2026-10-15): the time is his, set, not a
+  // request; the price is the one on the invitation; and the case takes the
+  // invitation's own id, so one invitation can only ever become one case.
+  const inviteId = typeof m.inviteId === 'string' && INVITE_ID_RE.test(m.inviteId) ? m.inviteId : '';
+  const invitePaid = inviteId ? Math.max(0, Number(m.priceCents) || 0) : 0;
+  const isRequest = !m.slotId && !!m.requestedStart && !inviteId;
+  const start = (isRequest || inviteId) ? new Date(m.requestedStart) : slot ? new Date(slot.data.start) : null;
+  const caseId = inviteId || crypto.randomUUID();
 
   // The rate as it stands at the moment this case is created. Read once and
   // used twice: written onto the case as what this client bought at, and, one
@@ -3703,7 +3725,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       // of THIS number, not of whatever the rate happens to be by then: a
       // client who paid $275 is not re-based onto a rate that moved after they
       // bought (Eric, "current client gets grandfathered in", 2026-08-20).
-      caseRateCents: rateAtBooking.caseCents,
+      caseRateCents: inviteId ? invitePaid : rateAtBooking.caseCents,
       // The follow-up price he was told at booking time. Eric: "The person who
       // books gets the add-on at the price they were originally told." Without
       // this, a client who booked at $265 would be quoted whatever the add-on
@@ -3731,15 +3753,31 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       // approval. Absent on a case paid outright, which is what every case
       // before this was, and what a hand-captured intent still is.
       charge: held ? heldChargeOf(session, held, now) : null,
+      ...(inviteId ? { invite: { id: inviteId, priceCents: invitePaid } } : {}),
     },
     { mustNotExist: true }
   );
+
+  if (inviteId) {
+    if (!created) {
+      // The invitation already opened its case. A second paid session for it
+      // is money with no case to go on, so he is told to send it back.
+      if (session.amount_total)
+        await pingAdmins(env, `${firstName(m.name)} paid twice for the case you scheduled. Refund the second payment from Stripe.`,
+          `/admin-case.html?id=${caseId}`);
+      return;
+    }
+    await patchDoc(env, `invites/${inviteId}`, { state: 'confirmed', confirmedAt: now, caseId },
+      { mask: ['state', 'confirmedAt', 'caseId'] }).catch(() => {});
+    await pingAdmins(env, `${firstName(m.name)} confirmed the case you scheduled.`, `/admin-case.html?id=${caseId}`);
+  }
 
   // mustNotExist returns falsy when the document already existed, which is how
   // a replayed Stripe webhook shows up. Raising here and only here means a
   // replay cannot bump the rate a second time. A held case raises the rate
   // when he approves it, not before: a booking he declines is not a client.
-  if (created && !held) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
+  // A case he scheduled at no charge is not a sale, so it moves nothing.
+  if (created && !held && !(inviteId && !invitePaid)) await raiseRates(env).catch((err) => console.warn('rate raise:', err.message || err));
   if (created && held) {
     await pingAdmins(env,
       `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
@@ -3780,7 +3818,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
     await sendEmail(env, {
       to: clientEmail,
       subject: held ? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',
-      html: `<p>${held ? escHtml(CHARGE_COPY.held) : 'Payment confirmed. Your case file is live.'}</p>
+      html: `<p>${held ? escHtml(CHARGE_COPY.held) : inviteId && !invitePaid ? 'Your time is confirmed. Your case file is live.' : 'Payment confirmed. Your case file is live.'}</p>
         ${whenHtml(start, m.tz)}
         <p>Meeting method: ${m.method}.</p>
         <p>Upload labs, imaging, or records any time before the call.</p>
@@ -10190,6 +10228,216 @@ async function claimFamilyCases(env, uid, email) {
     claimed += 1;
   }
   return claimed;
+}
+
+/**
+ * SCHEDULE A CASE FROM A LEAD (Eric, 2026-10-15: "schedule a case from a
+ * lead. Once a lead is scheduled they are prompted to fill out the forms and
+ * confirm the time and date."). He picks the person, the time and the price;
+ * they get one email with one link. The link is the booking page with the
+ * time already set: they sign in with the address it went to, give the same
+ * details and the same agreement every booking takes, and confirm. A price
+ * above zero is charged then, by card through Stripe (his answer: "Pay when
+ * they confirm"); zero opens the case with nothing to pay.
+ *
+ * None of these is in SALES_ROUTES: nobody can start one. Each is an
+ * invitation he made, to one address, for one time.
+ *
+ * invites/{id}: { email, name, start, priceCents, state, createdAt, by, caseId }
+ *   state 'sent' until they confirm ('confirmed', with the caseId) or he
+ *   withdraws it ('canceled'). The case they confirm is created with the
+ *   invite's own id, so one invitation can only ever become one case.
+ */
+const INVITE_ID_RE = /^[\w-]{6,64}$/;
+const INVITE_MIN_LEAD_MS = 3600_000;
+const INVITE_MAX_LEAD_MS = 365 * 86_400_000;
+
+/** The price for a sentence: "$2,100", or "$49.50" when there are cents. */
+function inviteDollars(cents) {
+  const n = Math.round(Number(cents) || 0);
+  return `$${(n / 100).toLocaleString('en-US', n % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {})}`;
+}
+
+/** The time on an invitation, the way every policy time is said: his clock. */
+function inviteWhen(start) {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  }).format(new Date(start));
+}
+
+/** The one email a lead gets. Pure, so the suite reads the words it sends. */
+function inviteEmail({ name, start, priceCents, link }) {
+  const first = String(name || '').trim().split(/\s+/)[0] || '';
+  const price = priceCents > 0 ? `${inviteDollars(priceCents)}, paid when you confirm.` : 'There is no charge.';
+  return {
+    subject: 'Your Advocacy Case call is set',
+    html: `<p>${first ? `Hi ${escHtml(first)},` : 'Hi,'}</p>
+      <p>I've set aside <strong>${inviteWhen(start)} MST</strong> for your Advocacy Case call. Sign in, fill out your forms, and confirm the time.</p>
+      <p>${price}</p>
+      <p><a href="${link}">Confirm your time</a></p>
+      <p>Sign in with this email address. A code comes to this inbox; there is no password.</p>
+      <p>Eric</p>`,
+  };
+}
+
+/** An address shown back to the wrong account, never in full: j***@example.com. */
+function maskEmail(email) {
+  const [user, host] = String(email || '').split('@');
+  if (!host) return 'another address';
+  return `${user.slice(0, 1)}***@${host}`;
+}
+
+// ---- POST /api/admin/lead-invite   Body: { email, name, start, priceCents }   admin only
+async function handleLeadInvite(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200)
+    return json({ error: 'Their email address, please.' }, 400);
+  const name = typeof body?.name === 'string' ? body.name.replace(/\s+/g, ' ').trim().slice(0, 120) : '';
+  const start = new Date(typeof body?.start === 'string' ? body.start : NaN);
+  if (Number.isNaN(start.getTime())) return json({ error: 'Pick a date and a time.' }, 400);
+  const lead = start.getTime() - Date.now();
+  if (lead < INVITE_MIN_LEAD_MS) return json({ error: 'Pick a time at least an hour from now.' }, 400);
+  if (lead > INVITE_MAX_LEAD_MS) return json({ error: 'Pick a time within the next year.' }, 400);
+  const priceCents = Number(body?.priceCents);
+  if (!Number.isInteger(priceCents) || priceCents < 0 || priceCents > RATE_MAX_CENTS)
+    return json({ error: `The price, from $0 to ${inviteDollars(RATE_MAX_CENTS)}.` }, 400);
+  // Stripe will not take a card payment under fifty cents.
+  if (priceCents > 0 && priceCents < 50)
+    return json({ error: 'Stripe cannot charge less than $0.50. Use 0 for no charge.' }, 400);
+  const id = crypto.randomUUID();
+  const now = new Date();
+  await patchDoc(env, `invites/${id}`, {
+    email, name: name || null, start, priceCents, state: 'sent', createdAt: now, by: admin.uid, caseId: null,
+  }, { mustNotExist: true });
+  const link = `${env.PUBLIC_BASE_URL}/book.html?invite=${id}`;
+  const mail = inviteEmail({ name, start, priceCents, link });
+  const emailed = await sendEmail(env, { to: email, subject: mail.subject, html: mail.html }).catch(() => false);
+  return json({ ok: true, id, email, name, start, priceCents, emailed: !!emailed, link });
+}
+
+// ---- POST /api/admin/lead-invites   admin only: every invitation still waiting on them, soonest first
+async function handleLeadInvites(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const rows = await listDocs(env, 'invites', { pageSize: 300, all: true }).catch(() => []);
+  const now = Date.now();
+  const invites = rows.filter((r) => r.data.state === 'sent').map((r) => ({
+    id: r.id, email: r.data.email, name: r.data.name || '', start: new Date(r.data.start).toISOString(),
+    priceCents: Number(r.data.priceCents) || 0, past: new Date(r.data.start).getTime() <= now,
+  })).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+  return json({ invites });
+}
+
+// ---- POST /api/admin/lead-invite/cancel   Body: { id }   admin only
+async function handleLeadInviteCancel(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  const body = await request.json().catch(() => ({}));
+  const id = typeof body?.id === 'string' ? body.id : '';
+  if (!INVITE_ID_RE.test(id)) return json({ error: 'Bad invitation' }, 400);
+  const doc = await getDoc(env, `invites/${id}`);
+  if (!doc) return json({ ok: true, gone: true });
+  if (doc.data.state === 'confirmed') return json({ error: 'They already confirmed it. The case is open.', caseId: doc.data.caseId }, 409);
+  if (doc.data.state !== 'sent') return json({ ok: true, canceled: true });
+  const done = await patchDoc(env, `invites/${id}`, { state: 'canceled', canceledAt: new Date() },
+    { mask: ['state', 'canceledAt'], ifUpdateTime: doc.updateTime });
+  if (!done) return json({ error: 'It changed while you were looking. Reload and try again.' }, 409);
+  return json({ ok: true, canceled: true });
+}
+
+/**
+ * The invitation, for the person signed in, or the reason it is not theirs to
+ * use. The address it went to is the key: whoever holds the link still has to
+ * sign in with that inbox.
+ */
+async function readInviteFor(env, user, id) {
+  if (typeof id !== 'string' || !INVITE_ID_RE.test(id))
+    return { error: 'That invitation link is not complete. Open it from the email again.', code: 400 };
+  const doc = await getDoc(env, `invites/${id}`);
+  if (!doc) return { error: 'That invitation could not be found. Reply to the email and I will send another.', code: 404 };
+  const inv = doc.data;
+  const profile = await getDoc(env, `users/${user.uid}`).catch(() => null);
+  const mine = String(profile?.data?.email || user.email || '').trim().toLowerCase();
+  if (!mine || mine !== String(inv.email || '').toLowerCase())
+    return { error: `This invitation was sent to ${maskEmail(inv.email)}. Sign in with that address to confirm it.`, code: 403, wrongAccount: true };
+  if (inv.state === 'confirmed') return { error: 'This time is already confirmed, and your case is open.', code: 409, caseId: inv.caseId || null };
+  if (inv.state !== 'sent') return { error: 'This invitation was withdrawn. Reply to the email and I will set up another time.', code: 410 };
+  if (new Date(inv.start).getTime() <= Date.now())
+    return { error: 'The time on this invitation has passed. Reply to the email and I will set up another.', code: 410 };
+  return { id, doc, invite: inv };
+}
+
+// ---- POST /api/invite   Body: { id }   signed in: the time and the price, for the booking page
+async function handleInviteRead(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in to see your invitation.' }, 401);
+  const body = await request.json().catch(() => ({}));
+  const got = await readInviteFor(env, user, body?.id);
+  if (got.error) return json({ error: got.error, caseId: got.caseId, wrongAccount: !!got.wrongAccount }, got.code);
+  return json({
+    start: new Date(got.invite.start).toISOString(),
+    priceCents: Number(got.invite.priceCents) || 0,
+    name: got.invite.name || '',
+  });
+}
+
+// ---- POST /api/invite/confirm   Body: { id, method, phone, address, acks, tz }   signed in
+async function handleInviteConfirm(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in to confirm.' }, 401);
+  const identity = await requireAdultProfile(env, user.uid);
+  if (identity.error) return json({ error: identity.error }, identity.code);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
+  const got = await readInviteFor(env, user, body.id);
+  if (got.error) return json({ error: got.error, caseId: got.caseId }, got.code);
+  // The same three gates as every booking (handleCheckout): a method, a
+  // number, and every part of the agreement.
+  const { method, phone, acks } = body;
+  if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
+  if (!PHONE_RE.test(cleanPhone(phone)))
+    return json({ error: 'A valid phone number is required so I can reach you.' }, 400);
+  for (const form of REQUIRED_ACKS)
+    if (!acks || typeof acks[form] !== 'number')
+      return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
+  const priceCents = Number(got.invite.priceCents) || 0;
+  const meta = {
+    uid: user.uid,
+    email: identity.email || user.email || got.invite.email || '',
+    name: identity.name,
+    dob: identity.dob,
+    tz: validTz(body.tz) || '',
+    slotId: '',
+    requestedStart: new Date(got.invite.start).toISOString(),
+    method,
+    phone: cleanPhone(phone),
+    address: cleanAddress(body.address),
+    acks: JSON.stringify(acks),
+    inviteId: got.id,
+    priceCents: String(priceCents),
+  };
+  if (priceCents === 0) {
+    // Nothing to pay: the case opens now, the way the webhook would open it.
+    await createCaseFromSession(env, { id: `invite_${got.id}`, amount_total: 0, payment_intent: null, metadata: meta });
+    const after = await getDoc(env, `invites/${got.id}`);
+    if (after?.data.state !== 'confirmed') return json({ error: 'The case did not open. Try again in a minute.' }, 502);
+    return json({ ok: true, caseId: after.data.caseId });
+  }
+  // Charged now, not held: he already decided to take this case when he
+  // scheduled it.
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: meta.email || undefined,
+    line_items: caseLineItems(priceCents),
+    success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/book.html?invite=${got.id}&canceled=1`,
+    metadata: meta,
+  });
+  return json({ url: session.url });
 }
 
 // POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }

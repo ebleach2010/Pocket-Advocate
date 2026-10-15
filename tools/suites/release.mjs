@@ -142,6 +142,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // is due within 14 days everywhere and the stats sit in a pull-up tab on the home.
   // NEGATIVE CONTROL (run 2026-10-15, v7.40): the worker's BUILD_TAG left at the his-prices tag made this read
   //   FAIL  R1 both versions read 7.40 with the new tag, the 7.40 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.41): both versions read 7.41 with the-plus tag, and the 7.41 entry says what the + opens,
+  // how a lead is scheduled and pays, where Delete is, and how the cards look by state.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.41): the worker's BUILD_TAG left at the two-weeks tag made this read
+  //   FAIL  R1 both versions read 7.41 with the new tag, the 7.41 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry741 = (CL.match(/\{\n\s+\/\/ THE \+, AND THE CARDS BY STATE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry740 = (CL.match(/\{\n\s+\/\/ TWO WEEKS, AND THE NUMBERS PULLED UP \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.39): both versions read 7.39 with the his-prices tag, and the 7.39 entry says the case
   // is $2,100 and his prices are in Settings, live at once.
@@ -156,9 +161,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.40 with the new tag, the 7.40 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.40';/.test(CL) && /const VERSION = '7\.40';/.test(W) && /const BUILD_TAG = 'v2026-10-15-two-weeks';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.40'
+  check('R1 both versions read 7.41 with the new tag, the 7.41 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.41';/.test(CL) && /const VERSION = '7\.41';/.test(W) && /const BUILD_TAG = 'v2026-10-15-the-plus';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.41'
+    && /version: '7\.41',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry741)
+    && /A \+ at the top of Clients: Showcase, My own case, Schedule a case from a lead, and Family case\./.test(entry741)
+    && /paying your price then; 0 is no charge/.test(entry741) && /Delete is on your own cases/.test(entry741) && /paused ones gold/.test(entry741)
+    && !DASH.test(entry741) && !HARD.some((re) => re.test(entry741))
     && /version: '7\.40',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry740)
     && /due within 14 days of the call/.test(entry740) && /keep the 7 days they were promised/.test(entry740) && /Pull it up, or tap it/.test(entry740)
     && !DASH.test(entry740) && !HARD.some((re) => re.test(entry740))

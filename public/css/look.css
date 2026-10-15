@@ -243,6 +243,13 @@ mark.chat-hit {
 /* Disabled primary buttons read as "not yet", not as missing. */
 :root:not([data-scheme="contrast"]) :is(.btn, .cta):is(:disabled, [aria-disabled="true"]) { opacity: 1; background: var(--sur-lit); border: 1px dashed var(--edge-lit); color: var(--dim); box-shadow: none; filter: none; transform: none; cursor: not-allowed; }
 
+/* The header over everything that sticks under it (Eric, 2026-10-15, with a
+   screenshot: "This menu is blocked."). It sat at the same layer as the case
+   page's tab rail, which comes later on the page and so painted over the
+   header's open menu. Above the rails and the folder tabs, below the demo
+   strip and every dialog. */
+header.bar { z-index: 20; }
+
 /* The Clients shelf's folders, dark. */
 :root:not([data-scheme="contrast"]) .folder { box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 6px 16px rgba(0, 0, 0, .45); }
 :root:not([data-scheme="contrast"]) .folder::before,

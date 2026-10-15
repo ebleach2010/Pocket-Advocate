@@ -2165,6 +2165,7 @@ function paintSelfOverview(pane, c) {
   const carried = (Array.isArray(c.carriedDx) ? c.carriedDx : []).filter((d) => d?.name);
   const topNow = (panelState.differential || [])[0]?.name || '';
   pane.innerHTML = `
+    <p class="row self-del-row"><button type="button" class="btn quiet danger tiny" data-delete-case>Delete this case</button></p>
     <div class="facts self-facts">
       <span class="fact-k">CASE</span>
       <span class="fact-v"><span class="status-pill self">MY OWN CASE</span></span>
@@ -2204,13 +2205,13 @@ function paintSelfOverview(pane, c) {
       <p class="row" style="gap:.4rem; align-items:center; justify-content:flex-start;">
         <button type="button" class="btn self-open" data-self-next-go>Confirm and open the next case</button>
         <button type="button" class="btn quiet" data-self-close>Just close it</button>
-        <button type="button" class="btn quiet danger" data-delete-case>Delete it</button>
       </p>
       <span class="dim small" data-self-next-said></span>
     </div>`}
-    ${c.status === 'closed' ? '<p class="row" style="justify-content:flex-start;"><button type="button" class="btn quiet danger" data-delete-case>Delete this case</button></p>' : ''}
     <p class="saved-note" data-self-said role="status" hidden></p>`;
   // Delete, whole (2026-09-06): nobody is behind his own case, so it can go.
+  // At the top of the case since 2026-10-15 (Eric: "let me delete my own
+  // cases"), open or closed, where it is found without scrolling.
   pane.querySelector('[data-delete-case]')?.addEventListener('click', (e) => deleteCase(e.currentTarget));
   // CLOSE AND CONTINUE (Eric, 2026-09-05: "When I close one, it confirms the
   // diagnosis that's top of the differential, and then opens the new case
@@ -2957,7 +2958,13 @@ function wireHoldAndClose(pane) {
  * case owns goes; the page walks back to the shelf.
  */
 async function deleteCase(btn) {
-  if (!confirm('Delete this case, whole? The chat, the files, the reading, the log and the milestones all go. Nothing is kept and nothing can bring it back.')) return;
+  // The app's own sheet, not the browser's grey box (2026-10-15).
+  const yes = await ask({
+    title: 'Delete this case?',
+    body: 'The whole case goes: the chat, the files, the reading, the log and the milestones. Nothing is kept and nothing can bring it back.',
+    okLabel: 'Delete it', cancelLabel: 'Keep it', danger: true,
+  });
+  if (!yes) return;
   btn.disabled = true;
   try {
     const idToken = await user.getIdToken();

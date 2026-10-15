@@ -56,6 +56,11 @@ export function folderCardHtml({
   clock = null,
   // His own case (2026-09-03): the one purple folder on the shelf.
   self = false,
+  // Open, paused or closed (Eric, 2026-10-15): open glows cyan to violet,
+  // paused gold, closed stays as it always was.
+  state = '',
+  // Delete on the card, for his own cases and the showcase (2026-10-15).
+  deletable = false,
 } = {}) {
   const read = String(dx || '').trim();
   // An override has to carry his mark, or a line he wrote reads as the
@@ -69,7 +74,7 @@ export function folderCardHtml({
   // from the row above the chat or from the switch itself all light the
   // folder, and none of them can light it alone.
   return `
-    <a class="folder${clock?.running ? ' working' : ''}${self ? ' self' : ''}" href="${esc(href)}" data-id="${esc(id)}">
+    <a class="folder${clock?.running ? ' working' : ''}${self ? ' self' : ''}${state === 'open' || state === 'paused' ? ` st-${state}` : ''}" href="${esc(href)}" data-id="${esc(id)}">
       <span class="folder-tab"><span class="folder-name">${esc(name)}</span></span>
       <span class="folder-body">
         <span class="folder-dx${dxCls}" data-dx="${esc(id)}" data-dx-text="${esc(read)}"
@@ -77,6 +82,8 @@ export function folderCardHtml({
         ${meta ? `<span class="folder-meta">${esc(meta)}</span>` : '<span class="folder-meta"></span>'}
         ${badge ? `<span class="status-pill ${esc(badgeClass)}">${esc(badge)}</span>` : ''}
         ${flags ? `<span class="folder-flags">${flags}</span>` : ''}
+        ${deletable ? `<span class="folder-del" data-del="${esc(id)}" data-del-name="${esc(name)}" role="button" tabindex="0"
+          aria-label="Delete ${esc(name)}">Delete</span>` : ''}
       </span>
       ${clock ? `
         <span class="folder-clock${clock.running ? ' on' : ''}" data-clock="${esc(id)}"
@@ -113,6 +120,12 @@ export function wireFolderOpen(root) {
     // reach for stopImmediatePropagation, and the shelf toggle goes silently
     // dead. Preventing the navigation is the whole job.
     if (e.target.closest?.('[data-clock]')) {
+      e.preventDefault();
+      return;
+    }
+    // Delete on the card (2026-10-15) is the same kind of control: admin.js
+    // asks first, and the tap must never open the case it is deleting.
+    if (e.target.closest?.('[data-del]')) {
       e.preventDefault();
       return;
     }

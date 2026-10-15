@@ -13,6 +13,8 @@ import { mountOfficeControl } from './admin-hours.js';
 import { mountFitCalls } from './admin-fit.js';
 import { mountWaitlist } from './admin-waitlist.js';
 import { mountPersonal } from './admin-personal.js';
+import { mountInvites, leadFormHtml, wireLeadForm } from './admin-invites.js';
+import { ask } from './sheet.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
@@ -32,6 +34,8 @@ const painted = () => {
 
 hydrateNav();
 const user = await requireAdmin();
+let invites = { refresh() {} };
+let leadForm = { prepare() {} };
 if (user) {
   // In or out, at the top of the page he actually opens. The same control is
   // on the availability page; both read and write settings/officeHours through
@@ -43,6 +47,10 @@ if (user) {
   mountWaitlist(document.getElementById('waitlist'), { getToken: () => user.getIdToken() });
   // Personal Uploads, across every case (Eric, 2026-09-03).
   mountPersonal(document.getElementById('personal'), { getToken: () => user.getIdToken(), scope: 'all' });
+  // The invitations still waiting on a lead (Eric, 2026-10-15).
+  invites = mountInvites(document.getElementById('invites'), { getToken: () => user.getIdToken() });
+  wireAddMenu();
+  wireShelfDelete(document.getElementById('list'));
   load();
 }
 
@@ -96,6 +104,7 @@ async function load() {
     painted();
     return;
   }
+  paintAddForms(cases);
   if (!cases.length) {
     listEl.innerHTML = '<p class="dim">No clients yet. They appear here the moment a payment lands.</p>';
     painted();
@@ -120,7 +129,7 @@ async function load() {
   // The money lines count only what was paid for: not his own case, and not
   // a family member's free one, which sits on the ordinary shelves but is
   // not "backed by a confirmed payment".
-  const billed = shelved.filter((c) => !c.family);
+  const billed = shelved.filter((c) => !c.family && !(c.invite && !(Number(c.invite.priceCents) > 0)));
   const former = shelved.filter((c) => c.status === 'closed');
   const future = shelved.filter((c) =>
     c.status !== 'closed' && c.appointment?.start && toDate(c.appointment.start).getTime() > now);
@@ -278,6 +287,14 @@ async function load() {
       },
       name: c.clientName || c.clientEmail || c.clientUid,
       self: !!c.self,
+      // CASE STATE ON THE SHELF (Eric, 2026-10-15: "Closed files should look
+      // like Chris's current aesthetic. But open ones should be highlighted in
+      // that ease in ease out blue/purple. Paused will be the same sort of
+      // aesthetic only yellow.").
+      state: c.status === 'closed' ? 'closed' : c.hold?.pausedAt ? 'paused' : 'open',
+      // His own cases and the showcase can go (Eric, 2026-10-15: "let me
+      // delete my own cases"); a client's case is closed, never deleted.
+      deletable: !!(c.self || c.showcase),
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -357,48 +374,16 @@ async function load() {
       </a>`).join('')}
     </section>` : '';
 
-  // THE TWO DOORS (Eric, 2026-09-03): his own case, which asks for his own
-  // details first, and a family case, which asks for theirs and the email
-  // they will sign in with. Each is a button that unfolds a short form.
-  //
-  // MORE THAN ONE OF HIS OWN, IN SEQUENCE (Eric, 2026-09-05: "A + -> open
-  // new personal cases -> pull information from [select other personal
-  // cases]"). The own-case door no longer goes away once a case exists: it
-  // reads "+ Open another case for myself", and its form carries a picker of
-  // every personal case he has, open or closed, each with what was confirmed
-  // on it. The ticked ones hand their information over to the new case.
-  const person = (p, withEmail, extra = '') => `
-      <div class="open-form" data-open-form="${p}" hidden>
-        <label class="dim small">First name<input type="text" data-of="${p}:firstName" maxlength="60" autocomplete="off"></label>
-        <label class="dim small">Last name<input type="text" data-of="${p}:lastName" maxlength="60" autocomplete="off"></label>
-        ${withEmail ? `<label class="dim small">The email they will sign in with<input type="email" data-of="${p}:email" maxlength="200" autocomplete="off"></label>
-        <label class="dim small">Who they are to you, if you like<input type="text" data-of="${p}:relation" maxlength="40" placeholder="e.g. my mother"></label>` : ''}
-        <label class="dim small">Date of birth<input type="date" data-of="${p}:dob"></label>
-        <label class="dim small">Phone<input type="tel" data-of="${p}:phone" maxlength="40" placeholder="+1 555 555 5555"></label>
-        <label class="dim small">Home address<input type="text" data-of="${p}:address" maxlength="300" placeholder="Street, city, state, ZIP"></label>
-        ${extra}
-        <p class="row"><button type="button" class="btn self-open" data-open-go="${p}">${withEmail ? 'Open their case, free' : 'Open my case'}</button>
-          <span class="dim small" data-open-said="${p}"></span></p>
-      </div>`;
-  const ownAll = cases.filter((c) => c.self).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
-  const ownClosed = ownAll.filter((c) => c.status === 'closed');
-  const pullPicker = ownAll.length ? `
-        <fieldset class="pull-from">
-          <legend class="dim small">Pull information from</legend>
-          ${ownAll.map((c) => `<label class="pull-row"><input type="checkbox" data-pull="${esc(c.id)}"> <span>${esc(c.clientName || 'Me')} · opened ${c.createdAt ? dateFmt.format(toDate(c.createdAt)) : 'no date'}${c.status === 'closed' ? ` · closed${c.confirmedDx?.name ? `, confirmed ${esc(c.confirmedDx.name)}` : ''}` : ' · open'}</span></label>`).join('')}
-        </fieldset>` : '';
+  const ownClosed = cases.filter((c) => c.self && c.status === 'closed');
   const selfBlock = ((mine.length || ownClosed.length)
     ? section('MY OWN CASE', 'var(--self)', [
       ...mine.map((c) => rowFor(c, 'nobody on the other end')),
       ...ownClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>${c.confirmedDx?.name ? ` · confirmed ${esc(c.confirmedDx.name)}` : ''}`)),
     ])
     : '');
-  // The doors are used rarely, so they sit under the shelf, above the quiet tools.
-  const doorsBlock = `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
-        <button type="button" class="btn self-open" data-open-door="family">Open a family case</button>
-        ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}
-        <a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a></div>
-      ${person('self', false, pullPicker)}${person('family', true)}`;
+  // The doors moved to the + at the top (Eric, 2026-10-15); the fund queue
+  // link is the one quiet tool left under the shelf.
+  const quietLinks = '<div class="open-doors"><a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a></div>';
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
@@ -408,98 +393,9 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
-    doorsBlock +
+    quietLinks +
     `<div class="cmd-quiet">` + voiceBlock + summary + `</div>`;
   painted();
-  // A door unfolds its form and folds the other; Open sends the form to its
-  // route and walks into the case it made.
-  for (const door of listEl.querySelectorAll('[data-open-door]')) {
-    door.addEventListener('click', () => {
-      const which = door.dataset.openDoor;
-      for (const f of listEl.querySelectorAll('[data-open-form]')) {
-        if (f.dataset.openForm === which) f.hidden = !f.hidden;
-        else f.hidden = true;
-      }
-      listEl.querySelector(`[data-open-form="${which}"]:not([hidden]) input`)?.focus();
-    });
-  }
-  for (const go of listEl.querySelectorAll('[data-open-go]')) {
-    go.addEventListener('click', async () => {
-      const which = go.dataset.openGo;
-      const said = listEl.querySelector(`[data-open-said="${which}"]`);
-      const val = (n) => listEl.querySelector(`[data-of="${which}:${n}"]`)?.value.trim() || '';
-      const payload = {
-        firstName: val('firstName'), lastName: val('lastName'), dob: val('dob'), phone: val('phone'), address: val('address'),
-      };
-      if (which === 'family') {
-        payload.email = val('email'); payload.relation = val('relation');
-        // Set by the confirm button below, for an address that already
-        // belongs to a client here (audit, 2026-09-03).
-        if (go.dataset.confirm === '1') payload.confirmExisting = true;
-      }
-      if (which === 'self') {
-        // The personal cases he ticked to pull information from (2026-09-05).
-        payload.pullFrom = [...listEl.querySelectorAll('[data-open-form="self"] [data-pull]:checked')].map((i) => i.dataset.pull);
-      }
-      // A blank name on his own door is fine when he is pulling from a case
-      // that already carries it; the route fills it from there.
-      if (!payload.firstName && !(which === 'self' && payload.pullFrom?.length)) { if (said) said.textContent = 'First name, please.'; return; }
-      if (which === 'family' && !payload.email) { if (said) said.textContent = 'The email they will sign in with, please.'; return; }
-      go.disabled = true;
-      if (said) said.textContent = 'Opening…';
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch(which === 'family' ? '/api/admin/family-case' : '/api/admin/self-case', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (res.status === 409 && out.existing && said) {
-          // The address already has a case here. Say so, and offer one
-          // button that sends the same form again as confirmed.
-          said.textContent = `${out.error} `;
-          const yes = document.createElement('button');
-          yes.type = 'button';
-          yes.className = 'btn quiet';
-          yes.setAttribute('data-open-confirm', which);
-          yes.textContent = 'Yes, it is them';
-          yes.addEventListener('click', () => { go.dataset.confirm = '1'; go.click(); });
-          said.appendChild(yes);
-          go.disabled = false;
-          return;
-        }
-        if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
-        location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
-      } catch (err) {
-        if (said) said.textContent = err.message;
-        go.disabled = false;
-      }
-    });
-  }
-
-  // THE SHOWCASE (Eric, 2026-09-06: "Create a completely fake case for me to
-  // show off on YouTube"). One tap builds Joe Bloe, invented end to end, and
-  // walks into him; the door goes away while he exists and comes back once
-  // he is deleted.
-  listEl.querySelector('[data-showcase-door]')?.addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    btn.textContent = 'Building the showcase… half a minute';
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/showcase-case', {
-        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
-      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
-    } catch (err) {
-      btn.textContent = err.message;
-      btn.disabled = false;
-    }
-  });
-
   const voiceSay = listEl.querySelector('#voice-said');
   const voicePost = async (btn, body, done) => {
     btn.disabled = true;
@@ -542,6 +438,218 @@ async function load() {
   // feature and stays.
   wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
   wireDxLongPress(listEl, overrideDx);
+}
+
+// ---- THE + ON THE CLIENTS SCREEN (Eric, 2026-10-15) -----------------------
+//
+// "There should be an example case I can open and shut... It will be a + at
+// the top of my 'all cases' screen and then a drop down that says 'showcase',
+// 'my own case' and 'schedule a case from a lead'." His three, in his order,
+// and the family case after them: an earlier door of his, kept rather than
+// quietly dropped. The menu is in admin.html, so it is there even before the
+// first case exists; the forms it opens are painted here.
+
+/** The forms the + opens, folded. Painted on every load: the own-case picker lists his cases. */
+function paintAddForms(cases) {
+  const addEl = document.getElementById('add-forms');
+  if (!addEl) return;
+  const dateFmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric', year: 'numeric',
+  });
+  // THE TWO DOORS (Eric, 2026-09-03): his own case, which asks for his own
+  // details first, and a family case, which asks for theirs and the email
+  // they will sign in with. Each is a button that unfolds a short form.
+  //
+  // MORE THAN ONE OF HIS OWN, IN SEQUENCE (Eric, 2026-09-05: "A + -> open
+  // new personal cases -> pull information from [select other personal
+  // cases]"). Its form carries a picker of every personal case he has, open
+  // or closed, each with what was confirmed on it. The ticked ones hand their
+  // information over to the new case.
+  const person = (p, withEmail, extra = '') => `
+      <div class="open-form" data-open-form="${p}" hidden>
+        <h3 class="open-form-h">${withEmail ? 'Family case' : 'My own case'}</h3>
+        <label class="dim small">First name<input type="text" data-of="${p}:firstName" maxlength="60" autocomplete="off"></label>
+        <label class="dim small">Last name<input type="text" data-of="${p}:lastName" maxlength="60" autocomplete="off"></label>
+        ${withEmail ? `<label class="dim small">The email they will sign in with<input type="email" data-of="${p}:email" maxlength="200" autocomplete="off"></label>
+        <label class="dim small">Who they are to you, if you like<input type="text" data-of="${p}:relation" maxlength="40" placeholder="e.g. my mother"></label>` : ''}
+        <label class="dim small">Date of birth<input type="date" data-of="${p}:dob"></label>
+        <label class="dim small">Phone<input type="tel" data-of="${p}:phone" maxlength="40" placeholder="+1 555 555 5555"></label>
+        <label class="dim small">Home address<input type="text" data-of="${p}:address" maxlength="300" placeholder="Street, city, state, ZIP"></label>
+        ${extra}
+        <p class="row"><button type="button" class="btn self-open" data-open-go="${p}">${withEmail ? 'Open their case, free' : 'Open my case'}</button>
+          <span class="dim small" data-open-said="${p}"></span></p>
+      </div>`;
+  const ownAll = cases.filter((c) => c.self).sort((a, b) => toDate(b.createdAt) - toDate(a.createdAt));
+  const pullPicker = ownAll.length ? `
+        <fieldset class="pull-from">
+          <legend class="dim small">Pull information from</legend>
+          ${ownAll.map((c) => `<label class="pull-row"><input type="checkbox" data-pull="${esc(c.id)}"> <span>${esc(c.clientName || 'Me')} · opened ${c.createdAt ? dateFmt.format(toDate(c.createdAt)) : 'no date'}${c.status === 'closed' ? ` · closed${c.confirmedDx?.name ? `, confirmed ${esc(c.confirmedDx.name)}` : ''}` : ' · open'}</span></label>`).join('')}
+        </fieldset>` : '';
+  // Whichever form he had open stays open across a repaint.
+  const open = addEl.querySelector('[data-open-form]:not([hidden])')?.dataset.openForm || '';
+  addEl.innerHTML = person('self', false, pullPicker) + person('family', true) + leadFormHtml();
+  if (open) addEl.querySelector(`[data-open-form="${open}"]`).hidden = false;
+  leadForm = wireLeadForm(addEl, { getToken: () => user.getIdToken(), onSent: () => invites.refresh() });
+  if (open === 'lead') leadForm.prepare();
+  // Open sends the form to its route and walks into the case it made.
+  for (const go of addEl.querySelectorAll('[data-open-go]')) {
+    go.addEventListener('click', async () => {
+      const which = go.dataset.openGo;
+      const said = addEl.querySelector(`[data-open-said="${which}"]`);
+      const val = (n) => addEl.querySelector(`[data-of="${which}:${n}"]`)?.value.trim() || '';
+      const payload = {
+        firstName: val('firstName'), lastName: val('lastName'), dob: val('dob'), phone: val('phone'), address: val('address'),
+      };
+      if (which === 'family') {
+        payload.email = val('email'); payload.relation = val('relation');
+        // Set by the confirm button below, for an address that already
+        // belongs to a client here (audit, 2026-09-03).
+        if (go.dataset.confirm === '1') payload.confirmExisting = true;
+      }
+      if (which === 'self') {
+        // The personal cases he ticked to pull information from (2026-09-05).
+        payload.pullFrom = [...addEl.querySelectorAll('[data-open-form="self"] [data-pull]:checked')].map((i) => i.dataset.pull);
+      }
+      // A blank name on his own door is fine when he is pulling from a case
+      // that already carries it; the route fills it from there.
+      if (!payload.firstName && !(which === 'self' && payload.pullFrom?.length)) { if (said) said.textContent = 'First name, please.'; return; }
+      if (which === 'family' && !payload.email) { if (said) said.textContent = 'The email they will sign in with, please.'; return; }
+      go.disabled = true;
+      if (said) said.textContent = 'Opening…';
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch(which === 'family' ? '/api/admin/family-case' : '/api/admin/self-case', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const out = await res.json().catch(() => ({}));
+        if (res.status === 409 && out.existing && said) {
+          // The address already has a case here. Say so, and offer one
+          // button that sends the same form again as confirmed.
+          said.textContent = `${out.error} `;
+          const yes = document.createElement('button');
+          yes.type = 'button';
+          yes.className = 'btn quiet';
+          yes.setAttribute('data-open-confirm', which);
+          yes.textContent = 'Yes, it is them';
+          yes.addEventListener('click', () => { go.dataset.confirm = '1'; go.click(); });
+          said.appendChild(yes);
+          go.disabled = false;
+          return;
+        }
+        if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
+        location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
+      } catch (err) {
+        if (said) said.textContent = err.message;
+        go.disabled = false;
+      }
+    });
+  }
+}
+
+/** One form open at a time; choosing the open one again folds it. */
+function openForm(which) {
+  const addEl = document.getElementById('add-forms');
+  if (!addEl) return;
+  let shown = null;
+  for (const f of addEl.querySelectorAll('[data-open-form]')) {
+    if (f.dataset.openForm === which) { f.hidden = !f.hidden; if (!f.hidden) shown = f; } else f.hidden = true;
+  }
+  if (!shown) return;
+  if (which === 'lead') leadForm.prepare();
+  shown.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  shown.querySelector('input, select')?.focus({ preventScroll: true });
+}
+
+/** The + and its menu: opens on a tap, closes on a choice, a tap outside, or Escape. */
+function wireAddMenu() {
+  const btn = document.querySelector('[data-add-open]');
+  const menu = document.getElementById('add-menu');
+  const said = document.getElementById('add-said');
+  if (!btn || !menu) return;
+  const setOpen = (on) => {
+    menu.hidden = !on;
+    btn.setAttribute('aria-expanded', on ? 'true' : 'false');
+  };
+  btn.addEventListener('click', () => {
+    setOpen(menu.hidden);
+    if (!menu.hidden) menu.querySelector('[role="menuitem"]')?.focus();
+  });
+  document.addEventListener('click', (e) => { if (!menu.hidden && !e.target.closest?.('.add-wrap')) setOpen(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !menu.hidden) { setOpen(false); btn.focus(); }
+  });
+  for (const door of menu.querySelectorAll('[data-open-door]')) {
+    door.addEventListener('click', () => { setOpen(false); openForm(door.dataset.openDoor); });
+  }
+  // THE SHOWCASE (Eric, 2026-09-06: "Create a completely fake case for me to
+  // show off on YouTube"). Opening it builds Joe Bloe the first time and
+  // walks into him every time after; Delete shuts him, and the next tap here
+  // builds him fresh.
+  menu.querySelector('[data-showcase-door]')?.addEventListener('click', async () => {
+    setOpen(false);
+    btn.disabled = true;
+    if (said) { said.hidden = false; said.textContent = 'Opening the showcase. The first time takes half a minute.'; }
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/showcase-case', {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
+      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
+    } catch (err) {
+      if (said) said.textContent = err.message;
+      btn.disabled = false;
+    }
+  });
+}
+
+/**
+ * Delete, on the card itself (Eric, 2026-10-15: "let me delete my own cases").
+ * Only his own cases and the showcase carry the control, and the Worker
+ * refuses any other case whatever a page sends. It asks first, in the app's
+ * own sheet; the shelf repaints without the case.
+ */
+function wireShelfDelete(listEl) {
+  if (!listEl || listEl.__paDel) return;
+  listEl.__paDel = true;
+  const run = async (el) => {
+    const name = el.dataset.delName || 'this case';
+    const yes = await ask({
+      title: `Delete ${name}?`,
+      body: 'The whole case goes: the chat, the files, the reading, the log and the milestones. Nothing is kept and nothing can bring it back.',
+      okLabel: 'Delete it', cancelLabel: 'Keep it', danger: true,
+    });
+    if (!yes) return;
+    el.textContent = 'Deleting…';
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/delete-case', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId: el.dataset.del }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      el.textContent = err.message;
+    }
+  };
+  listEl.addEventListener('click', (e) => {
+    const el = e.target.closest?.('[data-del]');
+    if (!el || !listEl.contains(el)) return;
+    e.preventDefault();
+    run(el);
+  });
+  listEl.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[data-del]')) {
+      e.preventDefault();
+      run(e.target);
+    }
+  });
 }
 
 function badge(c) {

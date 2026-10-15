@@ -279,10 +279,16 @@ console.log('\n--- W. Eric\'s side ---');
   // quiet tools (the voice study and the revenue).
   // NEGATIVE CONTROL (run 2026-10-15, v7.39): doorsBlock moved back ahead of the shelf made this read
   //   FAIL  W3 the rarely used doors sit under the shelf, just above the quiet tools
-  check('W3 the rarely used doors sit under the shelf, just above the quiet tools',
-    /const doorsBlock = `<div class="open-doors">/.test(ADMIN)
-    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*doorsBlock \+\s*`<div class="cmd-quiet">` \+ voiceBlock/.test(ADMIN)
-    && !/listEl\.innerHTML = attBlock \+ todayBlock \+ selfBlock \+\s*doorsBlock/.test(ADMIN));
+  // RE-PINNED 2026-10-15 (v7.41): Eric, "It will be a + at the top of my 'all cases' screen and then a drop down".
+  // The doors left the shelf for the + beside the heading; the fund queue link is all that stays under the shelf,
+  // still just above the quiet tools.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.41): quietLinks renamed made this read
+  //   FAIL  W3 the doors are the + beside the heading; under the shelf only the fund queue link stays, just above the quiet tools
+  check('W3 the doors are the + beside the heading; under the shelf only the fund queue link stays, just above the quiet tools',
+    /const quietLinks = '<div class="open-doors"><a class="btn quiet" href="\/admin-fund\.html">/.test(ADMIN)
+    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*quietLinks \+\s*`<div class="cmd-quiet">` \+ voiceBlock/.test(ADMIN)
+    && !/data-open-door="|data-showcase-door>/.test(ADMIN)
+    && /<div class="clients-head">\s*<h1>Clients<\/h1>\s*<div class="add-wrap">\s*<button type="button" class="add-btn" data-add-open/.test(f('public/admin.html')));
 
   // Recording comes after his own types: he asked for his types in his order with the picker opening on
   // Report (drive-summary), so the judge's "first" yields to his words.

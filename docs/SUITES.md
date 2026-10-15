@@ -266,6 +266,41 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### The +, and the cards by state (2026-10-15, v7.41)
+
+Eric, with two screenshots: "This menu is blocked. Also, let me delete my own
+cases. Lastly, there should be an example case I can open and shut. Every time
+we add something seeable from the client side, it gets secretly added to this.
+It will be a + at the top of my 'all cases' screen and then a drop down that
+says 'showcase', 'my own case' and 'schedule a case from a lead'. Once a lead
+is scheduled they are prompted to fill out the forms and confirm the time and
+date." And: "Closed files should look like Chris's current aesthetic. But open
+ones should be highlighted in that ease in ease out blue/purple. Paused will be
+the same sort of aesthetic only yellow." His answer on money: "Pay when they
+confirm". The bar is above the case page's tab rail (look.css); Delete is on
+his own cards and the showcase's and at the top of his case, through the app's
+sheet; the + opens Showcase, My own case, Schedule a case from a lead and the
+family case; an invitation is one email to one address for one time at his
+price, confirmed on the booking page and charged then (never a hold), or
+opened at once when free; open cards wear a cyan to violet rim that breathes,
+paused ones gold. The showcase gained the next-call list and a confirmed
+telehealth visit, and CLAUDE.md now says every client-visible feature joins him
+in the same push.
+
+New suites `opencases.mjs` (10 checks: the layer, Delete, the +, the card
+states run on fixtures, and the showcase's coverage list run against its
+builder) and `invites.mjs` (11 checks: the five routes and the invitation
+branch of `createCaseFromSession` lifted and run against stand-ins, the
+wiring, and his form's arithmetic imported and run). New drive
+`drive-invite.mjs` (19 checks) walks the menu over the tabs, the +, an
+invitation from his side to theirs and back, the cards by state and Delete.
+Every new check has its control recorded. Re-pinned with dated notes and fresh
+controls: `availability.mjs` H, `charge.mjs` CH3, CH7 and CH8, `showcase.mjs`
+X6 (its harness passes the two new constants), `selfcase.mjs` S18, S26 and
+S63, `tighten.mjs` W3, release R1, and the drives `drive-delete`,
+`drive-selfcase`, `drive-selfchain` and `drive-terms`, which open the + first,
+and `drive-approval`, whose demo booking now holds the live $2,100.
+
 ### Two weeks, and the numbers pulled up (2026-10-15, v7.40)
 
 Eric: "Make the advocacy case two weeks to deliver and update that timeframe

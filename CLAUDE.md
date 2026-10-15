@@ -164,6 +164,19 @@ Google key is among them. Places also returns at most five reviews. So the link
 half ships on its own, and the weekly pull waits on a key from him. Do not
 promise the pull as working until that key exists.
 
+## The showcase stays current (Eric, 2026-10-15)
+
+"There should be an example case I can open and shut. Every time we add
+something seeable from the client side, it gets secretly added to this."
+
+- Anything a client can see on their case gets an example on the showcase
+  (Joe Bloe) IN THE SAME PUSH: `buildShowcase` in `worker/showcase.js`, and
+  the demo's sketch of him in `public/js/demo/api.js`.
+- Add the feature to `SHOWCASE_COVERS` in `worker/showcase.js`; the
+  opencases suite checks the build writes every entry on that list.
+- "Secretly": nothing on a client surface mentions the showcase. It opens
+  from the + on the Clients screen and is shut with Delete.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin

@@ -62,7 +62,7 @@ async function bookFresh() {
   const out = await page.evaluate(async (acks) => {
     const res = await fetch('/api/checkout', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ method: 'video', phone: '+1 208 555 0100', address: '1 Demo St', acks: Object.fromEntries(Object.keys(acks).map((k) => [k, Date.now()])), tz: 'America/Denver', quotedCents: 120000 }),
+      body: JSON.stringify({ method: 'video', phone: '+1 208 555 0100', address: '1 Demo St', acks: Object.fromEntries(Object.keys(acks).map((k) => [k, Date.now()])), tz: 'America/Denver', quotedCents: 210000 }),
     });
     return { status: res.status, body: await res.json().catch(() => ({})) };
   }, ACKS);
@@ -106,9 +106,10 @@ const row = await page.evaluate(() => {
   const r = a?.closest('li, .row, .case-row, div');
   return (r?.textContent || a?.textContent || '').replace(/\s+/g, ' ');
 });
-ok('the shelf row says APPROVE OR DECLINE with the hold', /APPROVE OR DECLINE · \$1,200 held/.test(row), row.slice(0, 100));
+// RE-PINNED 2026-10-15 (v7.41): the demo's booking holds the live case price ($2,100, the demo settings' number), not a stale $1,200.
+ok('the shelf row says APPROVE OR DECLINE with the hold', /APPROVE OR DECLINE · \$2,100 held/.test(row), row.slice(0, 100));
 const card1 = await adminCard();
-ok('his overview opens on the approval card, holding $1,200', !!card1 && /holding \$1,200 since/.test(card1.text) && card1.amount === '1,200', JSON.stringify(card1));
+ok('his overview opens on the approval card, holding $2,100', !!card1 && /holding \$2,100 since/.test(card1.text) && card1.amount === '2,100', JSON.stringify(card1));
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/02-admin-card.png` });
 
 console.log('\n--- C. tap the amount, type 900, approve ---');

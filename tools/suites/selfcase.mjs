@@ -382,13 +382,20 @@ check('S18 the shelf: his case on its own purple shelf, out of the three and out
   // before any shelf sees it, so his shelf takes every open case of his own again.
   /const mine = cases\.filter\(\(c\) => c\.self && c\.status !== 'closed'\);/.test(ADMIN)
   && /const shelved = cases\.filter\(\(c\) => !c\.self\);/.test(ADMIN)
-  && /const billed = shelved\.filter\(\(c\) => !c\.family\);/.test(ADMIN)
+  // RE-PINNED 2026-10-15 (v7.41): Eric, "schedule a case from a lead"; one he scheduled at no charge is not
+  // "backed by a confirmed payment" either, so it leaves the revenue count the way a family case does.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.41): the revenue filter put back to `!c.family` alone made this read
+  //   FAIL  S18 the shelf: his case on its own purple shelf, out of the three and out of the revenue line, or the purple button that opens one
+  && /const billed = shelved\.filter\(\(c\) => !c\.family && !\(c\.invite && !\(Number\(c\.invite\.priceCents\) > 0\)\)\);/.test(ADMIN)
   && /const former = shelved\.filter/.test(ADMIN) && /const current = shelved\.filter/.test(ADMIN)
   && /billed\.reduce\(/.test(ADMIN) && /\$\{billed\.length\} case/.test(ADMIN)
   && /section\('MY OWN CASE', 'var\(--self\)'/.test(ADMIN)
   // Re-pinned 2026-09-05: the door is always there, and reads as a plus once
   // he has a case of his own.
-  && /data-open-door="self">\$\{ownAll\.length \? '\+ Open another case for myself' : 'Open a case for myself'\}</.test(ADMIN)
+  // RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says
+  // 'showcase', 'my own case' and 'schedule a case from a lead'". The door is the + menu's "My own case", in
+  // admin.html, so it is there before any case exists.
+  && /<button type="button" role="menuitem" data-open-door="self">My own case<\/button>/.test(f('public/admin.html'))
   && /which === 'family' \? '\/api\/admin\/family-case' : '\/api\/admin\/self-case'/.test(ADMIN)
   && /if \(c\.self\) return 'MY OWN CASE';/.test(ADMIN)
   && /if \(c\.self \|\| c\.status !== 'awaiting_report'/.test(ADMIN)
@@ -508,7 +515,10 @@ const CLIENT = f('public/js/case.js');
 // NEGATIVE CONTROL (run 2026-09-03): the family door renamed to `data-open-door="fam"` made this read
 //   FAIL  S26 both doors and their forms are on the shelf, the family flag rides the card and the page, their page sells nothing, and the demo mirrors it
 check('S26 both doors and their forms are on the shelf, the family flag rides the card and the page, their page sells nothing, and the demo mirrors it',
-  /data-open-door="family">Open a family case</.test(ADMIN)
+  // RE-PINNED 2026-10-15 (v7.41): the family door is the + menu's last item, after his three.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.41): the menu's family door renamed to `data-open-door="fam"` made this read
+  //   FAIL  S26 both doors and their forms are on the shelf, ...
+  /<button type="button" role="menuitem" data-open-door="family">Family case<\/button>/.test(f('public/admin.html'))
   && ['self:firstName', 'self:lastName', 'self:dob', 'self:phone', 'self:address', 'family:email', 'family:relation'].every((k) => new RegExp(`data-of="\\$\\{p\\}:${k.split(':')[1]}"`).test(ADMIN))
   && /const person = \(p, withEmail, extra = ''\) => `/.test(ADMIN)
   && /FAMILY · FREE/.test(ADMIN)
@@ -1358,7 +1368,10 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && /fetch\('\/api\/admin\/self-case\/next'/.test(CASEJS) && /CONFIRMED SO FAR/.test(CASEJS) && /CARRIED OVER/.test(CASEJS)
     && /function paintHandovers\(pane\)/.test(CASEJS) && /selfOverviewRepaint\?\.\(\);/.test(CASEJS) && /Condensing your earlier case/.test(CASEJS)
     && /data-self-close>Just close it</.test(CASEJS)
-    && /\+ Open another case for myself/.test(ADMINJS) && /class="pull-from"/.test(ADMINJS) && /payload\.pullFrom = /.test(ADMINJS)
+    // RE-PINNED 2026-10-15 (v7.41): the door is the + menu's "My own case"; the form and its picker are painted by paintAddForms.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.41): paintAddForms renamed made this read
+    //   FAIL  S63 the overview carries the close-and-continue card, ...
+    && /function paintAddForms\(cases\) \{/.test(ADMINJS) && /class="pull-from"/.test(ADMINJS) && /payload\.pullFrom = /.test(ADMINJS)
     && /person\('self', false, pullPicker\)/.test(ADMINJS) && /ownClosed\.map/.test(ADMINJS)
     && /handovers: out\.state\?\.handovers \|\| \[\],/.test(PANEL) && /handoverStatus: out\.state\?\.handoverStatus \|\| null,/.test(PANEL)
     && /url\.pathname === '\/api\/admin\/self-case\/next' && request\.method === 'POST'/.test(IDX)

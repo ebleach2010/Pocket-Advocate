@@ -47,7 +47,9 @@ await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await page.evaluate(() => { localStorage.removeItem('pa-demo-store'); localStorage.removeItem('pa-demo-store-advocate'); });
 await page.reload({ waitUntil: 'networkidle' });
 await settle(page);
-ok('with no case of his own the door reads plainly', (await page.textContent('[data-open-door="self"]') || '').trim() === 'Open a case for myself');
+// RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says 'showcase', 'my own case' and 'schedule a case from a lead'". The door is the + menu's "My own case": open the + first.
+ok('with no case of his own the door reads plainly', (await page.textContent('[data-open-door="self"]') || '').trim() === 'My own case');
+await page.click('[data-add-open]');
 await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 ok('and with no earlier case there is nothing to pull from', !(await page.$('[data-open-form="self"] .pull-from')));
@@ -120,7 +122,8 @@ const shelf = await page.evaluate(() => {
   };
 });
 ok('MY OWN CASE lists the open case and the closed one with what was confirmed', shelf.section && /closed/.test(shelf.text) && /confirmed Autoimmune encephalitis, relapse/.test(shelf.text), shelf.text.slice(0, 160));
-ok('and the door is always there, as a plus', shelf.door === '+ Open another case for myself', shelf.door);
+ok('and the door is always there, under the +', shelf.door === 'My own case', shelf.door);
+await page.click('[data-add-open]');
 await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 const picker = await page.evaluate(() => ({

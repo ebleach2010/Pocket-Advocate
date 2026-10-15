@@ -1123,8 +1123,15 @@ check('H: wireFolderClocks still hands its toggle back to a future caller',
 // teal outline from its own token and not the clock's green either.
 // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted and the third modifier
 // with it, so the class is the clock's and his own case's again.
+// RE-PINNED 2026-10-15 (v7.41): Eric, "open ones should be highlighted in that ease in ease out blue/purple.
+// Paused will be the same sort of aesthetic only yellow." A third modifier, `st-open` / `st-paused`, set from
+// the case's state, never from the clock; the GREEN glow is still `working` alone, and the state rim steps
+// aside on a working card (`:not(.working)` on every state rule).
+// NEGATIVE CONTROL (run 2026-10-15, v7.41): the paused rule's `:not(.working)` taken out made this read
+//   FAIL  H: the glow is the running clock and nothing else
 check('H: the glow is the running clock and nothing else',
-  /class="folder\$\{clock\?\.running \? ' working' : ''\}\$\{self \? ' self' : ''\}"/.test(DRAWER));
+  /class="folder\$\{clock\?\.running \? ' working' : ''\}\$\{self \? ' self' : ''\}\$\{state === 'open' \|\| state === 'paused' \? ` st-\$\{state\}` : ''\}"/.test(DRAWER)
+  && (code('public/css/admin.css').match(/\.folder\.st-(open|paused)[^{]*\{/g) || []).every((sel) => /:not\(\.working\)/.test(sel)));
 // Two paths CHANGE a running clock at runtime - the toggle and the beacon's
 // "this was stopped" event - and both must repaint the folder. The third path,
 // the first paint, is the class in folderCardHtml checked just above.

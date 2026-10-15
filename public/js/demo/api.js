@@ -927,7 +927,20 @@ export function demoApi(role, store) {
         fullAccess: true, fullAccessAt: ago(10), fullAccessRateCents: 440000, fullAccessMonths: 1, fullAccessByHand: true,
         stripe: null, work: { seconds: 24000, startedAt: null, tierMark: 3600 }, hold: null,
         chatUnlocked: true, chatOpenNotified: true,
+        // The confirmed telehealth visit and the next-call list, as the
+        // Worker's showcase builds them (2026-10-15).
+        telehealthVisits: [{
+          when: ago(-6, 13), clinicName: 'Owyhee Neurology Associates', provider: 'Dr. Okafor',
+          paidCents: 0, sessionId: null, attestAt: ago(3, 11), confirmedAt: ago(2, 15),
+        }],
       });
+      [
+        [3, 18, 'client', 'How long does the first round of treatment last, and what do the infusions involve?'],
+        [2, 16, 'admin', 'Go through the angiography report line by line: which branches, which eye, and what it changes.'],
+        [1, 20, 'client', 'A hearing test again before treatment starts, so there is a baseline?'],
+      ].forEach(([days, h, who, text], i) => store.docs.set(`${key}/agenda/a${i}`, {
+        text, by: who === 'admin' ? 'demo-admin' : 'showcase-joe-bloe', role: who, at: ago(days, h), done: false, doneAt: null,
+      }));
       const lines = [
         ['client', 20, 'Hi Eric. Thanks for taking this on. Quick version: five months of headaches, a blind spot in my right eye that comes and goes, and my left ear went muffled three weeks ago. Two doctors said migraine and stress. I do not buy it.'],
         ['admin', 20, 'Good. I do not buy it either, not yet. Three things, in order: what happened first, what has been tested, and who has seen you. Start with the first symptom and the date.'],
@@ -1275,6 +1288,97 @@ export function demoApi(role, store) {
       store.fire?.(key);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&extended=1&demo=1` });
     }
+    // SCHEDULE A CASE FROM A LEAD (2026-10-15): the Worker's five routes, on
+    // the store, with its refusals in its words. The confirm writes the case
+    // the way the webhook does for an invitation: confirmed and paid at once,
+    // at his time and his price, under the invitation's own id.
+    if (path === '/api/admin/lead-invite' || path === '/api/admin/lead-invites' || path === '/api/admin/lead-invite/cancel') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      await beat(300);
+      if (path === '/api/admin/lead-invites') {
+        const now = Date.now();
+        const invites = [...store.docs.entries()]
+          .filter(([k, d]) => /^invites\/[^/]+$/.test(k) && d.state === 'sent')
+          .map(([k, d]) => ({ id: k.split('/')[1], email: d.email, name: d.name || '', start: new Date(d.start).toISOString(), priceCents: Number(d.priceCents) || 0, past: new Date(d.start).getTime() <= now }))
+          .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
+        return ok({ invites });
+      }
+      if (path === '/api/admin/lead-invite/cancel') {
+        const key = `invites/${String(body.id || '')}`;
+        const d = store.docs.get(key);
+        if (!d) return ok({ ok: true, gone: true });
+        if (d.state === 'confirmed') return fail(409, 'They already confirmed it. The case is open.');
+        store.docs.set(key, { ...d, state: 'canceled', canceledAt: new Date() });
+        store.persist?.();
+        return ok({ ok: true, canceled: true });
+      }
+      const email = String(body?.email || '').trim().toLowerCase();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(400, 'Their email address, please.');
+      const start = new Date(typeof body?.start === 'string' ? body.start : NaN);
+      if (Number.isNaN(start.getTime())) return fail(400, 'Pick a date and a time.');
+      if (start.getTime() - Date.now() < 3600_000) return fail(400, 'Pick a time at least an hour from now.');
+      const priceCents = Number(body?.priceCents);
+      if (!Number.isInteger(priceCents) || priceCents < 0 || priceCents > 2000000) return fail(400, 'The price, from $0 to $20,000.');
+      if (priceCents > 0 && priceCents < 50) return fail(400, 'Stripe cannot charge less than $0.50. Use 0 for no charge.');
+      const id = `demo-invite-${Date.now().toString(36)}`;
+      const name = String(body?.name || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+      store.docs.set(`invites/${id}`, { email, name: name || null, start, priceCents, state: 'sent', createdAt: new Date(), by: 'demo-admin', caseId: null });
+      store.persist?.();
+      // No mail leaves the demo; the link is what the email would carry.
+      return ok({ ok: true, id, email, name, start, priceCents, emailed: true, link: `/book.html?invite=${id}&demo=client` });
+    }
+    if (path === '/api/invite' || path === '/api/invite/confirm') {
+      await beat(300);
+      const id = String(body?.id || '');
+      const key = `invites/${id}`;
+      const inv = /^[\w-]{6,64}$/.test(id) ? store.docs.get(key) : null;
+      if (!inv) return fail(404, 'That invitation could not be found. Reply to the email and I will send another.');
+      const profile = store.docs.get(`users/${role === 'admin' ? 'demo-admin' : 'demo-client'}`) || {};
+      const mine = String(profile.email || 'jordan@example.demo').toLowerCase();
+      if (mine !== String(inv.email).toLowerCase()) {
+        const [u, h] = String(inv.email).split('@');
+        return fail(403, `This invitation was sent to ${u.slice(0, 1)}***@${h}. Sign in with that address to confirm it.`);
+      }
+      if (inv.state === 'confirmed') return new Response(JSON.stringify({ error: 'This time is already confirmed, and your case is open.', caseId: inv.caseId }), { status: 409, headers: { 'content-type': 'application/json' } });
+      if (inv.state !== 'sent') return fail(410, 'This invitation was withdrawn. Reply to the email and I will set up another time.');
+      if (new Date(inv.start).getTime() <= Date.now()) return fail(410, 'The time on this invitation has passed. Reply to the email and I will set up another.');
+      if (path === '/api/invite') return ok({ start: new Date(inv.start).toISOString(), priceCents: Number(inv.priceCents) || 0, name: inv.name || '' });
+      if (!['phone', 'video'].includes(body.method)) return fail(400, 'Choose a meeting method.');
+      if (!/^\+?[\d\s().-]{7,20}$/.test(String(body.phone || '').trim())) return fail(400, 'A valid phone number is required so I can reach you.');
+      if (!['disclaimer', 'privacy', 'recording', 'service', 'phoneConsent'].every((f) => typeof body?.acks?.[f] === 'number'))
+        return fail(400, 'All acknowledgment forms must be completed first.');
+      const now = new Date();
+      const cents = Number(inv.priceCents) || 0;
+      store.docs.set(`cases/${id}`, {
+        clientUid: 'demo-client',
+        clientEmail: inv.email,
+        clientName: profile.name || inv.name || 'Jordan Avery',
+        clientDob: profile.dob || null,
+        clientTz: body.tz || 'America/Denver',
+        clientPhone: String(body.phone || '').trim() || null,
+        clientAddress: String(body.address || '').trim().slice(0, 300) || null,
+        status: 'confirmed',
+        createdAt: now,
+        appointment: { start: new Date(inv.start), durationMin: 60, method: body.method, phone: String(body.phone || '').trim() || null, joinLink: null, requested: false },
+        publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
+        addOnFollowUp: false,
+        forms: Object.fromEntries(Object.entries(body.acks || {}).map(([k, v]) => [k, new Date(v)])),
+        files: [],
+        reportDueAt: null,
+        caseRateCents: cents,
+        addonRateCents: 32500,
+        fullAccess: false, fullAccessAt: null, fullAccessRateCents: null,
+        stripe: { sessionId: `cs_demo_invite_${id}`, paymentIntentId: cents ? `pi_demo_invite_${id}` : null, amountTotal: cents || null },
+        charge: null,
+        invite: { id, priceCents: cents },
+        work: { seconds: 0, startedAt: null },
+      });
+      store.docs.set(key, { ...inv, state: 'confirmed', confirmedAt: now, caseId: id });
+      store.persist?.();
+      store.fire?.(`cases/${id}`);
+      // Paid: the walk comes back through the return page, as from Stripe. Free: straight to the case.
+      return cents ? ok({ url: `/return.html?session_id=cs_demo_invite_${id}` }) : ok({ ok: true, caseId: id });
+    }
     if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup'
       || path === '/api/upgrade') {
       // The scope note is a real gate, not decoration, so the demo refuses
@@ -1312,6 +1416,9 @@ export function demoApi(role, store) {
           : slot ? new Date(slot.start) : new Date();
         const now = new Date();
         const id = 'demo-case-booked';
+        // The case price as the demo's settings hold it (2026-10-15), the
+        // number the payment step quoted.
+        const liveCase = Number((store.docs.get('config/rates') || {}).caseCents) || 210000;
         store.docs.set(`cases/${id}`, {
           clientUid: 'demo-client',
           clientEmail: profile.email || 'jordan@example.demo',
@@ -1332,19 +1439,19 @@ export function demoApi(role, store) {
             .map(([k, v]) => [k, new Date(v)])),
           files: [],
           reportDueAt: null,
-          caseRateCents: 120000,
+          caseRateCents: liveCase,
           addonRateCents: 32500,
           fullAccess: false,
           fullAccessAt: null,
           fullAccessRateCents: null,
           stripe: {
             sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked',
-            amountTotal: 120000,
+            amountTotal: liveCase,
           },
           // The hold (2026-09-06): held, not charged, waiting on his approval,
           // the way the Worker writes it.
           charge: {
-            state: 'held', kind: 'case', authorizedCents: 120000, capturedCents: 0,
+            state: 'held', kind: 'case', authorizedCents: liveCase, capturedCents: 0,
             paymentIntentId: 'pi_demo_booked', sessionId: 'cs_demo_booked',
             heldAt: now, expiresAt: new Date(now.getTime() + 7 * 86_400_000),
             decidedAt: null, capturedAt: null, remindedAt: null, ratedAt: null,
@@ -1775,6 +1882,8 @@ export function demoApi(role, store) {
       // the case that booking just created; anything else keeps the fixture.
       const sid = q.get('session_id') || '';
       const booked = sid === 'cs_demo_booked' && store.docs.get('cases/demo-case-booked');
+      const invited = sid.startsWith('cs_demo_invite_') && store.docs.get(`cases/${sid.slice('cs_demo_invite_'.length)}`);
+      if (invited) return ok({ ready: true, caseId: sid.slice('cs_demo_invite_'.length) });
       return ok({ ready: true, caseId: booked ? 'demo-case-booked' : DEMO_CASE_ID });
     }
     if (path === '/api/portal') {

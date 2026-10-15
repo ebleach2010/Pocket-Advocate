@@ -159,6 +159,8 @@ if (SHOTS) await page.screenshot({ path: `${SHOTS}/05-maker-filled.png` });
 console.log('\n--- F. his own case says why it will not draft ---');
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(page);
+// RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says 'showcase', 'my own case' and 'schedule a case from a lead'". The door is the + menu's "My own case": open the + first.
+await page.click('[data-add-open]');
 await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="self:firstName"]', 'Eric');

@@ -236,10 +236,14 @@ const day = 86_400_000;
     && h4.length === 1 && h4[0][0] === 'tele' && h4[0][1]?.status === 'requires_capture'
     && /async function createCaseFromSession\(env, session, \{ held = null \} = \{\}\) \{/.test(W)
     && /charge: held \? heldChargeOf\(session, held, now\) : null,/.test(W)
-    && /if \(created && !held\) await raiseRates\(env\)/.test(W)
+    // RE-PINNED 2026-10-15 (v7.41): Eric, "schedule a case from a lead"; a case he scheduled at no charge is
+    // not a sale and raises nothing, and its mail says the time is confirmed rather than a payment.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.41): the raise put back to `if (created && !held) await raiseRates` made this read
+    //   FAIL  CH3 the slot checkout, ...
+    && /if \(created && !held && !\(inviteId && !invitePaid\)\) await raiseRates\(env\)/.test(W)
     && /if \(created && held\) \{\n\s+await pingAdmins\(env,\n\s+`\$\{firstName\(m\.name\) \|\| 'A client'\} booked a case\. Their card is held, not charged: approve or decline it\.`/.test(W)
     && /subject: held \? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',/.test(W)
-    && /\$\{held \? escHtml\(CHARGE_COPY\.held\) : 'Payment confirmed/.test(W)
+    && /\$\{held \? escHtml\(CHARGE_COPY\.held\) : inviteId && !invitePaid \? 'Your time is confirmed\. Your case file is live\.' : 'Payment confirmed/.test(W)
     && /url\.pathname === '\/api\/admin\/case-charge' && request\.method === 'POST'/.test(W)
     && /^\/\/   POST   \/api\/admin\/case-charge/m.test(W)
     && /export async function stripeGet\(env, path\) \{/.test(STRIPE),
@@ -380,7 +384,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     && heldLine === mod.CHARGE_COPY.held
     && /data-charge-released>Nothing was charged\. The hold on your card is released\.<\/p>/.test(CASE)
     && bookLine === `Your card is held today, not charged. ${mod.CHARGE_COPY.held.replace(/^Your card is held, not charged\. /, '')}`
-    && /<button class="btn cta" id="pay">Book, \$\$\{money\(caseCents\)\} held<\/button>/.test(BOOK)
+    // RE-PINNED 2026-10-15 (v7.41): Eric, "Once a lead is scheduled they are prompted to fill out the forms and confirm
+    // the time and date"; his invitation's last step confirms (and charges at once), every other booking still holds.
+    && /<button class="btn cta" id="pay">\$\{invite \? 'Confirm' : `Book, \$\$\{money\(caseCents\)\} held`\}<\/button>/.test(BOOK)
     && /your card is held as normal/.test(BOOK) && /Case fees are non-refundable once I have taken your case\./.test(BOOK)
     && /Your card is held, not charged\. I am opening your case now/.test(RET)
     && /\$\{chargeUndecided\(c\.charge\) \? chargeCard\(c\) : ''\}/.test(ADMC)
@@ -447,7 +453,11 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // NEGATIVE CONTROL (run 2026-10-06, v7.30): admin-fund.html put back to stat130 made this read
     //   FAIL  CH7 the pages: ...
     // RE-PINNED 2026-10-15 (v7.38): the look audit's doing pills and colour fixes moved the sheet to stat132.
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat132/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-15 (v7.41): Eric, "Closed files should look like Chris's current aesthetic. But open ones should
+    // be highlighted"; the + menu, Delete on the card and the state rims moved the sheet to stat133.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.41): admin-fund.html put back to stat132 made this read
+    //   FAIL  CH7 the pages: ...
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat133/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }
@@ -457,7 +467,11 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
 //   FAIL  CH8 the ledger reads what was captured, the demo's booking opens on a hold and its decision mirror approves at any amount up to the hold (zero comps) or declines with the reason and closes, the drive walks a hold from booking to approve, decline and comp, the version notes tell clients the card is held, and no dash is in anything a person reads
 check('CH8 the ledger reads what was captured, the demo\'s booking opens on a hold and its decision mirror approves at any amount up to the hold (zero comps) or declines with the reason and closes, the drive walks a hold from booking to approve, decline and comp, the version notes tell clients the card is held, and no dash is in anything a person reads',
   /g\.paidCents \+= Number\(c\.paidOverrideCents\) \|\| caseBookingCents\(c\);/.test(W)
-  && /charge: \{\n\s+state: 'held', kind: 'case', authorizedCents: 120000, capturedCents: 0,\n\s+paymentIntentId: 'pi_demo_booked', sessionId: 'cs_demo_booked',/.test(DEMO)
+  // RE-PINNED 2026-10-15 (v7.41): the demo's booking holds the live demo case price (the settings' number), not a stale $1,200.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.41): the demo's hold put back to `authorizedCents: 120000` made this read
+  //   FAIL  CH8 the ledger reads what was captured, ...
+  && /charge: \{\n\s+state: 'held', kind: 'case', authorizedCents: liveCase, capturedCents: 0,\n\s+paymentIntentId: 'pi_demo_booked', sessionId: 'cs_demo_booked',/.test(DEMO)
+  && /const liveCase = Number\(\(store\.docs\.get\('config\/rates'\) \|\| \{\}\)\.caseCents\) \|\| 210000;/.test(DEMO)
   && /if \(path === '\/api\/admin\/case-charge'\) \{/.test(DEMO)
   && /if \(ch\.state === 'held' && amount > cap\)\n\s+return fail\(400,/.test(DEMO)
   && /\? \{ \.\.\.ch, state: 'comped', capturedCents: 0, decidedAt: now, releasedAt: now, ratedAt: now \}/.test(DEMO)

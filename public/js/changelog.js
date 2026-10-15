@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.40';
+export const VERSION = '7.41';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.40';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE +, AND THE CARDS BY STATE (Eric, 2026-10-15: "This menu is
+    // blocked. Also, let me delete my own cases... It will be a + at the top
+    // of my 'all cases' screen"). Admin only.
+    version: '7.41',
+    quiet: true,
+    client: [],
+    admin: [
+      'A + at the top of Clients: Showcase, My own case, Schedule a case from a lead, and Family case.',
+      'Schedule a case from a lead: pick them, a time and a price. They get one email, sign in, fill out their forms and confirm, paying your price then; 0 is no charge. Until they do, they are listed as waiting on them, with Cancel.',
+      'Delete is on your own cases\' cards and at the top of each one.',
+      'Open cases glow cyan to violet on the shelf, paused ones gold; closed ones look as they always have. The menu on a case page now opens over its tabs.',
+    ],
+  },
   {
     // TWO WEEKS, AND THE NUMBERS PULLED UP (Eric, 2026-10-15: "Make the
     // advocacy case two weeks to deliver and update that timeframe anywhere

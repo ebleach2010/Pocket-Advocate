@@ -348,6 +348,30 @@ export const AUTHORITY = [
   }],
   [-10, 9, 'scope', { contactOk: true }],
 ];
+/**
+ * "For our next call", the list he and the client both add to, in the shape
+ * /api/agenda writes: [days, hour, who, text]. Two of Joe's and one of his.
+ */
+export const AGENDA = [
+  [-3, 18, 'joe', 'How long does the first round of treatment last, and what do the infusions involve?'],
+  [-2, 16, 'eric', 'Go through the angiography report line by line: which branches, which eye, and what it changes.'],
+  [-1, 20, 'joe', 'A hearing test again before treatment starts, so there is a baseline?'],
+];
+
+/** A telehealth visit he is attending, confirmed, six days out: what the client sees under their visits. */
+export const TELEHEALTH = { days: 6, hour: 13, minute: 30, clinicName: 'Owyhee Neurology Associates', provider: 'Dr. Okafor' };
+
+/**
+ * What the showcase carries, one entry per thing a client can see on their
+ * case (Eric, 2026-10-15: "Every time we add something seeable from the
+ * client side, it gets secretly added to this."). tools/suites/opencases.mjs
+ * reads this list and checks the build writes every entry.
+ */
+export const SHOWCASE_COVERS = [
+  'chat', 'documents', 'appointment', 'report', 'fullService', 'milestones', 'workLog', 'permissions',
+  'agenda', 'telehealth',
+];
+
 function authorityItem(now, [days, hour, kind, fields]) {
   return {
     kind, signedName: JOE.name, signedAt: at(now, days, hour), revokedAt: null,
@@ -439,6 +463,12 @@ export async function buildShowcase(env, { adminUid } = {}) {
     chatUnlocked: true,
     chatOpenNotified: true,
     lastMessage: { text: last.text.slice(0, 120), from: last.from, role: last.role, ts: last.ts, emailed: true },
+    // Confirmed the day before yesterday, attested by Joe when he asked.
+    telehealthVisits: [{
+      when: at(now, TELEHEALTH.days, TELEHEALTH.hour, TELEHEALTH.minute),
+      clinicName: TELEHEALTH.clinicName, provider: TELEHEALTH.provider,
+      paidCents: 0, sessionId: null, attestAt: at(now, -3, 11), confirmedAt: at(now, -2, 15),
+    }],
   }, { mustNotExist: true });
   for (let i = 0; i < rows.length; i += 400) await batchCreate(env, rows.slice(i, i + 400));
   await batchCreate(env, MILESTONES.map(([days, h, kind, kindLabel, kindColor, what]) => ({
@@ -453,11 +483,15 @@ export async function buildShowcase(env, { adminUid } = {}) {
     path: `cases/${id}/private/authority/items/${crypto.randomUUID()}`,
     data: authorityItem(now, a),
   })));
+  await batchCreate(env, AGENDA.map(([days, h, who, text]) => ({
+    path: `cases/${id}/agenda/${crypto.randomUUID()}`,
+    data: { text, by: who === 'eric' ? eric : JOE.uid, role: who === 'eric' ? 'admin' : 'client', at: at(now, days, h), done: false, doneAt: null },
+  })));
   await patchDoc(env, `caseMeta/${id}`, { clientMsgAt: lastFromJoe }, { mask: ['clientMsgAt'] }).catch(() => {});
   // The first read runs on the next firing, so the 🧬 page and the reading
   // are there when the camera is.
   await markPending(env, 'case', id).catch(() => {}); // owed work, due now (2026-09-13: no options)
-  return { id, existing: false, messages: rows.length, documents: docs.length, milestones: MILESTONES.length, log: WORK_LOG.length, permissions: AUTHORITY.length };
+  return { id, existing: false, messages: rows.length, documents: docs.length, milestones: MILESTONES.length, log: WORK_LOG.length, permissions: AUTHORITY.length, agenda: AGENDA.length };
 }
 
 /**

@@ -1601,3 +1601,89 @@ main > p > a.small[href="/admin.html"] {
 .fq-alerts h2 { margin: 0; font-size: 1.05rem; }
 .fq-alerts .row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin: 0; }
 .fq-alerts .btn { min-height: 44px; }
+
+/* ---- THE + ON THE CLIENTS SCREEN (Eric, 2026-10-15) ----------------------
+   One round button beside the heading, in the app's cyan to violet, and a
+   short menu under it: Showcase, My own case, Schedule a case from a lead,
+   Family case. */
+.clients-head { display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+.add-wrap { position: relative; flex: none; }
+.add-btn {
+  display: grid; place-items: center; width: 48px; height: 48px; padding: 0;
+  border: 0; border-radius: 50%;
+  background: linear-gradient(135deg, #3DDCF5, #B57BFF);
+  color: #04121A; font: 800 1.7rem/1 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .5), 0 8px 22px rgba(61, 220, 245, .28);
+  cursor: pointer;
+}
+.add-btn[aria-expanded="true"] { transform: rotate(45deg); }
+@media (prefers-reduced-motion: no-preference) { .add-btn { transition: transform .2s ease; } }
+.add-btn:focus-visible { outline: 2px solid #F5F5F7; outline-offset: 3px; }
+.add-btn:disabled { opacity: .6; cursor: progress; }
+.add-menu {
+  position: absolute; top: calc(100% + .45rem); right: 0; z-index: 25;
+  display: grid; gap: .15rem; min-width: 16rem; padding: .4rem;
+  border: 1px solid rgba(255, 255, 255, .16); border-radius: 14px;
+  background: var(--panel); box-shadow: 0 18px 40px rgba(0, 0, 0, .55);
+}
+.add-menu[hidden] { display: none; }
+.add-menu [role="menuitem"] {
+  min-height: 44px; padding: .55rem .85rem; border: 0; border-radius: 10px;
+  background: transparent; color: var(--ink); font: inherit; font-weight: 700; text-align: left;
+  cursor: pointer;
+}
+.add-menu [role="menuitem"]:hover,
+.add-menu [role="menuitem"]:focus-visible { background: rgba(255, 255, 255, .07); outline: none; }
+#add-forms .open-form { margin: .2rem 0 1rem; scroll-margin-top: calc(var(--demo-bar-h, 0px) + var(--bar-h, 3.5rem) + .75rem); }
+.open-form-h { margin: 0 0 .3rem; font-size: 1.05rem; }
+.lead-form select { width: 100%; min-height: 44px; margin-top: .2rem; }
+
+/* Delete, on his own cards and the showcase's (2026-10-15). */
+.folder-del {
+  grid-column: 2; justify-self: end;
+  display: inline-flex; align-items: center; min-height: 40px; padding: .3rem .85rem;
+  border: 1px solid rgba(255, 122, 122, .6); border-radius: 999px;
+  background: rgba(255, 122, 122, .12); color: #FFB3B3;
+  font-size: .78rem; font-weight: 700; letter-spacing: .02em;
+  cursor: pointer;
+}
+.folder-del:focus-visible { outline: 2px solid #FFB3B3; outline-offset: 2px; }
+
+/* SCHEDULED, WAITING ON THEM: a row is not a link, so its Cancel sits at the end. */
+.inv-row { cursor: default; }
+.inv-row .btn { margin-left: auto; }
+.inv-past { color: var(--orange); }
+
+/* CASE STATE ON THE SHELF (Eric, 2026-10-15: "Closed files should look like
+   Chris's current aesthetic. But open ones should be highlighted in that ease
+   in ease out blue/purple. Paused will be the same sort of aesthetic only
+   yellow."). The folder's back cover is the rim around the card: open, it
+   turns cyan to violet and the glow breathes, easing in and out; paused, the
+   same in gold. A closed card is untouched. His own purple and the running
+   clock's green keep their own light, so neither is painted over. Declared
+   at a weight that beats the dark folder rule in look.css. */
+:root .drawer .folder.st-open:not(.working):not(.self) {
+  background: linear-gradient(135deg, #3DDCF5, #B57BFF);
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 0 16px rgba(61, 220, 245, .3);
+}
+:root .drawer .folder.st-paused:not(.working):not(.self) {
+  background: linear-gradient(135deg, #F6D77A, #E9B949);
+  box-shadow: 0 0 0 1px rgba(233, 185, 73, .6), 0 0 16px rgba(233, 185, 73, .3);
+}
+/* The clock rides the rim, so on a lit rim it gets a dark backing to stay legible. */
+:root .drawer .folder:is(.st-open, .st-paused):not(.working):not(.self) .folder-clock { background: rgba(10, 10, 12, .78); }
+@media (prefers-reduced-motion: no-preference) {
+  :root .drawer .folder.st-open:not(.working):not(.self) { animation: st-open-glow 3s ease-in-out infinite; }
+  :root .drawer .folder.st-paused:not(.working):not(.self) { animation: st-paused-glow 3s ease-in-out infinite; }
+}
+@keyframes st-open-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 0 12px rgba(61, 220, 245, .28); }
+  50% { box-shadow: 0 0 0 1px rgba(181, 123, 255, .8), 0 0 24px rgba(181, 123, 255, .5); }
+}
+@keyframes st-paused-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(233, 185, 73, .55), 0 0 12px rgba(233, 185, 73, .25); }
+  50% { box-shadow: 0 0 0 1px rgba(246, 215, 122, .85), 0 0 24px rgba(233, 185, 73, .5); }
+}
+
+/* Delete at the top of his own case (2026-10-15), on the right, out of the way of the facts. */
+.self-del-row { justify-content: flex-end; margin: 0 0 .5rem; }

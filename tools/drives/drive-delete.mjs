@@ -39,7 +39,10 @@ await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await page.evaluate(() => { localStorage.removeItem('pa-demo-store'); localStorage.removeItem('pa-demo-store-advocate'); });
 await page.reload({ waitUntil: 'networkidle' });
 await settle(page);
-ok('the shelf offers the showcase door', (await page.textContent('[data-showcase-door]').catch(() => '') || '').trim() === 'Build the showcase case (Joe Bloe)');
+// RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says
+// 'showcase'". The door is the + menu's first item, and it is always there: it builds him or walks into him.
+await page.click('[data-add-open]');
+ok('the + offers the showcase door', (await page.textContent('[data-showcase-door]').catch(() => '') || '').trim() === 'Showcase');
 await page.click('[data-showcase-door]');
 await page.waitForURL((u) => /admin-case(\.html)?\?id=/.test(u.toString()), { timeout: 15000 });
 await settle(page, 2000);
@@ -69,6 +72,8 @@ const card = await page.evaluate(() => {
 ok('the Pause or close card carries Pause, Close and Delete, and says what this case is', !!card && card.pause && card.close && card.del === 'Delete this case' && /showcase case: invented from end to end/.test(card.note), JSON.stringify(card && { pause: card.pause, close: card.close, del: card.del }));
 if (SHOTS) { await page.evaluate(() => document.querySelector('details[data-k="hold"]')?.scrollIntoView()); await page.screenshot({ path: `${SHOTS}/01-delete-card.png` }); }
 await page.click('[data-delete-case]');
+// RE-PINNED 2026-10-15 (v7.41): Delete asks in the app's own sheet now, not the browser's confirm().
+await page.click('dialog.ask-sheet button[value="ok"]');
 await page.waitForURL(/admin(\.html)?(\?|$)/, { timeout: 15000 });
 await settle(page);
 const after = await page.evaluate((id) => ({
@@ -76,9 +81,10 @@ const after = await page.evaluate((id) => ({
   // His folder, not his name: the door itself names him.
   listed: [...document.querySelectorAll('a[href*="admin-case"]')].some((a) => a.href.includes(`id=${id}`)),
 }), showId);
-ok('the shelf comes back without him, and the door is back', after.door === 'Build the showcase case (Joe Bloe)' && !after.listed, JSON.stringify(after));
+ok('the shelf comes back without him, and the door is there to build him again', after.door === 'Showcase' && !after.listed, JSON.stringify(after));
 
 console.log('\n--- C. his own case, deleted from its own card ---');
+await page.click('[data-add-open]');
 await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="self:firstName"]', 'Eric');
@@ -89,20 +95,25 @@ await settle(page, 2000);
 const ownId = idOf(page.url());
 await page.evaluate(() => { document.querySelector('[data-group="case"]')?.click(); document.querySelector('[data-page="overview"]')?.click(); });
 await page.waitForTimeout(600);
+// RE-PINNED 2026-10-15 (v7.41): Eric, "let me delete my own cases". Delete is the first thing on his own
+// case's Overview now, open or closed; the close buttons stay where they were.
 const ownCard = await page.evaluate(() => ({
-  del: (document.querySelector('[data-self-next] [data-delete-case]')?.textContent || '').trim(),
+  del: (document.querySelector('.self-del-row [data-delete-case]')?.textContent || '').trim(),
+  first: document.querySelector('[data-page-body="overview"], .fpage[data-page="overview"]')?.querySelector('[data-delete-case]') === document.querySelector('[data-delete-case]'),
+  count: document.querySelectorAll('[data-delete-case]').length,
   next: !!document.querySelector('[data-self-next-go]'),
   just: !!document.querySelector('[data-self-close]'),
 }));
-ok('his own case\'s card carries Delete beside the close buttons', ownCard.del === 'Delete it' && ownCard.next && ownCard.just, JSON.stringify(ownCard));
-await page.click('[data-self-next] [data-delete-case]');
+ok('his own case carries Delete at the top of its Overview, once, and the close buttons stay', ownCard.del === 'Delete this case' && ownCard.count === 1 && ownCard.next && ownCard.just, JSON.stringify(ownCard));
+await page.click('.self-del-row [data-delete-case]');
+await page.click('dialog.ask-sheet button[value="ok"]');
 await page.waitForURL(/admin(\.html)?(\?|$)/, { timeout: 15000 });
 await settle(page);
 const ownAfter = await page.evaluate((id) => ({
   gone: ![...document.querySelectorAll('a[href*="admin-case"]')].some((a) => a.href.includes(`id=${id}`)),
   door: (document.querySelector('[data-open-door="self"]')?.textContent || '').trim(),
 }), ownId);
-ok('and the shelf no longer lists it', ownAfter.gone && ownAfter.door === 'Open a case for myself', JSON.stringify(ownAfter));
+ok('and the shelf no longer lists it', ownAfter.gone && ownAfter.door === 'My own case', JSON.stringify(ownAfter));
 
 await b.close();
 console.log(`\n${pass} ok, ${fail} failed${errs.length ? `\n${errs.join('\n')}` : ''}`);

@@ -61,6 +61,7 @@ const state = {
   method: 'phone',
   phone: '',
   address: '', // home address, optional (Eric, 2026-09-03)
+  invite: null, // { start: Date, priceCents, name } once the Worker has read his invitation
 };
 
 const STEPS = [
@@ -72,6 +73,16 @@ const STEPS = [
 let stepIndex = 0;
 let user = null;
 let profile = {}; // users/{uid} data: read at init, updated by the inline save
+
+// SCHEDULED FROM A LEAD (Eric, 2026-10-15: "Once a lead is scheduled they are
+// prompted to fill out the forms and confirm the time and date."). The link in
+// his email is /book.html?invite=<id>: one time, one price, set by him. Step 1
+// shows that time instead of the calendar; the details, the agreement and the
+// confirm are the same as any booking, and the Worker checks all of it again.
+const INVITE_ID = (() => {
+  const v = new URLSearchParams(location.search).get('invite') || '';
+  return /^[\w-]{6,64}$/.test(v) ? v : '';
+})();
 
 init();
 
@@ -85,12 +96,14 @@ async function init() {
   }).catch(() => {});
   drawRail(); // step 1 shows active even while the sign-in card is up
   if (new URLSearchParams(location.search).get('canceled')) {
-    showError('Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.');
+    showError(INVITE_ID
+      ? 'Checkout was canceled and nothing was charged. Your time is still set aside; confirm when you are ready.'
+      : 'Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.');
   }
   user = await currentUser();
   if (!user) {
     // Signed-out visitors sign in right here, inside step 1.
-    user = await ensureSignedIn(document.getElementById('step'), { returnTo: '/book.html' });
+    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : '/book.html' });
   }
   // requireUser used to create users/{uid} on first sign-in; currentUser +
   // ensureSignedIn do not, so replicate auth.js's ensureProfile here. The
@@ -103,7 +116,56 @@ async function init() {
   } catch (err) {
     console.warn('profile check failed', err);
   }
+  if (INVITE_ID && !(await readInvite())) return;
   render();
+}
+
+/**
+ * His invitation, read for the person signed in. A link that is not theirs,
+ * withdrawn, or past says why, in place of the steps; one already confirmed
+ * points at the case it opened.
+ */
+async function readInvite() {
+  try {
+    const idToken = await user.getIdToken();
+    const res = await fetch('/api/invite', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ id: INVITE_ID }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw Object.assign(new Error(data.error || `The invitation could not be read (${res.status}).`), { caseId: data.caseId });
+    state.invite = { start: new Date(data.start), priceCents: Number(data.priceCents) || 0, name: data.name || '' };
+    // Nothing is bought on the last step of an invitation: it is confirmed.
+    STEPS[2].label = 'Confirm';
+    return true;
+  } catch (err) {
+    document.getElementById('crumbs').innerHTML = '';
+    mount(`
+    <h1>Your invitation</h1>
+    <p class="muted measure" data-invite-said>${esc(err.message)}</p>
+    ${err.caseId ? `<p><a class="btn cta" href="/case.html?id=${encodeURIComponent(err.caseId)}">Open your case</a></p>` : ''}
+    <p class="back-row"><a class="btn quiet pill" href="/">← Back</a></p>`);
+    return false;
+  }
+}
+
+/** Step 1 for an invitation: his time, set, where the calendar would be. */
+function showInviteTime(el) {
+  const when = state.invite.start;
+  const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  const localFmt = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  const mtFmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, hour: 'numeric', minute: '2-digit' });
+  el.querySelector('h1').textContent = 'Your call is set';
+  el.querySelector('#time-intro').textContent = 'I set this time aside for your Advocacy Case call. Fill in the rest below, read the agreement, and confirm.';
+  el.querySelector('#days').innerHTML = `
+      <div class="day invite-time" data-invite-time><h3>${dayFmt.format(when)}</h3><div class="slots">
+        <div class="slot selected">${localFmt.format(when)}
+          <span class="local">${mtFmt.format(when)} MST my time</span></div>
+      </div></div>`;
+  el.querySelector('#request-box')?.remove();
+  revealAfterTimes(el);
+  el.querySelector('#continue').disabled = false;
 }
 
 function drawRail() {
@@ -267,6 +329,14 @@ async function renderTime() {
     </div>
     </div>
     <p class="back-row"><a class="btn quiet pill" href="/">← Back</a></p>`);
+
+  // An invitation: the time is his, already set. No calendar, no request;
+  // the rest of step 1 is the same as every booking, wired the same way.
+  if (state.invite) {
+    showInviteTime(el);
+    wireStep1(el);
+    return;
+  }
 
   let slots = [];
   // When the books are shut, say so. An empty calendar with no explanation
@@ -450,7 +520,15 @@ async function renderTime() {
     reqBox.open = true;
     syncRequest();
   }
+  wireStep1(el);
+}
 
+/**
+ * The second half of step 1, wired: the method, the number, the consent, the
+ * name and date of birth, and Continue. One function for the calendar and
+ * for an invitation, so the two can never ask for different things.
+ */
+function wireStep1(el) {
   el.querySelectorAll('input[name=method]').forEach((input) =>
     input.addEventListener('change', () => {
       state.method = input.value;
@@ -461,7 +539,7 @@ async function renderTime() {
   );
 
   el.querySelector('#continue').addEventListener('click', async () => {
-    if (!state.slot && !state.requestedStart) return;
+    if (!state.slot && !state.requestedStart && !state.invite) return;
     const err = el.querySelector('#method-error');
     err.hidden = true;
     if (state.requestedStart) {
@@ -636,8 +714,9 @@ function renderPayment() {
     hour: 'numeric', minute: '2-digit',
   });
   const methodLabel = state.method === 'phone' ? `Phone call to ${state.phone}` : 'Video call (I\'ll send the link)';
-  const when = state.slot ? state.slot.start : state.requestedStart;
-  const isRequest = !state.slot && !!state.requestedStart;
+  const invite = state.invite;
+  const when = invite ? invite.start : state.slot ? state.slot.start : state.requestedStart;
+  const isRequest = !invite && !state.slot && !!state.requestedStart;
 
   // ONE lit thing, not three stacked ones. The service, the time and the
   // price were a heading, a bordered card and a bordered price strip in a
@@ -651,7 +730,7 @@ function renderPayment() {
     <section class="stack-tight">
       <p class="price-line">
         <span class="eyebrow">Advocacy Case</span>
-        <span class="price" data-case-price>$${money(caseCents)}</span>
+        <span class="price" data-case-price>${invite && !invite.priceCents ? 'No charge' : `$${money(invite ? invite.priceCents : caseCents)}`}</span>
         <span class="included" data-included>This includes our call and your written report within 14 days.</span>
       </p>
       <p class="muted small">
@@ -666,16 +745,19 @@ function renderPayment() {
       that works, before the date. Nothing is lost either way.
     </p>` : ''}
     <p class="error" id="pay-error" hidden></p>
-    <button class="btn cta" id="pay">Book, $${money(caseCents)} held</button>
+    <button class="btn cta" id="pay">${invite ? 'Confirm' : `Book, $${money(caseCents)} held`}</button>
     <!-- THE HOLD (Eric, 2026-09-06): the card is held today and charged only
          when he takes the case. Said before the button is pressed, in the
          same words the case page and the mail use. -->
-    <p class="muted small measure" data-hold-line>Your card is held today, not charged. I read every new case before I take it on, and you are charged only when I do. If I cannot take your case, the hold is released and nothing is charged.</p>
+    ${invite ? `<p class="muted small measure" data-invite-line>${invite.priceCents
+    ? 'Your card is charged when you confirm, through Stripe\'s secure checkout, so card details never touch this site.'
+    : 'There is nothing to pay. Confirming opens your case.'}</p>` : `<p class="muted small measure" data-hold-line>Your card is held today, not charged. I read every new case before I take it on, and you are charged only when I do. If I cannot take your case, the hold is released and nothing is charged.</p>`}
     <!-- The terms sit under the button rather than over it. They are what
          pressing it agrees to, they are still on screen before any card is,
          and above it they were a paragraph of small print standing between a
          person and the only thing this step is for. -->
-    <p class="muted small measure">${isRequest ? 'Requested times are not held while you complete checkout.' : 'Your selected time is held while you complete checkout.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once I have taken your case. If I reschedule you more than once, you're entitled to a full refund on request.</p>
+    ${invite ? '<p class="muted small measure">This time is set aside for you. If I reschedule you more than once, you\'re entitled to a full refund on request.</p>' : ''}
+    <p class="muted small measure"${invite ? ' hidden' : ''}>${isRequest ? 'Requested times are not held while you complete checkout.' : 'Your selected time is held while you complete checkout.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once I have taken your case. If I reschedule you more than once, you're entitled to a full refund on request.</p>
     <!-- Nothing in here is decided today, so it is context for after the
          decision, not a fourth thing competing with it. -->
     <details class="faq card-quiet" id="addons-preview">
@@ -712,6 +794,10 @@ function renderPayment() {
   const payBtn = el.querySelector('#pay');
   const repaintPrice = () => {
     const p = el.querySelector('[data-case-price]');
+    if (invite) {
+      payBtn.textContent = invite.priceCents ? `Confirm and pay $${money(invite.priceCents)}` : 'Confirm my time';
+      return;
+    }
     if (p) p.textContent = `$${money(caseCents)}`;
     payBtn.textContent = `Pay $${money(caseCents)} and book`;
   };
@@ -723,6 +809,22 @@ function renderPayment() {
     errEl.hidden = true;
     try {
       const idToken = await user.getIdToken();
+      if (invite) {
+        // His invitation: the time and the price are his, so the Worker reads
+        // them off the invitation and takes only what this person gave.
+        const res = await fetch('/api/invite/confirm', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({
+            id: INVITE_ID, method: state.method, phone: state.phone, address: state.address, acks: state.acks,
+            tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Could not confirm (${res.status})`);
+        location.href = data.url || `/case.html?id=${encodeURIComponent(data.caseId || '')}`;
+        return;
+      }
       const res = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
