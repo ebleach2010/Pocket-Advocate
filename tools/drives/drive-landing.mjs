@@ -62,8 +62,10 @@ console.log('\n--- A. the slots and the doors, 390px ---');
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the cards is a door.
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
-  ok('no notice; the chat line open with Start chatting, the other two greyed with his words and nothing to tap, nothing under them',
-    shape.banner && shape.live.join() === '/subscribe.html,/services.html#chat' && shape.off.length === 2
+  // RE-PINNED 2026-10-15 (v7.37): the two greyed cards are each a door to their own page; nothing inside them is a separate tap.
+  ok('no notice; the chat line open with Start chatting, the other two greyed with his words and nothing to tap inside, nothing under them',
+    // RE-PINNED 2026-10-15 (v7.37): "What is included" opens the chat's own page.
+    shape.banner && shape.live.join() === '/subscribe.html,/priority-chat.html' && shape.off.length === 2
     && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
     && shape.acts.length === 0, JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
   // NEGATIVE CONTROL (run 2026-10-12): `justify-content: flex-end` on .wl-row turned to flex-start made this read
@@ -172,6 +174,29 @@ console.log('\n--- E. the home fits one screen ---');
   // NEGATIVE CONTROL (run 2026-10-14): landing-tabs.js's Back link line taken out made this read
   //   FAIL  the menu opens every other section as a screen with a Back link
   ok('the menu opens every other section as a screen with a Back link', hrefs.length === 7 && screens.every(Boolean), `${hrefs.join()} ${screens.join()}`);
+  await ctx.close();
+}
+
+console.log('\n--- F. each card opens its own page ---');
+{
+  // Eric, 2026-10-15: "When you tap on 'what's included' with the chat it describes an advocacy case ... it should
+  // go to a page dedicated to what the chat is. Same with the other two options." Tapped, not read from markup.
+  // NEGATIVE CONTROL (run 2026-10-15): the Advocacy Case card's door pointed at /full-service.html made this read
+  //   FAIL  every card's door lands on its own package's page, painted, with its own way in
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 } });
+  const page = await ctx.newPage();
+  const errs = []; page.on('pageerror', (e) => errs.push(String(e).slice(0, 200)));
+  const got = [];
+  for (const [sel, pkg, h1] of [['.opt-live .opt-more', 'chat', '24/7 Priority Chat'], ['a.opt-off[href$="advocacy-case.html"]', 'case', 'Advocacy Case'], ['a.opt-off[href$="full-service.html"]', 'full', 'Full-Service Case Management']]) {
+    await page.goto(`${P}/`, { waitUntil: 'networkidle' });
+    const door = await page.$(`#options ${sel}`);
+    if (!door) { got.push(false); continue; }
+    await door.click();
+    await page.waitForLoadState('networkidle');
+    got.push(await page.evaluate(([p, h]) => document.body.dataset.package === p && document.querySelector('h1').textContent === h
+      && document.querySelectorAll('.pkg-sec').length >= 3 && !!document.querySelector('[data-pkg-status] a.pkg-go'), [pkg, h1]));
+  }
+  ok('every card\'s door lands on its own package\'s page, painted, with its own way in', got.every(Boolean) && !errs.length, `${got.join()} ${errs.join(' | ')}`);
   await ctx.close();
 }
 

@@ -266,6 +266,23 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### One package, one page (2026-10-15, v7.37)
+
+Eric: "When you tap on 'what's included' with the chat it describes an
+advocacy case. Keep the shiny blue/purple aesthetic throughout. But it should
+go to a page dedicated to what the chat is. Same with the other two options.
+They should never commingle information." `priority-chat.html`,
+`advocacy-case.html` and `full-service.html` each name one package on
+`<body data-package>`; `package-page.js` paints that package's approved About
+copy and its way in (`packageOpen`, now in `sales.js`). The home's chat card
+opens the chat page and each closed card is a door to its own page; the
+services cards do the same, its About sheets are gone, and the case's
+after-booking steps moved to the case page. New suite `packages.mjs` (9
+checks, the painters lifted and run against every package and both switch
+positions, every check with its control); the landing drive taps each door;
+`landing.mjs` B2, B6, B9, `sales.mjs` B2 and B2b, `checkins.mjs` AB4,
+`waitlist.mjs` D7 and release R1 re-pinned with dated notes.
+
 ### Chat open, one screen, questions, Leads (2026-10-14, v7.36)
 
 Eric: "Unlock priority chat and remove banner. Have a yellow shiny outline

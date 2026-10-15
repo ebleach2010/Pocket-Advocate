@@ -310,7 +310,7 @@ console.log('\n--- D. the wiring ---');
   const css = f('public/css/landing.css');
   // RE-PINNED 2026-10-14 (v7.36): the waitlist's own block ends where the v7.36 rules begin.
   const block = css.slice(css.indexOf('/* ---- the waitlist'), css.indexOf('/* ==== v7.36'));
-  const rowRule = css.slice(css.indexOf('/* ==== v7.36'));
+  const rowRule = css.slice(css.indexOf('/* ==== v7.36'), css.indexOf('/* ==== v7.37'));
   // NEGATIVE CONTROL (run 2026-10-12): the shine animation moved out of the reduced-motion guard made this read
   //   FAIL  D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion
   // RE-PINNED 2026-10-14 (v7.36): "at the right" is now the hero row's last column, an auto-width one after the eyebrow's.
@@ -322,7 +322,7 @@ console.log('\n--- D. the wiring ---');
     && /@keyframes wl-shine/.test(block)
     && (block.match(/animation:/g) || []).length === 3
     && /@media \(prefers-reduced-motion: no-preference\) \{\n(  body\.landing [^\n]*animation:[^\n]*\n){3}\}/.test(block)
-    && /landing\.css\?v=b5/.test(f('public/index.html')));
+    && /landing\.css\?v=b6/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.37): b6
 }
 {
   const a = f('public/js/admin.js');

@@ -14,4 +14,9 @@ export const SALES_OPEN = false;
 // SALES_OPEN; the chat line's one route, /api/subscribe, answers to this.
 export const CHAT_OPEN = true;
 
+/** Whether a package can be bought right now: chat on its own switch, the rest on SALES_OPEN. */
+export function packageOpen(pkg) {
+  return pkg === 'chat' ? CHAT_OPEN : SALES_OPEN;
+}
+
 export const SALES_CLOSED_MESSAGE = "I'm not currently offering this. Join the waitlist on the home page and I'll get back to you soon.";

@@ -104,6 +104,9 @@ const CLIENT_PAGES = [
   '/fit',
   // 2026-09-02: By the numbers. Measured figures and the words around them.
   '/stats',
+  // 2026-10-15: one page per package ("They should never commingle
+  // information"), each painting its About copy from service-about.js.
+  '/priority-chat', '/advocacy-case', '/full-service',
 ];
 
 // 2026-10-06 (v7.30): the Community Assistance Fund's form, hidden (Eric:

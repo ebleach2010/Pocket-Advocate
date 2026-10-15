@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.36';
+export const VERSION = '7.37';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.36';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ONE PACKAGE, ONE PAGE (Eric, 2026-10-15: "it should go to a page
+    // dedicated to what the chat is. Same with the other two options. They
+    // should never commingle information."). Admin only.
+    version: '7.37',
+    quiet: true,
+    client: [],
+    admin: [
+      'Each package has its own page in the same black and glowing look: 24/7 Priority Chat, Advocacy Case and Full-Service Case Management. Each one shows only its own details.',
+      'What is included on the chat card opens the chat page. Tapping either of the other two cards opens its own page, which says Not currently offering and offers the waitlist.',
+      'The services page cards open the same pages, and the case steps moved to the case page.',
+    ],
+  },
   {
     // CHAT OPEN, ONE SCREEN (Eric, 2026-10-14: "Unlock priority chat and
     // remove banner." The ring, the one-screen home, the menu, the question

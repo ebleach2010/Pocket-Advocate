@@ -229,9 +229,17 @@ check('AB4 the About buttons are wired on the services page and every enhancemen
     // packs they explain. wireAboutButtons has to be on that same page or the
     // buttons render and open nothing, which is the exact failure this line
     // exists to catch.
+    // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information."
+    // NEGATIVE CONTROL (run 2026-10-15, v7.37): the services chat card pointed back at /subscribe.html made this read
+    //   FAIL  AB4 the About buttons are wired on the services page and every enhancement card
+    // The three service sheets became pages: each services card opens its own page, and each page paints
+    // its own About entry by name through package-page.js.
     const idx = readFileSync(`${ROOT}/public/services.html`, 'utf8');
-    const onLanding = /data-about="case"/.test(idx) && /data-about="handsOff"/.test(idx)
-      && /data-about="chat"/.test(idx) && /wireAboutButtons/.test(idx);
+    const PKG = readFileSync(`${ROOT}/public/js/package-page.js`, 'utf8');
+    const onLanding = /id="case" href="\/advocacy-case\.html"/.test(idx) && /id="full" href="\/full-service\.html"/.test(idx)
+      && /id="chat" href="\/priority-chat\.html"/.test(idx)
+      && /export const PAGE_COPY = \{ chat: 'chat', case: 'case', full: 'handsOff' \};/.test(PKG)
+      && ['chat', 'case', 'handsOff'].every((k) => SERVICE_ABOUT[k]);
     // Every id handed to an About call, however the call is spelled.
     const asked = [...CASE.matchAll(/addAbout(?:Button)?\([^,]+,\s*'([^']+)'\)/g)]
       .map((m) => m[1]);

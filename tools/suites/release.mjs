@@ -134,11 +134,19 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // says chat is open, the home is one screen, questions reach his inbox, and Leads exports a CSV.
   // NEGATIVE CONTROL (run 2026-10-14, v7.36): changelog.js's VERSION left at '7.35' made this read
   //   FAIL  R1 both versions read 7.36 with the new tag, the 7.36 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.37): both versions read 7.37 with the package-pages tag, and the 7.37 entry says
+  // each package has its own page and shows only its own details.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.37): the worker's BUILD_TAG left at the chat-open-one-screen tag made this read
+  //   FAIL  R1 both versions read 7.37 with the new tag, the 7.37 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.36 with the new tag, the 7.36 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.36';/.test(CL) && /const VERSION = '7\.36';/.test(W) && /const BUILD_TAG = 'v2026-10-14-chat-open-one-screen';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.36'
+  check('R1 both versions read 7.37 with the new tag, the 7.37 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.37';/.test(CL) && /const VERSION = '7\.37';/.test(W) && /const BUILD_TAG = 'v2026-10-15-package-pages';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.37'
+    && /version: '7\.37',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry737)
+    && /Each package has its own page/.test(entry737) && /shows only its own details/.test(entry737)
+    && !DASH.test(entry737) && !HARD.some((re) => re.test(entry737))
     && /version: '7\.36',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry736)
     && /Priority Chat is open again/.test(entry736) && /fits on one screen/.test(entry736) && /Leads tab/.test(entry736)
     && !DASH.test(entry736) && !HARD.some((re) => re.test(entry736))

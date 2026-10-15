@@ -28,7 +28,7 @@
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp15">
 <link rel="stylesheet" href="/css/glowup.css?v=sp8">
-<link rel="stylesheet" href="/css/landing.css?v=b5">
+<link rel="stylesheet" href="/css/landing.css?v=b6">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -162,21 +162,24 @@
         <span class="svc-line">A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.</span>
         <div class="opt-acts">
           <a class="btn glow cta opt-go" href="/subscribe.html">Start chatting</a>
-          <a class="opt-more" href="/services.html#chat">What is included</a>
+          <a class="opt-more" href="/priority-chat.html">What is included</a>
         </div>
       </div>
-      <div class="opt opt-off" aria-disabled="true">
+      <!-- Not offered, but each still opens its own page (2026-10-15: "Same
+           with the other two options. They should never commingle
+           information."): the whole card is that one door. -->
+      <a class="opt opt-off" href="/advocacy-case.html">
         <span class="opt-badge">Not currently offering</span>
         <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-brief"/></svg></span>Advocacy Case</h3>
         <span class="svc-price" data-rate="case">$1,200</span>
         <span class="svc-line">One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days.</span>
-      </div>
-      <div class="opt opt-off" aria-disabled="true">
+      </a>
+      <a class="opt opt-off" href="/full-service.html">
         <span class="opt-badge">Not currently offering</span>
         <h3><span class="opt-ic"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-lock"/></svg></span>Full-Service Case Management</h3>
         <span class="svc-price"><span data-rate="full">$4,400</span><span class="svc-per">/month</span></span>
         <span class="svc-line">Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.</span>
-      </div>
+      </a>
     </div>
     <p class="hero-fine">No hidden fees and no surprise bills. Insurance does not cover this and I do not bill it.</p>
     <p class="reframe measure">Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.</p>

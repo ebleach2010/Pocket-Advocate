@@ -5,16 +5,11 @@
 //   - a page whose <main> carries data-sales="case" (book) or "chat"
 //     (subscribe) hides its buying flow behind the notice while that
 //     package is closed, and is left alone while it is open;
-//   - services marks each closed package's card "Not currently offering"
-//     and takes the tap off it, and leads with the notice only when every
-//     package is closed.
+//   - services marks each closed package's card "Not currently offering",
+//     still opening that package's own page, and leads with the notice only
+//     when every package is closed.
 // Skipped in the demo, which drives the buying flows end to end.
-import { SALES_OPEN, CHAT_OPEN } from './sales.js';
-
-/** Whether a package can be bought right now. */
-export function packageOpen(pkg) {
-  return pkg === 'chat' ? CHAT_OPEN : SALES_OPEN;
-}
+import { packageOpen } from './sales.js';
 
 function inDemo() {
   try {
@@ -44,7 +39,7 @@ function style() {
     .pa-closed p { margin: 0; color: var(--soft, #D2D2D9); line-height: 1.5; }
     .pa-closed .btn { justify-self: start; }
     main.pa-closed-on > :not(.pa-closed):not(.footer-disclaimer) { display: none !important; }
-    .pack.pa-off { opacity: .55; filter: grayscale(1); cursor: default; }
+    .pack.pa-off { opacity: .55; filter: grayscale(1); }
     .pa-off-badge {
       display: inline-block; justify-self: start; margin: .7rem 0 .4rem; padding: .2rem .6rem;
       border: 1px solid currentColor; border-radius: 999px;
@@ -73,14 +68,12 @@ export function closeSales() {
     const card = document.getElementById(id);
     if (!card) continue;
     card.classList.add('pa-off');
-    card.setAttribute('aria-disabled', 'true');
     // After the card's own tag, which hangs off its top edge, so the two never overlap.
     const tag = card.querySelector('.tag');
     if (tag) tag.insertAdjacentHTML('afterend', '<span class="pa-off-badge">Not currently offering</span>');
     else card.insertAdjacentHTML('afterbegin', '<span class="pa-off-badge">Not currently offering</span>');
-    if (card.tagName === 'A') { card.removeAttribute('href'); card.setAttribute('tabindex', '-1'); }
-    const cta = card.querySelector('.pack-cta');
-    if (cta) cta.textContent = 'Not currently offering';
+    // The card stays a door: it opens the package's own page, which is
+    // information, not a sale (2026-10-15: one package, one page).
   }
   if (closed.length === 3) main.insertAdjacentHTML('afterbegin', NOTICE);
 }

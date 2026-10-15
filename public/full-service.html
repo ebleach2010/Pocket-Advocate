@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en" data-default-scheme="calm">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#0A0A0C">
+<title>Full-Service Case Management · Pocket Advocate</title>
+<script>
+// The landing is black (Eric, 2026-10-10: "Have it be a more sleek black
+// style with some color pop"). One visual world on every device, with one
+// exception kept on purpose: somebody who chose High contrast for their eyes
+// keeps it here too. Everything else paints on the Night base, which
+// landing.css turns black; data-default-scheme above tells theme.js.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
+    document.documentElement.dataset.scheme = s;
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+  } catch (e) { /* storage blocked: the shipped default is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=sp15">
+<link rel="stylesheet" href="/css/glowup.css?v=sp8">
+<link rel="stylesheet" href="/css/landing.css?v=b6">
+<script type="module" src="/js/nav-menu.js"></script>
+</head>
+<!-- ONE PACKAGE, ONE PAGE (Eric, 2026-10-15: "When you tap on 'what's
+     included' with the chat it describes an advocacy case. Keep the shiny
+     blue/purple aesthetic throughout. But it should go to a page dedicated
+     to what the chat is. Same with the other two options. They should
+     never commingle information."). This page is Full-Service Case Management and nothing
+     else. Its words are the ones he approved for its About sheet
+     (service-about.js), painted by package-page.js, and whether it can be
+     bought right now comes from sales.js. -->
+<body class="landing pkg" data-package="full">
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/">Home</a>
+      <a href="/book.html">Book</a>
+      <a href="/services.html">Services</a>
+      <a href="/about.html">About</a>
+      <a href="/faq.html">Questions</a>
+      <a href="/reviews.html">Reviews</a>
+      <a href="/contact.html">Contact</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <a class="pkg-back" href="/">&#8249; All options</a>
+  <section class="pkg-hero opt-gold">
+    <p class="pkg-tag">HANDS-OFF</p>
+    <h1>Full-Service Case Management</h1>
+    <p class="pkg-price"><span data-rate="full">$4,400</span><span class="svc-per">/month</span></p>
+    <p class="pkg-line">Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.</p>
+    <div class="pkg-status" data-pkg-status></div>
+  </section>
+  <div class="pkg-body" data-pkg-body></div>
+
+  <footer class="footer-disclaimer">
+    This is patient advocacy, not medical care. No diagnosis, no treatment, no prescriptions, and not a substitute for your own care team. If this is an emergency, call 911.
+  </footer>
+</main>
+<script type="module" src="/js/package-page.js?v=1"></script>
+<script type="module">
+  // Live prices, and the signed-in nav. Both soft: the page is a page without them.
+  import('/js/rates.js').catch(() => {});
+  import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
+</script>
+</body>
+</html>

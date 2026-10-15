@@ -19,6 +19,7 @@ const P = `http://127.0.0.1:${PORT}`;
 const WIDTHS = [390, 320];
 const CLIENT = [
   '/', '/about.html', '/advocate.html', '/services.html', '/faq.html', '/contact.html', '/fit.html',
+  '/priority-chat.html', '/advocacy-case.html', '/full-service.html',
   '/reviews.html', '/stats.html', '/book.html', '/subscribe.html', '/signin.html', '/return.html',
   '/case.html?demo=1', '/chat.html?demo=1', '/subscription.html?demo=1', '/fund.html?demo=1',
 ];

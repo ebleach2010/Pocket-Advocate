@@ -142,7 +142,8 @@ console.log('\n--- B. the shape ---');
 {
   const hero = sectionAt('land-sec hero');
   const opts = sectionAt('land-sec options cost');
-  const cards = [...opts.matchAll(/<div class="opt ([^"]*)"[^>]*>([\s\S]*?)(?=<div class="opt |<\/div>\s*<p class="hero-fine")/g)].map((m) => [m[1], m[2]]);
+  // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." The closed cards are each an <a> to their own page now.
+  const cards = [...opts.matchAll(/<(?:div|a) class="opt ([^"]*)"([^>]*)>([\s\S]*?)(?=<(?:div|a) class="opt |<\/div>\s*<p class="hero-fine")/g)].map((m) => [m[1], m[3], m[2]]);
   const doors = [...opts.matchAll(/<a class="act ([^"]*)" href="([^"]+)">/g)].map((m) => [m[1], m[2]]);
   // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
   // The chat line is first and lit, its button to the subscribe page; the two he is not offering carry his
@@ -162,11 +163,15 @@ console.log('\n--- B. the shape ---');
   // service still say Not currently offering and take no tap; nothing under them is a door.
   // NEGATIVE CONTROL (run 2026-10-14, v7.36): the notice put back above the hero made this read
   //   FAIL  B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering and take no tap; nothing under them is a door
-  check('B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering and take no tap; nothing under them is a door',
+  // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information."
+  // NEGATIVE CONTROL (run 2026-10-15, v7.37): the Advocacy Case card's door pointed at /full-service.html made this read
+  //   FAIL  B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering, each card a door to its own page alone; nothing under them is a door
+  check('B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering, each card a door to its own page alone; nothing under them is a door',
     !/class="out-banner"/.test(IDX) && !READ.includes('I am currently out of remission')
     && cards.length === 3 && /opt-live opt-gold/.test(cards[0][0]) && /24\/7 Priority Chat/.test(cards[0][1])
     && /<a class="btn glow cta opt-go" href="\/subscribe\.html">Start chatting<\/a>/.test(cards[0][1]) && !/opt-badge/.test(cards[0][1])
     && cards.slice(1).every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
+    && cards[1][2].trim() === 'href="/advocacy-case.html"' && cards[2][2].trim() === 'href="/full-service.html"'
     && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1])
     && doors.length === 0 && !/class="act /.test(hero),
     JSON.stringify({ cards: cards.map(([c]) => c), doors }));
@@ -198,12 +203,16 @@ check('B5 no dock offers anything, and the footer lists every door but the free 
 // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." Only the chat card links: to the chat line and to what it includes.
 // NEGATIVE CONTROL (run 2026-10-14, v7.36): an opt-acts row with `<a class="opt-more" href="/services.html#case">What is included</a>` added to the Advocacy Case card made this read
 //   FAIL  B6 only the chat card links, to the chat line and its services anchor, and the services anchors still exist
-check('B6 only the chat card links, to the chat line and its services anchor, and the services anchors still exist',
+// RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." Every card's information is its own page.
+// NEGATIVE CONTROL (run 2026-10-15, v7.37): the chat card's "What is included" put back on /services.html#chat made this read
+//   FAIL  B6 the chat card links to the chat line and its own page, each closed card to its own page, and the services anchors still exist
+check('B6 the chat card links to the chat line and its own page, each closed card to its own page, and the services anchors still exist',
   (() => {
     const s = sectionAt('class="land-sec options cost"');
     const svc = f('public/services.html');
     const links = [...s.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
-    return (s.match(/<div class="opt-acts">/g) || []).length === 1 && links.join() === '/subscribe.html,/services.html#chat'
+    return (s.match(/<div class="opt-acts">/g) || []).length === 1
+      && links.join() === '/subscribe.html,/priority-chat.html,/advocacy-case.html,/full-service.html'
       && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id));
   })());
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The sheet is the chat line's.
@@ -240,8 +249,10 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b5">/.test(IDX) // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
-  && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && n !== 'index.html').every((n) => !/landing\.css/.test(f(`public/${n}`)))
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b6">/.test(IDX) // RE-PINNED 2026-10-15 (v7.37): the package pages' rules moved the sheet to b6. // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
+  // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." The three package pages wear the landing's look too ("Keep the shiny blue/purple aesthetic throughout"); no other page does.
+  && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && !['index.html', 'priority-chat.html', 'advocacy-case.html', 'full-service.html'].includes(n)).every((n) => !/landing\.css/.test(f(`public/${n}`)))
+  && ['priority-chat', 'advocacy-case', 'full-service'].every((n) => /<link rel="stylesheet" href="\/css\/landing\.css\?v=b6">/.test(f(`public/${n}.html`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   && /dataset\.defaultScheme/.test(code('public/js/theme.js')));
 

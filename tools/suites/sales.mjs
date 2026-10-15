@@ -132,25 +132,29 @@ console.log('\n--- B. the pages ---');
   // NEGATIVE CONTROL (run 2026-10-12): `if (SALES_OPEN || inDemo()) return;` changed to `if (inDemo()) return;` made this read
   //   FAIL  B2 the notice follows the switch, says Not currently offering, and sends people to the waitlist
   // RE-PINNED 2026-10-14 (v7.36): package by package. packageOpen is lifted and run against both switches.
+  // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." packageOpen moved into sales.js, where the package pages read it too.
+  const SALES_SRC = f('public/js/sales.js');
   const lift = (chat, sales) => new Function('CHAT_OPEN', 'SALES_OPEN',
-    `${(closed.match(/export function packageOpen\([\s\S]*?\n\}/) || [''])[0].replace('export ', '')}; return packageOpen;`)(chat, sales);
+    `${(SALES_SRC.match(/export function packageOpen\([\s\S]*?\n\}/) || [''])[0].replace('export ', '')}; return packageOpen;`)(chat, sales);
   const now = lift(true, false);
   const allOpen = lift(true, true);
   const allShut = lift(false, false);
   // NEGATIVE CONTROL (run 2026-10-14, v7.36): packageOpen made to answer SALES_OPEN for every package made this read
   //   FAIL  B2 each page follows its own package's switch, says Not currently offering, and sends people to the waitlist
   check('B2 each page follows its own package\'s switch, says Not currently offering, and sends people to the waitlist',
-    /import \{ SALES_OPEN, CHAT_OPEN \} from '\.\/sales\.js';/.test(closed)
+    /import \{ packageOpen \} from '\.\/sales\.js';/.test(closed)
     && now('chat') === true && now('case') === false && now('full') === false
     && ['chat', 'case', 'full'].every((p) => allOpen(p) === true && allShut(p) === false)
     && /if \(packageOpen\(pkg\)\) return;/.test(closed)
     && /<h2>Not currently offering<\/h2>/.test(closed) && /href="\/#waitlist">Join the waitlist<\/a>/.test(closed) && !DASH.test(closed));
-  // NEGATIVE CONTROL (run 2026-10-14, v7.36): `card.removeAttribute('href');` swapped for a data attribute made this read
-  //   FAIL  B2b on services each closed package's card says so and takes no tap; the notice leads only when every package is closed
-  check('B2b on services each closed package\'s card says so and takes no tap; the notice leads only when every package is closed',
+  // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information."
+  // A closed card on services still opens its own page: that is information, not a sale.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.37): `card.removeAttribute('href');` put back into closeSales made this read
+  //   FAIL  B2b on services each closed package's card says so and still opens its own page; the notice leads only when every package is closed
+  check('B2b on services each closed package\'s card says so and still opens its own page; the notice leads only when every package is closed',
     /const closed = \['case', 'full', 'chat'\]\.filter\(\(p\) => !packageOpen\(p\)\);/.test(closed)
     && /tag\.insertAdjacentHTML\('afterend', '<span class="pa-off-badge">Not currently offering<\/span>'\);/.test(closed)
-    && /if \(card\.tagName === 'A'\) \{ card\.removeAttribute\('href'\);/.test(closed)
+    && !/removeAttribute\('href'\)/.test(closed)
     && /if \(closed\.length === 3\) main\.insertAdjacentHTML\('afterbegin', NOTICE\);/.test(closed)
     && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id)));
   const wl = f('public/js/waitlist.js');
