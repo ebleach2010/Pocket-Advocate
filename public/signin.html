@@ -276,7 +276,7 @@
     // The residency attestation gates clients booking care. A device already
     // known to be the admin's skips it; a brand-new admin device ticks it once.
     if (!document.getElementById('us-attest').checked &&
-        localStorage.getItem('pa-admin-device') !== '1') {
+        !localStorage.getItem('pa-admin-device')) {
       errEl.textContent = 'This service is available to US and Canadian residents only.';
       errEl.hidden = false;
       return;
@@ -330,6 +330,12 @@
       // Starts the weekly re-login clock (enforced in auth.js).
       localStorage.setItem('pa-admin-since', String(Date.now()));
       await signInWithCustomToken(auth, out.token);
+      // An advocate (2026-10-15): this device is theirs, and a first sign-in
+      // with the password they were given goes to choosing their own.
+      if (out.role === 'advocate') {
+        localStorage.setItem('pa-admin-device', 'advocate');
+        if (out.mustChange) { location.href = '/admin-account.html?setup=1'; return; }
+      }
       location.href = '/admin.html';
     } catch (err) {
       passErr.textContent = err.message;

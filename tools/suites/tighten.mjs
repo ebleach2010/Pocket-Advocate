@@ -285,7 +285,10 @@ console.log('\n--- W. Eric\'s side ---');
   // NEGATIVE CONTROL (run 2026-10-15, v7.41): quietLinks renamed made this read
   //   FAIL  W3 the doors are the + beside the heading; under the shelf only the fund queue link stays, just above the quiet tools
   check('W3 the doors are the + beside the heading; under the shelf only the fund queue link stays, just above the quiet tools',
-    /const quietLinks = '<div class="open-doors"><a class="btn quiet" href="\/admin-fund\.html">/.test(ADMIN)
+    // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate's shelf has no fund link.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.44): quietLinks' `advocate ? '' :` taken out made this read FAIL W3 through the drive
+    // (drive-advocates); here the pin is the line itself:
+    /const quietLinks = advocate \? '' : '<div class="open-doors"><a class="btn quiet" href="\/admin-fund\.html">/.test(ADMIN)
     && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*quietLinks \+\s*`<div class="cmd-quiet">` \+ voiceBlock/.test(ADMIN)
     && !/data-open-door="|data-showcase-door>/.test(ADMIN)
     && /<div class="clients-head">\s*<h1>Clients<\/h1>\s*<div class="add-wrap">\s*<button type="button" class="add-btn" data-add-open/.test(f('public/admin.html')));

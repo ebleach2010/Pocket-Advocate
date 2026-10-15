@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.43';
+export const VERSION = '7.44';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.43';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ADVOCATE ACCOUNTS (Eric, 2026-10-15: "Admin creates advocate accounts
+    // from the admin dashboard." And: "Each advocate gets their own isolated
+    // workspace."). Admin only.
+    version: '7.44',
+    quiet: true,
+    client: [],
+    admin: [
+      'A new Advocates tab. Add an advocate with their name, email and a first password; they choose their own the first time they sign in. You can reset a password, set their share, and turn an account off or back on.',
+      'Advocates sign in on the same page with their email and password. They see their own clients and nothing else, and the server checks every request.',
+      'A new My profile tab for your own card: photo, credentials, specialties and a short bio. Advocates fill in the same on My account.',
+      'The database locks now know about advocates too, and the app publishes them itself, so there is nothing for you to deploy.',
+    ],
+  },
   {
     // MANY ADVOCATES, THE GROUNDWORK (Eric, 2026-10-15: "We are expanding
     // Pocket Advocate from a single-advocate platform into a multi-advocate

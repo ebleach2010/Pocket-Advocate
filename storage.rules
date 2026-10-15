@@ -20,18 +20,38 @@ service firebase.storage {
       return request.auth != null && caseData(caseId).clientUid == request.auth.uid;
     }
 
+    // MANY ADVOCATES (2026-10-15): an active advocate reaches the files of
+    // their own cases, and of no one else's. The same three facts
+    // firestore.rules checks: role advocate, an active record, their uid on
+    // the case.
+    function isAdvocate() {
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'advocate'
+        && firestore.get(/databases/(default)/documents/advocates/$(request.auth.uid)).data.active == true;
+    }
+
+    function isCaseAdvocate(caseId) {
+      return request.auth != null && caseData(caseId).advocateId == request.auth.uid && isAdvocate();
+    }
+
+    function isSubAdvocate(uid) {
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/subscriptions/$(uid)).data.advocateId == request.auth.uid
+        && isAdvocate();
+    }
+
     // Named folders, not a recursive wildcard. The wildcard meant that anything
     // ever placed under cases/{id}/ was instantly client-readable — one manual
     // upload of working notes or a prep sheet into that prefix and it would be
     // on their screen. These four are the folders a client is entitled to.
     match /cases/{caseId}/{folder}/{fileName} {
       allow read: if (folder in ['report', 'recording', 'uploads', 'chat-files']) &&
-        (isCaseClient(caseId) || isAdmin());
+        (isCaseClient(caseId) || isAdmin() || isCaseAdvocate(caseId));
     }
 
     match /cases/{caseId}/{allPaths=**} {
-      allow read: if isAdmin();
-      allow write: if isAdmin();
+      allow read: if isAdmin() || isCaseAdvocate(caseId);
+      allow write: if isAdmin() || isCaseAdvocate(caseId);
     }
 
     match /cases/{caseId}/uploads/{fileName} {
@@ -42,15 +62,15 @@ service firebase.storage {
 
     // Files shared inside a case chat (either side, while the case is open).
     match /cases/{caseId}/chat-files/{fileName} {
-      allow write: if (isCaseClient(caseId) || isAdmin()) &&
+      allow write: if (isCaseClient(caseId) || isAdmin() || isCaseAdvocate(caseId)) &&
         caseData(caseId).status != 'closed' &&
         request.resource.size < 25 * 1024 * 1024;
     }
 
     // Files shared inside a subscriber chat.
     match /subscriptions/{uid}/chat-files/{fileName} {
-      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
-      allow write: if request.auth != null && (request.auth.uid == uid || isAdmin()) &&
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin() || isSubAdvocate(uid));
+      allow write: if request.auth != null && (request.auth.uid == uid || isAdmin() || isSubAdvocate(uid)) &&
         request.resource.size < 25 * 1024 * 1024;
     }
 

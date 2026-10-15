@@ -425,7 +425,11 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     !missingF.length, missingF.join(', '));
   // Four tabs per group at 320px is a hard limit. These are day headings on a
   // page, not tabs, and the tab strip must not have grown.
-  const strip = (ADMINCASE.match(/groups: \[[\s\S]*?\n    \],/) || [''])[0];
+  // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate's strip is its own short
+  // list; his is the second list after `groups: advocate ? [ ... ] :`, and that is what these pins are about.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.44): a fifth page added to his Case group made this read
+  //   FAIL  U10b and no group in the tab strip grew a fifth page (Mine excepted, its fifth is Personal, 2026-09-03)
+  const strip = (ADMINCASE.match(/groups: advocate \? \[[\s\S]*?\n    \] : \[[\s\S]*?\n    \],/) || [''])[0].replace(/^groups: advocate \? \[[\s\S]*?\n    \] : /, 'groups: ');
   // NEGATIVE CONTROL: adding two pages to the Case group made this read
   //   FAIL  U10b ... -- pages: ['overview', 'chat', 'files', 'a', 'b'] ...
   // Four per group at 320px is a hard limit; this suite touches the Uploads

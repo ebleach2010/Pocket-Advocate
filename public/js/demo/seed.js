@@ -11,6 +11,10 @@ const CASE_ID = 'demo-case';
 const FULL_ID = 'demo-case-full';
 const CLIENT = 'demo-client';
 const ADMIN = 'demo-admin';
+// Many advocates (2026-10-15): one he added, with a case of her own.
+const ADVOCATE = 'demo-advocate';
+const ADV_CASE = 'demo-case-ana';
+const ADV_CLIENT = 'demo-client-ana';
 
 const days = (n) => new Date(Date.now() - n * 86_400_000);
 const hours = (n) => new Date(Date.now() - n * 3_600_000);
@@ -580,7 +584,62 @@ export function seed({ set, file }) {
     audit: [{ at: days(40), by: 'demo-fund-jo', act: 'submitted', from: 'draft', to: 'submitted' }, { at: days(38), by: 'demo-admin', act: 'verify', from: 'under_review', to: 'verified' }],
   });
   set('fundPayments/demo-fund-jo', { userId: 'demo-fund-jo', method: 'check', accountName: 'Joanna Wren', address: { line1: '412 Pin Oak Dr', line2: '', city: 'Boise', state: 'ID', zip: '83702' }, updatedAt: days(40) });
+
+  // ---- many advocates (2026-10-15) -------------------------------------------
+  // He is advocate number one; Ana Rivera is an advocate he added yesterday,
+  // still setting up, with one case of her own. The advocate demo
+  // (?demo=advocate) signs in as her and sees her case alone; his demo sees
+  // hers on his shelf beside his own. Invented, like everything here.
+  set(`advocates/${ADMIN}`, {
+    uid: ADMIN, name: 'Eric Bleach', email: 'you@pocketadvocate.demo', active: true, owner: true,
+    commissionPct: 100, payroll: false, primarySpecialty: 'Neurology',
+    specialties: ['Neurology', 'Complex / Undiagnosed Cases'], credentials: 'Patient advocate',
+    bio: '', headshotPath: null, acceptingNew: true, advisor: { optedIn: true, enabled: true },
+    createdAt: days(400), onboardedAt: null,
+  });
+  set(`advocates/${ADVOCATE}`, {
+    uid: ADVOCATE, name: 'Ana Rivera', email: 'ana@advocate.demo', active: true, owner: false,
+    commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '',
+    headshotPath: null, acceptingNew: true, advisor: { optedIn: false, enabled: false },
+    createdAt: days(1), onboardedAt: null,
+    // The demo's stand-in for her password record: she still has the one
+    // she was given, so the drive walks choosing her own.
+    demoMustChange: true,
+  });
+  set(`users/${ADVOCATE}`, { email: 'ana@advocate.demo', name: 'Ana Rivera', role: 'advocate' });
+  set(`users/${ADV_CLIENT}`, { email: 'priya@example.demo', name: 'Priya Shah', role: 'client' });
+  set(`cases/${ADV_CASE}`, {
+    advocateId: ADVOCATE,
+    clientUid: ADV_CLIENT,
+    clientEmail: 'priya@example.demo',
+    clientName: 'Priya Shah',
+    clientTz: 'America/Chicago',
+    clientPhone: '+1 312 555 0190',
+    clientAddress: '22 Larch St, Evanston, IL 60201',
+    status: 'confirmed',
+    createdAt: days(2),
+    appointment: { start: inDays(5), durationMin: 60, method: 'video', joinLink: null, requested: false },
+    publicElection: { choice: 'private', history: [{ choice: 'private', at: days(2) }] },
+    addOnFollowUp: false,
+    caseRateCents: 180000,
+    addonRateCents: 30000,
+    forms: { disclaimer: days(2), privacy: days(2), recording: days(2) },
+    reportDueAt: null,
+    files: [],
+    stripe: { sessionId: 'cs_demo_ana', paymentIntentId: 'pi_demo_ana', amountTotal: 180000 },
+    work: { seconds: 0, startedAt: null },
+  });
+  const anaChat = [
+    [2, 'client', 'Hi Ana. My cardiologist says my echo is fine but I still get winded on the stairs.'],
+    [2, 'admin', 'Thank you for telling me. Please upload the echo report and any Holter results, and we will go through them before our call.'],
+    [1, 'client', 'Uploading the echo now.'],
+  ];
+  let ai = 0;
+  for (const [ago, role, text] of anaChat) {
+    set(`cases/${ADV_CASE}/chat/a${String(++ai).padStart(3, '0')}`, { from: role === 'admin' ? ADVOCATE : ADV_CLIENT, role, text, ts: days(ago) });
+  }
 }
 
 export const DEMO_CASE_ID = CASE_ID;
 export const DEMO_FULL_CASE_ID = FULL_ID;
+export const DEMO_ADVOCATE_CASE_ID = ADV_CASE;

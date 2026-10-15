@@ -104,7 +104,10 @@ let startIso = '';
   }));
   ok('the lead form opens with his leads to pick from and the live case price filled in',
     before.open && before.leads.some((t) => /jordan@example\.demo/.test(t)) && before.price === '2100', JSON.stringify(before));
-  await page.selectOption('[data-lead-pick]', '0');
+  // RE-PINNED 2026-10-15 (v7.44): the demo now holds the advocate persona's client, Priya Shah, whose newer
+  // case puts her first in his leads, so Jordan is picked by address rather than by place in the list.
+  const jordan = await page.evaluate(() => [...document.querySelectorAll('[data-lead-pick] option')].find((o) => /jordan@example\.demo/.test(o.textContent))?.value ?? '0');
+  await page.selectOption('[data-lead-pick]', jordan);
   const day = new Date(Date.now() + 5 * 86400000).toISOString().slice(0, 10);
   await page.fill('[data-lf="date"]', day);
   await page.fill('[data-lf="time"]', '10:00');

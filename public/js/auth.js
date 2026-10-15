@@ -148,11 +148,49 @@ export async function isAdmin(user) {
   }
 }
 
-/** Redirects non-admins away from admin pages; returns the admin user. */
+/**
+ * WHO IS WORKING (2026-10-15). The working side of the app serves two kinds of
+ * staff: Eric, who sees every case, and the advocates he adds, who see their
+ * own. The database rules and the Worker enforce which cases each can reach;
+ * this is only how a page knows which list to ask for and what to show.
+ * 'admin', 'advocate', false for anyone else, and null when the profile could
+ * not be read, the same three answers isAdmin gives.
+ */
+export const STAFF = { role: null, uid: null };
+export async function staffRole(user) {
+  try {
+    const snapshot = await readProfile(user);
+    if (snapshot === TOO_SLOW) return null;
+    const role = snapshot.exists() ? snapshot.data().role : '';
+    return role === 'admin' || role === 'advocate' ? role : false;
+  } catch {
+    return null;
+  }
+}
+
+/** The cases a staff member works: every one for Eric, their own for an advocate. */
+export function staffCasesQuery(user) {
+  return STAFF.role === 'advocate'
+    ? query(collection(db, 'cases'), where('advocateId', '==', user.uid))
+    : collection(db, 'cases');
+}
+/** The chat subscriptions, the same way. */
+export function staffSubsQuery(user) {
+  return STAFF.role === 'advocate'
+    ? query(collection(db, 'subscriptions'), where('advocateId', '==', user.uid))
+    : collection(db, 'subscriptions');
+}
+
+/** Redirects anyone who is not staff away from the working pages; returns the user. */
 export async function requireAdmin() {
   const user = await requireUser();
   if (!user) return null;
-  const admin = await isAdmin(user);
+  const role = await staffRole(user);
+  // Staff: Eric, or an advocate (2026-10-15). The device hint remembers which,
+  // so an unreadable profile on a known device keeps its own half of the app.
+  const hint = localStorage.getItem('pa-admin-device');
+  const known = role || (role === null && hint ? (hint === 'advocate' ? 'advocate' : 'admin') : null);
+  const admin = !!known;
   // A REFUSED READ IS NOT A REFUSAL (Eric, 2026-09-09, in hospital, with the
   // database over its daily read allowance). The profile could not be read,
   // isAdmin said false, and this wiped the trusted-device flag and the PIN
@@ -160,7 +198,7 @@ export async function requireAdmin() {
   // device that already carries the admin hint, when the answer is unknown,
   // is left alone: every real door is still the Worker's, which checks for
   // itself, so nothing is opened by staying on the page.
-  const unknownButHis = admin === null && !!localStorage.getItem('pa-admin-device');
+  const unknownButHis = role === null && !!hint;
   if (!admin && !unknownButHis) {
     // Clear the open-to-admin hint BEFORE bouncing to '/', or a stale hint on
     // a non-admin device would bounce '/' right back here, forever. The PIN
@@ -191,9 +229,16 @@ export async function requireAdmin() {
     location.href = `/signin.html?to=${encodeURIComponent(location.pathname + location.search)}`;
     return null;
   }
-  // Mark this device as the admin's so the landing page can redirect to the
-  // dashboard instantly, without waiting for Firebase to wake up.
-  localStorage.setItem('pa-admin-device', '1');
+  // Mark this device as staff so the landing page can redirect to the
+  // dashboard instantly, without waiting for Firebase to wake up. '1' is his,
+  // as it has always been; an advocate's device says so.
+  localStorage.setItem('pa-admin-device', known === 'advocate' ? 'advocate' : '1');
+  STAFF.role = known;
+  STAFF.uid = user.uid;
+  try { document.documentElement.dataset.staff = known; } catch { /* no document */ }
+  // The tabs each half of the working app shows: loaded only here, on a
+  // working page, so no client page ever fetches it.
+  import('./admin-staffnav.js').then((m) => m.mountStaffNav(known)).catch(() => {});
   signinStep('ok');
   return user;
 }
@@ -210,10 +255,13 @@ export async function hydrateNav() {
   if (!el) return;
   const user = await currentUser();
   if (user) {
-    const admin = await isAdmin(user);
+    // Staff, him or an advocate (2026-10-15), get the working side's nav.
+    const role = await staffRole(user);
+    const admin = role === 'admin';
+    const staff = role === 'admin' || role === 'advocate';
     const path = location.pathname;
-    if (admin) {
-      localStorage.setItem('pa-admin-device', '1');
+    if (staff) {
+      localStorage.setItem('pa-admin-device', role === 'advocate' ? 'advocate' : '1');
       ensureAdminSession(user);
       el.innerHTML =
         // No "Admin" link: every admin page already carries "Clients", which
@@ -249,7 +297,7 @@ export async function hydrateNav() {
       await signOut(auth);
       location.href = '/';
     });
-    markUnread(user, admin).catch(() => {});
+    markUnread(user, staff, role).catch(() => {});
     import('./settings.js').then((m) => m.initSettings(user, admin)).catch(() => {});
     // What changed since they last opened the app. Loaded soft and shown once:
     // nothing on the page depends on it, and a changelog that fails to load is
@@ -283,13 +331,17 @@ async function showCases(el, user) {
 // Glowing golden diamond on the Chat tab when a conversation is waiting on you:
 // for Eric, any thread whose last word was a client's; for a client, any whose
 // last word was Eric's.
-async function markUnread(user, admin) {
+async function markUnread(user, admin, role) {
   let unread = false;
   try {
     if (admin) {
+      // His: every thread. An advocate's: their own (2026-10-15).
+      const mine = (name) => (role === 'advocate'
+        ? query(collection(db, name), where('advocateId', '==', user.uid))
+        : collection(db, name));
       const [cases, subs] = await Promise.all([
-        getDocs(collection(db, 'cases')),
-        getDocs(collection(db, 'subscriptions')),
+        getDocs(mine('cases')),
+        getDocs(mine('subscriptions')),
       ]);
       const any = (snap) => snap.docs.some((d) => d.data().lastMessage?.role === 'client');
       unread = any(cases) || any(subs);

@@ -298,6 +298,36 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Advocate accounts (2026-10-15, v7.44)
+
+Eric: "Admin creates advocate accounts from the admin dashboard." And:
+"Passwords are never logged." And: "Each advocate gets their own isolated
+workspace." `worker/advocates.js` holds his Advocates tab (create, list,
+update, turn off and on, reset a password), the advocate's own page (profile,
+password, finish setup), the headshot upload and its public route, and the
+advocate's password door. Passwords are PBKDF2-SHA256 at 100,000 rounds with
+a 16-byte salt in `staffSecrets/{sha256(email)}`; a miss hashes as hard as a
+hit. The working pages' cookie is signed for him and for active advocates
+only; the fund page asks for his uid on it. The work clock is every
+advocate's, on their own clock doc. Case notes for an advocate go through
+`/api/notes`. The security rules know advocates (isAdvocate, isAdvocateOf,
+worksThread) and the Worker publishes them itself (`worker/rules-release.js`).
+
+`advocates.mjs` grew to 48: section G evaluates the accounts module whole on a
+stand-in store (the password never lands anywhere, one account per address,
+the door, the profile whitelist, the opt-in rule, the photo's magic bytes,
+setup's two guards, reset, turn off, the share), section H reads the doors,
+cookie and router, B7 runs the presence beat. New suite `rulesync.mjs` (6):
+the Worker carries both rules files byte for byte, and the release runs
+against a stand-in Rules API (publish on change only, a refusal waits six
+hours). `tools/rules/rules-check.mjs` runs 16 checks against the Firestore and
+Storage emulators (an advocate reads and writes their own case, chat and
+files, and never another's). New drive `drive-advocates.mjs` (14). Every new
+check has its control recorded. Re-pinned with dated notes and controls:
+clock C43b, fund F27, defects, filing F13b, prep-shelf P4/P5, selfcase S45,
+tighten W3, uploads U10b, worklog L28, advocates D3, release R1; drive-invite
+picks Jordan by address (the advocate persona's client is newer in his leads).
+
 ### Many advocates, the groundwork (2026-10-15, v7.43)
 
 Eric: "We are expanding Pocket Advocate from a single-advocate platform into

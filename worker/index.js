@@ -74,6 +74,11 @@ import { validateAction } from './advisor-acts.js';
 // The Community Assistance Fund's verification (2026-10-04): every route,
 // the applicant's and the reviewer's, lives in worker/fund.js.
 import { handleFund, drainFundNotices } from './fund.js';
+// The advocates themselves (2026-10-15): his Advocates tab, their own account
+// page, the password door and their headshots.
+import { handleAdvocates, isStaffLogin, advocateLogin } from './advocates.js';
+// The security rules, published by the Worker when what it carries changes.
+import { releaseRules, RULES_STATUS } from './rules-release.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
 import { SALES_OPEN, CHAT_OPEN, SALES_CLOSED_MESSAGE } from '../public/js/sales.js';
 import {
@@ -792,10 +797,12 @@ function demoRole(request, url) {
   if (!DEMO_HOST.test(url.hostname)) return '';
   const q = url.searchParams.get('demo');
   if (q === '0') return '';
-  if (q) return q === 'admin' ? 'admin' : '1';
+  // Three demos now (2026-10-15): his, an advocate's, and a client's.
+  const pick = (v) => (v === 'admin' || v === 'advocate' ? v : '1');
+  if (q) return pick(q);
   const m = (request.headers.get('cookie') || '')
     .match(new RegExp(`(?:^|;\\s*)${DEMO_COOKIE}=([^;]+)`));
-  return m ? (m[1] === 'admin' ? 'admin' : '1') : '';
+  return m ? pick(m[1]) : '';
 }
 
 const demoCookie = (role) =>
@@ -854,7 +861,10 @@ async function adminCookieUid(request, env) {
   if (parts.length !== 3) return null;
   const [uid, exp, hex] = parts;
   if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return null;
-  if (!env.ADMIN_UID || uid !== env.ADMIN_UID) return null;
+  // Signed only for staff (2026-10-15): Eric, or an advocate he added, on the
+  // sign-in that proved it. The signature is the check; it opens the admin
+  // CODE to them and nothing else, since every route checks whose case it is.
+  if (!/^[\w-]{1,64}$/.test(uid)) return null;
   // Re-sign the exp that came in, and compare. Signing a fresh one would only
   // ever match a cookie minted this millisecond.
   const key = await adminKey(env);
@@ -873,6 +883,17 @@ const ADMIN_COOKIE_CLEAR = `${ADMIN_COOKIE}=; Path=/; HttpOnly; Secure; SameSite
 /** Attach a fresh admin cookie to a JSON response, if this uid is the admin. */
 async function withAdminCookie(env, res, uid) {
   if (!env.ADMIN_UID || uid !== env.ADMIN_UID) return res;
+  const out = new Response(res.body, res);
+  out.headers.append('set-cookie', await adminCookieHeader(env, uid));
+  return out;
+}
+
+/** The same cookie for staff: Eric, or an advocate who is active right now (2026-10-15). */
+async function withStaffCookie(env, res, uid) {
+  if (env.ADMIN_UID && uid === env.ADMIN_UID) return withAdminCookie(env, res, uid);
+  if (!uid || !/^[\w-]{1,64}$/.test(uid)) return res;
+  const adv = await getDoc(env, `advocates/${uid}`).catch(() => null);
+  if (adv?.data?.active !== true) return res;
   const out = new Response(res.body, res);
   out.headers.append('set-cookie', await adminCookieHeader(env, uid));
   return out;
@@ -955,6 +976,8 @@ export default {
         return await handlePersonalFile(request, env, url);
       if (url.pathname.startsWith('/api/fund/') || url.pathname.startsWith('/api/admin/fund/'))
         return await handleFund(request, env, url, ctx);
+      if (url.pathname === '/api/admin/advocates' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
+        return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json });
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
         return await handleSelfCase(request, env);
       if (url.pathname === '/api/admin/self-case/next' && request.method === 'POST')
@@ -1073,6 +1096,12 @@ export default {
       if (url.pathname === '/api/diag' && request.method === 'GET') {
         if (url.searchParams.get('k') !== 'b6e6f406dc540d5459188b00716ab631')
           return json({ error: 'Not found' }, 404);
+        // Whether the rules this build carries are the ones live (2026-10-15).
+        // Read-only: hashes, times and an error line; never the rules.
+        if (url.searchParams.get('do') === 'rules') {
+          const st = await getDoc(env, RULES_STATUS).catch(() => null);
+          return json({ ok: true, rules: st?.data || null });
+        }
         // The showcase, built from here as well as from the shelf (Eric,
         // 2026-09-06: "You can push it to the app"), so it can be pushed
         // without a phone in hand. Same builder, same one-per-app rule.
@@ -1286,6 +1315,8 @@ export default {
         return await handleFileMeta(request, env);
       if (url.pathname === '/api/admin/ledger' && request.method === 'GET')
         return await handleLedger(request, env);
+      if (url.pathname === '/api/notes' && (request.method === 'GET' || request.method === 'POST'))
+        return await handleCaseNotes(request, env, url);
       if (url.pathname === '/api/chattime' && request.method === 'POST')
         return await handleChatTime(request, env);
       if (url.pathname === '/api/uploaded' && request.method === 'POST')
@@ -1362,7 +1393,8 @@ export default {
     // navigates to keep working once the query string is gone.
     if ((ADMIN_ASSET.test(assetPath) || DEMO_ASSET.test(assetPath)) && demo) {
       const wantsAdmin = ADMIN_ASSET.test(assetPath);
-      if (wantsAdmin && demo !== 'admin') {
+      // The working half is staff's: his demo or an advocate's (2026-10-15).
+      if (wantsAdmin && demo !== 'admin' && demo !== 'advocate') {
         // Asked for the client demo and reached for the admin half. A PAGE is
         // sent to sign in, because that is a person who navigated somewhere.
         // A module or a stylesheet is a fetch, and it gets the same 404 a path
@@ -1395,7 +1427,8 @@ export default {
     // public and linked from his post, so saying where the front door is now
     // confirms nothing.
     if (FUND_PAGE.test(assetPath) && !FUND_OPEN && !demo) {
-      const his = !!(await adminCookieUid(request, env).catch(() => null));
+      // His, not every staff cookie's (2026-10-15).
+      const his = !!env.ADMIN_UID && (await adminCookieUid(request, env).catch(() => null)) === env.ADMIN_UID;
       if (!his) return Response.redirect(new URL('/', url).toString(), 302);
       const res = await env.ASSETS.fetch(request);
       const out = new Response(res.body, res);
@@ -1494,6 +1527,9 @@ export default {
     // invocation's outside calls are shared by everything in it. Every fire
     // after that one is a single read.
     if (minute % 15 === 7) ctx.waitUntil(stampAdvocates(env));
+    // The rules this build carries, published once when they change (a read
+    // and nothing else when they have not). Its own minute, like the stamp.
+    if (minute % 15 === 11) ctx.waitUntil(releaseRules(env).catch((err) => console.warn('rules release:', err.message || err)));
 
     // NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420. No scans
     // unless I manually do it. No auto token burn anywhere."). This firing
@@ -2236,7 +2272,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-advocates-ground';
+const BUILD_TAG = 'v2026-10-15-advocate-accounts';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2244,7 +2280,7 @@ const BUILD_TAG = 'v2026-10-15-advocates-ground';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.43';
+const VERSION = '7.44';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -5670,6 +5706,15 @@ const WORK_PRESENCE_STALE_MS = 3 * 60_000;
  * per-minute cron costs one document read instead of a query over every case.
  */
 const CLOCK_DOC = 'admin/clock';
+/**
+ * EVERY ADVOCATE HAS THEIR OWN CLOCK DOC (2026-10-15). His stays where it has
+ * always been; an advocate's is staffClocks/{uid}, Worker-only by the same
+ * catch-all deny. A case's clock lives on its advocate's doc, so their day
+ * figure, their running list and their reminders are theirs alone.
+ */
+function clockPathFor(env, uid) {
+  return !uid || uid === env.ADMIN_UID ? CLOCK_DOC : `staffClocks/${uid}`;
+}
 
 /**
  * TODAY'S HOURS, PER CASE (Eric, 2026-08-29: "I would like a daily hours/min
@@ -5752,19 +5797,19 @@ function todayByCase(clockData, now = Date.now()) {
   return out;
 }
 /** Add (or, for a correction, subtract) seconds on today's bucket. */
-async function bankDaySeconds(env, caseId, add, now = Date.now()) {
-  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+async function bankDaySeconds(env, caseId, add, now = Date.now(), path = CLOCK_DOC) {
+  const doc = await getDoc(env, path).catch(() => null);
   const byCase = todayByCase(doc?.data, now);
   const cur = byCase[caseId] || 0;
   const next = Math.max(0, cur + (Math.floor(Number(add)) || 0));
   if (next === cur && doc?.data?.today?.d === workDayString(now)) return next;
   if (next > 0) byCase[caseId] = next; else delete byCase[caseId];
-  await patchDoc(env, CLOCK_DOC, { today: { d: workDayString(now), byCase } },
+  await patchDoc(env, path, { today: { d: workDayString(now), byCase } },
     { mask: ['today'] }).catch(() => {});
   return next;
 }
-async function readDaySeconds(env, caseId) {
-  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+async function readDaySeconds(env, caseId, path = CLOCK_DOC) {
+  const doc = await getDoc(env, path).catch(() => null);
   return todayByCase(doc?.data)[caseId] || 0;
 }
 
@@ -5804,12 +5849,12 @@ function splitClockAtFlip(w, now = new Date()) {
 }
 
 /** The running list, self-healing: whatever the case docs actually say. */
-async function setClockRunning(env, caseId, running) {
-  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+async function setClockRunning(env, caseId, running, path = CLOCK_DOC) {
+  const doc = await getDoc(env, path).catch(() => null);
   const list = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
   const next = running ? [...new Set([...list, caseId])] : list.filter((x) => x !== caseId);
   if (next.length === list.length && next.every((x, i) => x === list[i])) return;
-  await patchDoc(env, CLOCK_DOC, { running: next }, { mask: ['running'] }).catch(() => {});
+  await patchDoc(env, path, { running: next }, { mask: ['running'] }).catch(() => {});
 }
 
 /**
@@ -5847,7 +5892,7 @@ async function markIncludedHours(env, caseId, c, bankedSeconds, tierMark) {
   }
 }
 
-async function stopWorkClock(env, caseId, w, until = Date.now()) {
+async function stopWorkClock(env, caseId, w, until = Date.now(), path = CLOCK_DOC) {
   const startedAt = w?.startedAt ? new Date(w.startedAt).getTime() : 0;
   let seconds = Math.max(0, Number(w?.seconds) || 0);
   if (startedAt) {
@@ -5864,7 +5909,7 @@ async function stopWorkClock(env, caseId, w, until = Date.now()) {
     if (workDayString(end) === workDayString()) {
       const dayStart = end - workDayElapsedMs(end);
       const inToday = Math.max(0, Math.floor((end - Math.max(startedAt, dayStart)) / 1000));
-      await bankDaySeconds(env, caseId, Math.min(add, inToday));
+      await bankDaySeconds(env, caseId, Math.min(add, inToday), Date.now(), path);
     }
   }
   await patchDoc(env, `cases/${caseId}`, {
@@ -5872,7 +5917,7 @@ async function stopWorkClock(env, caseId, w, until = Date.now()) {
     // stop that drops tierMark merges the two tier clocks back into one.
     work: { ...w, seconds, startedAt: null, updatedAt: new Date(), auto: false, nudged: 0 },
   }, { mask: ['work'] });
-  await setClockRunning(env, caseId, false);
+  await setClockRunning(env, caseId, false, path);
   return seconds;
 }
 
@@ -5892,13 +5937,15 @@ async function stopWorkClock(env, caseId, w, until = Date.now()) {
  * admin-gated route ever writes it.
  */
 async function handleWork(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
-  if (!doc) return json({ error: 'Not found' }, 404);
+  if (!doc || !staffSees(staff, doc.data, env)) return json({ error: 'Not found' }, 404);
+  // The case's clock lives on its advocate's clock doc (2026-10-15).
+  const clock = clockPathFor(env, advocateIdOf(doc.data, env));
   // Nothing is billable to a closed case, and the client can still see their
   // own work total - a stray tap used to put "working on it right now" on the
   // page of somebody whose case ended weeks ago. Stopping one is always
@@ -5927,7 +5974,7 @@ async function handleWork(request, env) {
     }, { mask: ['work'] });
     return json({
       seconds, running: true, auto: w.auto === true, startedAt: new Date(startedAt), tierMark,
-      doing: doingIn || null, todaySeconds: await readDaySeconds(env, caseId),
+      doing: doingIn || null, todaySeconds: await readDaySeconds(env, caseId, clock),
     });
   }
 
@@ -5946,19 +5993,19 @@ async function handleWork(request, env) {
       return json({
         seconds, running: !!startedAt, auto: w.auto === true,
         startedAt: startedAt ? new Date(startedAt) : null, tierMark: 0,
-        todaySeconds: await readDaySeconds(env, caseId),
+        todaySeconds: await readDaySeconds(env, caseId, clock),
       });
     }
     const split = splitClockAtFlip(w);
     await patchDoc(env, `cases/${caseId}`, { work: split.work }, { mask: ['work'] });
     if (split.stretch) {
       await bankDaySeconds(env, caseId,
-        Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000)));
+        Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000)), Date.now(), clock);
     }
     return json({
       seconds: split.work.seconds, running: !!startedAt, auto: w.auto === true,
       startedAt: split.work.startedAt, tierMark: split.work.tierMark,
-      todaySeconds: await readDaySeconds(env, caseId),
+      todaySeconds: await readDaySeconds(env, caseId, clock),
     });
   }
 
@@ -6006,7 +6053,7 @@ async function handleWork(request, env) {
     // breakfast leave today reading zero, not minus nine.
     const stretch = stillRunning ? Math.max(0, Math.floor((Date.now() - startedAt) / 1000)) : 0;
     const stretchToday = Math.min(stretch, Math.floor(workDayElapsedMs() / 1000));
-    const todaySeconds = await bankDaySeconds(env, caseId, (next - seconds - stretch) + stretchToday);
+    const todaySeconds = await bankDaySeconds(env, caseId, (next - seconds - stretch) + stretchToday, Date.now(), clock);
     return json({
       seconds: next, running: stillRunning, auto: w.auto === true,
       startedAt: stillRunning ? anchor : null,
@@ -6025,7 +6072,7 @@ async function handleWork(request, env) {
     return json({
       seconds, running: !!startedAt, auto: w.auto === true,
       startedAt: startedAt ? new Date(startedAt) : null,
-      todaySeconds: await readDaySeconds(env, caseId),
+      todaySeconds: await readDaySeconds(env, caseId, clock),
       tierMark,
     });
 
@@ -6060,7 +6107,7 @@ async function handleWork(request, env) {
   if (on) {
     // The day figure rides on every answer in this block. Starting banks
     // nothing, so this is a read of what earlier stretches already put there.
-    const todaySeconds = await readDaySeconds(env, caseId);
+    const todaySeconds = await readDaySeconds(env, caseId, clock);
     if (!startedAt) {
       const now = new Date();
       await patchDoc(env, `cases/${caseId}`, {
@@ -6068,7 +6115,7 @@ async function handleWork(request, env) {
         // silently drop tierMark and merge the two tier clocks back together.
         work: { ...w, seconds, startedAt: now, updatedAt: now, auto, nudged: 0, doing: doingIn || null },
       }, { mask: ['work'] });
-      await setClockRunning(env, caseId, true);
+      await setClockRunning(env, caseId, true, clock);
       return json({ seconds, running: true, auto, startedAt: now, todaySeconds, tierMark, doing: doingIn || null });
     }
     // Already running: leave the existing start alone rather than resetting
@@ -6096,11 +6143,11 @@ async function handleWork(request, env) {
   // had happened to beacon immediately after starting.
   let until = Date.now();
   if (body?.backdate === true) {
-    const clock = await getDoc(env, CLOCK_DOC).catch(() => null);
-    const seen = clock?.data.seenAt ? new Date(clock.data.seenAt).getTime() : 0;
+    const beacon = await getDoc(env, clock).catch(() => null);
+    const seen = beacon?.data.seenAt ? new Date(beacon.data.seenAt).getTime() : 0;
     if (seen) until = seen;
   }
-  const banked = await stopWorkClock(env, caseId, w, until);
+  const banked = await stopWorkClock(env, caseId, w, until, clock);
   // The doing line dies with the clock: a client must never read "on the
   // phone with a clinic" under a clock that stopped an hour ago.
   if (w.doing) {
@@ -6122,7 +6169,7 @@ async function handleWork(request, env) {
     seconds: banked,
     running: false,
     startedAt: null,
-    todaySeconds: await readDaySeconds(env, caseId),
+    todaySeconds: await readDaySeconds(env, caseId, clock),
     tierMark,
     // What the caller tells him: a backdated stop banked less than the clock
     // on screen was showing, and silence about that reads as lost time.
@@ -6147,19 +6194,21 @@ async function handleWork(request, env) {
  * exactly the state he asked to be asked about.
  */
 async function handleWorkPresence(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  // Every advocate's own beacon, on their own clock doc (2026-10-15).
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
+  const clock = clockPathFor(env, staff.uid);
   const body = await request.json().catch(() => ({}));
   const raw = typeof body?.caseId === 'string' ? body.caseId : '';
   const atCaseId = /^[\w-]{1,64}$/.test(raw) ? raw : '';
 
-  const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+  const doc = await getDoc(env, clock).catch(() => null);
   const prevAt = typeof doc?.data.atCaseId === 'string' ? doc.data.atCaseId : '';
   const prevSeen = doc?.data.seenAt ? new Date(doc.data.seenAt).getTime() : 0;
   const running = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
   const wasAway = !prevSeen || Date.now() - prevSeen > WORK_PRESENCE_STALE_MS;
 
-  await patchDoc(env, CLOCK_DOC, { seenAt: new Date(), atCaseId },
+  await patchDoc(env, clock, { seenAt: new Date(), atCaseId },
     { mask: ['seenAt', 'atCaseId'] }).catch(() => {});
 
   // Today's per-case log rides back on every beat. The beacon is the one
@@ -6177,7 +6226,7 @@ async function handleWorkPresence(request, env) {
   for (const id of running) {
     const c = await getDoc(env, `cases/${id}`).catch(() => null);
     const w = c?.data.work;
-    if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
+    if (!w?.startedAt) { await setClockRunning(env, id, false, clock); continue; }
     // NOTHING IS STOPPED HERE ANY MORE (Eric, 2026-08-25: "no automatic
     // start/stops"). This used to end an `auto` stretch the moment he was
     // seen elsewhere in the app - the other half of the chart-entry
@@ -6243,8 +6292,22 @@ async function cronWatchdog(env) {
  * is running, which is almost all of them.
  */
 async function runWorkClockNudges(env) {
+  // His clock doc, and every advocate's (2026-10-15): each one's reminders go
+  // to that advocate, by push and by email, and to nobody else. One read for
+  // his and one list for theirs; nothing more while nothing is running.
+  const theirs = await listDocs(env, 'staffClocks', { pageSize: 300 }).catch(() => []);
+  await nudgeOneClock(env, CLOCK_DOC, env.ADMIN_UID, env.ADMIN_EMAIL, null);
+  for (const row of theirs) {
+    const running = Array.isArray(row.data?.running) ? row.data.running.filter((x) => typeof x === 'string') : [];
+    if (!running.length) continue;
+    const adv = await getDoc(env, `advocates/${row.id}`).catch(() => null);
+    await nudgeOneClock(env, `staffClocks/${row.id}`, row.id, adv?.data?.email || '', row);
+  }
+}
+
+async function nudgeOneClock(env, path, ownerUid, ownerEmail, preread) {
   try {
-    const doc = await getDoc(env, CLOCK_DOC).catch(() => null);
+    const doc = preread || await getDoc(env, path).catch(() => null);
     const running = Array.isArray(doc?.data.running) ? doc.data.running.filter((x) => typeof x === 'string') : [];
     if (!running.length) return;
     const seenAt = doc?.data.seenAt ? new Date(doc.data.seenAt).getTime() : 0;
@@ -6279,7 +6342,7 @@ async function runWorkClockNudges(env) {
       const c = await tryGet(env, `cases/${id}`);
       if (c === READ_FAILED) continue; // unreadable is not stopped (2026-09-09)
       const w = c?.data.work;
-      if (!w?.startedAt) { await setClockRunning(env, id, false); continue; }
+      if (!w?.startedAt) { await setClockRunning(env, id, false, path); continue; }
       if (Number(w.nudged || 0) >= rung) continue;
       await patchDoc(env, `cases/${id}`, { work: { ...w, nudged: rung } }, { mask: ['work'] }).catch(() => {});
       const started = new Date(w.startedAt).getTime();
@@ -6319,8 +6382,8 @@ async function runWorkClockNudges(env) {
       // total would read as a surprise.
       const thisRun = totalMins - stretchMins >= 1 ? ` (${fmtMins(stretchMins)} this run)` : '';
       const mins = stretchMins;
-      const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
-      for (const a of admins) {
+      // The clock's own advocate, and only them (2026-10-15).
+      for (const a of ownerUid ? [{ id: ownerUid }] : []) {
         await notifyUser(env, a.id, {
           title: 'Pocket Advocate',
           // Past an hour this stops being "are you still there?" and starts
@@ -6347,9 +6410,9 @@ async function runWorkClockNudges(env) {
       // Email depends on none of that. It is deliberately hourly-only rather
       // than on every rung: the five and ten minute rungs are a routine "are
       // you still there?" and do not deserve an inbox.
-      if (mins >= WORK_NUDGE_REPEAT_MINUTES && env.ADMIN_EMAIL) {
+      if (mins >= WORK_NUDGE_REPEAT_MINUTES && ownerEmail) {
         await sendEmail(env, {
-          to: env.ADMIN_EMAIL,
+          to: ownerEmail,
           subject: `The clock is still running on ${firstName(c.data.clientName) || 'a case'} (${ran})`,
           html: `<p>The work clock on <strong>${escHtml(c.data.clientName || 'a case')}</strong>
               has been running for <strong>${ran}</strong>.</p>
@@ -6420,6 +6483,36 @@ async function handleLedger(request, env) {
       tipCents: clients.reduce((s, c) => s + c.tipCents, 0),
     },
   });
+}
+
+/**
+ * GET /api/notes?caseId=   POST /api/notes { caseId, html }   staff
+ *
+ * AN ADVOCATE'S NOTES (2026-10-15). The private notes page, for an advocate
+ * on their own case: the same document his notes live on (private/notes,
+ * browser-denied by rule both ways), the same sanitizer, and the same 200,000
+ * character ceiling. His notes keep riding the reading's route, where they
+ * have always been; this is the door for everyone whose case it is.
+ */
+async function handleCaseNotes(request, env, url) {
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
+  const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
+  const caseId = String(body?.caseId || url.searchParams.get('caseId') || '');
+  if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
+  const doc = await getDoc(env, `cases/${caseId}`).catch(() => null);
+  if (!doc || !staffSees(staff, doc.data, env)) return json({ error: 'Not found' }, 404);
+  const path = `cases/${caseId}/private/notes`;
+  if (request.method === 'GET') {
+    const notes = await getDoc(env, path).catch(() => null);
+    return json({ html: notes?.data?.html || '', updatedAt: notes?.data?.updatedAt || null });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  if (typeof body?.html !== 'string') return json({ error: 'Bad note' }, 400);
+  if (body.html.length > 200_000) return json({ error: 'That note is too long to save.' }, 400);
+  const now = new Date();
+  await patchDoc(env, path, { html: sanitizeNotes(body.html), updatedAt: now }, { mask: ['html', 'updatedAt'] });
+  return json({ ok: true, savedAt: now.toISOString() });
 }
 
 /**
@@ -7166,7 +7259,8 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   if (okBuy === false) return confirmFullAccessPurchase(env, session, attempt + 1);
   if (split.stretch) {
     await bankDaySeconds(env, caseId,
-      Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000))).catch(() => {});
+      Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000)), Date.now(),
+      clockPathFor(env, advocateIdOf(c.data, env))).catch(() => {});
   }
 
   if (c.data.clientEmail) {
@@ -8697,7 +8791,24 @@ async function handleAdminLogin(request, env) {
   await new Promise((r) => setTimeout(r, 400));
 
   const emailOk = env.ADMIN_EMAIL && email === env.ADMIN_EMAIL.toLowerCase();
-  if (!expected || !adminUid || !emailOk || !timingSafeEqual(password, expected)) {
+  // AN ADVOCATE'S DOOR (2026-10-15). Any other address is tried as an
+  // advocate's: the same throttle, the same sentence on a miss, and a hashed
+  // password checked on the server. The password is never logged.
+  if (!emailOk) {
+    const adv = email ? await advocateLogin(env, email, password).catch(() => null) : null;
+    if (!adv) {
+      await cache.put(
+        rlKey,
+        new Response(String(fails + 1), { headers: { 'cache-control': 'max-age=900' } })
+      );
+      return json({ error: 'Wrong email or password.' }, 401);
+    }
+    await cache.delete(rlKey);
+    const token = await mintCustomToken(env, adv.uid);
+    const deviceToken = await issueDeviceToken(env, adv.uid, adv.email);
+    return withStaffCookie(env, json({ token, deviceToken, role: ADVOCATE_ROLE, mustChange: adv.mustChange }), adv.uid);
+  }
+  if (!expected || !adminUid || !timingSafeEqual(password, expected)) {
     await cache.put(
       rlKey,
       new Response(String(fails + 1), { headers: { 'cache-control': 'max-age=900' } })
@@ -8778,6 +8889,9 @@ async function handleRequestCode(request, env) {
   // revealed beyond that, and the password is still throttled server-side.
   if (env.ADMIN_EMAIL && email === env.ADMIN_EMAIL.toLowerCase())
     return json({ ok: true, mode: 'password' });
+  // So does an advocate's (2026-10-15): "Admin enters the email/password when
+  // creating the account."
+  if (await isStaffLogin(env, email)) return json({ ok: true, mode: 'password' });
 
   const key = await sha256hex(email);
   const now = Date.now();
@@ -8879,12 +8993,13 @@ async function handleAdminSession(request, env) {
     });
   }
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
-  return new Response(JSON.stringify({ ok: true }), {
+  // Staff: Eric, or an active advocate (2026-10-15).
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
+  return new Response(JSON.stringify({ ok: true, role: staff.isAdmin ? 'admin' : ADVOCATE_ROLE }), {
     headers: {
       'content-type': 'application/json',
-      'set-cookie': await adminCookieHeader(env, admin.uid),
+      'set-cookie': await adminCookieHeader(env, staff.uid),
     },
   });
 }
@@ -8929,7 +9044,7 @@ async function handleDeviceSignin(request, env) {
     expiresAt: new Date(Date.now() + DEVICE_TOKEN_TTL_DAYS * 86_400_000),
   });
   const token = await mintCustomToken(env, d.uid);
-  return withAdminCookie(env, json({ token }), d.uid);
+  return withStaffCookie(env, json({ token }), d.uid);
 }
 
 async function lookupUidByEmail(env, email) {
@@ -10806,7 +10921,8 @@ async function handleCaseUpdate(request, env) {
     });
     if (split.stretch) {
       await bankDaySeconds(env, caseId,
-        Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000))).catch(() => {});
+        Math.min(split.stretch, Math.floor(workDayElapsedMs() / 1000)), Date.now(),
+        clockPathFor(env, advocateIdOf(doc.data, env))).catch(() => {});
     }
     // The email the webhook sends, with one sentence added when the month
     // has not begun yet. It asks the client to sign NOTHING (Eric,

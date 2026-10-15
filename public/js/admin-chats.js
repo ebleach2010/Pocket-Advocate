@@ -4,7 +4,7 @@
 
 import './admin-ledger.js';
 import { db, collection, getDocs, doc, getDoc } from './firebase.js';
-import { requireAdmin, hydrateNav } from './auth.js';
+import { requireAdmin, hydrateNav, staffCasesQuery, staffSubsQuery } from './auth.js';
 import { mountChat } from './chat.js';
 
 hydrateNav();
@@ -48,9 +48,10 @@ async function loadInbox() {
   const page = document.getElementById('page');
   const threads = [];
   try {
+    // Every thread for him, their own for an advocate (2026-10-15).
     const [cases, subs] = await Promise.all([
-      getDocs(collection(db, 'cases')),
-      getDocs(collection(db, 'subscriptions')),
+      getDocs(staffCasesQuery(user)),
+      getDocs(staffSubsQuery(user)),
     ]);
     cases.forEach((d) => {
       const c = d.data();

@@ -927,7 +927,11 @@ check('S45 a question row is named as one wherever a row is labelled (the CSV, t
   && /who: c\.self \? `\$\{c\.clientName \|\| 'My own case'\} \(mine\)` : \(c\.clientEmail \|\| c\.clientUid\),/.test(CHATS)
   && /const who = r\.data\.role === 'admin' \? 'Eric'\n\s+: r\.data\.role === 'question' \? 'Asked of Eric' : 'Client';/.test(ADV)
   && /const ownDay = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV) && /\$\{ownDay\n\s+\? `You summarise one day of Eric's own log/.test(ADV)
-  && /saveUid: c\.self \? user\.uid : c\.clientUid,/.test(CASE) && /profiles\/\$\{data\.self \? user\.uid : data\.clientUid\}\/saved/.test(CASE));
+  // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate saves nothing to a client's
+  // shelf and does not list it (it follows the client across advocates); his own case's shelf is still his.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.44): the case page's saveUid put back to `c.self ? user.uid : c.clientUid` made this read
+  //   FAIL  S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list, the day summary), and the saved shelf on his own case is his
+  && /saveUid: advocate \? null : c\.self \? user\.uid : c\.clientUid,/.test(CASE) && /\.\.\.\(advocate \? \[\] : \[\['saved', `profiles\/\$\{data\.self \? user\.uid : data\.clientUid\}\/saved`\]\]\),/.test(CASE));
 
 // NEGATIVE CONTROL (run 2026-09-03): `if (self) prepBtn.remove();` replaced with `if (false)` made this read
 //   FAIL  S46 nothing on his own case writes to a client: no Prepare a response, no duty of care panel, no Send to client on the agenda; the appeal is his own and the call notes have no pitch

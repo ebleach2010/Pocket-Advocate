@@ -105,6 +105,9 @@ const demoVoice = {
 
 export function demoApi(role, store) {
   const real = window.fetch.bind(window);
+  // Staff are him or an advocate (2026-10-15); `me` is whoever is signed in.
+  const staff = role === 'admin' || role === 'advocate';
+  const me = role === 'advocate' ? 'demo-advocate' : role === 'admin' ? 'demo-admin' : 'demo-client';
 
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url || '';
@@ -124,7 +127,12 @@ export function demoApi(role, store) {
     if (path === '/api/auth/request-code') { await beat(); return ok({ ok: true }); }
     if (path === '/api/auth/verify-code') { await beat(); return ok({ token: 'demo', deviceToken: 'demo' }); }
     if (path === '/api/auth/device-signin') return ok({ token: 'demo' });
-    if (path === '/api/admin/login' || path === '/api/admin/pin') return ok({ token: 'demo', deviceToken: 'demo' });
+    if (path === '/api/admin/login' || path === '/api/admin/pin') {
+      // An advocate's door answers with who they are, and whether they still
+      // hold the password they were given (2026-10-15).
+      if (role === 'advocate') return ok({ token: 'demo', deviceToken: 'demo', role: 'advocate', mustChange: !!store.docs.get('advocates/demo-advocate')?.demoMustChange });
+      return ok({ token: 'demo', deviceToken: 'demo' });
+    }
     if (path === '/api/admin/session') return ok({ ok: true });
     // The Clients page's stall report (2026-09-24, v7.16): kept on the page for the drive, sent nowhere.
     if (path === '/api/admin/stall') { (window.__paDemoStalls ||= []).push(body); return ok({ ok: true }); }
@@ -1333,7 +1341,7 @@ export function demoApi(role, store) {
       const key = `invites/${id}`;
       const inv = /^[\w-]{6,64}$/.test(id) ? store.docs.get(key) : null;
       if (!inv) return fail(404, 'That invitation could not be found. Reply to the email and I will send another.');
-      const profile = store.docs.get(`users/${role === 'admin' ? 'demo-admin' : 'demo-client'}`) || {};
+      const profile = store.docs.get(`users/${me}`) || {};
       const mine = String(profile.email || 'jordan@example.demo').toLowerCase();
       if (mine !== String(inv.email).toLowerCase()) {
         const [u, h] = String(inv.email).split('@');
@@ -1516,7 +1524,7 @@ export function demoApi(role, store) {
       // to land on the case return page, which is not where a chat
       // subscriber goes, so the chat flow could not be walked).
       if (path === '/api/subscribe') {
-        const uid = role === 'admin' ? 'demo-admin' : 'demo-client';
+        const uid = me;
         const now = Date.now();
         store.docs.set(`subscriptions/${uid}`, {
           uid, status: 'active', termsAckAt: body?.termsAckAt || now,
@@ -1890,7 +1898,7 @@ export function demoApi(role, store) {
       // The clear cancel (2026-10-15): the demo plays Stripe's cancel step,
       // ending the subscription at its period's end as Stripe would.
       if (body?.flow === 'cancel') {
-        const key = `subscriptions/${role === 'admin' ? 'demo-admin' : 'demo-client'}`;
+        const key = `subscriptions/${me}`;
         const s = store.docs.get(key);
         if (s) { store.docs.set(key, { ...s, cancelAtPeriodEnd: true }); store.persist?.(); store.fire?.(key); }
       }
@@ -2320,7 +2328,7 @@ export function demoApi(role, store) {
     // Per-case, like the routes it serves: hardcoding the fixture id meant a
     // save on the booked case landed under the fixture and listed there.
     if (path === '/api/saved') {
-      const uid = role === 'admin' ? 'demo-admin' : 'demo-client';
+      const uid = me;
       const sc = body.id || q.get('id') || DEMO_CASE_ID;
       const base = `cases/${sc}/private/saved/${uid}`;
       if (!init.method || init.method === 'GET') {
@@ -2353,10 +2361,10 @@ export function demoApi(role, store) {
         const id = `a${Date.now()}`;
         const item = {
           text: String(body.text || '').slice(0, 500),
-          by: role === 'admin' ? 'demo-admin' : 'demo-client',
+          by: me,
           // Normalised: the seamless door's role string is '1', and storing
           // it raw hid the Remove button (case.js gates on role === 'client').
-          role: role === 'admin' ? 'admin' : 'client',
+          role: staff ? 'admin' : 'client',
           at: new Date(), done: false, doneAt: null,
         };
         store.docs.set(`${base}/${id}`, item);
@@ -2478,7 +2486,7 @@ export function demoApi(role, store) {
       return fail(404, 'Not found');
     }
     if (path === '/api/file/meta') {
-      if (role !== 'admin') return fail(404, 'Not found');
+      if (!staff) return fail(404, 'Not found');
       const target = String(body.path || '');
       if (!/^(cases|subscriptions)\/[\w-]+\/(report|recording|uploads|chat-files)\//.test(target))
         return fail(400, 'Bad path');
@@ -2510,6 +2518,141 @@ export function demoApi(role, store) {
         name: meta.paName || '', category: meta.paCategory || '',
         starred: !!meta.paStarred,
       });
+    }
+
+    // ---- many advocates (2026-10-15) ----------------------------------------
+    // His Advocates tab, an advocate's own account page and their notes,
+    // mirrored over the demo store: the same answers and refusals as
+    // worker/advocates.js, with nothing hashed because nothing is real.
+    const advView = (uid, a = {}) => {
+      const missing = [];
+      if (!a.name) missing.push('name');
+      if (!a.headshotPath) missing.push('headshot');
+      if (!a.credentials) missing.push('credentials');
+      if (!a.primarySpecialty) missing.push('primary specialty');
+      if (!a.bio) missing.push('bio');
+      return {
+        uid, name: a.name || '', email: a.email || '', active: a.active === true, owner: a.owner === true,
+        credentials: a.credentials || '', bio: a.bio || '', primarySpecialty: a.primarySpecialty || '',
+        specialties: a.specialties || [], hasHeadshot: !!a.headshotPath, commissionPct: Number(a.commissionPct ?? 60),
+        advisorOptIn: a.advisor?.optedIn === true, advisorEnabled: a.advisor?.enabled === true,
+        acceptingNew: a.acceptingNew !== false, onboardedAt: a.onboardedAt || null, createdAt: a.createdAt || null, missing,
+      };
+    };
+    const SPECIALTIES = ['Neurology', 'Autoimmune / Rheumatology', 'Cardiology', 'Oncology', 'Rare Disease', 'Complex / Undiagnosed Cases'];
+    if (path === '/api/admin/advocates') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const action = body.action || 'list';
+      if (action === 'list') {
+        const list = [...store.docs.entries()].filter(([k]) => /^advocates\/[^/]+$/.test(k)).map(([k, v]) => advView(k.split('/')[1], v))
+          .sort((a, b) => (b.owner - a.owner) || (b.active - a.active) || a.name.localeCompare(b.name));
+        return ok({ advocates: list, specialties: SPECIALTIES, defaultCommissionPct: 60 });
+      }
+      if (action === 'create') {
+        const email = String(body.email || '').trim().toLowerCase();
+        const name = String(body.name || '').trim();
+        if (!name) return fail(400, 'Their name, please.');
+        if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(400, 'Enter a valid email address.');
+        if (String(body.password || '').length < 10) return fail(400, 'Use at least 10 characters.');
+        if ([...store.docs.entries()].some(([k, v]) => /^advocates\//.test(k) && v.email === email)) return fail(409, 'That address already has an advocate account.');
+        const uid = `demo-adv-${Date.now().toString(36)}`;
+        store.docs.set(`advocates/${uid}`, { uid, name, email, active: true, owner: false, commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null, acceptingNew: true, advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true });
+        store.docs.set(`users/${uid}`, { email, name, role: 'advocate' });
+        store.persist?.();
+        return ok({ ok: true, uid, emailed: true });
+      }
+      const uid = String(body.uid || '');
+      const a = store.docs.get(`advocates/${uid}`);
+      if (!a) return fail(404, 'Not found');
+      if (action === 'deactivate' || action === 'activate') {
+        if (a.owner) return fail(409, 'You are the owner; your account stays on.');
+        store.docs.set(`advocates/${uid}`, { ...a, active: action === 'activate' });
+      } else if (action === 'reset-password') {
+        if (a.owner) return fail(409, 'Your own sign-in is your PIN.');
+        if (String(body.password || '').length < 10) return fail(400, 'Use at least 10 characters.');
+        store.docs.set(`advocates/${uid}`, { ...a, demoMustChange: true });
+      } else if (action === 'update') {
+        const next = { ...a };
+        if ('commissionPct' in body) {
+          const pct = Number(body.commissionPct);
+          if (!Number.isInteger(pct) || pct < 0 || pct > 100) return fail(400, 'Commission is a whole percent, 0 to 100.');
+          next.commissionPct = pct;
+        }
+        if ('advisorEnabled' in body) {
+          if (body.advisorEnabled === true && !a.owner && a.advisor?.optedIn !== true) return fail(409, 'They have not opted in. It can be switched on once they do.');
+          next.advisor = { ...(a.advisor || {}), enabled: body.advisorEnabled === true };
+        }
+        store.docs.set(`advocates/${uid}`, next);
+      } else return fail(400, 'Bad request');
+      store.persist?.();
+      return ok({ ok: true, advocate: advView(uid, store.docs.get(`advocates/${uid}`)) });
+    }
+    if (path === '/api/staff/me') {
+      if (!staff) return fail(404, 'Not found');
+      const key = `advocates/${me}`;
+      const a = store.docs.get(key) || {};
+      if ((init.method || 'GET') === 'GET') {
+        return ok({ advocate: advView(me, a), role, mustChange: !!a.demoMustChange, specialties: SPECIALTIES });
+      }
+      if (body.action === 'profile') {
+        const next = { ...a };
+        for (const f of ['name', 'credentials', 'bio', 'primarySpecialty']) if (f in body) next[f] = String(body[f] || '').trim();
+        if ('specialties' in body) next.specialties = [...new Set((body.specialties || []).map((x) => String(x).trim()).filter(Boolean))].slice(0, 6);
+        if ('advisorOptIn' in body) next.advisor = { ...(a.advisor || {}), optedIn: body.advisorOptIn === true, ...(body.advisorOptIn ? {} : { enabled: a.owner ? a.advisor?.enabled === true : false }) };
+        if ('name' in body && !next.name) return fail(400, 'Your name, please.');
+        store.docs.set(key, next);
+        store.persist?.();
+        return ok({ ok: true, advocate: advView(me, next) });
+      }
+      if (body.action === 'password') {
+        if (role === 'admin') return fail(409, 'Your own sign-in is your PIN.');
+        if (!body.current) return fail(403, 'Your current password is not right.');
+        if (String(body.next || '').length < 10) return fail(400, 'Use at least 10 characters.');
+        store.docs.set(key, { ...a, demoMustChange: false });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.action === 'onboarded') {
+        const missing = advView(me, a).missing;
+        if (missing.length) return fail(409, `Still needed: ${missing.join(', ')}.`);
+        if (a.demoMustChange) return fail(409, 'Choose your own password first.');
+        store.docs.set(key, { ...a, onboardedAt: a.onboardedAt || new Date().toISOString() });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      return fail(400, 'Bad request');
+    }
+    if (path === '/api/staff/headshot') {
+      if (!staff) return fail(404, 'Not found');
+      const type = String(init.headers?.['content-type'] || init.headers?.get?.('content-type') || '').split(';')[0];
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return fail(415, 'A JPEG, PNG or WebP photo, please.');
+      const blob = init.body instanceof Blob ? init.body : new Blob([init.body || ''], { type });
+      if (blob.size > 3 * 1024 * 1024) return fail(413, 'That photo is over 3 MB.');
+      const key = `advocates/${me}`;
+      const url = URL.createObjectURL(blob);
+      (window.__paDemoHeadshots ||= {})[me] = url;
+      store.docs.set(key, { ...(store.docs.get(key) || {}), headshotPath: `advocates/${me}/headshot` });
+      store.persist?.();
+      return ok({ ok: true });
+    }
+    if (path === '/api/advocates/headshot') {
+      const uid = q.get('uid') || '';
+      const url = window.__paDemoHeadshots?.[uid];
+      if (url) return real(url);
+      // A plain stand-in when the page was reloaded since the photo was picked.
+      const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96"><rect width="96" height="96" fill="#1B1B21"/><circle cx="48" cy="38" r="18" fill="#3DDCF5"/><rect x="20" y="62" width="56" height="26" rx="13" fill="#3DDCF5"/></svg>';
+      return new Response(svg, { headers: { 'content-type': 'image/svg+xml' } });
+    }
+    if (path === '/api/notes') {
+      if (!staff) return fail(404, 'Not found');
+      const caseId = String(body.caseId || q.get('caseId') || '');
+      const c = store.docs.get(`cases/${caseId}`);
+      if (!c || (role === 'advocate' && c.advocateId !== me)) return fail(404, 'Not found');
+      const key = `cases/${caseId}/private/notes/doc`;
+      if ((init.method || 'GET') === 'GET') return ok({ html: store.docs.get(key)?.html || '' });
+      store.docs.set(key, { html: String(body.html || ''), updatedAt: new Date().toISOString() });
+      store.persist?.();
+      return ok({ ok: true, savedAt: new Date().toISOString() });
     }
 
     // ---- everything else --------------------------------------------------
@@ -2555,12 +2698,12 @@ export function demoApi(role, store) {
         // pages render ({ id, kind, label/emoji, by, at }). A bare id string
         // here meant no chip ever drew in the demo, so the feature the demo
         // exists to show was invisible in it.
-        const myUid = role === 'admin' ? 'demo-admin' : 'demo-client';
+        const myUid = me;
         const reaction = body.reaction ?? null;
         const emo = EMOJI_REACTIONS.find((r) => r.id === reaction);
         const stat = STATUS_REACTIONS.find((r) => r.id === reaction);
         if (reaction !== null && !emo && !stat) return fail(400, 'Unknown reaction');
-        if (stat && role !== 'admin') return fail(403, 'That reaction is not available.');
+        if (stat && !staff) return fail(403, 'That reaction is not available.');
         // Live demo messages carry `from`; seeded fixtures always do too,
         // but the role fallback keeps any stray legacy doc behaving.
         // handleChatReact's rules, mirrored line for line. Where this file
@@ -2568,11 +2711,11 @@ export function demoApi(role, store) {
         // an invented admin carve-out here is what let drive-status.mjs run
         // green while Eric's own dropdown was refusing him live.
         const mine = msg.from ? msg.from === myUid
-          : (msg.role || 'client') === (role === 'admin' ? 'admin' : 'client');
-        const adminStatus = role === 'admin' && (stat || reaction === null);
+          : (msg.role || 'client') === (staff ? 'admin' : 'client');
+        const adminStatus = staff && (stat || reaction === null);
         if (mine && !adminStatus)
           return fail(403, "You can only react to the other person's messages.");
-        if (msg.reaction?.kind === 'status' && role !== 'admin')
+        if (msg.reaction?.kind === 'status' && !staff)
           return fail(403, 'That message is showing a status note.');
         const rec = emo
           ? { id: reaction, emoji: emo.emoji, kind: 'emoji', by: myUid, at: new Date() }

@@ -454,7 +454,11 @@ ck('L27 the log is on the client\'s page, on every case',
 // NEGATIVE CONTROL (run 2026-08-27): moving 'log' back under Act made this
 // read
 //   FAIL  L28 ... -- log is behind a tier gate the client's half is not
-const strip = (ADMIN.match(/groups: \[[\s\S]*?\n    \],/) || [''])[0];
+// RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." His strip is the second list after
+// `groups: advocate ? [ ... ] :` (an advocate's is its own short list).
+// NEGATIVE CONTROL (run 2026-10-15, v7.44): his Act group's 'log' taken out made this read
+//   FAIL  L28 and his half of it is on every case as well
+const strip = (ADMIN.match(/groups: advocate \? \[[\s\S]*?\n    \] : \[[\s\S]*?\n    \],/) || [''])[0].replace(/^groups: advocate \? \[[\s\S]*?\n    \] : /, 'groups: ');
 // THE EXPECTATION MOVED, 2026-08-30 (Eric: "This and work log should be tabs
 // under 'act' since it has so much space"). The log lives under Act now, and
 // the TIER GATE MOVED OFF THE GROUP so the entry form is still on every

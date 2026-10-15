@@ -71,6 +71,8 @@ const KEY = 'pa-demo-store';
  */
 const NOT_FOR_CLIENTS = [/\/advisor\//, /^advisorStyle\//, /^advisorKnowledge\//,
   /^caseMeta\//, /^advisorQueue\//, /\/private\//,
+  // The advocates' own records (2026-10-15): Worker-only in the real app.
+  /^advocates\//, /^staffClocks\//,
   // The Trade portal (2026-09-21): his desk, never a client's.
   /^trade\//];
 let clientSide = false;
@@ -523,20 +525,22 @@ function onDisconnect() { return { set: async () => {} }; }
 // ----------------------------------------------------------------- the person
 
 function makeAuth(role) {
-  const uid = role === 'admin' ? 'demo-admin' : 'demo-client';
-  const user = {
-    uid,
-    email: role === 'admin' ? 'you@pocketadvocate.demo' : 'jordan@example.demo',
-    displayName: role === 'admin' ? 'Eric' : 'Jordan Avery',
-    getIdToken: async () => 'demo',
-  };
+  // Three people now (2026-10-15): him, an advocate he added, and a client.
+  const who = {
+    admin: ['demo-admin', 'you@pocketadvocate.demo', 'Eric'],
+    advocate: ['demo-advocate', 'ana@advocate.demo', 'Ana Rivera'],
+    client: ['demo-client', 'jordan@example.demo', 'Jordan Avery'],
+  }[role] || ['demo-client', 'jordan@example.demo', 'Jordan Avery'];
+  const user = { uid: who[0], email: who[1], displayName: who[2], getIdToken: async () => 'demo' };
   return { user, currentUser: user };
 }
 
 // --------------------------------------------------------------------- mount
 
 export function mountDemo(role) {
-  const admin = role === 'admin';
+  // Staff hold the working half of the store: him, or an advocate (2026-10-15).
+  const advocate = role === 'advocate';
+  const admin = role === 'admin' || advocate;
   // Set before anything reads or writes, so the first persist already filters.
   clientSide = !admin;
   if (!load()) reset();
@@ -550,7 +554,7 @@ export function mountDemo(role) {
     if (load()) for (const l of listeners) { try { l(''); } catch { /* ignore */ } }
   });
 
-  const auth = makeAuth(admin ? 'admin' : 'client');
+  const auth = makeAuth(advocate ? 'advocate' : admin ? 'admin' : 'client');
   // users/{uid} has to exist, and with the right role, because auth.js reads
   // it to decide which half of the app to show.
   //
@@ -562,7 +566,7 @@ export function mountDemo(role) {
     ...(docs.get(`users/${auth.user.uid}`) || {}),
     email: auth.user.email,
     name: auth.user.displayName,
-    role: admin ? 'admin' : 'client',
+    role: advocate ? 'advocate' : admin ? 'admin' : 'client',
   });
   persist();
 

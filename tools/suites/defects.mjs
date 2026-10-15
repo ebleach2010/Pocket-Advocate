@@ -425,7 +425,11 @@ ck('clock: all switches share one painter set, so no two can disagree',
 // failed to find it twice more.
 {
   const AC = f('public/js/admin-case.js');
-  const block = (AC.match(/groups: \[([\s\S]*?)\n    \],/) || [])[1] || '';
+  // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate's strip is
+  // its own short list (Case, Mine, Act); HIS strip, the one these names are about, is the second list.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.44): his strip's 'Track' label renamed 'Before' made this read
+  //   FAIL  groups: the five names are Case, Advisor, Track, Mine and Act
+  const block = (AC.match(/groups: advocate \? \[[\s\S]*?\n    \] : \[([\s\S]*?)\n    \],/) || [])[1] || '';
   const labels = [...block.matchAll(/label: '([^']+)'/g)].map((m) => m[1]);
   const ids = [...block.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
   ck('groups: the five names are Case, Advisor, Track, Mine and Act',
@@ -730,10 +734,16 @@ ck('clock: all switches share one painter set, so no two can disagree',
   const gateSrc = (AUTH.match(/export async function requireAdmin\(\) \{[\s\S]*?location\.href = '\/';\n\s+return null;\n\s+\}/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-09-09): isAdmin's catch put back to `return false;` made this read
   //   FAIL  the browser gate answers null when the profile cannot be read, and a device that already carries the admin hint is left signed in on that answer; only a definite no clears the device
+  // RE-PINNED 2026-10-15 (v7.44): the gate admits staff, him or an advocate (staffRole, the same three answers), and the
+  // device hint remembers which half of the app is this device's.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.44): staffRole's catch put back to `return false;` made this read
+  //   FAIL  the browser gate answers null when the profile cannot be read, and a device that already carries the admin hint is left signed in on that answer; only a definite no clears the device
+  const roleSrc = (AUTH.match(/export async function staffRole\(user\) \{[\s\S]*?\n\}/) || [''])[0];
   ck('the browser gate answers null when the profile cannot be read, and a device that already carries the admin hint is left signed in on that answer; only a definite no clears the device',
     /\} catch \{\n\s+return null;\n\s+\}/.test(isAdminSrc)
-    && /const admin = await isAdmin\(user\);/.test(gateSrc)
-    && /const unknownButHis = admin === null && !!localStorage\.getItem\('pa-admin-device'\);/.test(gateSrc)
+    && /if \(snapshot === TOO_SLOW\) return null;/.test(roleSrc) && /\} catch \{\n\s+return null;\n\s+\}/.test(roleSrc)
+    && /const role = await staffRole\(user\);/.test(gateSrc)
+    && /const unknownButHis = role === null && !!hint;/.test(gateSrc)
     && /if \(!admin && !unknownButHis\) \{/.test(gateSrc)
     && /localStorage\.removeItem\('pa-admin-device'\);\n\s+localStorage\.removeItem\('pa-admin-door'\);/.test(gateSrc)
     && !/if \(!\(await isAdmin\(user\)\)\) \{/.test(AUTH),
@@ -931,7 +941,10 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && noStore.reloads === 0 && noStore.stuck === 'checking your sign-in'
     && /window\.__paStage = window\.__paStage \|\| 'code';/.test(net) && HTML.indexOf('NEVER STUCK ON LOADING') < HTML.indexOf('<script type="module" src="/js/admin.js">')
     && slow === within.TOO_SLOW && JSON.stringify(slowCovers) === '{}' && refused === 'permission-denied' && fast === 'cases'
-    && /const snapshot = await within\(15_000, \(\) => getDocs\(collection\(db, 'cases'\)\)\);\n\s+if \(snapshot === TOO_SLOW\) throw new Error\('the database did not answer'\);/.test(APP)
+    // RE-PINNED 2026-10-15 (v7.44): Eric, "Advocates can only view cases assigned to them." The read is every case for
+    // him and an advocate's own (staffCasesQuery), under the same fifteen seconds.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.44): the cases read put back to a bare `await getDocs(staffCasesQuery(user))` made this read FAIL
+    && /const snapshot = await within\(15_000, \(\) => getDocs\(staffCasesQuery\(user\)\)\);\n\s+if \(snapshot === TOO_SLOW\) throw new Error\('the database did not answer'\);/.test(APP)
     && /return within\(10_000, async \(\) => \{\n\s+const token = await user\.getIdToken\(\);\n\s+const res = await fetch\('\/api\/advisor\/covers'/.test(APP)
     // RE-PINNED 2026-10-15 (v7.39): the rate panel and its read moved into the settings cog (Eric, "let me adjust
     // price for each effective immediately"), so the voice study is the one extra left on this page.

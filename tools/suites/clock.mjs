@@ -51,6 +51,8 @@ function sfn(name) {
 const LIFTED = [
   konst('WORK_NUDGE_MINUTES'), konst('WORK_NUDGE_REPEAT_MINUTES'),
   konst('WORK_PRESENCE_STALE_MS'), konst('CLOCK_DOC'), konst('WORK_DAY_TZ'),
+  // Every advocate's own clock doc (2026-10-15).
+  sfn('clockPathFor'),
   sfn('workDayString'), sfn('workDayElapsedMs'), sfn('todayByCase'),
   sfn('splitClockAtFlip'),
   fn('bankDaySeconds'), fn('readDaySeconds'),
@@ -58,7 +60,7 @@ const LIFTED = [
   // branch since 2026-09-02 (the fulfillment mark), so they lift beside it.
   konst('FULL_INCLUDED_HOURS'), fn('markIncludedHours'),
   fn('setClockRunning'), fn('stopWorkClock'), fn('handleWork'),
-  fn('handleWorkPresence'), fn('runWorkClockNudges'), fn('cronWatchdog'),
+  fn('handleWorkPresence'), fn('runWorkClockNudges'), fn('nudgeOneClock'), fn('cronWatchdog'),
 ].join('\n');
 
 // ---- the world it runs in ------------------------------------------------
@@ -82,6 +84,11 @@ const deps = {
   firstName: (v) => String(v || '').trim().split(/\s+/)[0] || '',
   json: (data, status = 200) => ({ status, body: data }),
   requireAdmin: async () => ({ uid: 'eric' }),
+  // The admin or the case's own advocate (2026-10-15); he is both here.
+  requireStaff: async () => ({ uid: 'eric', isAdmin: true, advocateId: 'eric' }),
+  staffSees: (st) => !!st && st.isAdmin,
+  advocateIdOf: (d, e) => (d && d.advocateId) || e?.ADMIN_UID || '',
+  listDocs: async (env, coll) => [...docs.entries()].filter(([k]) => k.startsWith(`${coll}/`)).map(([k, v]) => ({ id: k.split('/')[1], data: clone(v) })),
   // The email backstop. notifyUser is a silent no-op with no push
   // subscription, so this is the path that still reaches him.
   sendEmail: async (env2, msg) => { emails.push(msg); },
@@ -119,7 +126,7 @@ const W = build(...Object.values(deps), FakeDate);
 // ADMIN_EMAIL is set, because the email backstop only exists when it is - and
 // the checks below assert both halves: that it fires past an hour, and that a
 // deployment without it degrades to push alone rather than throwing.
-const env = { ADMIN_EMAIL: 'eric@example.com', PUBLIC_BASE_URL: 'https://example.com' };
+const env = { ADMIN_UID: 'eric', ADMIN_EMAIL: 'eric@example.com', PUBLIC_BASE_URL: 'https://example.com' };
 const req = (body) => ({ json: async () => body });
 const work = (id) => docs.get(`cases/${id}`)?.work || {};
 const running = () => (docs.get(W.CLOCK_DOC)?.running || []).slice().sort();
@@ -384,7 +391,7 @@ reset();
 await W.handleWork(req({ caseId: 'a', on: true, auto: false }), env);
 docs.set(W.CLOCK_DOC, { running: ['a'], seenAt: new Date(NOW).toISOString(), atCaseId: '' });
 advance(90);
-await W.runWorkClockNudges({});
+await W.runWorkClockNudges({ ADMIN_UID: 'eric' });
 check('C22g with no ADMIN_EMAIL it still pushes and does not throw',
   pushes.length === 1 && emails.length === 0,
   `${pushes.length} pushes, ${emails.length} emails`);
@@ -543,12 +550,16 @@ Date.now = realNow;
 // NEGATIVE CONTROL (run 2026-08-29): pointing the ladder's notifyUser at
 // c.data.clientUid made this read
 //   FAIL  C43b the nudge ladder pings him, never them
+// RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." Each clock doc is one
+// advocate's (his stays admin/clock), and its ladder pings and emails that advocate: him on his, them on theirs.
+// NEGATIVE CONTROL (run 2026-10-15): the ladder's push loop pointed back at every role-admin user made this read
+//   FAIL  C43b the nudge ladder pings the clock's own advocate, never the client
 {
-  const nudgeSrc = (SRC.match(/async function runWorkClockNudges\([\s\S]*?\n\}/) || [''])[0];
+  const nudgeSrc = (SRC.match(/async function nudgeOneClock\([\s\S]*?\n\}/) || [''])[0];
   const workSrc = (SRC.match(/async function handleWork\([\s\S]*?\n\}/) || [''])[0];
-  check('C43b the nudge ladder pings him, never them',
-    /queryDocs\(env, 'users', \[\['role', 'EQUAL', 'admin'\]\], 5\)/.test(nudgeSrc)
-    && /to: env\.ADMIN_EMAIL,/.test(nudgeSrc)
+  check('C43b the nudge ladder pings the clock\'s own advocate, never the client',
+    /for \(const a of ownerUid \? \[\{ id: ownerUid \}\] : \[\]\) \{/.test(nudgeSrc)
+    && /to: ownerEmail,/.test(nudgeSrc)
     && !/clientUid/.test(nudgeSrc)
     && !/notifyUser|sendEmail/.test(workSrc));
 }

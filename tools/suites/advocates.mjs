@@ -160,7 +160,14 @@ const STAFF_ROUTES = [
   ['handleMilestones', 'async function handleMilestones(request, env, url) {', { caseId: 'ca', action: 'add', label: 'Referral sent' }],
   ['handleFileMeta', 'async function handleFileMeta(request, env) {', { kind: 'case', id: 'ca', path: 'cases/ca/uploads/1-x.pdf', name: 'Mine' }],
   ['handleChatTime', 'async function handleChatTime(request, env) {', { id: 'ca', seconds: 30 }],
+  // The work clock (v7.44): each advocate's own clock doc, on their own cases.
+  ['handleWork', 'async function handleWork(request, env) {', { caseId: 'ca', on: true }],
+  // Their notes (v7.44).
+  ['handleCaseNotes', 'async function handleCaseNotes(request, env, url) {', { caseId: 'ca', html: '<p>Note</p>' }],
 ];
+// Routes about the staff member themselves, not one case: the presence
+// beacon writes their own clock doc and nothing else.
+const STAFF_OWN_ROUTES = ['handleWorkPresence'];
 // The helpers the lifted routes need by name, lifted with them so they run as shipped.
 const HELPERS = ['async function threadContext(env, user, kind, id) {'].map((dcl) => lift(W, dcl));
 {
@@ -247,6 +254,24 @@ const HELPERS = ['async function threadContext(env, user, kind, id) {'].map((dcl
   }
 }
 
+// The presence beacon is about the staff member, not a case: an advocate's
+// beat writes their own clock doc, whatever case id rides on it.
+{
+  const src = [(W.match(/const CLOCK_DOC = [^\n]+;/) || [''])[0], lift(W, 'function clockPathFor(env, uid) {'), lift(W, 'async function handleWorkPresence(request, env) {')];
+  const store = new Map([['cases/ca', { advocateId: 'adv-a', work: { startedAt: new Date().toISOString() } }], ['admin/clock', { running: ['ca'] }]]);
+  const { fn, calls } = runLifted(src, 'handleWorkPresence', { staff: B, store, extra: {
+    WORK_PRESENCE_STALE_MS: 180_000, workDayString: () => '2026-10-15', todayByCase: () => ({}),
+  } });
+  const out = await fn(req({ caseId: 'ca' }), ENV);
+  const writes = calls.filter((c) => c[0] === 'patchDoc').map((c) => c[1]);
+  const reads = calls.filter((c) => c[0] === 'getDoc').map((c) => c[1]);
+  // NEGATIVE CONTROL (run 2026-10-15): the beacon's clock taken as `clockPathFor(env, env.ADMIN_UID)` made this read
+  //   FAIL  B7 an advocate's presence beat writes their own clock doc and reads nobody's case
+  check('B7 an advocate\'s presence beat writes their own clock doc and reads nobody\'s case',
+    out?.s === 200 && writes.length === 1 && writes[0] === 'staffClocks/adv-b' && !reads.some((p) => p.startsWith('cases/') || p === 'admin/clock'),
+    JSON.stringify({ writes, reads }));
+}
+
 // ---- C. the shared chat and file helpers -------------------------------------
 console.log('\n--- C. chat, files and pings ---');
 {
@@ -330,7 +355,7 @@ console.log('\n--- C. chat, files and pings ---');
 console.log('\n--- D. the router ---');
 {
   const takers = [...W.matchAll(/\n(?:async )?function (\w+)\([^)]*\) \{\n(?:\s*\/\/[^\n]*\n)*\s*const staff = await requireStaff\(request, env\);/g)].map((m) => m[1]).sort();
-  const listed = STAFF_ROUTES.map((r) => r[0]).sort();
+  const listed = [...STAFF_ROUTES.map((r) => r[0]), ...STAFF_OWN_ROUTES].sort();
   // NEGATIVE CONTROL (run 2026-10-15): handleLeadInvite switched to `const staff = await requireStaff(request, env);` made this read
   //   FAIL  D1 the routes that take an advocate are exactly the ones checked above, so a new one cannot slip in unchecked
   check('D1 the routes that take an advocate are exactly the ones checked above, so a new one cannot slip in unchecked',
@@ -342,11 +367,12 @@ console.log('\n--- D. the router ---');
     /const profile = await getDoc\(env, `users\/\$\{user\.uid\}`\);/.test(reqStaff) && /advocates\/\$\{user\.uid\}/.test(reqStaff)
     && /return staffFrom\(env, user, profile, advocate\);/.test(reqStaff));
   // Everything about the platform as a whole stays his alone.
-  const hisAlone = ['handleSetRates', 'handleCreateSlots', 'handleAdminLeads', 'handleLedger', 'handleLeadInvite', 'handleStatsRecompute', 'handleSelfCase', 'handleShowcaseCase', 'handleDeleteCase', 'handleFamilyCase', 'handleBookingClosure', 'handleOfficeHoursControl', 'handleFullCapacity', 'handleWork', 'handleWorkPresence', 'handleDaySummary', 'handleChatReply', 'handlePersonal'];
+  const hisAlone = ['handleSetRates', 'handleCreateSlots', 'handleAdminLeads', 'handleLedger', 'handleLeadInvite', 'handleStatsRecompute', 'handleSelfCase', 'handleShowcaseCase', 'handleDeleteCase', 'handleFamilyCase', 'handleBookingClosure', 'handleOfficeHoursControl', 'handleFullCapacity', 'handleDaySummary', 'handleChatReply', 'handlePersonal'];
   const wrong = hisAlone.filter((n) => { const m = W.match(new RegExp(`\\n(?:async )?function ${n}\\([^)]*\\) \\{[\\s\\S]{0,300}`)); return !m || !/await requireAdmin\(request, env\)/.test(m[0]); });
   // NEGATIVE CONTROL (run 2026-10-15): handleSetRates asking requireStaff made this read
-  //   FAIL  D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase, the work clock and the private reading stay his alone for now
-  check('D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase, the work clock and the private reading stay his alone for now',
+  //   FAIL  D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase and the private reading stay his alone for now
+  // RE-PINNED 2026-10-15 (v7.44): the work clock is every advocate's now, on their own clock doc (STAFF_ROUTES above).
+  check('D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase and the private reading stay his alone for now',
     !wrong.length, wrong.join(','));
 }
 
@@ -433,6 +459,235 @@ console.log('\n--- F. whose ---');
     /advocateId: \(typeof session\.metadata\.advocateId === 'string'[\s\S]{0,200}\|\| advocateIdOf\(existing\?\.data, env\),/.test(lift(W, 'async function activateSubscription(env, session) {'))
     && /advocateId: admin\.uid,/.test(lift(W, 'async function handleCreateSlots(request, env) {'))
     && /adminCreated: true, advocateId: advocateIdOf\(c, env\) \}/.test(lift(W, 'async function handleAdminSchedule(request, env) {')));
+}
+
+// ---- G. the accounts: his Advocates tab, their own page, the password door ----
+// worker/advocates.js evaluated whole with its imports replaced by stand-ins
+// (the way fund.mjs runs worker/fund.js), and the real staff module beside it.
+console.log('\n--- G. accounts ---');
+{
+  const SRC = f('worker/advocates.js');
+  const world = () => {
+    const docs = new Map();
+    const files = new Map();
+    const mails = [];
+    const pushes = [];
+    const deps = {
+      getDoc: async (env, p) => (docs.has(p) ? { id: p.split('/').pop(), data: JSON.parse(JSON.stringify(docs.get(p))), updateTime: 't' } : null),
+      patchDoc: async (env, p, data, opts = {}) => {
+        if (opts.mustNotExist && docs.has(p)) return null;
+        const cur = opts.mask ? (docs.get(p) || {}) : {};
+        docs.set(p, JSON.parse(JSON.stringify({ ...cur, ...data })));
+        return true;
+      },
+      deleteDoc: async (env, p) => { docs.delete(p); return true; },
+      queryDocs: async (env, coll, filters) => [...docs.entries()].filter(([k, v]) => k.startsWith(`${coll}/`) && filters.every(([fld, , val]) => v[fld] === val)).map(([k, v]) => ({ id: k.split('/')[1], data: v })),
+      listDocs: async (env, coll) => [...docs.entries()].filter(([k]) => k.startsWith(`${coll}/`) && k.split('/').length === 2).map(([k, v]) => ({ id: k.split('/')[1], data: v })),
+      putFile: async (env, p, bytes, type) => { files.set(p, { bytes, type }); return { path: p }; },
+      deleteFile: async (env, p) => { files.delete(p); },
+      mediaFetch: async (env, p) => (files.has(p) ? { ok: true, body: files.get(p).bytes, headers: new Headers({ 'content-type': files.get(p).type }) } : { ok: false }),
+      sendEmail: async (env, m) => { mails.push(m); return true; },
+      notifyUser: async (env, uid, m) => { pushes.push({ uid, ...m }); },
+      ...STAFF,
+    };
+    const body = SRC.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').replace(/^export (const|async function|function) /gm, '$1 ');
+    const api = new Function(...Object.keys(deps), `${body}\nreturn { handleAdvocates, isStaffLogin, advocateLogin, loginPath };`)(...Object.values(deps));
+    return { docs, files, mails, pushes, api };
+  };
+  const env = { ADMIN_UID: ERIC, ADMIN_EMAIL: 'eric@x.test', PUBLIC_BASE_URL: 'https://app.test' };
+  // Who is asking: the token names a uid; requireStaff and requireAdmin decide the way the Worker's do.
+  const h = (w) => ({
+    json: (o, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'content-type': 'application/json' } }),
+    requireAdmin: async (req) => { const uid = req.headers.get('x-uid'); const p = w.docs.get(`users/${uid}`); return uid === ERIC && p?.role === 'admin' ? { uid, email: 'eric@x.test' } : null; },
+    requireStaff: async (req) => { const uid = req.headers.get('x-uid'); if (!uid) return null; const p = w.docs.get(`users/${uid}`); return STAFF.staffFrom(env, { uid }, p ? { data: p } : null, w.docs.has(`advocates/${uid}`) ? { data: w.docs.get(`advocates/${uid}`) } : null); },
+  });
+  const call = async (w, uid, path, { method = 'POST', json, bytes, type } = {}) => {
+    const headers = new Headers();
+    if (uid) headers.set('x-uid', uid);
+    if (type) headers.set('content-type', type);
+    if (bytes) headers.set('content-length', String(bytes.byteLength));
+    const url = new URL(`https://app.test${path}`);
+    const req = { method, headers, url: url.href, json: async () => json ?? null, arrayBuffer: async () => bytes || new ArrayBuffer(0) };
+    const res = await w.api.handleAdvocates(req, env, url, h(w));
+    let out = null; try { out = await res.clone().json(); } catch { out = null; }
+    return { status: res.status, out, res };
+  };
+  const PW = 'given-password-1';
+  const w = world();
+  w.docs.set(`users/${ERIC}`, { role: 'admin' });
+  w.docs.set(`advocates/${ERIC}`, { uid: ERIC, name: 'Eric', email: 'eric@x.test', active: true, owner: true, commissionPct: 100, advisor: { optedIn: true, enabled: true } });
+  w.docs.set('users/c1', { role: 'client' });
+  const made = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'Ana Rivera', email: ' Ana@Example.com ', password: PW } });
+  const uid = made.out?.uid;
+  const secretPath = await w.api.loginPath('ana@example.com');
+  const secret = w.docs.get(secretPath);
+  const everything = JSON.stringify([...w.docs.values()]) + JSON.stringify(w.mails) + JSON.stringify(made.out);
+  // NEGATIVE CONTROL (run 2026-10-15): the create storing `password: body.password` beside the hash made this read
+  //   FAIL  G1 creating an advocate stores a salted hash and never the password: not on any record, not in the email, not in the answer
+  check('G1 creating an advocate stores a salted hash and never the password: not on any record, not in the email, not in the answer',
+    made.status === 200 && /^a[0-9a-f]{31}$/.test(uid || '') && secret?.algo === 'pbkdf2-sha256' && secret.rounds === 100000
+    && /^[0-9a-f]{32}$/.test(secret.salt) && /^[0-9a-f]{64}$/.test(secret.hash) && secret.mustChange === true && secret.uid === uid
+    && !everything.includes(PW) && w.mails.length === 1 && w.mails[0].to === 'ana@example.com' && !DASH.test(w.mails[0].html),
+    JSON.stringify({ status: made.status, uid, secret: secret && Object.keys(secret) }));
+  const adv = w.docs.get(`advocates/${uid}`);
+  // NEGATIVE CONTROL (run 2026-10-15): the create's share set to 100 instead of DEFAULT_COMMISSION_PCT made this read
+  //   FAIL  G2 the new advocate is active at the 60% default, off the Advisor, unset up, and their user record says advocate
+  check('G2 the new advocate is active at the 60% default, off the Advisor, unset up, and their user record says advocate',
+    adv?.active === true && adv.commissionPct === 60 && adv.advisor?.optedIn === false && adv.advisor?.enabled === false
+    && adv.onboardedAt === null && adv.owner === false && w.docs.get(`users/${uid}`)?.role === 'advocate' && adv.email === 'ana@example.com');
+  const dup = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'Ana Again', email: 'ana@example.com', password: PW } });
+  const his = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'Eric', email: 'eric@x.test', password: PW } });
+  const weak = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'Weak', email: 'weak@x.test', password: 'short' } });
+  const asAdvocate = await call(w, uid, '/api/admin/advocates', { json: { action: 'list' } });
+  const asClient = await call(w, 'c1', '/api/admin/advocates', { json: { action: 'create', name: 'X', email: 'x@x.test', password: PW } });
+  const stranger = await call(w, '', '/api/admin/advocates', { json: { action: 'list' } });
+  // NEGATIVE CONTROL (run 2026-10-15): the create's `{ mustNotExist: true }` on the password record taken out made this read
+  //   FAIL  G3 one account per address, never his, never a weak password, and only he reaches the tab: an advocate, a client and a stranger get the 404
+  check('G3 one account per address, never his, never a weak password, and only he reaches the tab: an advocate, a client and a stranger get the 404',
+    dup.status === 409 && his.status === 409 && weak.status === 400
+    && asAdvocate.status === 404 && asClient.status === 404 && stranger.status === 404,
+    JSON.stringify([dup.status, his.status, weak.status, asAdvocate.status, asClient.status, stranger.status]));
+  const right = await w.api.advocateLogin(env, 'ANA@example.com ', PW);
+  const wrong = await w.api.advocateLogin(env, 'ana@example.com', 'not-the-password');
+  const nobody = await w.api.advocateLogin(env, 'nobody@example.com', PW);
+  // NEGATIVE CONTROL (run 2026-10-15): advocateLogin skipping verifyPassword made this read
+  //   FAIL  G4 the password door opens for the right password only, says whether they still hold the one they were given, and a miss does the same hashing work
+  check('G4 the password door opens for the right password only, says whether they still hold the one they were given, and a miss does the same hashing work',
+    right?.uid === uid && right.mustChange === true && right.email === 'ana@example.com' && wrong === null && nobody === null
+    && /if \(!sec\?\.data\?\.uid\) \{\n\s*await verifyPassword\(/.test(SRC)
+    && await w.api.isStaffLogin(env, 'ana@example.com') && !(await w.api.isStaffLogin(env, 'c1@example.com')));
+  // Their own page.
+  const me = await call(w, uid, '/api/staff/me', { method: 'GET' });
+  const seen = JSON.stringify(me.out);
+  // NEGATIVE CONTROL (run 2026-10-15): the GET answer carrying `login: login?.data` beside the record made this read
+  //   FAIL  G5 their own page shows their record and never a secret
+  check('G5 their own page shows their record and never a secret',
+    me.status === 200 && me.out.advocate.uid === uid && me.out.mustChange === true && me.out.role === 'advocate'
+    && !/"(hash|salt|password|algo|rounds)"\s*:|pbkdf2/i.test(seen) && Array.isArray(me.out.specialties) && me.out.specialties.length === 6);
+  const sneaky = await call(w, uid, '/api/staff/me', { json: { action: 'profile', name: 'Ana Rivera', active: false, owner: true, commissionPct: 100, advisor: { enabled: true }, credentials: 'RN, BCPA', bio: 'Hearts.', primarySpecialty: 'cardiology', specialties: ['Cardiology', 'Sleep', 'sleep'] } });
+  const after = w.docs.get(`advocates/${uid}`);
+  // NEGATIVE CONTROL (run 2026-10-15): cleanProfile passing `commissionPct` through made this read
+  //   FAIL  G6 an advocate sets their own profile and nothing of his: not their share, their switch, their standing or their owner flag
+  check('G6 an advocate sets their own profile and nothing of his: not their share, their switch, their standing or their owner flag',
+    sneaky.status === 200 && after.commissionPct === 60 && after.active === true && after.owner === false && after.advisor.enabled === false
+    && after.credentials === 'RN, BCPA' && after.primarySpecialty === 'Cardiology' && JSON.stringify(after.specialties) === '["Cardiology","Sleep"]',
+    JSON.stringify(after));
+  const optIn = await call(w, uid, '/api/staff/me', { json: { action: 'profile', advisorOptIn: true } });
+  const enabled = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid, advisorEnabled: true } });
+  const optOut = await call(w, uid, '/api/staff/me', { json: { action: 'profile', advisorOptIn: false } });
+  const enableWithoutAsking = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid, advisorEnabled: true } });
+  // NEGATIVE CONTROL (run 2026-10-15): the update's opt-in refusal taken out made this read
+  //   FAIL  G7 he switches Advisor on only for someone who asked; opting out switches it off
+  check('G7 he switches Advisor on only for someone who asked; opting out switches it off',
+    optIn.status === 200 && enabled.status === 200 && optOut.status === 200 && w.docs.get(`advocates/${uid}`).advisor.enabled === false
+    && enableWithoutAsking.status === 409, JSON.stringify([optIn.status, enabled.status, optOut.status, enableWithoutAsking.status]));
+  const badCur = await call(w, uid, '/api/staff/me', { json: { action: 'password', current: 'nope-nope-nope', next: 'brand-new-pass-9' } });
+  const notReady = await call(w, uid, '/api/staff/me', { json: { action: 'onboarded' } });
+  const changed = await call(w, uid, '/api/staff/me', { json: { action: 'password', current: PW, next: 'brand-new-pass-9' } });
+  const oldNow = await w.api.advocateLogin(env, 'ana@example.com', PW);
+  const newNow = await w.api.advocateLogin(env, 'ana@example.com', 'brand-new-pass-9');
+  // Their own password now, but no photo yet: still not finished.
+  const noPhoto = await call(w, uid, '/api/staff/me', { json: { action: 'onboarded' } });
+  // NEGATIVE CONTROL (run 2026-10-15): the password change skipping its verifyPassword of the current one made this read
+  //   FAIL  G8 changing their password needs the current one, and afterwards only the new one opens the door
+  check('G8 changing their password needs the current one, and afterwards only the new one opens the door',
+    badCur.status === 403 && changed.status === 200 && oldNow === null && newNow?.uid === uid && newNow.mustChange === false,
+    JSON.stringify([badCur.status, changed.status]));
+  // The photo.
+  const JPG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 6, 7, 8]).buffer;
+  const fake = new TextEncoder().encode('<script>alert(1)</script>').buffer;
+  const up = await call(w, uid, '/api/staff/headshot', { bytes: JPG, type: 'image/jpeg' });
+  const liar = await call(w, uid, '/api/staff/headshot', { bytes: fake, type: 'image/jpeg' });
+  const svg = await call(w, uid, '/api/staff/headshot', { bytes: fake, type: 'image/svg+xml' });
+  const shotPath = w.docs.get(`advocates/${uid}`).headshotPath;
+  const pub = await call(w, '', `/api/advocates/headshot?uid=${uid}`, { method: 'GET' });
+  // NEGATIVE CONTROL (run 2026-10-15): looksLike answering true for any bytes made this read
+  //   FAIL  G9 a photo is a real JPEG, PNG or WebP under their own prefix; anything else is refused; the public route serves it
+  check('G9 a photo is a real JPEG, PNG or WebP under their own prefix; anything else is refused; the public route serves it',
+    up.status === 200 && liar.status === 415 && svg.status === 415 && shotPath?.startsWith(`advocates/${uid}/headshot-`)
+    && pub.status === 200 && pub.res.headers.get('content-type') === 'image/jpeg' && pub.res.headers.get('x-content-type-options') === 'nosniff',
+    JSON.stringify([up.status, liar.status, svg.status, pub.status, shotPath]));
+  const finished = await call(w, uid, '/api/staff/me', { json: { action: 'onboarded' } });
+  // NEGATIVE CONTROL (run 2026-10-15): the onboarded action's missing-fields refusal taken out made this read
+  //   (first run MISSED: the password guard refused the same call; noPhoto added so each guard is met alone, then re-run)
+  //   FAIL  G10 setup finishes only when the profile is whole and their own password is set, once, and tells him
+  check('G10 setup finishes only when the profile is whole and their own password is set, once, and tells him',
+    notReady.status === 409 && noPhoto.status === 409 && noPhoto.out?.missing?.length === 1 && finished.status === 200 && !!w.docs.get(`advocates/${uid}`).onboardedAt
+    && w.pushes.length === 1 && w.pushes[0].uid === ERIC && !DASH.test(w.pushes[0].body), JSON.stringify([notReady.status, noPhoto.status, noPhoto.out, finished.status, w.pushes]));
+  // His support tools.
+  w.docs.set('trustedDevices/d1', { uid, email: 'ana@example.com' });
+  w.docs.set('trustedDevices/d2', { uid: 'c1', email: 'c1@x.test' });
+  const reset = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'reset-password', uid, password: 'support-reset-77' } });
+  const afterReset = await w.api.advocateLogin(env, 'ana@example.com', 'support-reset-77');
+  // NEGATIVE CONTROL (run 2026-10-15): the reset's `await forgetDevices(env, uid);` taken out made this read
+  //   FAIL  G11 his reset sets a password they must change, signs out every device of theirs and no one else's, and echoes nothing back
+  check('G11 his reset sets a password they must change, signs out every device of theirs and no one else\'s, and echoes nothing back',
+    reset.status === 200 && afterReset?.mustChange === true && !w.docs.has('trustedDevices/d1') && w.docs.has('trustedDevices/d2')
+    && !JSON.stringify(reset.out).includes('support-reset-77'));
+  w.docs.set('trustedDevices/d3', { uid, email: 'ana@example.com' });
+  const off = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'deactivate', uid } });
+  const offLogin = await w.api.advocateLogin(env, 'ana@example.com', 'support-reset-77');
+  const offStaff = STAFF.staffFrom(env, { uid }, { data: w.docs.get(`users/${uid}`) }, { data: w.docs.get(`advocates/${uid}`) });
+  const offPhoto = await call(w, '', `/api/advocates/headshot?uid=${uid}`, { method: 'GET' });
+  const ownerOff = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'deactivate', uid: ERIC } });
+  // NEGATIVE CONTROL (run 2026-10-15): deactivate leaving `active` true made this read
+  //   FAIL  G12 turning an advocate off locks them out at once: no door, no staff, no devices, no public photo; his own account cannot be turned off
+  check('G12 turning an advocate off locks them out at once: no door, no staff, no devices, no public photo; his own account cannot be turned off',
+    off.status === 200 && offLogin === null && offStaff === null && !w.docs.has('trustedDevices/d3') && offPhoto.status === 404 && ownerOff.status === 409);
+  const pct = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid, commissionPct: 55 } });
+  const badPct = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid, commissionPct: 55.5 } });
+  // NEGATIVE CONTROL (run 2026-10-15): the share's `Number.isInteger` loosened to `Number.isFinite` made this read
+  //   FAIL  G13 his share setting is a whole percent from 0 to 100, per advocate
+  check('G13 his share setting is a whole percent from 0 to 100, per advocate',
+    pct.status === 200 && w.docs.get(`advocates/${uid}`).commissionPct === 55 && badPct.status === 400);
+  // NEGATIVE CONTROL (run 2026-10-15): an em dash put in admin-advocates.js's header made this read
+  //   FAIL  G14 the accounts module carries no dash
+  check('G14 the accounts module carries no dash', !DASH.test(SRC) && !DASH.test(f('public/js/admin-advocates.js')) && !DASH.test(f('public/js/admin-account.js')));
+}
+
+// ---- H. the Worker's doors for them -------------------------------------------
+console.log('\n--- H. doors ---');
+{
+  const login = lift(W, 'async function handleAdminLogin(request, env) {');
+  const code = lift(W, 'async function handleRequestCode(request, env) {');
+  // NEGATIVE CONTROL (run 2026-10-15): the advocate branch's throttle increment taken out made this read
+  //   FAIL  H1 an advocate's address gets the password box, and their door shares his throttle, his sentence and his 400ms
+  check('H1 an advocate\'s address gets the password box, and their door shares his throttle, his sentence and his 400ms',
+    /if \(await isStaffLogin\(env, email\)\) return json\(\{ ok: true, mode: 'password' \}\);/.test(code)
+    && /if \(!emailOk\) \{\n[\s\S]*?const adv = email \? await advocateLogin\(env, email, password\)\.catch\(\(\) => null\) : null;\n\s*if \(!adv\) \{\n\s*await cache\.put\(\n\s*rlKey,\n\s*new Response\(String\(fails \+ 1\)/.test(login)
+    && /return json\(\{ error: 'Wrong email or password\.' \}, 401\);\n\s*\}\n\s*await cache\.delete\(rlKey\);\n\s*const token = await mintCustomToken\(env, adv\.uid\);/.test(login)
+    && login.indexOf('setTimeout(r, 400)') < login.indexOf('if (!emailOk) {'));
+  // The cookie: signed for staff only, and the fund page is still his.
+  const cookieSrc = [lift(W, 'function adminKey(env) {'), lift(W, 'async function signAdminCookie(env, uid) {'), lift(W, 'async function adminCookieUid(request, env) {'),
+    lift(W, 'async function adminCookieHeader(env, uid) {'), lift(W, 'async function withAdminCookie(env, res, uid) {'), lift(W, 'async function withStaffCookie(env, res, uid) {'),
+    lift(W, 'function timingSafeEqual(a, b) {')].join('\n');
+  const docs = new Map([['advocates/adv-a', { active: true }], ['advocates/adv-off', { active: false }]]);
+  // eslint-disable-next-line no-new-func
+  const mk = new Function('getDoc', `const ADMIN_COOKIE = 'pa_adm'; const ADMIN_COOKIE_DAYS = 14; let adminKeyPromise = null;\n${cookieSrc}\nreturn { signAdminCookie, adminCookieUid, withStaffCookie };`)(async (env, p) => (docs.has(p) ? { data: docs.get(p) } : null));
+  const env = { ADMIN_UID: ERIC, FIREBASE_SERVICE_ACCOUNT: '{"k":"test"}' };
+  const res = (o) => new Response(JSON.stringify(o));
+  const cookieOf = (r) => (r.headers.get('set-cookie') || '').match(/pa_adm=([^;]+)/)?.[1] || '';
+  const forA = cookieOf(await mk.withStaffCookie(env, res({}), 'adv-a'));
+  const forOff = cookieOf(await mk.withStaffCookie(env, res({}), 'adv-off'));
+  const forClient = cookieOf(await mk.withStaffCookie(env, res({}), 'c1'));
+  const forEric = cookieOf(await mk.withStaffCookie(env, res({}), ERIC));
+  const read = (c) => mk.adminCookieUid({ headers: new Headers({ cookie: `pa_adm=${c}` }) }, env);
+  const forged = forA.replace(/^adv-a/, 'adv-b');
+  // NEGATIVE CONTROL (run 2026-10-15): withStaffCookie skipping the active check made this read
+  //   FAIL  H2 the working pages' cookie is signed for him and for active advocates only, and a forged uid fails the signature
+  check('H2 the working pages\' cookie is signed for him and for active advocates only, and a forged uid fails the signature',
+    !!forA && !forOff && !forClient && !!forEric && (await read(forA)) === 'adv-a' && (await read(forEric)) === ERIC && (await read(forged)) === null,
+    JSON.stringify({ forA: !!forA, forOff: !!forOff, forClient: !!forClient }));
+  // NEGATIVE CONTROL (run 2026-10-15): the fund page gate's `=== env.ADMIN_UID` taken out made this read
+  //   FAIL  H3 the hidden fund page asks for HIS uid on the cookie, and the session route and device sign-in serve staff
+  check('H3 the hidden fund page asks for HIS uid on the cookie, and the session route and device sign-in serve staff',
+    /const his = !!env\.ADMIN_UID && \(await adminCookieUid\(request, env\)\.catch\(\(\) => null\)\) === env\.ADMIN_UID;/.test(W)
+    && /const staff = await requireStaff\(request, env\);\n\s*if \(!staff\) return json\(\{ error: 'Not found' \}, 404\);\n\s*return new Response\(JSON\.stringify\(\{ ok: true, role:/.test(lift(W, 'async function handleAdminSession(request, env) {'))
+    && /return withStaffCookie\(env, json\(\{ token \}\), d\.uid\);/.test(lift(W, 'async function handleDeviceSignin(request, env) {')));
+  // NEGATIVE CONTROL (run 2026-10-15): the router handing `requireAdmin: requireStaff` to the accounts module made this read
+  //   FAIL  H4 the routes reach the accounts module, with his gate and the staff gate handed in
+  check('H4 the routes reach the accounts module, with his gate and the staff gate handed in',
+    /if \(url\.pathname === '\/api\/admin\/advocates' \|\| url\.pathname\.startsWith\('\/api\/staff\/'\) \|\| url\.pathname\.startsWith\('\/api\/advocates\/'\)\)\n\s*return await handleAdvocates\(request, env, url, \{ requireAdmin, requireStaff, json \}\);/.test(W));
 }
 
 const failed = results.filter((r) => !r.pass).length;

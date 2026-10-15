@@ -17,7 +17,30 @@ service cloud.firestore {
         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    function validMessage() {
+    // MANY ADVOCATES (Eric, 2026-10-15: "Advocates must never be able to
+    // access another advocate's cases or data."). An advocate is a user the
+    // Worker gave role 'advocate' (nobody can give it to themselves: see
+    // users below) whose advocates/{uid} record is active. They reach a case
+    // or a chat line only when its advocateId is their own uid; the Worker
+    // checks the same thing on every route.
+    function isAdvocate() {
+      return signedIn()
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'advocate'
+        && get(/databases/$(database)/documents/advocates/$(request.auth.uid)).data.active == true;
+    }
+
+    function isAdvocateOf(data) {
+      return signedIn() && data.advocateId == request.auth.uid && isAdvocate();
+    }
+
+    // The advocate side of a thread: the admin on every one, an advocate on
+    // their own. Their messages carry role 'admin', the advocate side's role
+    // everywhere in the app.
+    function worksThread(data) {
+      return isAdmin() || isAdvocateOf(data);
+    }
+
+    function validMessage(staffSide) {
       return request.resource.data.keys().hasOnly(['from', 'role', 'text', 'ts', 'attachment'])
         && request.resource.data.from == request.auth.uid
         && request.resource.data.text is string
@@ -25,7 +48,7 @@ service cloud.firestore {
         // a message is words, a file, or both — never neither
         && (request.resource.data.text.size() > 0
             || request.resource.data.keys().hasAny(['attachment']))
-        && (isAdmin()
+        && (staffSide
             ? request.resource.data.role == 'admin'
             : request.resource.data.role == 'client');
     }
@@ -53,9 +76,9 @@ service cloud.firestore {
       // Case docs are created and mutated by the Worker — except the
       // lastMessage pointer, which chat participants may update.
       allow read: if signedIn() &&
-        (resource.data.clientUid == request.auth.uid || isAdmin());
+        (resource.data.clientUid == request.auth.uid || worksThread(resource.data));
       allow update: if signedIn()
-        && (resource.data.clientUid == request.auth.uid || isAdmin())
+        && (resource.data.clientUid == request.auth.uid || worksThread(resource.data))
         && onlyLastMessageChanged();
       allow create, delete: if false;
 
@@ -79,12 +102,12 @@ service cloud.firestore {
       match /chat/{msgId} {
         allow read: if signedIn() &&
           (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
-            || isAdmin());
+            || worksThread(get(/databases/$(database)/documents/cases/$(caseId)).data));
         allow create: if signedIn()
           && (get(/databases/$(database)/documents/cases/$(caseId)).data.clientUid == request.auth.uid
-              || isAdmin())
+              || worksThread(get(/databases/$(database)/documents/cases/$(caseId)).data))
           && get(/databases/$(database)/documents/cases/$(caseId)).data.status != 'closed'
-          && validMessage();
+          && validMessage(worksThread(get(/databases/$(database)/documents/cases/$(caseId)).data));
         allow update, delete: if false;
       }
     }
@@ -121,9 +144,9 @@ service cloud.firestore {
 
     match /subscriptions/{uid} {
       // Lifecycle fields come from Stripe webhooks via the Worker.
-      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow read: if signedIn() && (request.auth.uid == uid || worksThread(resource.data));
       allow update: if signedIn()
-        && (request.auth.uid == uid || isAdmin())
+        && (request.auth.uid == uid || worksThread(resource.data))
         && onlyLastMessageChanged();
       allow create, delete: if false;
 
@@ -145,10 +168,11 @@ service cloud.firestore {
       }
 
       match /chat/{msgId} {
-        allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+        allow read: if signedIn() && (request.auth.uid == uid
+          || worksThread(get(/databases/$(database)/documents/subscriptions/$(uid)).data));
         allow create: if signedIn()
-          && validMessage()
-          && (isAdmin()
+          && validMessage(worksThread(get(/databases/$(database)/documents/subscriptions/$(uid)).data))
+          && (worksThread(get(/databases/$(database)/documents/subscriptions/$(uid)).data)
               || (request.auth.uid == uid
                   && request.time < get(/databases/$(database)/documents/subscriptions/$(uid)).data.currentPeriodEnd));
         allow update, delete: if false;

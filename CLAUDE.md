@@ -201,6 +201,18 @@ access another advocate's data by changing IDs or URLs."
   invitation, slot, chat line) is stamped with its advocate where it is made.
 - A new route that takes an advocate joins `STAFF_ROUTES` in
   `tools/suites/advocates.mjs` in the same commit; D1 fails until it does.
+- Advocate accounts (v7.44): his Advocates tab and the advocate's own My
+  account page talk to `worker/advocates.js`. Passwords are PBKDF2 hashes in
+  `staffSecrets/` (Worker only); a password is never stored, logged, emailed
+  or echoed. A turned-off advocate is out at once: no door, no staff, no
+  devices, no public photo.
+- The demo has an advocate persona (`?demo=advocate`, Ana Rivera, case
+  `demo-case-ana`). Walk both sides with `tools/drives/drive-advocates.mjs`.
+- The security rules are published by the Worker (`worker/rules-release.js`,
+  cron minute 11 of each quarter hour; outcome in `/api/diag?do=rules`). After
+  ANY edit to firestore.rules or storage.rules run
+  `node tools/rules/sync-rules.mjs` (rulesync S1 fails until you do), and run
+  the emulator checks in `tools/rules/rules-check.mjs`.
 
 ## Iron rules (long-standing, do not relax)
 

@@ -4,7 +4,7 @@
 
 import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';
-import { requireAdmin, hydrateNav } from './auth.js';
+import { requireAdmin, hydrateNav, STAFF, staffCasesQuery } from './auth.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with LEAD_TIME_HOURS in worker/schedule.js.
@@ -24,9 +24,10 @@ if (user) init();
 
 async function init() {
   try {
+    // The cases: every one for him, their own for an advocate (2026-10-15).
     const [slotSnap, caseSnap] = await Promise.all([
       getDocs(collection(db, 'availability')),
-      getDocs(collection(db, 'cases')),
+      getDocs(staffCasesQuery(user)),
     ]);
     // Open slots that are past or inside the booking lead window are
     // unbookable — never show them (the Worker cron deletes them from the
@@ -34,6 +35,9 @@ async function init() {
     const unbookableBefore = Date.now() + LEAD_TIME_HOURS * 3600_000;
     slotSnap.forEach((d) => {
       const s = d.data();
+      // An advocate's calendar holds their own hours (2026-10-15); a slot with
+      // no advocate is his.
+      if (STAFF.role === 'advocate' && s.advocateId !== user.uid) return;
       const slot = {
         id: d.id, start: toDate(s.start), state: s.state || 'open', caseId: s.caseId || null,
         kind: s.kind || null, leadId: s.leadId || null,

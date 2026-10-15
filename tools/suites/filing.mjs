@@ -269,8 +269,12 @@ const slab = (src, from, to) => {
   // NEGATIVE CONTROL (run 2026-08-28): removing the demo's role check made
   // this read
   //   FAIL  F13b and it refuses everyone but Eric, exactly as the Worker does
-  ck('F13b and it refuses everyone but Eric, exactly as the Worker does',
-    /if \(path === '\/api\/file\/meta'\) \{\s*\n\s*if \(role !== 'admin'\) return fail\(404, 'Not found'\);/
+  // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." The Worker's route takes staff
+  // (him, or the case's own advocate), so the demo's does too.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.44): the demo's `if (!staff)` refusal removed made this read
+  //   FAIL  F13b and it refuses everyone but staff, exactly as the Worker does
+  ck('F13b and it refuses everyone but staff, exactly as the Worker does',
+    /if \(path === '\/api\/file\/meta'\) \{\s*\n\s*if \(!staff\) return fail\(404, 'Not found'\);/
       .test(DEMOAPI));
 }
 

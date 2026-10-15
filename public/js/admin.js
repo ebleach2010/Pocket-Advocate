@@ -3,7 +3,7 @@
 
 import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';
-import { requireAdmin, hydrateNav } from './auth.js';
+import { requireAdmin, hydrateNav, STAFF, staffCasesQuery } from './auth.js';
 import { initPushPrompt } from './push.js';
 import {
   folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet,
@@ -36,7 +36,17 @@ hydrateNav();
 const user = await requireAdmin();
 let invites = { refresh() {} };
 let leadForm = { prepare() {} };
-if (user) {
+// An advocate's shelf (2026-10-15): their own cases, and none of his
+// platform-wide panels (office hours, free calls, the waitlist, his personal
+// uploads, invitations, the +). Each of those routes refuses them anyway.
+const advocate = STAFF.role === 'advocate';
+if (user && advocate) {
+  for (const id of ['office', 'fit-calls', 'waitlist', 'personal', 'invites']) document.getElementById(id)?.remove();
+  document.querySelector('[data-add-open]')?.closest('.add-wrap, .add-menu-wrap, [data-add-wrap]')?.remove();
+  document.querySelector('[data-add-open]')?.remove();
+  wireShelfDelete(document.getElementById('list'));
+  load();
+} else if (user) {
   // In or out, at the top of the page he actually opens. The same control is
   // on the availability page; both read and write settings/officeHours through
   // the Worker, so they cannot disagree.
@@ -60,6 +70,8 @@ if (user) {
  * something a patient should find on their own record.
  */
 async function loadCovers() {
+  // An advocate's shelf carries no covers: they are his private reading.
+  if (advocate) return {};
   // Ten seconds, then no covers (2026-09-24): a shelf with no covers is still a usable shelf.
   return within(10_000, async () => {
     const token = await user.getIdToken();
@@ -93,7 +105,8 @@ async function load() {
   window.__paStage = 'cases';
   try {
     // Fifteen seconds (2026-09-24): a read that never answers says so, with Try again, instead of Loading forever.
-    const snapshot = await within(15_000, () => getDocs(collection(db, 'cases')));
+    // Every case for him, their own for an advocate (2026-10-15).
+    const snapshot = await within(15_000, () => getDocs(staffCasesQuery(user)));
     if (snapshot === TOO_SLOW) throw new Error('the database did not answer');
     // The retired trade desk's case (PR 420, gone 2026-10-04) stays out of
     // every shelf; its document is still in the database.
@@ -192,7 +205,8 @@ async function load() {
 
   // The nightly voice study. It runs on its own; this is the switch and the
   // proof it is still running.
-  let voice = await within(10_000, async () => {
+  // His alone: an advocate's shelf asks for neither the study nor the revenue line.
+  let voice = advocate ? null : await within(10_000, async () => {
     const token = await user.getIdToken();
     const res = await fetch('/api/admin/voice', {
       method: 'POST',
@@ -227,7 +241,7 @@ async function load() {
       <p class="dim small" id="voice-said" style="margin:.4rem 0 0;" hidden></p>
     </details>` : '';
 
-  const summary = `
+  const summary = advocate ? '' : `
     <div class="panel" style="margin-bottom:1rem;">
       <div class="row"><strong>Case revenue (paid via Stripe)</strong>
         <span class="price" style="color:var(--cyan);">$${(cents / 100).toLocaleString()}</span></div>
@@ -264,6 +278,7 @@ async function load() {
     const h = Math.floor(live / 3600);
     const m = Math.floor((live % 3600) / 60);
     return folderCardHtml({
+      noRead: advocate,
       id: c.id,
       href: `/admin-case.html?id=${c.id}`,
       // A closed case gets no clock at all: there is no more work to bill to
@@ -383,7 +398,7 @@ async function load() {
     : '');
   // The doors moved to the + at the top (Eric, 2026-10-15); the fund queue
   // link is the one quiet tool left under the shelf.
-  const quietLinks = '<div class="open-doors"><a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a></div>';
+  const quietLinks = advocate ? '' : '<div class="open-doors"><a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a></div>';
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}

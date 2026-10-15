@@ -9,7 +9,7 @@ import {
   db, storage, doc, getDoc, collection, getDocs, query, where,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata, deleteObject,
 } from './firebase.js';
-import { requireAdmin, hydrateNav } from './auth.js';
+import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
 import { STATUS_REACTIONS, openMessageMenu } from './msg-actions.js';
 import { mountAdvisor, sendToClient } from './advisor.js';
@@ -162,6 +162,13 @@ const CUSTOM_OPTION = `<option value="${CUSTOM}">A time not on the calendar…</
 
 hydrateNav();
 const user = await requireAdmin();
+// AN ADVOCATE'S CASE PAGE (2026-10-15). Their own case, worked the way he
+// works his: the conversation, the files, the next-call list, their notes,
+// the clock, the log and the milestones. Not his private reading, its pages
+// or his margin floor: those routes are his alone, and the Worker refuses
+// them to anyone else whatever a page asks.
+const advocate = STAFF.role === 'advocate';
+const ADVOCATE_PAGES = new Set(['overview', 'chat', 'files', 'notes', 'agenda', 'saved', 'log', 'milestones']);
 // askIfStillWorking is called from inside load(), not here: prepending its
 // card moments before render() replaced #case's innerHTML made the prompt
 // Eric taps from a push notification flash and vanish. It is the safety
@@ -190,6 +197,7 @@ let notesHtml = '';
  * module is behind the admin asset gate.
  */
 async function loadFloor() {
+  if (advocate) return;
   try {
     const token = await user.getIdToken();
     const res = await fetch('/api/admin/rates', {
@@ -277,7 +285,12 @@ function render(el) {
     //   Advisor  its read, its differential, asking it, the terms in play
     //   Track    where the case stands and what is outstanding
     //   Mine     the things he wrote himself
-    groups: [
+    groups: advocate ? [
+      // An advocate's strip: three groups, each page one that works for them.
+      { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
+      { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'agenda', 'saved'] },
+      { id: 'act', label: 'Act', icon: 'i-scale', pages: ['log', 'milestones'] },
+    ] : [
       { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: 'i-user', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
       { id: 'track', label: 'Track', icon: 'i-doc', pages: ['summary', 'unanswered', 'agenda', 'about'] },
@@ -520,14 +533,25 @@ function render(el) {
             initialHtml: notesHtml,
             onSave: async (html) => {
               const token = await user.getIdToken();
-              const res = await fetch('/api/advisor', {
+              // An advocate's notes ride their own route (2026-10-15); his
+              // ride the reading's, as they always have.
+              const res = await fetch(advocate ? '/api/notes' : '/api/advisor', {
                 method: 'POST',
                 headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-                body: JSON.stringify({ kind: 'case', id: caseId, action: 'note', html }),
+                body: JSON.stringify(advocate ? { caseId, html } : { kind: 'case', id: caseId, action: 'note', html }),
               });
               if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Save failed (${res.status})`);
             },
           });
+          if (advocate) {
+            (async () => {
+              try {
+                const token = await user.getIdToken();
+                const res = await fetch(`/api/notes?caseId=${encodeURIComponent(caseId)}`, { headers: { authorization: `Bearer ${token}` } });
+                if (res.ok) notes?.setHtml?.((await res.json()).html || '');
+              } catch { /* an empty page is still a page to write on */ }
+            })();
+          }
         },
       },
       {
@@ -625,7 +649,9 @@ function render(el) {
         id: 'unanswered', title: 'Unanswered', icon: '⚠️',
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
-    ],
+    // An advocate's strip carries their own pages only (2026-10-15). A page in
+    // no group would otherwise land in the first one, so the list is cut here.
+    ].filter((p) => !advocate || ADVOCATE_PAGES.has(p.id)),
   });
 
   // ---- who this is, and whether the clock is running -----------------------
@@ -730,8 +756,10 @@ function render(el) {
     user,
     myRole: 'admin',
     // His own case: the saved shelf is his (audit, 2026-09-03); a null uid
-    // pointed the long-press save at profiles/null.
-    saveUid: c.self ? user.uid : c.clientUid,
+    // pointed the long-press save at profiles/null. An advocate saves nothing
+    // to a client's shelf (null hides the long press): that shelf is the
+    // client's, across every advocate they ever have.
+    saveUid: advocate ? null : c.self ? user.uid : c.clientUid,
     disabled: c.status === 'closed',
     notice: 'Chat ended when this case closed.',
     // Always there, on every case, saying nothing about anyone. The point is
@@ -808,7 +836,7 @@ function render(el) {
           button.textContent = was;
         }
       },
-    }],
+    }].filter((b) => !advocate || b.icon !== '✍️'),
   });
 
   // Setting it: the chat module owns the write, because it knows which
@@ -846,8 +874,9 @@ function render(el) {
 
   // Admin-only, and admin-only by rule — see the `advisor` match in
   // firestore.rules. An approved draft goes out through the same send path as
-  // anything I type, so it lands as an ordinary message from me.
-  mountAdvisor({
+  // anything I type, so it lands as an ordinary message from me. Not mounted
+  // on an advocate's page at all (2026-10-15).
+  if (!advocate) mountAdvisor({
     container: folder.el('advisor').querySelector('#advisor'),
     kind: 'case',
     id: caseId,
@@ -3555,7 +3584,9 @@ async function listCaseFiles({ onProgress } = {}) {
     // at all - the second half of the same blind spot that lost Eric's
     // documents. They live under the case, so they belong on the case's page.
     ['chat', `cases/${caseId}/chat-files`],
-    ['saved', `profiles/${data.self ? user.uid : data.clientUid}/saved`],
+    // The client's own shelf, which follows them across every advocate: his to
+    // see, not an advocate's (2026-10-15), and storage.rules says the same.
+    ...(advocate ? [] : [['saved', `profiles/${data.self ? user.uid : data.clientUid}/saved`]]),
   ];
   let done = 0;
   let files = 0;

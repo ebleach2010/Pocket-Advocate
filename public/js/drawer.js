@@ -61,6 +61,8 @@ export function folderCardHtml({
   state = '',
   // Delete on the card, for his own cases and the showcase (2026-10-15).
   deletable = false,
+  // An advocate's shelf (2026-10-15): no reading line on the cover at all.
+  noRead = false,
 } = {}) {
   const read = String(dx || '').trim();
   // An override has to carry his mark, or a line he wrote reads as the
@@ -77,8 +79,8 @@ export function folderCardHtml({
     <a class="folder${clock?.running ? ' working' : ''}${self ? ' self' : ''}${state === 'open' || state === 'paused' ? ` st-${state}` : ''}" href="${esc(href)}" data-id="${esc(id)}">
       <span class="folder-tab"><span class="folder-name">${esc(name)}</span></span>
       <span class="folder-body">
-        <span class="folder-dx${dxCls}" data-dx="${esc(id)}" data-dx-text="${esc(read)}"
-          >${read ? `${pen}${esc(read)}` : 'No read yet'}</span>
+        ${noRead ? '' : `<span class="folder-dx${dxCls}" data-dx="${esc(id)}" data-dx-text="${esc(read)}"
+          >${read ? `${pen}${esc(read)}` : 'No read yet'}</span>`}
         ${meta ? `<span class="folder-meta">${esc(meta)}</span>` : '<span class="folder-meta"></span>'}
         ${badge ? `<span class="status-pill ${esc(badgeClass)}">${esc(badge)}</span>` : ''}
         ${flags ? `<span class="folder-flags">${flags}</span>` : ''}

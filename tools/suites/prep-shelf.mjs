@@ -34,10 +34,18 @@ ck('P3 prep/ is NOT among them, which is the whole point',
   !folders.includes('prep'), folders.join());
 
 // ---- everything else under a case is the admin's alone -------------------
-ck('P4 the catch-all under a case is admin-read only',
-  /match \/cases\/\{caseId\}\/\{allPaths=\*\*\} \{\s*allow read: if isAdmin\(\);/.test(RULES));
-ck('P5 and admin-write only',
-  /match \/cases\/\{caseId\}\/\{allPaths=\*\*\} \{[\s\S]{0,120}allow write: if isAdmin\(\);/.test(RULES));
+// RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." The working files under a case
+// are his and that case's own advocate's (isCaseAdvocate: role, active record, their uid on the case); still never
+// a client's. tools/rules/rules-check.mjs RUNS this against the emulator (R13, R15).
+// NEGATIVE CONTROL (run 2026-10-15, v7.44): the catch-all's read widened to `isAdmin() || isAdvocate()` made this read
+//   FAIL  P4 the catch-all under a case is read only by him and that case's own advocate
+ck('P4 the catch-all under a case is read only by him and that case\'s own advocate',
+  /match \/cases\/\{caseId\}\/\{allPaths=\*\*\} \{\s*allow read: if isAdmin\(\) \|\| isCaseAdvocate\(caseId\);/.test(RULES)
+  && /function isCaseAdvocate\(caseId\) \{\n\s*return request\.auth != null && caseData\(caseId\)\.advocateId == request\.auth\.uid && isAdvocate\(\);/.test(RULES));
+// NEGATIVE CONTROL (run 2026-10-15, v7.44): the catch-all's write widened to `isAdmin() || isAdvocate()` made this read
+//   FAIL  P5 and written only by them
+ck('P5 and written only by them',
+  /match \/cases\/\{caseId\}\/\{allPaths=\*\*\} \{[\s\S]{0,120}allow write: if isAdmin\(\) \|\| isCaseAdvocate\(caseId\);/.test(RULES));
 ck('P6 with a deny-everything tail underneath it',
   /match \/\{allPaths=\*\*\} \{\s*allow read, write: if false;/.test(RULES));
 

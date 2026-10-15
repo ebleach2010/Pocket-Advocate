@@ -872,10 +872,15 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const blockSrc = at > 0 ? W.slice(at, W.indexOf('\n    }\n', at) + 6) : '';
   const gateRun = new Function('assetPath', 'demo', 'request', 'env', 'url', 'adminCookieUid', 'FUND_PAGE', 'FUND_OPEN',
     `return (async () => { ${blockSrc} return null; })();`);
-  const env2 = { ASSETS: { fetch: async () => new Response('<h1>Fund</h1>', { headers: { 'cache-control': 'public, max-age=3600' } }) } };
+  // RE-PINNED 2026-10-15 (v7.44): Eric, "Admin creates advocate accounts". The admin cookie is signed for advocates
+  // too now, so the fund page asks for HIS uid on it, and an advocate's cookie is sent to the landing like a stranger.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.44): the gate's `=== env.ADMIN_UID` taken out made this read
+  //   FAIL  F27 the old public pages are public again and the fund's form is hidden: the parking gate is gone and the inline redirects are back; the fund page's gate matches its spellings and nothing else, sends a stranger on the live site to the landing with a 302, serves him privately, and steps aside for the demo and for an open fund; the audit lists the ten as client pages and the form as hidden
+  const env2 = { ADMIN_UID: 'eric', ASSETS: { fetch: async () => new Response('<h1>Fund</h1>', { headers: { 'cache-control': 'public, max-age=3600' } }) } };
   const u = new URL('https://thepocketadvocates.com/fund.html');
   const stranger = await gateRun('/fund.html', '', {}, env2, u, async () => null, RE, false);
   const him = await gateRun('/fund.html', '', {}, env2, u, async () => 'eric', RE, false);
+  const advocate = await gateRun('/fund.html', '', {}, env2, u, async () => 'a-advocate', RE, false);
   const demo = await gateRun('/fund.html', 'client', {}, env2, u, async () => null, RE, false);
   const open = await gateRun('/fund.html', '', {}, env2, u, async () => null, RE, true);
   const AUDIT = f('tools/blindness-audit.mjs');
@@ -885,6 +890,7 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
     && ['/fund', '/fund.html', '/fund/'].every((p) => RE.test(p)) && !['/', '/fundx', '/admin-fund', '/js/fund.js', '/css/fund.css', '/services.html'].some((p) => RE.test(p))
     && at > 0 && at < W.indexOf('    if (ADMIN_ASSET.test(assetPath)) {\n      const isPage')
     && stranger?.status === 302 && stranger.headers.get('location') === 'https://thepocketadvocates.com/'
+    && advocate?.status === 302
     && him?.status === 200 && him.headers.get('cache-control') === 'private, no-store' && demo === null && open === null
     && /import \{ FUND_OPEN \} from '\.\.\/public\/js\/fund-rules\.js';/.test(W)
     // The about-your-advocate page was never in the list; the crawl reaches it from the landing.
