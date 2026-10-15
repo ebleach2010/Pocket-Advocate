@@ -116,23 +116,16 @@ const addons = await page.evaluate(() => ({
   followupHidden: !document.querySelector('[data-buy-followup]'),
   upgrade: !!document.querySelector('[data-upgrade] button, [data-upgrade-buy]'),
 }));
-ok('telehealth card offers on the new case', addons.telehealth);
-ok('the follow-up correctly waits for the report', addons.followupHidden);
-await page.evaluate(() => {
-  const d = new Date(Date.now() + 5 * 86400_000);
-  const pad = (n) => String(n).padStart(2, '0');
-  document.querySelector('[data-th-when]').value = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T14:30`;
-  document.querySelector('[data-th-clinic]').value = 'Riverside Neurology';
-  document.querySelector('[data-th-provider]').value = 'Dr. Alvarez';
-  const a = document.querySelector('[data-th-attest]'); if (a) a.checked = true;
-});
-await page.evaluate(() => document.querySelector('[data-th-request]')?.click());
-await page.waitForURL(/telehealth=1/, { timeout: 15000 }).catch(() => {});
-await settle(2200);
-ok('telehealth request written to the BOOKED case', await page.evaluate(() => {
+// RE-PINNED 2026-10-15 (v7.38, the tighten audit): while sales are closed the Worker refuses every add-on, so
+// the Enhance tab offers none and says the approved closed sentence; the purchase this section made comes back
+// with SALES_OPEN (CLAUDE.md, /open).
+const closedLine = await page.evaluate(() => document.querySelector('[data-addons-closed]:not([hidden])')?.textContent || '');
+ok('while sales are closed the new case offers no telehealth, no upgrade and no follow-up', !addons.telehealth && addons.followupHidden && !addons.upgrade);
+ok('and it says so in the approved words', /not currently offering this\. Join the waitlist/.test(closedLine), closedLine);
+ok('nothing was written to the booked case', await page.evaluate(() => {
   const rows = JSON.parse(localStorage.getItem('pa-demo-store') || '{}').docs || [];
   const c = rows.find((d) => d[0] === 'cases/demo-case-booked')?.[1];
-  return c?.pendingTelehealth?.state === 'requested';
+  return !!c && !c.pendingTelehealth;
 }));
 
 console.log('\n--- E. the advocate side sees it ---');
@@ -152,7 +145,8 @@ const chart = await page.evaluate(() => ({
   thCard: !!document.querySelector('[data-telehealth="confirm"]'),
 }));
 ok('the chart opens on the booked case', chart.name && chart.status, JSON.stringify(chart));
-ok('the telehealth confirm card followed the client purchase over', chart.thCard);
+// RE-PINNED 2026-10-15 (v7.38, the tighten audit): nothing was bought while closed, so nothing waits on him.
+ok('and no telehealth confirm card waits on him, because nothing was bought', !chart.thCard);
 
 console.log('\n--- F. the call-notes workbench (Full Access fixture) ---');
 await page.goto(`${P}/admin-case.html?id=demo-case-full&demo=admin`, { waitUntil: 'networkidle' });

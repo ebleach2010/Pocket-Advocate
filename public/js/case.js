@@ -13,7 +13,7 @@ import { mountChat, watchPresence } from './chat.js';
 import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
-import { helpButton, wireHelp, openCaseHelp } from './help.js';
+import { wireHelp, openCaseHelp } from './help.js';
 import { GOOGLE_REVIEW_WRITE_URL } from './reviews-config.js';
 import { officeCueHtml } from './office.js';
 import { startNightShift } from './night-shift.js';
@@ -26,6 +26,8 @@ import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 import { wireAboutButtons } from './service-about.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { mountFolder, folderEnter } from './folder.js';
+import { ask } from './sheet.js';
+import { SALES_OPEN, SALES_CLOSED_MESSAGE } from './sales.js';
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -189,12 +191,12 @@ function render() {
     storageKey: `client-case-${currentId}`,
     initial: 'progress',
     pages: [
-      { id: 'progress', title: 'Progress', icon: '📍', render: (pane) => renderProgress(pane, c) },
+      { id: 'progress', title: 'Progress', icon: 'i-pin', render: (pane) => renderProgress(pane, c) },
       {
         // fade, and opted out of tap-to-flip: the chat is mostly bubbles and
         // dead space you tap around in, and it is position:fixed when full
         // screen, which no transformed ancestor may touch.
-        id: 'chat', title: 'Chat', icon: '💬', fade: true,
+        id: 'chat', title: 'Chat', icon: 'i-chat', fade: true,
         render: (pane) => renderChat(pane, c),
         onShow: (pane) => {
           // The log fills while this page is hidden (display:none), where its
@@ -213,7 +215,7 @@ function render() {
       // 'Docs', not 'Documents': three pills have to fit across a 390px phone,
       // and a tab hanging half off the edge reads as a broken page rather than
       // as more to scroll to. The 📄 carries the rest of the word.
-      { id: 'docs', title: 'Docs', icon: '📄', render: (pane) => renderDocs(pane, c) },
+      { id: 'docs', title: 'Docs', icon: 'i-doc', render: (pane) => renderDocs(pane, c) },
       // Everything purchasable, in one place with a ? beside each (Eric,
       // 2026-08-25: "an entire separate tab for add-ons"). The follow-up and
       // upgrade cards moved here from the bottom of Docs, where they were
@@ -224,12 +226,12 @@ function render() {
       // the only tab on the page where anything is offered, so it is also
       // styled apart from its four neighbours in glowup.css rather than being
       // one more identical pill.
-      { id: 'addons', title: 'Enhance', icon: '💎', render: (pane) => renderAddons(pane, c) },
+      { id: 'addons', title: 'Enhance', icon: 'i-gem', render: (pane) => renderAddons(pane, c) },
       {
         // Messages they bookmarked, each with a note of their own. Private:
         // Eric is not told what they save, and nothing is written back to the
         // message, so there is nothing for him to notice.
-        id: 'saved', title: 'Saved', icon: '🔖',
+        id: 'saved', title: 'Saved', icon: 'i-bookmark',
         render: (pane) => {
           mountSaved({ container: pane, kind: 'case', id: c.id, user, myRole: 'client' });
         },
@@ -654,10 +656,16 @@ function renderProgress(el, c) {
   // exist the calendar link keeps its full-width button (Eric, 2026-08-21:
   // "make the hyperlink section text larger... line it up.") but sits inside
   // the fold below, so the two are no longer twins competing for one tap.
-  const joinHref = method !== 'phone' && c.appointment?.joinLink ? esc(c.appointment.joinLink) : '';
-  const icsHtml = start ? '<a href="#" data-ics>📅 Add to calendar</a>' : '';
+  // Only while a call is still ahead: before the report is due, or with a
+  // booked call that has not yet ended (a Full-Service check-in rides on the
+  // same appointment). A "Join the video call" button after the call is a
+  // dead door.
+  const callAhead = !closed && (rank < STATUS_RANK.awaiting_report
+    || (!!start && start.getTime() > Date.now() - 2 * 3600_000));
+  const joinHref = callAhead && method !== 'phone' && c.appointment?.joinLink ? esc(c.appointment.joinLink) : '';
+  const icsHtml = callAhead && start ? '<a href="#" data-ics>Add to calendar</a>' : '';
   const primaryAction = joinHref
-    ? `<a class="btn cta" href="${joinHref}" rel="noopener">🎥 Join the video call</a>`
+    ? `<a class="btn cta" href="${joinHref}" rel="noopener"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-video"/></svg> Join the video call</a>`
     : (start ? icsHtml.replace('<a href="#"', '<a class="btn cta" href="#"') : '');
   const secondAction = joinHref && start
     ? icsHtml.replace('<a href="#"', '<a class="btn quiet pill" href="#"')
@@ -727,11 +735,10 @@ function renderProgress(el, c) {
               <span class="t-dot"></span>${label}</li>`).join('')}
         </ul>
         ${c.fullAccess ? '' : workLine(c)}
-        ${closed ? '' : '<p class="dim small">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>'}
+        ${callAhead ? '<p class="dim small">A copy is in your email. Nothing else is needed from you before the call, though labs and imaging help if you have them.</p>' : ''}
         ${secondAction ? `<p class="back-row">${secondAction}</p>` : ''}
-        <hr class="divide">
-        <p class="dim small">Session: <strong style="color:${election.choice === 'public' ? 'var(--magenta)' : 'var(--cyan)'};">
-          ${election.choice === 'public' ? 'PUBLIC, streams live on YouTube' : 'PRIVATE'}</strong></p>
+        ${election.choice === 'public' ? `<hr class="divide">
+        <p class="dim small">Session: <strong style="color:var(--magenta);">PUBLIC, streams live on YouTube</strong></p>` : ''}
         ${revocable ? `<p><button class="btn ghost pill" data-private>Make it private</button></p>` : ''}
         ${followUpSection(c)}
       </div>
@@ -786,7 +793,7 @@ function renderProgress(el, c) {
     if (c.pendingExtra) {
       const s = toDate(c.pendingExtra.start);
       return `<div style="border:1px solid var(--magenta); border-radius:10px; padding:.6rem .8rem; margin-top:.6rem;">
-        <p class="small" style="margin:0 0 .4rem;"><strong>${esc(c.pendingExtra.label)}</strong> —
+        <p class="small" style="margin:0 0 .4rem;"><strong>${esc(c.pendingExtra.label)}</strong>:
           ${mt.format(s)} MST · $${(c.pendingExtra.amountCents / 100).toLocaleString()}</p>
         <p class="dim small" style="margin:0 0 .5rem;">I scheduled this for you. The time is held for 24 hours. Pay to confirm it.</p>
         <a class="btn" href="${esc(c.pendingExtra.url)}">Pay & confirm</a>
@@ -835,7 +842,7 @@ function renderChat(el, c) {
     ? `<p class="dim small doing-line" data-doing style="margin:0 0 .4rem;">Eric is ${esc(String(c.work.doing))} right now.</p>`
     : ''}
     <div class="panel" data-chat></div>
-    ${chatLocked ? `
+    ${chatLocked && SALES_OPEN ? `
     <div class="panel" data-chat-unlock style="margin-top:.7rem;">
       <h3 style="margin:.1rem 0 .2rem;">Want a direct line before then?</h3>
       <p class="dim small" style="margin:0 0 .5rem;">Open chat now for a one-time <span data-unlock-price>$50</span> and it stays open for the life of your case. Otherwise it opens on its own, one week before we talk.</p>
@@ -995,7 +1002,7 @@ function paintAgenda(box, items) {
     ...open.map((i) => `<li data-item="${esc(i.id)}" style="display:flex; gap:.4rem; align-items:flex-start; margin:.3rem 0; list-style:none;">
       <span style="flex:1; min-width:0;">• ${esc(i.text)}</span>${
       i.role === 'client'
-        ? `<button type="button" class="btn quiet" style="font-size:.68rem; padding:.15rem .5rem; flex:none;" data-agenda-remove="${esc(i.id)}">Remove</button>`
+        ? `<button type="button" class="btn quiet tiny" style="flex:none;" data-agenda-remove="${esc(i.id)}">Remove</button>`
         : ''
     }</li>`),
     ...covered.map((i) => `<li class="dim" style="margin:.3rem 0; list-style:none;">✓ ${esc(i.text)} <span class="small">· covered</span></li>`),
@@ -1005,6 +1012,7 @@ function paintAgenda(box, items) {
 // ---- Documents section ----
 function renderDocs(el, c) {
   const closed = c.status === 'closed';
+  const delivered = c.status === 'delivered' || closed;
   const paused = !closed && !!c.hold?.pausedAt;
   el.innerHTML = `
     <h2 class="case-sec-h">Documents</h2>
@@ -1019,7 +1027,14 @@ function renderDocs(el, c) {
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="error" data-upload-error hidden></p>`}
     <ul class="filelist" data-files><li class="dim small">Loading files…</li></ul>
+    ${delivered ? `
+    <p class="dim small"><em>Note: You can export this as a PDF for your records and can hand select which sections you want to export.</em></p>
+    <div class="actions">
+      <button class="btn quiet" data-export>Export as PDF</button>
+    </div>` : ''}
     <div data-review hidden></div>`;
+  // Under the files it exports, not at the foot of the review card.
+  el.querySelector('[data-export]')?.addEventListener('click', () => openExport(c));
   const input = el.querySelector('[data-file-input]');
   input?.addEventListener('change', () => uploadFiles(c, el, [...input.files]));
   refreshFiles(c, el);
@@ -1138,7 +1153,7 @@ async function refreshFiles(c, el) {
       <span class="fname">${r.starred ? '⭐ ' : ''}<span class="kind-pill ${filedCat(r) || r.kind}">${
         filedCat(r) ? CATS[filedCat(r)].label
           : r.kind === 'saved' || r.kind === 'chat' ? 'FROM CHAT' : r.kind.toUpperCase()}</span>
-        ${r.kind === 'report' && !r.cat && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered">✅</span>' : ''}
+        ${r.kind === 'report' && !r.cat && delivered ? '<span class="delivered-tick" title="Delivered" role="img" aria-label="Delivered"><svg class="ico" aria-hidden="true" style="color:var(--cyan)"><use href="/img/icons.svg#i-check"/></svg></span>' : ''}
         <a href="${r.url}" target="_blank" rel="noopener">${esc(readName(r))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
@@ -1180,8 +1195,8 @@ async function refreshFiles(c, el) {
 /** Long-press (550ms) or right-click asks, then runs the delete. */
 function wireFileDelete(li, r, doDelete) {
   const name = r.display || String(r.name).replace(/^\d{10,}-/, '');
-  const askThen = () => {
-    if (confirm(`Delete "${name}"? This removes the file for both of us.`)) doDelete();
+  const askThen = async () => {
+    if (await ask({ title: `Delete "${name}"?`, body: 'This removes the file for both of us.', okLabel: 'Delete', danger: true })) doDelete();
   };
   let timer = null;
   li.addEventListener('touchstart', () => { timer = setTimeout(askThen, 550); }, { passive: true });
@@ -1259,11 +1274,6 @@ function renderReview(el, c) {
         The box above comes only to me; Google is public.</p>
       ${delivered && c.addOnFollowUp && !c.followUp && !justBoughtFollowUp() ? `
         <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
-      ${delivered ? `
-      <p class="dim small"><em>Note: You can export this as a PDF for your records and can hand select which sections you want to export.</em></p>
-      <div class="actions">
-        <button class="btn quiet" data-export>Export as PDF</button>
-      </div>` : ''}
     </div>`;
 
   let stars = 0;
@@ -1279,8 +1289,6 @@ function renderReview(el, c) {
       });
       sendBtn.disabled = false;
     }));
-
-  host.querySelector('[data-export]')?.addEventListener('click', () => openExport(c));
 
   sendBtn.addEventListener('click', async () => {
     if (!stars) return;
@@ -1428,7 +1436,10 @@ const fullAccessPrice = () => fullAccessCents;
 // on a card that the Worker would then refuse.
 const ratesReady = fetch('/api/rates')
   .then((r) => (r.ok ? r.json() : null))
-  .then((d) => { if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents); })
+  .then((d) => {
+    if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents);
+    if (Number(d?.teleCents) > 0) telehealthCents = Number(d.teleCents);
+  })
   .catch(() => { /* the compiled-in price is right at deploy time */ });
 
 /**
@@ -1473,11 +1484,6 @@ function renderPageFooter(host, c) {
         render();
       }));
   }
-  // The version line rides just above the jar (Eric, 2026-08-21). It mounts
-  // itself at the end of main before this footer exists; before() MOVES the
-  // node, click wiring intact. Idempotent across repaints.
-  const verline = document.getElementById('pa-verline');
-  if (verline) host.before(verline);
 }
 
 /**
@@ -1563,7 +1569,7 @@ function extendOffer(c) {
     // is true right now instead of promising days it does not yet carry.
     if (pending) return `
       <div class="followup-offer">
-        <h3>Payment received — putting the month on your case.</h3>
+        <h3>Payment received: putting the month on your case.</h3>
         <p>This takes a moment. Refresh in a minute if it hasn't updated;
           nothing is charged twice.</p>
       </div>`;
@@ -1641,18 +1647,30 @@ function renderAddons(el, c) {
     <p class="dim small" style="margin:.2rem 0 .8rem;">Nothing to buy here: this case is free. Anything you need, ask in chat.</p>`;
     return;
   }
+  // While sales are closed, only what is already bought or under way stays:
+  // a request on Eric's desk, a checkout still open, a month being applied.
+  // Every offer to buy something new goes, because the Worker would refuse
+  // the payment after the client had filled the form in.
   el.innerHTML = `
     <h2 class="case-sec-h">Case Enhancements</h2>
-    <p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
+    ${SALES_OPEN ? `<p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
       this case whenever you need them. Nothing here is required, and nothing
-      is charged until you choose it.</p>
+      is charged until you choose it.</p>` : ''}
     <div data-telehealth></div>
     <div data-followup></div>
     <div data-upgrade></div>
-    <div data-extend></div>`;
-  const addAbout = addAboutButton;
+    <div data-extend></div>
+    <p class="dim small" data-addons-closed hidden style="margin:.2rem 0 .8rem;"></p>`;
+  const addAbout = (host, topic) => { if (keepCard(host)) addAboutButton(host, topic); };
   const th = el.querySelector('[data-telehealth]');
-  if (th) { th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth'); }
+  if (th) {
+    th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth');
+    // Repaint with the live price, unless they have started typing.
+    ratesReady.then(() => {
+      if (!th.isConnected || [...th.querySelectorAll('input')].some((i) => i.value || i.checked)) return;
+      th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth');
+    }).catch(() => {});
+  }
   const ex = el.querySelector('[data-extend]');
   if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); addAbout(ex, 'extension'); }
   const offer = el.querySelector('[data-followup]');
@@ -1676,6 +1694,30 @@ function renderAddons(el, c) {
       addAbout(up, 'handsOff');
     }).catch(() => {});
   }
+  const none = el.querySelector('[data-addons-closed]');
+  if (!SALES_OPEN && none && ![th, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
+    none.textContent = SALES_CLOSED_MESSAGE;
+    none.hidden = false;
+  }
+}
+
+/** The buttons that start a new purchase. */
+const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again]';
+/**
+ * While sales are closed, empties a card that is only an offer and takes the
+ * "buy again" button off a finished one. True when something is left to show.
+ */
+function keepCard(host, open = SALES_OPEN) {
+  if (!host) return false;
+  if (!open) {
+    if (host.querySelector(SELLING)) {
+      // A confirmed appointment is not an offer; it stays on its own.
+      const kept = host.querySelector('[data-th-upcoming]');
+      host.innerHTML = kept ? `<div class="followup-offer"><h3>Appointment advocacy</h3>${kept.outerHTML}</div>` : '';
+    }
+    host.querySelector('[data-extend-again]')?.closest('p')?.remove();
+  }
+  return !!host.innerHTML.trim();
 }
 
 /**
@@ -1684,7 +1726,9 @@ function renderAddons(el, c) {
  * confirms or declines every one; a decline - his or the clinic's - refunds
  * the payment in full, and the card says so before they type a thing.
  */
-const TELEHEALTH_PRICE_CENTS = 45000;
+// The live price from /api/rates, which is what Stripe charges. This used to be
+// a typed-in 45000 while the Worker charged 52500, so the card under-quoted.
+let telehealthCents = 52500;
 function telehealthCard(c) {
   const p = c.pendingTelehealth;
   const visits = (Array.isArray(c.telehealthVisits) ? c.telehealthVisits : [])
@@ -1694,7 +1738,7 @@ function telehealthCard(c) {
     weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
   });
   const upcoming = visits.length ? `
-    <p class="dim small" style="margin:.4rem 0 0;">Confirmed:
+    <p class="dim small" data-th-upcoming style="margin:.4rem 0 0;">Confirmed:
       ${visits.map((v) => `<strong style="color:var(--ink)">${esc(fmt.format(toDate(v.when)))}</strong> · ${esc(v.clinicName || '')}`).join('<br>')}</p>` : '';
 
   // Straight back from Stripe: paid, on Eric's desk to confirm.
@@ -1708,7 +1752,7 @@ function telehealthCard(c) {
       </div>`;
   if (p?.state === 'requested') return `
     <div class="followup-offer">
-      <h3>Appointment advocacy — waiting on my confirmation</h3>
+      <h3>Appointment advocacy: waiting on my confirmation</h3>
       <p><strong>${esc(fmt.format(toDate(p.when)))}</strong> · ${esc(p.clinicName || '')}${p.provider ? ` · ${esc(p.provider)}` : ''}</p>
       <p class="dim small">I confirm every appointment personally. ${p.paymentIntentId && !p.paidCents
         ? 'Your card is held, not charged, until I do. If I can\'t make it, the hold is released and nothing is charged.'
@@ -1729,12 +1773,12 @@ function telehealthCard(c) {
       You're welcome to ask again for another appointment.</p>` : '';
   const price = c.fullAccess
     ? '<span class="price" style="font-size:1rem;">Included</span>'
-    : `<span class="price">$${(TELEHEALTH_PRICE_CENTS / 100).toFixed(0)}</span>`;
+    : `<span class="price">$${(telehealthCents / 100).toFixed(0)}</span>`;
   return `
     <div class="followup-offer">
-      <h3>Bring me to your appointment ${helpButton('telehealth', 'What appointment advocacy is, and the ground rules')}</h3>
+      <h3>Bring me to your appointment</h3>
       <p>Have a telehealth visit coming up? I join it with you by video and
-        advocate on your behalf, live — the questions get asked, the answers
+        advocate on your behalf, live: the questions get asked, the answers
         get written down, and you are not in that room alone.</p>
       ${denied}${upcoming}
       <div style="margin:.6rem 0 0;">
@@ -1775,7 +1819,7 @@ function wireTelehealthCard(el, c) {
     if (!when || Number.isNaN(when.getTime())) return say('Pick the date and time of your appointment.');
     if (!clinicName) return say('Name the clinic.');
     if (!provider) return say("Name the provider we'll be seeing.");
-    if (!attest) return say('Tick the box - it is your invitation, and your provider will want to know.');
+    if (!attest) return say('Tick the box: it is your invitation, and your provider will want to know.');
     btn.disabled = true;
     try {
       const idToken = await user.getIdToken();
@@ -2444,7 +2488,7 @@ async function mountPermissions(host, c) {
       b.addEventListener('click', () => printAuthority(c, items.find((i) => i.id === b.dataset.authView)));
     for (const b of host.querySelectorAll('[data-auth-revoke]')) {
       b.addEventListener('click', async () => {
-        if (!confirm('Withdraw this authorisation? I will stop using it straight away. It cannot undo anything already sent to me under it.')) return;
+        if (!(await ask({ title: 'Withdraw this authorisation?', body: 'I will stop using it straight away. It cannot undo anything already sent to me under it.', okLabel: 'Withdraw', danger: true }))) return;
         b.disabled = true;
         try {
           const idToken = await user.getIdToken();

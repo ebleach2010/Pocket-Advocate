@@ -27,11 +27,17 @@ async function load() {
   const threads = [];
   try {
     const cases = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
+    // Two cases both labelled "My case" read as one case twice (2026-10-15, the
+    // look audit). With more than one, each is named by its call date.
+    const many = cases.size > 1;
+    const dayFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
     cases.forEach((d) => {
       const c = d.data();
+      const when = tsMs(c.appointment?.start) || tsMs(c.createdAt);
+      const named = many && when ? `${dayFmt.format(new Date(when))} case` : 'My case';
       threads.push({
         key: `case:${d.id}`,
-        label: c.status === 'closed' ? 'Case (closed)' : 'My case',
+        label: c.status === 'closed' ? (many && when ? `${named} (closed)` : 'Case (closed)') : named,
         parentPath: ['cases', d.id],
         closed: c.status === 'closed',
         // A paused case's chat is paused too (Eric, 2026-10-03).
@@ -45,7 +51,7 @@ async function load() {
       const end = s.currentPeriodEnd?.toDate ? s.currentPeriodEnd.toDate() : new Date(s.currentPeriodEnd || 0);
       threads.push({
         key: 'sub',
-        label: 'Pocket Advocate line',
+        label: '24/7 Priority Chat',
         parentPath: ['subscriptions', user.uid],
         closed: !(end > new Date()),
         ts: s.lastMessage?.ts ? tsMs(s.lastMessage.ts) : 0,
@@ -58,7 +64,7 @@ async function load() {
 
   if (!threads.length) {
     chatEl.innerHTML = `<p class="dim">No conversations yet.</p>
-      <p><a class="btn" href="/subscribe.html">Start chatting →</a></p>`;
+      <p><a class="btn glow" href="/subscribe.html">Start chatting →</a></p>`;
     return;
   }
 
@@ -89,7 +95,7 @@ async function load() {
       saveUid: user.uid,
       disabled: t.closed || t.paused,
       notice: t.closed
-        ? 'This conversation is closed. Your history stays here; book again or subscribe to reach me.'
+        ? 'This conversation is closed. Your history stays here; subscribe to reach me.'
         : t.paused ? 'This case is paused.' : '',
     });
   }

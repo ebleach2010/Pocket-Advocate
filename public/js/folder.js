@@ -85,7 +85,7 @@ export function mountPages({ container, pages, storageKey = '', groups = null } 
     if (groupList.length >= 4) groupNav.classList.add('many');
     groupNav.innerHTML = groupList.map((g) => `
       <button type="button" class="fgrp" data-group="${esc(g.id)}" aria-selected="false">
-        ${g.icon ? `<span class="fgrp-ic" aria-hidden="true">${esc(g.icon)}</span>` : ''}<span class="fgrp-t">${esc(g.label || g.id)}</span><span class="fgrp-dot" data-gdot hidden></span>
+        ${g.icon ? `<span class="fgrp-ic" aria-hidden="true">${iconHtml(g.icon)}</span>` : ''}<span class="fgrp-t">${esc(g.label || g.id)}</span><span class="fgrp-dot" data-gdot hidden></span>
       </button>`).join('');
   }
 
@@ -98,7 +98,7 @@ export function mountPages({ container, pages, storageKey = '', groups = null } 
     return `
       <a class="ftab" role="tab" href="#${esc(p.el.id)}" id="${uid}-tab-${i}"
          aria-controls="${esc(p.el.id)}" aria-selected="false" tabindex="-1"
-         data-page="${esc(p.id)}">${p.icon ? `<span class="ftab-ic" aria-hidden="true">${esc(p.icon)}</span>` : ''}<span class="ftab-t">${esc(p.label || p.id)}</span><span class="ftab-dot" data-dot hidden></span></a>`;
+         data-page="${esc(p.id)}">${p.icon ? `<span class="ftab-ic" aria-hidden="true">${iconHtml(p.icon)}</span>` : ''}<span class="ftab-t">${esc(p.label || p.id)}</span><span class="ftab-dot" data-dot hidden></span></a>`;
   }).join('');
   container.prepend(nav);
   if (groupNav) {
@@ -523,6 +523,17 @@ function scrollableX(el, stop) {
     }
   }
   return false;
+}
+
+/**
+ * A tab's icon: a stroke icon from /img/icons.svg when it is named 'i-...'
+ * (2026-10-15, the look audit: the home draws one stroke icon set, not
+ * colour emoji), otherwise the text it was given.
+ */
+function iconHtml(icon) {
+  return /^i-[a-z-]+$/.test(icon)
+    ? `<svg class="ico" aria-hidden="true"><use href="/img/icons.svg#${icon}"/></svg>`
+    : esc(icon);
 }
 
 function esc(s) {

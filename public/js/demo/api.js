@@ -1760,7 +1760,16 @@ export function demoApi(role, store) {
       const booked = sid === 'cs_demo_booked' && store.docs.get('cases/demo-case-booked');
       return ok({ ready: true, caseId: booked ? 'demo-case-booked' : DEMO_CASE_ID });
     }
-    if (path === '/api/portal') return ok({ url: `/subscription.html?demo=${role}` });
+    if (path === '/api/portal') {
+      // The clear cancel (2026-10-15): the demo plays Stripe's cancel step,
+      // ending the subscription at its period's end as Stripe would.
+      if (body?.flow === 'cancel') {
+        const key = `subscriptions/${role === 'admin' ? 'demo-admin' : 'demo-client'}`;
+        const s = store.docs.get(key);
+        if (s) { store.docs.set(key, { ...s, cancelAtPeriodEnd: true }); store.persist?.(); store.fire?.(key); }
+      }
+      return ok({ url: `/subscription.html?demo=${role}` });
+    }
     // Retired with the jar itself. The ledger branch below still reports
     // tips, because a real ledger still has to reconcile ones already given.
     if (path === '/api/tip') return fail(404, 'Not found');

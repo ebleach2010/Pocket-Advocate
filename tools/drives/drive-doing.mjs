@@ -34,6 +34,18 @@ const caseId = await page.evaluate(() => (document.querySelector('a[href*="admin
 console.log('\n--- A. his side ---');
 await page.goto(`${P}/admin-case.html?id=${caseId}`, { waitUntil: 'networkidle' });
 await settle(page);
+// RE-PINNED 2026-10-15 (v7.38, the tighten audit): the row moved out of the head of every page and onto the
+// Chat page, under the Working on picker, so the drive opens Chat first.
+await page.evaluate(() => document.querySelector('.folder-tabs .ftab[data-page="chat"]')?.click());
+await settle(page, 600);
+// NEGATIVE CONTROL (run 2026-10-15): the row's data-doing-row moved back into the case head made this read
+//   FAIL  the row sits on the Chat page under Working on, and nowhere in the head
+ok('the row sits on the Chat page under Working on, and nowhere in the head', await page.evaluate(() => {
+  const row = document.querySelector('[data-doing-row]');
+  const pick = document.querySelector('[data-status-pick]');
+  return !!row && !!pick && !row.closest('.case-head') && !!(pick.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_FOLLOWING)
+    && document.querySelectorAll('[data-doing-row]').length === 1;
+}));
 ok('the row is folded while the clock is stopped', await page.evaluate(() => document.querySelector('[data-doing-row]')?.hidden === true));
 await page.click('[data-work-head]');
 await settle(page, 900);

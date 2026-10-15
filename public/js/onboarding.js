@@ -71,7 +71,7 @@ function finish() {
 function runIntro(user, mount, fullySet, welcome = true) {
   const steps = [
     ...(welcome ? [{
-      title: 'Welcome to Pocket Advocate 👋',
+      title: 'Welcome to Pocket Advocate',
       body: `<p>You're in. This is your private space: your case, your documents, and a direct line to me. Just a couple of quick things to set up first.</p>`,
       cta: 'Get started',
     }, {
@@ -101,7 +101,7 @@ function runIntro(user, mount, fullySet, welcome = true) {
                <ol class="intro-steps"><li>Tap the <strong>⋮</strong> menu in Chrome</li>
                <li>Tap <strong>Add to Home screen</strong></li>
                <li>Confirm, then open it from the new icon</li></ol>`}
-        <p class="dim small" style="margin-top:.9rem;">Nothing here is required. You can skip it and carry on. The <strong>?</strong> beside your case title explains all of this again any time.</p>`,
+        <p class="dim small" style="margin-top:.9rem;">Nothing here is required. You can skip it and carry on.</p>`,
       cta: pushInstalled() ? 'Next' : 'Done, take me in',
     },
   ];
@@ -159,7 +159,7 @@ function runIntro(user, mount, fullySet, welcome = true) {
         ${s.body}
         <div class="intro-actions">
           <button class="btn quiet" data-skip>${last ? 'Not now' : 'Skip'}</button>
-          <button class="btn" data-next>${last ? 'Done' : s.cta || 'Next'}</button>
+          <button class="btn glow" data-next>${last ? 'Done' : s.cta || 'Next'}</button>
         </div>
       </div>`;
     overlay.querySelector('[data-skip]')?.addEventListener('click', () => { releaseFocus(); finish(); });
@@ -182,7 +182,7 @@ function reminder(user, mount) {
       ${isIOS() ? '(Share ⬆️ → Add to Home Screen)' : '(⋮ menu → Add to Home screen)'} to get notifications.</p>`;
   } else {
     card.innerHTML = `<p style="margin:0 0 .5rem;"><strong>Turn on notifications</strong> so you don't miss a reply.</p>
-      <button class="btn" data-on>Turn on notifications</button>`;
+      <button class="btn glow" data-on>Turn on notifications</button>`;
     card.querySelector('[data-on]').addEventListener('click', async (e) => {
       e.target.disabled = true;
       const r = await enablePush(user);

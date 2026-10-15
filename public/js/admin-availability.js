@@ -5,6 +5,7 @@
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav } from './auth.js';
 import { mountOfficeControl } from './admin-hours.js';
+import { SALES_OPEN } from './sales.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7'; // MST = fixed UTC-7 (IANA sign is inverted)
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]; // last 60-min slot ends 7pm (CLOSE_HOUR in worker/schedule.js)
@@ -31,6 +32,7 @@ function init() {
   // same control is on the shelf; both read and write the one settings doc.
   mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
   wireClosure();
+  for (const el of document.querySelectorAll('[data-when-sales-open]')) el.hidden = !SALES_OPEN;
   loadCalendar();
 }
 
@@ -47,9 +49,13 @@ function wireClosure() {
   const stateEl = document.getElementById('closure-state');
   const errEl = document.getElementById('closure-error');
   const paint = (msg) => {
+    // While sales are closed nobody can book, whatever the calendar says,
+    // so the open line would be untrue. Same words as the public badge.
     stateEl.innerHTML = msg
       ? `🚫 <strong>${msg}</strong>`
-      : '✅ <strong>Open for new cases.</strong> Clients can book any slot below.';
+      : SALES_OPEN
+        ? '✅ <strong>Open for new cases.</strong> Clients can book any slot below.'
+        : '🚫 <strong>Not currently offering.</strong>';
   };
   const call = async (body) => {
     const token = await user.getIdToken();
@@ -161,7 +167,7 @@ function fmtDay(ymd) {
 
 /** Explain WHY a range produced zero slots — never the generic shrug. */
 function zeroSlotReason(dropped, from, to) {
-  const range = from === to ? fmtDay(from) : `${fmtDay(from)}–${fmtDay(to)}`;
+  const range = from === to ? fmtDay(from) : `${fmtDay(from)} to ${fmtDay(to)}`;
   const reasons = [];
   if (dropped.weekend)
     reasons.push(`${range} falls on a weekend and “Weekdays only” is checked`);
@@ -169,14 +175,14 @@ function zeroSlotReason(dropped, from, to) {
     reasons.push(`${dropped.past} of the times are already in the past`);
   if (dropped.lead)
     reasons.push(`${dropped.lead} of the times are inside the ${LEAD_TIME_HOURS}-hour booking lead window, so clients could never book them`);
-  if (!reasons.length) return 'That range produces no slots — check the dates and start times.';
+  if (!reasons.length) return 'That range produces no slots: check the dates and start times.';
   if (reasons.length === 1) {
     // Single cause: make it read as one clean sentence.
     if (dropped.weekend && !dropped.past && !dropped.lead)
       return `No slots opened: ${range} falls on a weekend and “Weekdays only” is checked. Uncheck it, or pick weekdays.`;
     if (dropped.past && !dropped.weekend && !dropped.lead)
       return `No slots opened: every time in ${range} is already in the past.`;
-    return `No slots opened: every time in ${range} is inside the ${LEAD_TIME_HOURS}-hour booking lead window — clients can't book with less than ${LEAD_TIME_HOURS} hours' notice. Pick dates at least ${Math.ceil(LEAD_TIME_HOURS / 24)} days out.`;
+    return `No slots opened: every time in ${range} is inside the ${LEAD_TIME_HOURS}-hour booking lead window: clients can't book with less than ${LEAD_TIME_HOURS} hours' notice. Pick dates at least ${Math.ceil(LEAD_TIME_HOURS / 24)} days out.`;
   }
   return `No slots opened: ${reasons.join('; ')}.`;
 }

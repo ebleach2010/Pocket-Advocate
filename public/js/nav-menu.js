@@ -151,6 +151,27 @@ export function refuseZoom(doc = document) {
 }
 refuseZoom();
 
+/**
+ * While cases are closed, every link to the Book page is hidden, on every page.
+ * The demo keeps them so the old flow can still be walked through. Loaded on
+ * demand so this file still works without the sales switch.
+ */
+function inDemo() {
+  try {
+    const q = new URLSearchParams(location.search).get('demo');
+    return q !== '0' && !!(q || sessionStorage.getItem('pa-demo'));
+  } catch { return false; }
+}
+export function hideBookWhenClosed(open, demo) {
+  if (open || demo || document.querySelector('style[data-book-closed]')) return false;
+  const s = document.createElement('style');
+  s.setAttribute('data-book-closed', '');
+  s.textContent = 'a[href^="/book.html"]{display:none !important}';
+  document.head.appendChild(s);
+  return true;
+}
+import('./sales.js').then((m) => hideBookWhenClosed(m.packageOpen('case'), inDemo())).catch(() => {});
+
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', mountNav);
 } else {

@@ -840,13 +840,17 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   // RE-PINNED 2026-10-14 (v7.36): Eric, "any person who has submitted their information through any route gets added to a 'leads' tab". Leads sits after Clients on every admin page.
   const ADV = '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html';
   const adminPages = ['admin', 'admin-case', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-fund'];
-  check('F26 his home is the Clients page again: both admin doors on the sign-in page go to Clients, sign-in otherwise defaults to Book, his device\'s landing goes to Clients, every admin page carries the advocacy tabs and no Fund or PR 1 tab, the queue still keeps his alerts registered, and the client\'s own pages carry their tabs again',
+  // RE-PINNED 2026-10-15 (v7.38, the tighten audit): Book is closed, so sign-in otherwise defaults to Chat, the open
+  // package, and the client's own pages lost their "Book" tab (it pointed at the home); they keep About and Reviews.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): sign-in's default put back to /book.html made this read
+  //   FAIL  F26 his home is the Clients page again: both admin doors on the sign-in page go to Clients, sign-in otherwise defaults to Chat, his device's landing goes to Clients, every admin page carries the advocacy tabs and no Fund or PR 1 tab, the queue still keeps his alerts registered, and the client's own pages carry their tabs again
+  check('F26 his home is the Clients page again: both admin doors on the sign-in page go to Clients, sign-in otherwise defaults to Chat, his device\'s landing goes to Clients, every admin page carries the advocacy tabs and no Fund or PR 1 tab, the queue still keeps his alerts registered, and the client\'s own pages carry their tabs again',
     (SIGNIN.match(/location\.href = '\/admin\.html';/g) || []).length === 2 && !/admin-fund/.test(SIGNIN)
-    && /const returnTo = params\.get\('to'\) \|\| '\/book\.html';/.test(SIGNIN)
+    && /const returnTo = params\.get\('to'\) \|\| '\/chat\.html';/.test(SIGNIN)
     && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(f('public/index.html'))
     && adminPages.every((n) => tabs(f(`public/${n}.html`)).join() === ADV)
     && /initPushPrompt\(user, null\)/.test(ADMINPAGE)
-    && ['case', 'chat', 'subscription', 'return'].every((n) => tabs(f(`public/${n}.html`)).join() === '/,/about.html,/reviews.html')
+    && ['case', 'chat', 'subscription', 'return'].every((n) => tabs(f(`public/${n}.html`)).join() === '/about.html,/reviews.html')
     && /<a href="\/services\.html">Services<\/a>/.test(SIGNIN),
     JSON.stringify({ fund: tabs(f('public/admin-fund.html')), admin: tabs(f('public/admin.html')), cases: tabs(f('public/case.html')) }));
 }

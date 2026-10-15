@@ -1050,7 +1050,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
       <div class="settings-card" role="dialog" aria-modal="true" aria-label="Prepare a response">
         <div class="row"><h3 style="margin:0;">✍️ Prepare a response</h3>
           <button class="btn quiet" data-x>Cancel</button></div>
-        <p class="dim small" style="margin:.2rem 0 .5rem;">Anything this reply must do? Optional — leave blank for the natural next message.</p>
+        <p class="dim small" style="margin:.2rem 0 .5rem;">Anything this reply must do? Optional: leave blank for the natural next message.</p>
         <textarea class="edit-box" data-inst rows="3" maxlength="1000" style="min-height:4rem;"></textarea>
         <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Draft it</button></div>
       </div>`;
@@ -1476,7 +1476,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         <div class="settings-card" role="dialog" aria-modal="true" aria-label="Revise the draft">
           <div class="row"><h3 style="margin:0;">🔁 Revise the draft</h3>
             <button class="btn quiet" data-x>Cancel</button></div>
-          <p class="dim small" style="margin:.2rem 0 .5rem;">What should change? Shorter, warmer, add something, drop something — say it plainly.</p>
+          <p class="dim small" style="margin:.2rem 0 .5rem;">What should change? Shorter, warmer, add something, drop something: say it plainly.</p>
           <textarea class="edit-box" data-inst rows="3" maxlength="1000" style="min-height:4rem;"></textarea>
           <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Revise it</button></div>
         </div>`;
@@ -1547,7 +1547,7 @@ function glossaryHtml(glossary) {
   const fresh = glossary.filter((g) => !g.learned);
   const known = glossary.filter((g) => g.learned);
   return `
-    <p class="dim small" style="margin:.1rem 0 .6rem;">Tick a term once you own it — it's never explained to you again, and the advisor pitches future notes to what you know.</p>
+    <p class="dim small" style="margin:.1rem 0 .6rem;">Tick a term once you own it; it's never explained to you again, and the advisor pitches future notes to what you know.</p>
     ${fresh.length ? fresh.map(item).join('') : '<p class="dim small">Nothing new to learn right now.</p>'}
     ${known.length ? `<details class="gloss-known"><summary>✓ ${known.length} term${known.length === 1 ? '' : 's'} you know</summary>${known.map(item).join('')}</details>` : ''}
     <p class="small" style="margin:.6rem 0 0;"><a href="/admin-dictionary.html">📚 Full dictionary, by type and A to Z →</a></p>`;

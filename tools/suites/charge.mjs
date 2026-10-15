@@ -333,7 +333,10 @@ check('CH5 telehealth: the request holds the card and says so on the receipt, th
   && /Your card is held, not charged, until I confirm\./.test(CASE)
   && /Nothing was charged; the hold on your card is released/.test(CASE)
   && /Their card is holding \$\$\{\(Number\(c\.pendingTelehealth\.heldCents\) \/ 100\)\.toFixed\(0\)\}, not charged\./.test(ADMC)
-  && /Charge them how much\? Their card is holding \$/.test(ADMC)
+  // RE-PINNED 2026-10-15 (v7.38): the look audit. prompt() does nothing in a Home Screen app, so his amount is asked in the app's own sheet (sheet.js), same words split into a title and a line.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): the sheet's title changed to 'How much?' made this read
+  //   FAIL  CH5 telehealth: the request holds the card and says so on the receipt, the webhook writes the hold on the request and pushes no payment, confirming captures the amount he set up to the hold (zero releases; a lapsed hold can only confirm at no charge) and writes captured money down, declining releases the hold with nothing to refund and says so, his card and the client\
+  && /title: 'Charge them how much\?', body: `Their card is holding \$/.test(ADMC)
   && /body: JSON\.stringify\(\{ caseId, action, amountCents \}\),/.test(ADMC)
   && /if \(p\.paymentIntentId && p\.holdState === 'held'\) \{\n\s+const cap = Number\(p\.heldCents\) \|\| 0;/.test(DEMO)
   && /released: !!p\.paymentIntentId && !p\.paidCents,/.test(DEMO));
@@ -346,7 +349,10 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
   && /if \(cents === 0\) \{\n[\s\S]{0,700}?await confirmFullAccessPurchase\(env, \{\n\s+id: `comp_\$\{caseId\}_\$\{Date\.now\(\)\}`, amount_total: 0,\n\s+metadata: \{ caseId, ackAt: String\(req\.ackAt \|\| Date\.now\(\)\), comped: '1' \},\n\s+\}\);/.test(W)
   && /return json\(\{ ok: true, state: 'started', cents: 0, comped: true \}\);/.test(W)
   && /line_items: fullAccessLineItems\(cents\),/.test(W)
-  && /First month, in dollars\. They were quoted \$/.test(ADMC)
+  // RE-PINNED 2026-10-15 (v7.38): the look audit. prompt() does nothing in a Home Screen app, so his amount is asked in the app's own sheet (sheet.js), same words split into a title and a line.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): the sheet's title changed to 'First month?' made this read
+  //   FAIL  CH6 Full-Service approval takes the amount he typed (the quoted month by default), refuses a bad one, opens the month at no charge with no link when it is zero through the same landing a paid link has, sends the link for any other figure, the card asks for the figure and carries it on both posts, and the demo honours it
+  && /title: 'First month, in dollars', body: `They were quoted \$/.test(ADMC)
   && (ADMC.match(/body: JSON\.stringify\(\{ caseId, decision, reason, amountCents/g) || []).length === 2
   && /const asked = body\.amountCents === undefined \|\| body\.amountCents === null \? null : Number\(body\.amountCents\);/.test(DEMO)
   && /const amount = asked === null \? \(Number\(req\.firstMonthCents\) \|\| 0\) : asked;/.test(DEMO));
@@ -440,7 +446,8 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // stat131 on the seven admin pages.
     // NEGATIVE CONTROL (run 2026-10-06, v7.30): admin-fund.html put back to stat130 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat131/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-15 (v7.38): the look audit's doing pills and colour fixes moved the sheet to stat132.
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat132/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

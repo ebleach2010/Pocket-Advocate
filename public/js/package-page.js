@@ -20,7 +20,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (ch) =>
 export function statusHtml(pkg, open) {
   if (!open) {
     return `<span class="opt-badge">Not currently offering</span>
-      <a class="btn glow cta pkg-go" href="/#waitlist">Join the waitlist</a>`;
+      <a class="btn glow cta pkg-go" href="/?wl=${esc(pkg)}#waitlist">Join the waitlist</a>`;
   }
   if (pkg === 'chat') return '<a class="btn glow cta pkg-go" href="/subscribe.html">Start chatting</a>';
   // Full service is asked for from inside an open case, so its way in is a case.

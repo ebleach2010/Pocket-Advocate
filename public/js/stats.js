@@ -86,6 +86,11 @@ export async function paintStats(root = document) {
   // The floor: below three cases the ledger is withheld by the server, and
   // the page says how many cases the reply figures rest on.
   for (const el of root.querySelectorAll('[data-ledger]')) el.hidden = !!s.floor;
+  // The two tiles the floor withholds would sit on "…" forever; they wait too.
+  for (const k of ['reports', 'hours']) {
+    const tile = root.querySelector(`[data-stat="${k}"]`)?.closest('.tile');
+    if (tile) tile.hidden = !!s.floor;
+  }
   for (const el of root.querySelectorAll('[data-stat-floor]')) {
     el.hidden = !s.floor;
     if (s.floor) el.textContent = `Measured across ${s.cases} case${s.cases === 1 ? '' : 's'} so far. The rest of the ledger appears at three.`;

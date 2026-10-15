@@ -74,7 +74,7 @@ function flowChart(steps) {
         <rect x="${x - 150}" y="${armY}" width="300" height="40" rx="8"
           fill="#FFFFFF" stroke="#C9BFA6" stroke-width="1.2"/>
         <text x="${x}" y="${armY + 25}" text-anchor="middle" font-size="12.5"
-          fill="#231F16">${esc(String(then || '—').slice(0, 48))}</text>`);
+          fill="#231F16">${esc(String(then || '').slice(0, 48))}</text>`);
     });
   });
 
@@ -127,13 +127,13 @@ export function openPrepSheet({ name = '', when = '', analysis = '', differentia
 
   // The model separates "the thing" from "what it settles" with a pipe. That is
   // a field separator, not punctuation anybody reads off a page.
-  const clean = (x) => x.replace(/\[\[|\]\]/g, '').split('|').map((t) => t.trim()).filter(Boolean).join(' — ');
+  const clean = (x) => x.replace(/\[\[|\]\]/g, '').split('|').map((t) => t.trim()).filter(Boolean).join(': ');
   const list = (items) => (items.length
     ? `<ol>${items.map((x) => `<li>${esc(clean(x))}</li>`).join('')}</ol>`
     : '<p class="none">Nothing yet.</p>');
 
   win.document.write(`<!doctype html><html><head><meta charset="utf-8">
-    <title>Prep — ${esc(name)}</title>
+    <title>Prep: ${esc(name)}</title>
     <style>
       body { font: 14.5px/1.5 -apple-system, system-ui, sans-serif; color: #1A1712;
              margin: 0; padding: 2rem 1.6rem; background: #fff; }

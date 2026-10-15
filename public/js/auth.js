@@ -222,9 +222,18 @@ export async function hydrateNav() {
         `<a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     } else {
       el.innerHTML =
-        `<a href="/case.html" class="${path === '/case.html' ? 'active' : ''}">My cases</a>` +
+        // "My cases" waits until there is a case to show; a chat-only
+        // subscriber never sees a door to an empty room.
+        `<a href="/case.html" data-nav-cases hidden class="${path === '/case.html' ? 'active' : ''}">My cases</a>` +
         ` <a href="/chat.html" data-nav-chat class="${path === '/chat.html' ? 'active' : ''}">Chat</a>` +
+        // A clear way to cancel, in the menu at the top right (Eric,
+        // 2026-10-15: "When they do open a case, they need a clear way to
+        // cancel. So that will be in a hamburger menu at the top right").
+        // Shown once there is a subscription that is still renewing.
+        ` <a href="/subscription.html#cancel" data-nav-cancel hidden>Cancel subscription</a>` +
         ` <a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+      showCancel(el, user).catch(() => {});
+      showCases(el, user).catch(() => {});
     }
     el.querySelector('[data-signout]').addEventListener('click', async (e) => {
       e.preventDefault();
@@ -250,6 +259,25 @@ export async function hydrateNav() {
   } else {
     el.innerHTML = `<a href="/signin.html">Sign in</a>`;
   }
+}
+
+/** Whether a subscription still renews, so there is something to cancel. */
+export function renewing(sub, now = Date.now()) {
+  if (!sub || sub.status === 'canceled' || sub.cancelAtPeriodEnd) return false;
+  const end = sub.currentPeriodEnd?.toDate ? sub.currentPeriodEnd.toDate() : new Date(sub.currentPeriodEnd || 0);
+  return end.getTime() > now;
+}
+
+async function showCancel(el, user) {
+  const snap = await getDoc(doc(db, 'subscriptions', user.uid));
+  const link = el.querySelector('[data-nav-cancel]');
+  if (link && snap.exists() && renewing(snap.data())) link.hidden = false;
+}
+
+async function showCases(el, user) {
+  const snap = await getDocs(query(collection(db, 'cases'), where('clientUid', '==', user.uid)));
+  const link = el.querySelector('[data-nav-cases]');
+  if (link && !snap.empty) link.hidden = false;
 }
 
 // Glowing golden diamond on the Chat tab when a conversation is waiting on you:

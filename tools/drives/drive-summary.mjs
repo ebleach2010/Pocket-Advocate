@@ -79,9 +79,12 @@ for (const width of [390, 320]) {
   // kind and is still the strong one: the list is pinned WORD FOR WORD and in
   // order, so a renamed or reordered option fails here rather than quietly
   // disagreeing with the client's pill.
-  ok('with the types he named, spelled the way he said them, in his order',
+  // RE-PINNED 2026-10-15 (v7.38, the tighten audit): the recording's separate picker became one more choice in
+  // this one. It comes after his types, so his list is still word for word and in his order, and the picker
+  // still opens on Report.
+  ok('with the types he named, spelled the way he said them, in his order, then Recording',
     picker.options.join(' | ') === 'Report | Call summary | Visit follow-up | '
-      + 'Appointment summary | Form sent to client | Filled form',
+      + 'Appointment summary | Form sent to client | Filled form | Recording',
     picker.options.join(' | '));
   ok('and it starts on Report, so the common case is no taps',
     /Marks the case delivered/.test(picker.note), picker.note);

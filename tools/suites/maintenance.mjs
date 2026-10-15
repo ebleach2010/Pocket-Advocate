@@ -175,7 +175,10 @@ check('M23 the notice neuters only the case\'s links and carries a live Start ch
 {
   const CP = readFileSync(`${ROOT}/public/js/chat-page.js`, 'utf8');
   check('M25 the Chat tab\'s empty state starts the chat line, not a case',
-    /<p><a class="btn" href="\/subscribe\.html">Start chatting →<\/a><\/p>/.test(CP) && !/href="\/book\.html"/.test(CP));
+    // RE-PINNED 2026-10-15 (v7.38): the look audit made the one way forward the primary button (btn glow).
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): the empty state's button put back to a plain `btn` made this read
+    //   FAIL  M25 the Chat tab's empty state starts the chat line, not a case
+    /<p><a class="btn glow" href="\/subscribe\.html">Start chatting →<\/a><\/p>/.test(CP) && !/href="\/book\.html"/.test(CP));
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -21,15 +21,18 @@ const money = (cents) => (cents / 100).toLocaleString('en-US',
 hydrateNav();
 
 let subCents = SUB_PRICE_CENTS;
+// Full-Service's included hours, for the comparison Eric asked for (2026-10-15).
+let fullHours = 20;
 try {
   const r = await rates();
   if (Number(r?.subCents) > 0) subCents = Number(r.subCents);
+  if (Number(r?.fullHours) > 0) fullHours = Number(r.fullHours);
 } catch { /* the seed stands */ }
 
 // The pitch is visible before sign-in; every displayed price is the live one.
 document.getElementById('pitch').innerHTML = `
   <p class="price-line"><strong>$${money(subCents)}</strong> a month. Cancel anytime; your chat history stays available.</p>
-  <p><strong>The honest deal:</strong> I answer as I am available. Sometimes that is within minutes; other times it may take longer. Response time is not guaranteed.</p>`;
+  <p><strong>The honest deal:</strong> you are guaranteed same day turnaround for at least one message. At $${money(subCents)} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which guarantees ${fullHours} hours of work, so expect priority, not in-depth case work.</p>`;
 
 const flow = document.getElementById('flow');
 
@@ -80,7 +83,7 @@ function renderTerms() {
     <details class="agreement" data-id="${SUBSCRIPTION_TERMS.id}">
       <summary>
         <span class="agreement-title">The terms, in plain words</span>
-        <span class="agreement-plain">The important part: response time is not guaranteed. Please read the terms before you subscribe.</span>
+        <span class="agreement-plain">The important part: same day turnaround for at least one message, and priority, not in-depth case work. Please read the terms before you subscribe.</span>
       </summary>
       <div class="agreement-body">${SUBSCRIPTION_TERMS.body}</div>
       <label class="agreement-check"><input type="checkbox" id="terms-ok" disabled> I have read and accept these terms</label>

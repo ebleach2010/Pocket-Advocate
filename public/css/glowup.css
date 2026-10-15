@@ -416,7 +416,7 @@ summary:focus-visible,
   border-radius: var(--r-pill);
   background: var(--sur-quiet);
   color: var(--soft);
-  font: 600 var(--t-small)/1.2 inherit;
+  font-family: inherit; font-weight: 600; font-size: var(--t-small); line-height: 1.2;
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
@@ -458,7 +458,7 @@ p > .pill { max-width: 100%; white-space: normal; }
   border-radius: var(--r-2);
   background: var(--cyan);
   color: var(--on-accent);
-  font: 700 var(--t-body)/1.25 inherit;
+  font-family: inherit; font-weight: 700; font-size: var(--t-body); line-height: 1.25;
   letter-spacing: .01em;
   text-align: center;
   text-decoration: none;
@@ -636,7 +636,7 @@ main > footer.legal { margin: 0; }
   border: 1px solid var(--edge-base);
   background: var(--sur-base);
   color: var(--ink);
-  font: 700 var(--t-small)/1.25 inherit;
+  font-family: inherit; font-weight: 700; font-size: var(--t-small); line-height: 1.25;
   box-shadow: none;
   transition: background .12s ease, border-color .12s ease, transform .12s ease;
 }

@@ -256,7 +256,5 @@ export function openCaseHelp() {
     <p>Add Pocket Advocate to your Home Screen and it opens like an app, keeps you signed in, and can notify you. It takes under a minute.</p>
     ${installBlock()}
 
-    ${notificationsBlock()}
-
-    ${signInBlock()}`);
+    ${notificationsBlock()}`);
 }

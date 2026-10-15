@@ -44,6 +44,18 @@ When Eric sends `/open`, ship one versioned push that:
 2026-10-14: "Unlock priority chat"). Re-pin the tests that pin the closed
 state, with dated notes.
 
+What follows `SALES_OPEN` on its own, with nothing to restore: every
+"Book" link and button (`nav-menu.js` hides them while closed), the case
+page's Enhance offers and the Chat tab's paid unlock (`case.js`), the
+availability page's open line (`admin-availability.js`), and the waitlist
+sheet's choices (`waitlist.js` drops any package that is open).
+
+What the tighten audit deleted while closed (2026-10-15, v7.38) and should
+be restored by hand on `/open`, from the v7.37 file history: the home's
+"How it works" screen and its menu link (`index.html`, the case's booking
+steps), and About's "How a case runs" section (`about.html`). The home's
+"Straight answers" screen stays gone; the questions live on `faq.html`.
+
 ## Deploy ritual
 
 Cloudflare Workers Builds deploys every push to main to production in about

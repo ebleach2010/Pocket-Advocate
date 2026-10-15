@@ -30,7 +30,7 @@ export const SERVICE_ABOUT = {
       'Chat with me directly: it opens the week before our call, or right away for a one-time $50',
       'A 48-hour question window after the report lands, to go through it with me',
       'Your price locked at booking; pauses put the time back; the file is yours forever',
-      'Add later, only if you want them: a follow-up session, telehealth advocacy, or Full-Service Case Management at the difference',
+      'Add later, only if you want them: a follow-up session, telehealth advocacy, or Full-Service Case Management',
     ],
     cta: { label: 'Book a case', href: '/book.html' },
   },
@@ -59,7 +59,7 @@ export const SERVICE_ABOUT = {
     tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
       'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Full-Service Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
-      'You ask, and I answer personally. I carry a limited number of these at a time, so this is not something you can simply buy - you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
+      'You ask, and I answer personally. I carry a limited number of these at a time, so this is not something you can simply buy: you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
       'It is billed a month at a time, and I would rather explain why than have you wonder. A single payment for a whole engagement is a large thing to hand over at the exact moment you are least able to think about money. Monthly means the biggest number you ever see is one month, and it means you are never locked into a case that is going nowhere. Most of these run about two months. Some run one. Some run five. You decide each month.',
       'We speak at least twice a month, by phone or video, for as long as the case runs. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
       'If your insurer says no, I write the appeal: the first-level internal appeal, the escalation if they deny it, and I keep writing for as long as the case is mine. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $600 to $1,500 per appeal elsewhere; here it draws from the month\'s hours like everything else.',

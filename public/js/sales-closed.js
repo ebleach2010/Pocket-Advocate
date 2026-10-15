@@ -21,7 +21,7 @@ function inDemo() {
 const NOTICE = `
     <section class="pa-closed" role="note">
       <h2>Not currently offering</h2>
-      <p>I'm not taking on new work right now. Join the waitlist and I'll get back to you soon.</p>
+      <p>Join the waitlist and I'll get back to you soon.</p>
       <a class="btn glow" href="/#waitlist">Join the waitlist</a>
     </section>`;
 

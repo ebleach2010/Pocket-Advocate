@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-default-scheme="calm">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -9,28 +9,24 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#EAF2FA">
+<meta name="theme-color" content="#0A0A0C">
 <title>About · Pocket Advocate</title>
 <script>
-// Paint in the stored colour scheme before the stylesheet lands, so a scheme
-// never flashes neon on the way in. Mirrors theme.js, which owns the choosing
-// and persisting; this only applies what is already stored. Eric's admin
-// device keeps Neon by default, everyone else gets Calm, and a stored choice
-// always wins.
+// Every page is black now (Eric, 2026-10-15: "everywhere should have this
+// same aesthetic"): the Night base, turned black by look.css. Somebody who
+// chose High contrast for their eyes keeps it.
 (function () {
   try {
-    var s = localStorage.getItem('pa-scheme');
-    if (!s || ['neon', 'calm', 'paper', 'contrast'].indexOf(s) < 0)
-      s = (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) ? 'calm' : 'neon';
-    if (s !== 'neon') document.documentElement.dataset.scheme = s;
-    var c = { neon: '#EAF2FA', calm: '#0A1626', paper: '#F3EEE3', contrast: '#000000' }[s];
+    var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
+    document.documentElement.dataset.scheme = s;
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m && c) m.setAttribute('content', c);
-  } catch (e) { /* storage blocked: neon is the default and is already correct */ }
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+  } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp15">
-<link rel="stylesheet" href="/css/glowup.css?v=sp8">
+<link rel="stylesheet" href="/css/site.css?v=sp16">
+<link rel="stylesheet" href="/css/glowup.css?v=sp9">
+<link rel="stylesheet" href="/css/look.css?v=5">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>
@@ -75,34 +71,8 @@
   </section>
 
   <section class="land-sec">
-    <h2>How a case runs</h2>
-    <ol class="hiw">
-      <li>
-        <p>Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.</p>
-      </li>
-      <li>
-        <p>Review one agreement covering the service, privacy, and recording. It is written to be read, not buried in legal language.</p>
-      </li>
-      <li>
-        <p>Pay <span data-rate="case">$1,200</span>. Your case includes our call, review of the records you share, and a written report within 7 days. A follow-up session is <span data-rate="addon">$325</span> if you need one.</p>
-      </li>
-    </ol>
-    <!-- "What happens after you book" was five bullets, four of them word for
-         word the same list that services.html carries, and the fifth (chat
-         opening early) is in the About the Advocacy Case sheet that opens
-         from the landing and services pages. The list is not gone from the
-         site, it is on the page that sells; this one links to it. -->
-    <p class="dim small"><a class="pill" href="/services.html">What happens after you book, step by step</a></p>
-  </section>
-
-  <section class="land-sec">
-    <h2>What you get out of it</h2>
-    <p class="dim small measure">Instead of carrying the whole story in your head, you leave with one organized file you can use with any specialist.</p>
-  </section>
-
-  <section class="land-sec">
     <h2>24/7 Priority Chat</h2>
-    <p class="dim small measure">Priority Chat is <span data-rate="sub">$50</span> a month and is separate from case work. You can message me from your phone and see when I am online. I answer as I am available, so response time is not guaranteed. Cancel anytime; your history remains available to you.</p>
+    <p class="dim small measure">Priority Chat is <span data-rate="sub">$50</span> a month and is separate from case work. You can message me from your phone and see when I am online. You are guaranteed same day turnaround for at least one message. Cancel anytime; your history remains available to you.</p>
   </section>
 
   <section class="land-sec">
@@ -111,7 +81,7 @@
       full interviews with people navigating complex neurological illness and live discussions
       where we work through a case in real time. If you want to know who you are hiring, watch
       before you spend a dollar.</p>
-    <p><a class="btn quiet" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">▶ Watch on YouTube</a></p>
+    <p><a class="btn quiet" href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a></p>
   </section>
 
   <hr class="divide">
@@ -148,7 +118,6 @@
       <a href="https://youtube.com/@the_broscientist" rel="noopener" target="_blank">Watch on YouTube</a>
     </nav>
   </div>
-  <p class="foot-serving">Serving patients across the United States and Canada.</p>
   <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
 </footer>
 
@@ -164,7 +133,7 @@
   import('/js/auth.js').then((m) => m.hydrateNav()).catch(() => {});
   if (BUSINESS_PHONE)
     document.getElementById('call-slot').outerHTML =
-      `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">📞 Call</a>`;
+      `<a class="btn quiet" href="tel:${BUSINESS_PHONE}">Call</a>`;
 </script>
 </body>
 </html>

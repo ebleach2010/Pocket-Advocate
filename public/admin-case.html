@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-default-scheme="calm">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -9,11 +9,24 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#EAF2FA">
+<meta name="theme-color" content="#0A0A0C">
 <title>Case · Pocket Advocate admin</title>
-<script>try{var s=localStorage.getItem('pa-scheme')||((window.matchMedia&&matchMedia('(prefers-color-scheme: dark)').matches)?'calm':'neon');if(s&&s!=='neon')document.documentElement.dataset.scheme=s;}catch(e){}</script>
-<link rel="stylesheet" href="/css/site.css?v=sp15">
-<link rel="stylesheet" href="/css/admin.css?v=stat131">
+<script>
+// Every page is black now (Eric, 2026-10-15: "everywhere should have this
+// same aesthetic"): the Night base, turned black by look.css. Somebody who
+// chose High contrast for their eyes keeps it.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
+    document.documentElement.dataset.scheme = s;
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+  } catch (e) { /* storage blocked: the shipped default is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=sp16">
+<link rel="stylesheet" href="/css/admin.css?v=stat132">
+<link rel="stylesheet" href="/css/look.css?v=5">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>

@@ -2108,7 +2108,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-package-pages';
+const BUILD_TAG = 'v2026-10-15-one-look';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2116,7 +2116,7 @@ const BUILD_TAG = 'v2026-10-15-package-pages';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.37';
+const VERSION = '7.38';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2961,7 +2961,7 @@ async function handleCheckout(request, env) {
   if (body?.tier === 'full')
     return json({
       error: 'Full-Service Case Management is added from inside an open case now. '
-        + 'Book an Advocacy Case, then add it from your case page — you pay the difference, never twice.',
+        + 'Book an Advocacy Case, then add it from your case page.',
     }, 400);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
@@ -3227,16 +3227,39 @@ async function handleSubscribe(request, env) {
 }
 
 // ---- POST /api/portal ----  Manage/cancel via Stripe's customer portal
+//
+// Body { flow: 'cancel' } (Eric, 2026-10-15: "they need a clear way to
+// cancel") opens Stripe's own cancel step for this subscription, straight
+// away, and comes back to the subscription page after. If Stripe will not
+// open that step (a portal configured without cancelling), the ordinary
+// portal opens instead, which still has it.
 async function handlePortal(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Unauthorized' }, 401);
+  const body = await request.json().catch(() => ({}));
   const sub = await getDoc(env, `subscriptions/${user.uid}`);
   if (!sub || !sub.data.stripeCustomerId) return json({ error: 'No subscription found.' }, 404);
-  const session = await stripePost(env, '/billing_portal/sessions', {
+  const base = {
     customer: sub.data.stripeCustomerId,
     return_url: `${env.PUBLIC_BASE_URL}/subscription.html`,
     ...(env.STRIPE_PORTAL_CONFIG ? { configuration: env.STRIPE_PORTAL_CONFIG } : {}),
-  });
+  };
+  if (body?.flow === 'cancel' && sub.data.subscriptionId) {
+    try {
+      const session = await stripePost(env, '/billing_portal/sessions', {
+        ...base,
+        flow_data: {
+          type: 'subscription_cancel',
+          subscription_cancel: { subscription: sub.data.subscriptionId },
+          after_completion: { type: 'redirect', redirect: { return_url: `${env.PUBLIC_BASE_URL}/subscription.html` } },
+        },
+      });
+      return json({ url: session.url });
+    } catch (err) {
+      console.error('portal cancel flow:', err.message);
+    }
+  }
+  const session = await stripePost(env, '/billing_portal/sessions', base);
   return json({ url: session.url });
 }
 
@@ -3351,7 +3374,10 @@ async function syncSubscription(env, sub) {
   const uid = (sub.metadata && sub.metadata.uid) || (await uidForCustomer(env, sub.customer));
   if (!uid) return;
   const status = sub.status === 'canceled' ? 'canceled' : sub.status;
-  const fields = { status };
+  // cancelAtPeriodEnd (2026-10-15): a subscription cancelled from the clear
+  // cancel step stays active to the end of its month, so the menu needs to
+  // know it no longer renews and stop offering to cancel it.
+  const fields = { status, cancelAtPeriodEnd: !!sub.cancel_at_period_end };
   if (sub.current_period_end) fields.currentPeriodEnd = new Date(sub.current_period_end * 1000);
   await patchDoc(env, `subscriptions/${uid}`, fields, { mask: Object.keys(fields) });
   if (status === 'canceled') {

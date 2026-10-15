@@ -95,10 +95,12 @@ export async function initPushPrompt(user, mount) {
     <p style="margin:0 0 .6rem;"><strong>Message alerts</strong><br>
     <span class="dim small">Get a notification on this device when there's a reply. No message content is shown.</span></p>
     <div class="row" style="gap:.6rem;">
-      <button class="btn" data-push="on">Turn on notifications</button>
+      <button class="btn glow" data-push="on">Turn on notifications</button>
       <button class="btn quiet" data-push="later">Not now</button>
     </div>`;
-  mount.prepend(panel);
+  // Under the page's title, not above it (2026-10-15, the look audit).
+  const h1 = mount.querySelector('h1');
+  if (h1) h1.after(panel); else mount.prepend(panel);
 
   panel.querySelector('[data-push="later"]').addEventListener('click', () => {
     localStorage.setItem(DISMISS_KEY, '1');

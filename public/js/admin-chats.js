@@ -83,13 +83,6 @@ async function loadInbox() {
 
   page.innerHTML = `
     <h1>Chats</h1>
-    <div class="panel">
-      <h3>Response line</h3>
-      <p class="dim small">The line clients see about timing is set beside your
-        in/out switch, under <strong>Your status</strong> on the shelf. One line,
-        one place: it shows on the subscriber page and inside the "?" answer, and
-        clearing it clears it in both.</p>
-    </div>
     <div id="threads">
       ${threads.length ? threads.map((t) => `
         <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="${t.href}">

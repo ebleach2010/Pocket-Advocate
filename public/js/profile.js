@@ -34,7 +34,7 @@ export async function ensureFullProfile(user, container) {
   return new Promise((resolve) => {
     const today = new Date().toISOString().slice(0, 10);
     container.innerHTML = `
-      <h2>First — who are we talking with?</h2>
+      <h2>First, who are we talking with?</h2>
       <p class="muted small">I work with real people, by name. This stays between you and me, like everything else here.</p>
       <div class="card">
         <label for="pf-first">First name</label>
@@ -44,7 +44,7 @@ export async function ensureFullProfile(user, container) {
         <label for="pf-dob" style="margin-top:.6rem;">Date of birth</label>
         <input type="date" id="pf-dob" max="${today}" value="${esc(existing.dob || '')}">
         <p class="muted small" style="margin-top:.6rem;">Pocket Advocate serves adults. Under 18? A parent or guardian
-          needs to reach out first — message through the site or the About page's call button.</p>
+          needs to reach out first: message through the site or the About page's call button.</p>
         <p class="error" id="pf-err" hidden></p>
         <p style="margin-top:.8rem;"><button class="btn" id="pf-save">Continue</button></p>
       </div>`;
@@ -56,7 +56,7 @@ export async function ensureFullProfile(user, container) {
       const dob = container.querySelector('#pf-dob').value;
       err.hidden = true;
       if (!firstName || !lastName) {
-        err.textContent = 'First and last name, please — I need to know who I\'m working with.';
+        err.textContent = 'First and last name, please. I need to know who I\'m working with.';
         err.hidden = false;
         return;
       }
@@ -70,7 +70,7 @@ export async function ensureFullProfile(user, container) {
         container.innerHTML = `
           <h2>We need a guardian for this one</h2>
           <p class="muted">Pocket Advocate doesn't open cases for anyone under 18 without a parent or guardian's
-          consent — that's a hard rule, for your protection. Have your parent or guardian get in touch
+          consent; that's a hard rule, for your protection. Have your parent or guardian get in touch
           (the call button on the <a href="/about.html">About page</a> works), and I'll take it from there.</p>`;
         return;
       }

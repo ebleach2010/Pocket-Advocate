@@ -1,0 +1,358 @@
+/* THE LOOK, EVERYWHERE (Eric, 2026-10-15: "Remember, everywhere should
+   have this same aesthetic including the chat box, the files, everything.")
+
+   The home's black, its type and its cyan to violet pop, for every page
+   that is not the home. Loaded last, after site.css and glowup.css (or
+   admin.css), so these tokens are the ones every rule reads. The home and
+   the package pages carry the same values in landing.css; packages.mjs
+   keeps the two sets identical.
+
+   Every page now paints on the Night base (data-scheme="calm") and this
+   turns it black. High contrast, chosen for somebody's eyes, still wins:
+   nothing here touches it. */
+
+@font-face {
+  font-family: 'Sora';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('/fonts/sora-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Manrope';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('/fonts/manrope-latin.woff2') format('woff2');
+}
+
+:root:not([data-scheme="contrast"]) {
+  background: #0A0A0C;
+  color-scheme: dark;
+}
+:root:not([data-scheme="contrast"]) body {
+  --bg: #0A0A0C;
+  --bg-deep: #050506;
+  --panel: #131317;
+  --panel-2: #1B1B21;
+  --ink: #F5F5F7;
+  --soft: #D2D2D9;
+  --dim: #9C9CA8;
+  --muted: #73737F;
+  --line: #26262E;
+  --cyan: #3DDCF5;
+  --cyan-dim: #1E8FA3;
+  --magenta: #B9A6FF;
+  --blue: #8FB4FF;
+  --green: #4FD69C;
+  --gold: #F2C14E;
+  --danger: #FF7A7A;
+  --on-accent: #02161A;
+  --sur-quiet: #0F0F12;
+  --sur-base: #131317;
+  --sur-lit: #1B1B21;
+  --sur-floating: #17171C;
+  --sur-inset: #0D0D10;
+  --edge-quiet: rgba(255, 255, 255, .06);
+  --edge-base: rgba(255, 255, 255, .10);
+  --edge-lit: rgba(255, 255, 255, .18);
+  --edge-focus: #3DDCF5;
+  --el-1: none;
+  --el-2: 0 18px 50px rgba(0, 0, 0, .5);
+  --el-3: 0 24px 70px rgba(0, 0, 0, .6);
+  --el-cta: 0 10px 30px rgba(61, 220, 245, .28), 0 0 0 1px rgba(61, 220, 245, .55);
+  --glow-c: 0 10px 30px rgba(61, 220, 245, .25);
+  --glow-m: none;
+  --bar: rgba(10, 10, 12, .82);
+  --deep: #050506;
+  --deep-2: #050506;
+  --deep-ink: #F5F5F7;
+  --deep-dim: #9C9CA8;
+  --deep-line: rgba(255, 255, 255, .08);
+  background-color: #0A0A0C;
+  background-image:
+    radial-gradient(900px 420px at 88% -6%, rgba(61, 220, 245, .11), transparent 62%),
+    radial-gradient(700px 380px at -12% 26%, rgba(139, 123, 255, .07), transparent 60%);
+  color: var(--ink);
+}
+
+:root:not([data-scheme="contrast"]) body {
+  font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 500;
+}
+:root:not([data-scheme="contrast"]) h1,
+:root:not([data-scheme="contrast"]) h2,
+:root:not([data-scheme="contrast"]) h3,
+:root:not([data-scheme="contrast"]) h4 {
+  font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+  font-weight: 600;
+  letter-spacing: -.02em;
+}
+:root:not([data-scheme="contrast"]) .brand { font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; }
+
+/* ---- tokens the home never needed (2026-10-15, the look audit): the
+   app's folders, its legal pad and its alarm colour, retinted for black. */
+:root:not([data-scheme="contrast"]) body {
+  --manila: #1B1B21; --manila-2: #22222A; --manila-ink: #F5F5F7; --manila-edge: #2A2A33; --manila-fold: rgba(0, 0, 0, .55);
+  --manila-strong: #F5F5F7; --manila-alert: #FF7A7A; --manila-note: #4FD69C; --manila-flag: #B9A6FF;
+  --paper: #131317; --paper-ink: #F5F5F7; --paper-rule: rgba(255, 255, 255, .07); --paper-margin: rgba(185, 166, 255, .45);
+  --orange: #F2C14E; --glow-o: 0 10px 30px rgba(242, 193, 78, .16);
+  --glow-c-peak: 0 12px 34px rgba(61, 220, 245, .28), 0 0 0 1px rgba(61, 220, 245, .40);
+  --wash-b: rgba(61, 220, 245, .05); --chip-wash: rgba(61, 220, 245, .10);
+}
+
+/* ---- the clear cancel (Eric, 2026-10-15: "they need a clear way to
+   cancel"): the subscription page's sheet, in the waitlist sheet's shape. */
+.cancel-row { margin: .4rem 0 0; }
+dialog.cancel-sheet {
+  width: min(28rem, calc(100vw - 32px));
+  margin: auto;
+  padding: 1.3rem;
+  border: 1px solid var(--edge-lit);
+  border-radius: 18px;
+  background: var(--sur-floating, #17171C);
+  color: var(--ink);
+  box-shadow: var(--el-3);
+}
+dialog.cancel-sheet::backdrop { background: rgba(0, 0, 0, .62); backdrop-filter: blur(3px); }
+dialog.cancel-sheet h2 { margin: 0 0 .6rem; font-size: 1.3rem; }
+dialog.cancel-sheet p { margin: 0 0 .8rem; color: var(--soft); line-height: 1.5; }
+.cancel-acts { display: flex; flex-wrap: wrap; gap: .6rem; }
+.cancel-acts .btn { min-height: 48px; border-radius: 999px; }
+.btn.danger { border-color: rgba(255, 122, 122, .6); background: rgba(255, 122, 122, .14); color: #FFB3B3; }
+
+/* ---- chat search and the down arrow (Eric, 2026-10-15) ---------------- */
+.chat-tools { position: relative; display: flex; justify-content: flex-end; min-height: 40px; margin: 0 0 .4rem; }
+.chat-root:has(> .chat-expand) .chat-tools { padding-right: 2.8rem; }
+.chat-search-btn,
+.chat-search-x {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--edge-base, rgba(255, 255, 255, .1));
+  border-radius: 999px;
+  background: var(--sur-lit, #1B1B21);
+  color: var(--soft, #D2D2D9);
+  cursor: pointer;
+}
+.chat-search-x { border: 0; background: none; font-size: 1.4rem; }
+.chat-search {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: .4rem;
+  min-height: 44px;
+  padding: 0 .3rem 0 .8rem;
+  border: 1px solid var(--cyan, #3DDCF5);
+  border-radius: 999px;
+  background: var(--sur-inset, #0D0D10);
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .25), 0 8px 24px rgba(61, 220, 245, .14);
+}
+.chat-search[hidden] { display: none; }
+.chat-search-ico { display: grid; color: var(--cyan, #3DDCF5); }
+.chat-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--ink, #F5F5F7);
+  font: 500 16px/1.3 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
+}
+.chat-search input::-webkit-search-cancel-button,
+.chat-search input::-webkit-search-decoration { -webkit-appearance: none; appearance: none; display: none; }
+.chat-results {
+  position: absolute;
+  top: calc(100% + .35rem);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: grid;
+  gap: .3rem;
+  max-height: min(55vh, 24rem);
+  overflow-y: auto;
+  padding: .5rem;
+  border: 1px solid var(--edge-lit, rgba(255, 255, 255, .18));
+  border-radius: 16px;
+  background: var(--sur-floating, #17171C);
+  box-shadow: var(--el-3, 0 24px 70px rgba(0, 0, 0, .6));
+}
+.chat-results[hidden] { display: none; }
+.chat-results-n { margin: .1rem .4rem .2rem; color: var(--dim, #9C9CA8); font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.chat-result {
+  display: grid;
+  gap: .2rem;
+  padding: .6rem .7rem;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink, #F5F5F7);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.chat-result:hover,
+.chat-result:focus-visible { background: var(--sur-lit, #1B1B21); outline: none; }
+.chat-result-top { display: flex; justify-content: space-between; gap: .6rem; color: var(--dim, #9C9CA8); font-size: .8rem; }
+.chat-result-top strong { color: var(--soft, #D2D2D9); }
+.chat-result-text { color: var(--soft, #D2D2D9); font-size: .92rem; line-height: 1.4; }
+.chat-result mark,
+mark.chat-hit {
+  padding: 0 .12em;
+  border-radius: 4px;
+  background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
+  color: #02161A;
+}
+.msg.chat-found { box-shadow: inset 0 0 0 2px #3DDCF5, inset 0 0 18px rgba(61, 220, 245, .25); }
+@media (prefers-reduced-motion: no-preference) {
+  .msg.chat-found { animation: chat-found 1.6s ease-out; }
+}
+@keyframes chat-found { 0% { box-shadow: inset 0 0 0 4px #B9A6FF, inset 0 0 30px rgba(185, 166, 255, .55); } }
+.chat-bottom {
+  position: absolute;
+  right: .7rem;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
+  color: #02161A;
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 22px rgba(0, 0, 0, .45);
+  cursor: pointer;
+}
+.chat-bottom[hidden] { display: none; }
+
+
+/* ==== THE LOOK AUDIT (2026-10-15): two finders swept the app, a judge ruled
+   on every area; these are the fixes it decided. ======================== */
+
+/* Controls take the page's font, not the browser's Arial. Zero specificity:
+   any rule that names a font still wins. */
+:where(button, input, select, textarea) { font-family: inherit; }
+:root:not([data-scheme="contrast"]) :is(.msg-menu-row, .chip-label) { font-weight: 600; }
+
+/* Buttons are pills, as on the home; the composer's icons are round. */
+:root:not([data-scheme="contrast"]) :is(.btn, .cta, .pack-cta, .chip-label, .pill) { border-radius: 999px; }
+:root:not([data-scheme="contrast"]) :is(.chat-form .attach-btn, .chat-expand) { border-radius: 50%; }
+:root:not([data-scheme="contrast"]) .chat-form .btn[type="submit"] { padding-inline: 1.4rem; }
+
+/* Disabled primary buttons read as "not yet", not as missing. */
+:root:not([data-scheme="contrast"]) :is(.btn, .cta):is(:disabled, [aria-disabled="true"]) { opacity: 1; background: var(--sur-lit); border: 1px dashed var(--edge-lit); color: var(--dim); box-shadow: none; filter: none; transform: none; cursor: not-allowed; }
+
+/* The Clients shelf's folders, dark. */
+:root:not([data-scheme="contrast"]) .folder { box-shadow: 0 1px 0 rgba(255, 255, 255, .06) inset, 0 6px 16px rgba(0, 0, 0, .45); }
+:root:not([data-scheme="contrast"]) .folder::before,
+:root:not([data-scheme="contrast"]) .folder::after { background: linear-gradient(180deg, #34343E, #2A2A33); }
+:root:not([data-scheme="contrast"]) .folder-tab { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08); }
+:root:not([data-scheme="contrast"]) .folder-body { background: linear-gradient(180deg, var(--manila-2), var(--manila) 80%); border-color: var(--edge-base); }
+:root:not([data-scheme="contrast"]) .folder-flags { color: var(--soft); }
+:root:not([data-scheme="contrast"]) .folder-clock { background: rgba(255, 255, 255, .08); }
+:root:not([data-scheme="contrast"]) .folder-clock .wk-sw { background: rgba(255, 255, 255, .16); }
+:root:not([data-scheme="contrast"]) .fld-alert { background: rgba(255, 122, 122, .14); border: 1px solid rgba(255, 122, 122, .6); color: #FFB3B3; border-radius: 999px; box-shadow: none; }
+:root:not([data-scheme="contrast"]) .cmd-h:not(.hot) .cmd-count { background: transparent; color: var(--soft); box-shadow: inset 0 0 0 1px var(--edge-lit); }
+
+/* The legal pad, on black. */
+:root:not([data-scheme="contrast"]) .notes-paper { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; caret-color: #3DDCF5; }
+:root:not([data-scheme="contrast"]) .notes-paper::selection,
+:root:not([data-scheme="contrast"]) .notes-paper ::selection { background: rgba(61, 220, 245, .3); color: #F5F5F7; }
+:root:not([data-scheme="contrast"]) :is(.notes-tool.t-i, .notes-tool.t-sz) { font-family: inherit; }
+
+/* Fields the app never styled: search, number, password, time, file. */
+:where(:root:not([data-scheme="contrast"])) :where(input[type=search], input[type=number], input[type=password], input[type=time], input:not([type])) { padding: .6rem .75rem; border: 1px solid var(--edge-base); border-radius: 10px; background: var(--panel-2); color: var(--ink); font: inherit; }
+:root:not([data-scheme="contrast"]) input[type=file] { color: var(--dim); font: inherit; font-size: .9rem; max-width: 100%; }
+:root:not([data-scheme="contrast"]) input[type=file]::file-selector-button { margin-right: .7rem; min-height: 40px; padding: .45rem 1rem; border: 1px solid var(--edge-lit); border-radius: 999px; background: var(--sur-lit); color: var(--ink); font: inherit; font-weight: 600; cursor: pointer; }
+:root:not([data-scheme="contrast"]) :is(input[type=checkbox], input[type=radio]) { accent-color: #3DDCF5; }
+:where(:root:not([data-scheme="contrast"])) hr { height: 1px; margin: 1rem 0; padding: 0; border: 0; background: rgba(255, 255, 255, .10); }
+
+/* Services: the live package first and ringed, the closed ones dark and dashed. */
+:root:not([data-scheme="contrast"]) .pack.pa-off { opacity: 1; filter: none; border-style: dashed; background: var(--sur-quiet); }
+:root:not([data-scheme="contrast"]) .pack.pa-off > :not(.pa-off-badge) { opacity: .5; filter: grayscale(1); }
+:root:not([data-scheme="contrast"]) .pack#chat { border: 1.5px solid transparent; background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%) border-box; box-shadow: 0 0 0 1px rgba(61, 220, 245, .25), 0 10px 30px rgba(61, 220, 245, .18); }
+:root:not([data-scheme="contrast"]) .pack#chat .pack-cta { border-color: #3DDCF5; background: #3DDCF5; color: #02161A; box-shadow: 0 10px 30px rgba(61, 220, 245, .25); }
+
+/* Labels in Manrope, prices in Sora: no monospace left in the look. */
+:root:not([data-scheme="contrast"]) :is(.tag, .hero-eyebrow, .crumbs li, .kind-pill, .status-pill, .reviews-label, .step-rail .n, .auth-on, .auth-off, .folder-clock, .log-day, .fact-k, .work-rate, .unread-hint, .cal-dow, .diff-pct, .cmd-h, .case-next-k, .draft-box, .sched-amt input) { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-style: normal; font-variant-numeric: tabular-nums; }
+:root:not([data-scheme="contrast"]) .hiw li::before { font-family: 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; }
+:root:not([data-scheme="contrast"]) .hero-eyebrow { letter-spacing: .16em; }
+:root:not([data-scheme="contrast"]) :is(.price, .tier-card .tier-price) { font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-weight: 600; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+:root:not([data-scheme="contrast"]) :is(.pack .price, .fu-buy .price, .price-line strong:first-child) { background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); -webkit-background-clip: text; background-clip: text; color: transparent; -webkit-text-fill-color: transparent; }
+:root:not([data-scheme="contrast"]) .price-line { padding: 1.1rem 1.2rem; border: 1.5px solid transparent; border-radius: 18px; background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%) border-box; box-shadow: 0 10px 30px rgba(61, 220, 245, .16); }
+:root:not([data-scheme="contrast"]) .price-line strong:first-child { display: block; font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-weight: 600; font-size: 2.1rem; line-height: 1.1; }
+
+/* Files: rows without a thumbnail lay out; stars and names are readable. */
+.uploads .filelist li { grid-template-columns: minmax(0, 1fr) auto auto; }
+.uploads .filelist li:has(> .thumb) { grid-template-columns: auto minmax(0, 1fr) auto auto; }
+.uploads .up-text .fname { flex: none; }
+:root:not([data-scheme="contrast"]) .star:not(.on) { color: rgba(255, 255, 255, .26); }
+:root:not([data-scheme="contrast"]) .filelist > li > .fname { flex: 1 1 100%; }
+:root:not([data-scheme="contrast"]) .filelist > li > .fmeta { white-space: normal; }
+:root:not([data-scheme="contrast"]) .filelist > li > .fname a { text-decoration: none; font-weight: 600; }
+
+/* Chat bubbles: your own in the pop's wash, the other side raised. */
+:root:not([data-scheme="contrast"]) .msg.me { background: linear-gradient(110deg, rgba(61, 220, 245, .16), rgba(185, 166, 255, .12)); border: 1px solid rgba(61, 220, 245, .38); }
+:root:not([data-scheme="contrast"]) .msg.them { background: var(--sur-lit); border: 1px solid var(--edge-base); }
+:root:not([data-scheme="contrast"]) .chat-root > .chat-tools { min-height: 0; margin: -.4rem 0 .2rem; }
+:root:not([data-scheme="contrast"]) .chat-log { -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 1.25rem); mask-image: linear-gradient(to bottom, transparent 0, #000 1.25rem); }
+:root:not([data-scheme="contrast"]) .chat-root [data-hint] { font-size: .8rem; line-height: 1.45; color: var(--dim); }
+
+/* Stroke icons in the tab rails, lit when on. */
+:is(.ftab-ic, .fgrp-ic) .ico { width: 18px; height: 18px; }
+:root:not([data-scheme="contrast"]) :is(.folder-tabs > a.on, .fgrp.on) :is(.ftab-ic, .fgrp-ic) { color: #3DDCF5; }
+:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a[data-page="addons"] .ftab-ic { color: #B9A6FF; }
+:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a.on { color: var(--ink); border-color: #3DDCF5; box-shadow: 0 0 0 1px rgba(61, 220, 245, .35), 0 6px 18px rgba(61, 220, 245, .16); }
+:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a[data-page="addons"].on { border-color: #B9A6FF; box-shadow: 0 0 0 1px rgba(185, 166, 255, .4), 0 6px 18px rgba(185, 166, 255, .18); }
+:root:not([data-scheme="contrast"]) .case-folder { padding: 0; border: 0; background: none; box-shadow: none; }
+
+/* The push prompt. */
+:root:not([data-scheme="contrast"]) .push-prompt { border-color: rgba(61, 220, 245, .45); box-shadow: 0 10px 30px rgba(61, 220, 245, .12); }
+.push-prompt .row { flex-wrap: wrap; }
+
+/* Focus is cyan everywhere. */
+:root:not([data-scheme="contrast"]) :focus-visible { outline-color: #3DDCF5; }
+:where(:root:not([data-scheme="contrast"])) :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid #3DDCF5; outline-offset: 2px; }
+
+/* Sheets: one surface, edge to edge. */
+:root:not([data-scheme="contrast"]) :is(.settings-card, .msg-menu-sheet) { background: var(--sur-lit); border-color: var(--edge-lit); box-shadow: var(--el-3); }
+:root:not([data-scheme="contrast"]) .help-card .row { background: var(--sur-lit); margin: -1.1rem -1.2rem 0; padding: 1.1rem 1.2rem .6rem; }
+:root:not([data-scheme="contrast"]) .msg-menu-sheet .msg-menu-row.cancel { background: var(--sur-lit); box-shadow: 0 -10px 12px -6px var(--sur-lit); }
+:root:not([data-scheme="contrast"]) :is(.rename-card, .sig-sheet) .actions { background: var(--sur-lit); box-shadow: 0 -14px 16px -6px var(--sur-lit); }
+
+/* The demo strip: still loud, in gold on black. */
+:root:not([data-scheme="contrast"]) .demo-bar { background: #131317; color: var(--soft); border-bottom: 1px solid rgba(242, 193, 78, .55); }
+:root:not([data-scheme="contrast"]) .demo-bar strong { color: #F2C14E; }
+:root:not([data-scheme="contrast"]) .demo-dot { background: #F2C14E; box-shadow: 0 0 8px rgba(242, 193, 78, .6); }
+:root:not([data-scheme="contrast"]) .demo-bar.demo-bar .btn { color: var(--ink); background: transparent; border-color: rgba(242, 193, 78, .5); border-radius: 999px; }
+:root:not([data-scheme="contrast"]) .demo-bar.demo-bar .btn:hover { background: rgba(242, 193, 78, .12); }
+
+/* The calendar's markers in the look's colours, the free call in gold. */
+:root:not([data-scheme="contrast"]) .kind-pill.formsent { border-color: var(--blue); color: var(--blue); }
+:root:not([data-scheme="contrast"]) .cal-mark.fit { color: #1A1405; box-shadow: 0 0 9px rgba(242, 193, 78, .5); }
+:root:not([data-scheme="contrast"]) :is(.cal-mark, .cal-key).booked { box-shadow: 0 0 9px rgba(61, 220, 245, .6); }
+:root:not([data-scheme="contrast"]) :is(.cal-mark, .cal-key).open { box-shadow: 0 0 9px rgba(79, 214, 156, .55); }
+:root:not([data-scheme="contrast"]) :is(.cal-mark, .cal-key).held { box-shadow: 0 0 9px rgba(185, 166, 255, .6); }
+.cal-key.fit { background: var(--orange); }
+
+/* Toasts: centred and readable; a failure is red, not brand violet. */
+:root:not([data-scheme="contrast"]) .pa-toast { left: 16px; right: 16px; width: fit-content; max-width: 26rem; margin-inline: auto; transform: none; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-scheme="contrast"]) .pa-toast { animation-name: pa-toast-up; } }
+@keyframes pa-toast-up { from { opacity: 0; transform: translateY(.5rem); } }
+:root:not([data-scheme="contrast"]) .pa-toast.bad { border-color: rgba(255, 122, 122, .6); box-shadow: 0 10px 30px rgba(255, 122, 122, .18); }
+
+/* Eric's header tiles match the client's; no bloom on the wordmark. */
+:root:not([data-scheme="contrast"]) :is(.nav-toggle, .cog-btn) { width: 44px; height: 44px; min-width: 44px; border-radius: 16px; border: 1px solid var(--edge-base); background: var(--sur-base); color: var(--ink); }
+:root:not([data-scheme="contrast"]) .brand .spark { text-shadow: none; }
+
+/* Progress in the pop's gradient. */
+:root:not([data-scheme="contrast"]) progress { -webkit-appearance: none; appearance: none; height: 6px; border: 0; border-radius: 999px; background: rgba(255, 255, 255, .07); overflow: hidden; }
+:root:not([data-scheme="contrast"]) progress::-webkit-progress-bar { background: rgba(255, 255, 255, .07); border-radius: 999px; }
+:root:not([data-scheme="contrast"]) progress::-webkit-progress-value { background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); border-radius: 999px; }
+:root:not([data-scheme="contrast"]) progress::-moz-progress-bar { background: linear-gradient(110deg, #3DDCF5, #B9A6FF); }
+:root:not([data-scheme="contrast"]) :is(.rd-bar > i, .diff-row.diff-top .diff-fill) { background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); }
+
+/* The asking sheet (sheet.js): its one field. */
+.ask-sheet .ask-input { width: 100%; min-height: 48px; margin: 0 0 1rem; padding: .6rem .8rem; border: 1px solid var(--edge-base); border-radius: 12px; background: var(--sur-inset, #0D0D10); color: var(--ink); font: 500 16px/1.3 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; }
+.ask-sheet .ask-input:focus-visible { outline: 2px solid #3DDCF5; outline-offset: 1px; }

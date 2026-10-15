@@ -148,7 +148,7 @@ function showDay(key, daySlots) {
       : s.state === 'booked'
       ? `<strong style="color:var(--cyan)">${esc(caseInfo[s.caseId]?.name || 'client')}</strong> <span class="dim small">· ${(caseInfo[s.caseId]?.status || '').replace('_', ' ')}</span>`
       : s.state === 'held'
-        ? '<strong style="color:var(--magenta)">held — awaiting payment</strong>'
+        ? '<strong style="color:var(--magenta)">held, awaiting payment</strong>'
         : '<span class="dim">open slot</span>';
     const link = s.caseId ? ` <a class="small" href="/admin-case.html?id=${s.caseId}">open case →</a>`
       : s.kind === 'fit' && s.state === 'booked' ? ' <a class="small" href="/admin.html#fit-calls">free calls →</a>' : '';

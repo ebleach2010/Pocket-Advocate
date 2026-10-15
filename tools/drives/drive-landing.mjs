@@ -57,8 +57,9 @@ console.log('\n--- A. the slots and the doors, 390px ---');
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
   // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything."
   ok('his headline, in Sora, on black', shape.h1 === 'Go into your next appointment with a plan.' && /^Sora/.test(shape.serif) && shape.scheme === 'calm' && shape.bg === 'rgb(10, 10, 12)', `${shape.scheme} / ${shape.bg} / ${shape.serif}`);
-  ok('the eight headings after the hero, in order, the options first',
-    shape.h2s.join('|') === "What it costs|You might need an advocate if|How it works|Who you're hiring|What clients say|By the numbers|Straight answers|Ready when you are.", shape.h2s.join('|'));
+  // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works and Straight answers went.
+  ok('the six headings after the hero, in order, the options first',
+    shape.h2s.join('|') === "What it costs|You might need an advocate if|Who you're hiring|What clients say|By the numbers|Ready when you are.", shape.h2s.join('|'));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the cards is a door.
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
@@ -74,7 +75,8 @@ console.log('\n--- A. the slots and the doors, 390px ---');
   ok('the waitlist bubble sits at the top right, above the headline, a full tap high',
     shape.bubble.inTop && shape.bubble.right <= 24 && shape.bubble.gap >= 0 && shape.bubble.gap < 60 && shape.bubble.h >= 44, JSON.stringify(shape.bubble));
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The step that promised it and its closing button went with it.
-  ok('five reasons, four steps', shape.needs === 5 && shape.steps === 4);
+  // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". The steps were the closed case's booking steps.
+  ok('five reasons, and no booking steps for the case it is not offering', shape.needs === 5 && shape.steps === 0);
   ok('the closing: the number alone', shape.closing.join() === 'tel:+12086708608');
   // The greyed cards are meant to read as unavailable, but the words on them and everything on the chat
   // card stay legible: his badge and the chat line clear 4.5:1 on their own card.
@@ -173,7 +175,8 @@ console.log('\n--- E. the home fits one screen ---');
   }
   // NEGATIVE CONTROL (run 2026-10-14): landing-tabs.js's Back link line taken out made this read
   //   FAIL  the menu opens every other section as a screen with a Back link
-  ok('the menu opens every other section as a screen with a Back link', hrefs.length === 7 && screens.every(Boolean), `${hrefs.join()} ${screens.join()}`);
+  // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". Five sections are left behind the menu.
+  ok('the menu opens every other section as a screen with a Back link', hrefs.length === 5 && screens.every(Boolean), `${hrefs.join()} ${screens.join()}`);
   await ctx.close();
 }
 
@@ -193,8 +196,13 @@ console.log('\n--- F. each card opens its own page ---');
     if (!door) { got.push(false); continue; }
     await door.click();
     await page.waitForLoadState('networkidle');
+    // RE-PINNED 2026-10-15 (v7.38): Eric, "And shorten the description:" then his letter. The chat page is his
+    // letter, one section signed, with the guarantee above it, instead of the three painted sections.
     got.push(await page.evaluate(([p, h]) => document.body.dataset.package === p && document.querySelector('h1').textContent === h
-      && document.querySelectorAll('.pkg-sec').length >= 3 && !!document.querySelector('[data-pkg-status] a.pkg-go'), [pkg, h1]));
+      && (p === 'chat'
+        ? !!document.querySelector('.pkg-letter .pkg-sign') && !!document.querySelector('.pkg-callout')
+        : document.querySelectorAll('.pkg-sec').length >= 3)
+      && !!document.querySelector('[data-pkg-status] a.pkg-go'), [pkg, h1]));
   }
   ok('every card\'s door lands on its own package\'s page, painted, with its own way in', got.every(Boolean) && !errs.length, `${got.join()} ${errs.join(' | ')}`);
   await ctx.close();

@@ -38,7 +38,7 @@ function openNotes() {
       <p class="dim small" style="margin:0 0 .6rem;">What changed in this version.</p>
       <ul class="whats-new-list">${(current.client || [])
         .map((n) => `<li>${esc(n)}</li>`).join('')}</ul>
-      <div class="actions"><button class="btn" data-x>Got it</button></div>
+      <div class="actions"><button class="btn glow" data-x>Got it</button></div>
     </div>`;
   const close = () => overlay.remove();
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
@@ -59,14 +59,10 @@ function mount() {
       style="font:inherit; background:none; border:none; cursor:pointer; text-decoration:underline; padding:0 0 0 .5rem; color:inherit;"
       >Version notes</button>`;
   line.querySelector('[data-vnotes]').addEventListener('click', openNotes);
-  // On the client case page the line sits ABOVE the tip jar (Eric,
-  // 2026-08-21), not under it at the very end. The page footer div exists in
-  // the case page's skeleton; everywhere else the line takes the bottom of
-  // main. case.js re-asserts this placement when it paints the footer, which
-  // covers whichever module happens to run first.
-  const jarHost = document.querySelector('[data-page-footer]');
-  if (jarHost) jarHost.before(line);
-  else host.appendChild(line);
+  // Always the bottom of main. It used to sit above the case page's tip jar
+  // (2026-08-21); the jar was retired, and the line was left stranded midway
+  // up the page (the tighten audit, 2026-10-15).
+  host.appendChild(line);
 }
 
 mount();

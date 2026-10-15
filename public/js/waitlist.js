@@ -7,6 +7,7 @@
 // to /api/waitlist, and the Worker keeps the row where no page can read it.
 // The checks here are the Worker's, in the same words, so a person hears
 // about a missing field before anything is sent.
+import { packageOpen } from './sales.js';
 
 /** On a demo host the shim answers the route, so wait for it to mount. */
 async function demoReady() {
@@ -35,6 +36,13 @@ function wire() {
   const done = dlg.querySelector('.wl-done');
   const go = dlg.querySelector('.wl-go');
   const say = (msg) => { err.textContent = msg; err.hidden = !msg; };
+
+  // A package that is open has no waitlist, so it is not offered here. A
+  // package page's "Join the waitlist" says which one it came from (?wl=).
+  const pick = form.elements.package;
+  for (const o of [...pick.options]) if (o.value && packageOpen(o.value)) o.remove();
+  const wl = new URLSearchParams(location.search).get('wl');
+  if (wl && [...pick.options].some((o) => o.value === wl)) pick.value = wl;
 
   // The closed pages send people to /#waitlist (2026-10-12): open it for them.
   if (location.hash === '#waitlist') {

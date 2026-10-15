@@ -212,7 +212,8 @@ const navs = await adm.$$eval('nav.tabs > a', (as) => as.map((a) => a.getAttribu
 await adm.goto(`${P}${navs[0]}`, { waitUntil: 'networkidle' });
 await adm.waitForSelector('a:has-text("Fund queue")', { timeout: 8000 }).catch(() => {});
 const door = await adm.getAttribute('a:has-text("Fund queue")', 'href').catch(() => null);
-check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with a quiet door back to the Fund queue', navs.join() === '/admin.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html'
+// RE-PINNED 2026-10-15 (v7.38): Leads joined the advocacy tabs after Clients on 2026-10-14 (v7.36); this drive had not followed.
+check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with a quiet door back to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html'
   && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname) && door === '/admin-fund.html',
   JSON.stringify({ navs, clients: adm.url(), door }));
 

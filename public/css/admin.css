@@ -9,12 +9,12 @@
   50% { opacity: 1; text-shadow: 0 0 11px rgba(255,204,85,1), 0 0 20px rgba(255,204,85,.7); }
 }
 @keyframes neon-breathe-c {
-  0%, 100% { box-shadow: 0 0 12px rgba(45,226,255,.27), inset 0 0 34px rgba(45,226,255,.05); }
-  50%      { box-shadow: 0 0 29px rgba(45,226,255,.66), inset 0 0 40px rgba(45,226,255,.11); }
+  0%, 100% { box-shadow: 0 0 12px rgba(61, 220, 245,.27), inset 0 0 34px rgba(61, 220, 245,.05); }
+  50%      { box-shadow: 0 0 29px rgba(61, 220, 245,.66), inset 0 0 40px rgba(61, 220, 245,.11); }
 }
 @keyframes neon-breathe-b {
-  0%, 100% { box-shadow: 0 0 12px rgba(108,158,255,.24), inset 0 0 34px rgba(108,158,255,.05); }
-  50%      { box-shadow: 0 0 29px rgba(108,158,255,.62), inset 0 0 40px rgba(108,158,255,.11); }
+  0%, 100% { box-shadow: 0 0 12px rgba(143, 180, 255,.24), inset 0 0 34px rgba(143, 180, 255,.05); }
+  50%      { box-shadow: 0 0 29px rgba(143, 180, 255,.62), inset 0 0 40px rgba(143, 180, 255,.11); }
 }
 .status-pill.due { border-color: var(--magenta); color: var(--magenta); box-shadow: var(--glow-m); }
 
@@ -303,11 +303,11 @@ main > p > a.small[href="/admin.html"] {
 /* Arriving from a term tap: the row the tap meant, lit briefly. */
 .gloss-item.dict-hit { animation: dict-hit 2.6s ease-out; border-radius: 6px; }
 @keyframes dict-hit {
-  0%, 55% { background: rgba(111, 227, 255, .14); box-shadow: 0 0 0 2px rgba(111, 227, 255, .35); }
+  0%, 55% { background: rgba(61, 220, 245, .14); box-shadow: 0 0 0 2px rgba(61, 220, 245, .35); }
   100% { background: transparent; box-shadow: none; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .gloss-item.dict-hit { animation: none; background: rgba(111, 227, 255, .14); }
+  .gloss-item.dict-hit { animation: none; background: rgba(61, 220, 245, .14); }
 }
 .gloss-known summary { cursor: pointer; list-style: none; font-size: .78rem; color: var(--dim); padding: .3rem 0; }
 .gloss-known summary::-webkit-details-marker { display: none; }
@@ -335,9 +335,9 @@ main > p > a.small[href="/admin.html"] {
   font-size: .58rem; line-height: 1.5; border-radius: 4px; padding: 0 .25rem;
   margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cal-mark.booked { background: var(--cyan); color: var(--on-accent); box-shadow: 0 0 9px rgba(45,226,255,.75); }
+.cal-mark.booked { background: var(--cyan); color: var(--on-accent); box-shadow: 0 0 9px rgba(61, 220, 245,.75); }
 .cal-mark.open { background: var(--green); color: #04180D; box-shadow: 0 0 9px rgba(62,224,138,.7); }
-.cal-mark.held { background: var(--magenta); color: #1A0413; box-shadow: 0 0 9px rgba(255,79,216,.75); }
+.cal-mark.held { background: var(--magenta); color: #1A0413; box-shadow: 0 0 9px rgba(185, 166, 255,.75); }
 /* A booked free call: the warm one, so a fifteen-minute chat never reads as
    a paid hour on the grid. */
 .cal-mark.fit { background: var(--orange); color: #FFF6EE; box-shadow: 0 0 9px rgba(170,90,38,.6); }
@@ -345,9 +345,9 @@ main > p > a.small[href="/admin.html"] {
 .fit-row .fit-acts { display: flex; gap: .35rem; flex-wrap: wrap; width: 100%; margin-top: .3rem; }
 .fit-row .btn.small { min-height: 36px; padding: .2rem .7rem; font-size: .85rem; }
 .cal-key { display: inline-block; width: .8rem; height: .8rem; border-radius: 3px; vertical-align: -2px; }
-.cal-key.booked { background: var(--cyan); box-shadow: 0 0 7px rgba(45,226,255,.7); }
+.cal-key.booked { background: var(--cyan); box-shadow: 0 0 7px rgba(61, 220, 245,.7); }
 .cal-key.open { background: var(--green); box-shadow: 0 0 7px rgba(62,224,138,.65); }
-.cal-key.held { background: var(--magenta); box-shadow: 0 0 7px rgba(255,79,216,.7); }
+.cal-key.held { background: var(--magenta); box-shadow: 0 0 7px rgba(185, 166, 255,.7); }
 @media (max-width: 600px) {
 .cal-cell { min-height: 3.2rem; padding: .2rem .25rem; }
 .cal-mark {
@@ -368,7 +368,7 @@ main > p > a.small[href="/admin.html"] {
 }
 .dr-badge.on,
 .file-review.on {
-  border-color: var(--cyan); background: rgba(45, 226, 255, .14); box-shadow: var(--glow-c);
+  border-color: var(--cyan); background: rgba(61, 220, 245, .14); box-shadow: var(--glow-c);
 }
 
 .advisor-draft {
@@ -535,7 +535,7 @@ main > p > a.small[href="/admin.html"] {
 .advisor-page-body li.askable { cursor: pointer; border-radius: 6px; padding: .05rem .3rem; margin-left: -.3rem; }
 .advisor-page-body li.askable:focus-visible { outline: 2px solid var(--cyan); outline-offset: 1px; }
 .advisor-page-body li.askable.held {
-  background: rgba(45, 226, 255, .1);
+  background: rgba(61, 220, 245, .1);
   transform: scale(.985);
   transition: transform .25s ease-out, background .25s ease-out;
 }
@@ -772,7 +772,7 @@ main > p > a.small[href="/admin.html"] {
 }
 .notes-paper::selection,
 .notes-paper ::selection {
-  background: rgba(45, 226, 255, .3); color: var(--paper-ink);
+  background: rgba(61, 220, 245, .3); color: var(--paper-ink);
 }
 
 .notes-paper > :first-child { margin-top: 0; }
@@ -1443,7 +1443,8 @@ main > p > a.small[href="/admin.html"] {
 /* The doing line under the clock (2026-09-03): what the client reads. */
 .doing-row { display: grid; gap: .3rem; margin: .3rem 0 0; }
 .doing-pills { display: flex; flex-wrap: wrap; gap: .35rem; }
-.doing-pills .pill { font-size: .82rem; min-height: 34px; padding: .2rem .65rem; }
+.doing-pills .pill { appearance: none; display: inline-flex; align-items: center; min-height: 36px; padding: .3rem .85rem; border: 1px solid var(--line); border-radius: 999px; background: var(--panel-2); color: var(--soft); font: inherit; font-size: .82rem; font-weight: 600; cursor: pointer; }
+.doing-pills .pill.on { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px var(--cyan), var(--glow-c); }
 
 /* The CONTACT row on the overview card (2026-09-03): the phone and the home
    address, tap to call or open in Maps, and the Edit that unfolds under them.

@@ -273,7 +273,10 @@ console.log('\n--- C. the home ---');
   //   FAIL  C2 the landing's bar always shows the menu button, and the menu opens every other section, each a section that exists
   check('C2 the landing\'s bar always shows the menu button, and the menu opens every other section, each a section that exists',
     /<div class="bar-inner" data-always-menu>/.test(idx) && /barInner\.hasAttribute\('data-always-menu'\) \|\|/.test(f('public/js/nav-menu.js'))
-    && anchors.join() === 'needs,how,who,proof,faq,closing,more'
+    // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works (the closed case's booking steps) and Straight answers (the Questions page twice) left the menu with their screens.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): a How it works link put back in the home's menu made this read
+    //   FAIL  C2 the landing's bar always shows the menu button, and the menu opens every other section, each a section that exists
+    && anchors.join() === 'needs,who,proof,closing,more'
     && anchors.every((id) => new RegExp(`<(section|footer) class="[^"]*" id="${id}"`).test(idx)));
   // NEGATIVE CONTROL (run 2026-10-14): the `display: none` on the other sections deleted made this read
   //   FAIL  C3 off the home, every other section is hidden until the menu names it, then it is a screen of its own with a way back

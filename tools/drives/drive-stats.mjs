@@ -56,7 +56,9 @@ ok('the ledger: messages, milestones, actions logged, cases', pg.ledger.join('|'
 ok('milestones by type in one line', pg.milestones === 'milestones reached: 4 appointments scheduled, 3 referrals out, 2 authorizations approved', pg.milestones);
 ok('cases since the first month', pg.cases === 'cases taken since July 2026', pg.cases);
 ok('the stamp names the month and the last update', /since July 2026\. Updated daily; last updated 5 hours ago\./.test(pg.stamp), pg.stamp);
-ok('two doors out: the free call and the case', pg.doors[0] === '/fit.html' && pg.doors[1] === '/book.html');
+// RE-PINNED 2026-10-15 (v7.38): the free call was removed on 2026-10-12, so one door is left, the case. The demo
+// keeps it; outside the demo nav-menu.js hides every Book link while cases are closed (tighten.mjs T1).
+ok('one door out: the case', pg.doors.join() === '/book.html', pg.doors.join());
 await shot('02-stats-top');
 await page.evaluate(() => document.querySelector('.ledger').scrollIntoView({ block: 'center' }));
 await page.waitForTimeout(400);

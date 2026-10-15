@@ -266,6 +266,49 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### His letter, a clear cancel, chat search, one look, tightened (2026-10-15, v7.38)
+
+Five asks in one release. The chat page is Eric's letter word for word, with
+the guarantee above it ("They are guaranteed same day turn around for at
+least one message ... their expectation is priority, not in depth case
+work"). A client's menu offers "Cancel subscription" while there is one to
+cancel, and it opens Stripe's own cancel step. Every chat, his and the
+client's, has a search: hits in a pop-out with the words marked, a tap jumps
+there, a down arrow goes back to the newest, and a tap anywhere off it
+cancels. `look.css` loads last on every page but the hidden fund form and
+carries the home's black, cyan and violet everywhere (three agents: two
+finders, one judge, 36 fixes). Then a second three-agent pass, the tighten
+audit, after his screenshot of the foot of Services: 42 fixes, mostly
+deletions of the same thing said twice, plus hiding everything that sells
+what is closed.
+
+New suite `cancelsearch.mjs` (18 checks: the cancel rule, the portal route
+and the subscription sync lifted and run; the search's matching run; the
+look's tokens compared value for value). New suite `tighten.mjs` (20 checks:
+the Book-link hider, the Enhance tab's card filter, the Needs-attention
+grouping and the Leads column order lifted and run; a dash scan over every
+page and script but the frozen waivers). Every new check proven able to fail
+with its control recorded. New drive `drive-chatsearch.mjs`. Re-pinned with
+dated notes and fresh controls: `landing.mjs` A4, A7, B1, B5, B9, D4,
+`leads.mjs` C2, `packages.mjs` B1, B3, `capacity.mjs` C16b, `checkins.mjs`
+W7, `fitcall.mjs` F15, `fund.mjs` F26, `pricing.mjs` H1, `charge.mjs` CH5,
+CH6, `worklog.mjs` L28, `maintenance.mjs` M25, and release R1; stylesheet
+stamps in `waitlist.mjs` D7 and `charge.mjs` CH7.
+
+Every drive was run. Re-pinned with dated notes: approval (the decline reason
+is asked in the app's sheet), buy and seamless (no add-on is offered while
+sales are closed), capacity (the limit is read off the Full-Service page),
+doing (the client-reads chips are on the Chat page), filing (its Docs-tab
+regex had silently required half of the old emoji), joinlink (no button after
+the call, the button once the call is ahead), landing (six headings, five
+menu screens, the chat page is his letter), stats (one door), summary
+(Recording after his types) and fund B10 (the Leads tab, missed in v7.36).
+Two real defects the drives found were fixed, not re-pinned: file inputs ran
+past 320px under the new look, and the join button was hidden for a call
+still ahead on a case past its report. act, calldoc, fit, forms, hours,
+nudge, openfull, worklog and the notes section of seamless fail identically
+on v7.37 and are untouched here.
+
 ### One package, one page (2026-10-15, v7.37)
 
 Eric: "When you tap on 'what's included' with the chat it describes an

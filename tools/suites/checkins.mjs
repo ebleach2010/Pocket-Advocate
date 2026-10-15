@@ -320,7 +320,14 @@ check('W7 the landing sells with his phrase, and the value math is on the servic
     // His words, on the page a stranger arrives at.
     const hisPhrase = /5 years' worth of boots on the ground experience/.test(idx);
     // The comparison that justifies the tier price, where the tier is sold.
-    const valueMath = /per appeal<\/em> elsewhere/.test(svc) && /data-rate="full"/.test(svc);
+    // RE-PINNED 2026-10-15 (v7.38, the tighten audit): the Services card that copied the whole
+    // Full-Service page is one line now, and the tier is sold on its own page (v7.37), whose copy
+    // is service-about.js's handsOff entry. The value math is read there; Services keeps the price.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): "per appeal elsewhere" changed to "per appeal, elsewhere" in service-about.js made this read
+    //   FAIL  W7 the landing sells with his phrase, and the value math is on the services page
+    const about = readFileSync(`${ROOT}/public/js/service-about.js`, 'utf8');
+    const pkg = readFileSync(`${ROOT}/public/js/package-page.js`, 'utf8');
+    const valueMath = /per appeal elsewhere/.test(about) && /full: 'handsOff'/.test(pkg) && /data-rate="full"/.test(svc);
     // And the landing still has to NAME the tier and its live price, or the
     // split would have quietly hidden the most expensive thing he sells.
     const onLanding = /data-rate="full"/.test(idx) && /Full-Service Case Management/.test(idx);

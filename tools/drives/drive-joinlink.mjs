@@ -69,13 +69,29 @@ const stored = await page.evaluate(() => {
 ok('and the case really holds it', stored.includes('meet.example.com'), stored);
 
 // Now the client side, which is the question he actually asked.
-await page.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' });
-await page.waitForTimeout(3000);
-const client = await page.evaluate(() => {
+// RE-PINNED 2026-10-15 (v7.38, the tighten audit): the button shows only while a call is ahead. The demo case's
+// call is three days behind it, so first the button must be gone, then the call is moved two days ahead in the
+// demo store and the button must be there with his link.
+const joinOn = () => page.evaluate(() => {
   const a = [...document.querySelectorAll('a,button')].find((e) => /join the video call|join the call/i.test(e.textContent || ''));
   return a ? (a.getAttribute('href') || 'button, no href') : '(no join control)';
 });
-ok('the CLIENT page shows a Join the video call button', /meet\.example\.com/.test(client), client);
+await page.goto(`${P}/case.html?id=demo-case&demo=1`, { waitUntil: 'networkidle' });
+await page.waitForTimeout(3000);
+const past = await joinOn();
+// NEGATIVE CONTROL (run 2026-10-15): callAhead made always true made this read
+//   FAIL  after the call, the CLIENT page offers no Join button
+ok('after the call, the CLIENT page offers no Join button', past === '(no join control)', past);
+await page.evaluate(() => {
+  const s = JSON.parse(localStorage.getItem('pa-demo-store') || '{}');
+  const row = (s.docs || []).find(([p]) => p === 'cases/demo-case');
+  if (row) row[1].appointment = { ...row[1].appointment, start: new Date(Date.now() + 2 * 86_400_000).toISOString() };
+  localStorage.setItem('pa-demo-store', JSON.stringify(s));
+});
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(3000);
+const client = await joinOn();
+ok('with the call ahead, the CLIENT page shows a Join the video call button', /meet\.example\.com/.test(client), client);
 
 await b.close();
 console.log(`\n${pass} ok, ${fail} FAIL`);

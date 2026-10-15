@@ -269,8 +269,9 @@ for (const width of [390, 320]) {
   // switching tabs reads a list nobody is looking at - which is a drive
   // proving nothing while printing ok.
   await client.evaluate(() => {
-    const tab = [...document.querySelectorAll('button, a')]
-      .find((x) => /^\s*📄?\s*Docs\s*$/.test(x.textContent || ''));
+    // RE-PINNED 2026-10-15 (v7.38, the look audit): the tab's 📄 became a stroke icon, and this regex, without
+    // the u flag, had quietly required half of the emoji. The tab is found by its page now.
+    const tab = document.querySelector('.folder-tabs .ftab[data-page="docs"]');
     tab?.click();
   });
   await client.waitForTimeout(3000);

@@ -7,6 +7,8 @@
 // NEEDS A LINK is the one alarm: a video call inside the next 24 hours with
 // no join link yet. A phone call needs nothing from him but to ring.
 
+import { ask } from './sheet.js';
+
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const mtFmt = new Intl.DateTimeFormat('en-US', {
   timeZone: MOUNTAIN_TZ, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
@@ -79,7 +81,7 @@ export function mountFitCalls(el, { getToken }) {
       const action = btn.dataset.act;
       const body = { leadId, action };
       if (action === 'join-link') {
-        const joinLink = (prompt('Paste the video link (https):') || '').trim();
+        const joinLink = ((await ask({ title: 'Paste the video link', body: 'The https link for the call.', okLabel: 'Send link', input: { value: '', placeholder: 'https://', type: 'url' } })) || '').trim();
         if (!joinLink) return;
         body.joinLink = joinLink;
       }

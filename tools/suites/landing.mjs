@@ -89,7 +89,16 @@ check('A3 the five "you might need an advocate if" lines, in order',
 // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The first step was the free call, so it went with it; his other four sentences stand, renumbered.
 // NEGATIVE CONTROL (run 2026-10-12, v7.35): the free-call step put back as step 1 made this read
 //   FAIL  A4 the four steps, his sentences from about.html and services.html, the free call gone
-check('A4 the four steps, his sentences from about.html and services.html, the free call gone',
+// RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". The home's How it works screen was the closed
+// case's booking steps, the third copy of them, on a home that only offers the chat; it went with its menu link.
+// The steps are the case's own, and the Advocacy Case page carries them (service-about.js, its approved copy).
+// NEGATIVE CONTROL (run 2026-10-15, v7.38): a How it works section put back above the closing made this read
+//   FAIL  A4 the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case's own page still says what happens after the call
+check('A4 the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case\'s own page still says what happens after the call',
+  !/class="land-sec ruled how"/.test(IDX) && !/href="#how"/.test(IDX)
+  && f('public/js/service-about.js').includes('After the call you get a written report within 7 days.'));
+// The pre-v7.38 form, kept as a record of what the steps said: never evaluated.
+false && check('A4 (retired 2026-10-15) the four steps, his sentences from about.html and services.html, the free call gone',
   (() => {
     const s = sectionAt('class="land-sec ruled how"');
     const nums = [...s.matchAll(/<span class="num">(\d)<\/span>/g)].map((m) => m[1]).join();
@@ -117,9 +126,14 @@ check('A6 the price section: his line, the reframe, his three card sentences, th
       && s.includes('Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.')
       && s.includes('A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.');
   })());
-check('A7 the questions and the closing are his',
-  READ.includes('<h2>Straight answers</h2>') && READ.includes('Is this medical advice?') && READ.includes('Can I stop?')
-  && READ.includes('Is my information private?') && READ.includes('If yours is not here, ask me before you pay for anything.')
+// RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". The home's Straight answers screen sat beside
+// "Questions" in the same menu, the same questions twice; the questions live on faq.html, where the menu sends them.
+// NEGATIVE CONTROL (run 2026-10-15, v7.38): a Straight answers section put back above the closing made this read
+//   FAIL  A7 the questions are his, on the Questions page the menu sends them to, and the closing is his
+check('A7 the questions are his, on the Questions page the menu sends them to, and the closing is his',
+  !READ.includes('<h2>Straight answers</h2>') && /href="\/faq\.html"/.test(IDX)
+  && ['Is this medical advice?', 'Can I stop?', 'Is my information private?', 'If yours is not here, ask me before you pay for anything.']
+    .every((q) => f('public/faq.html').includes(q))
   && READ.includes("You don't have to navigate this alone.") && READ.includes('<h2>Ready when you are.</h2>'));
 
 // ---------------------------------------------------------------------------
@@ -131,12 +145,15 @@ console.log('\n--- B. the shape ---');
   // The options come straight after the hero; the rest keeps its order.
   // NEGATIVE CONTROL (run 2026-10-10, v7.31): the options section moved back below the numbers made this read
   //   FAIL  B1 the nine slots, in the order the sweep settled on
-  const order = ['land-sec hero', 'land-sec options cost', 'ruled needs', 'ruled how', 'ruled who', 'ruled proof', 'id="numbers"', 'ruled faq', 'ruled closing'];
+  // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works and Straight answers went; seven slots.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): the closing's class renamed `ruled closer` made this read
+  //   FAIL  B1 the seven slots, in the order the sweep settled on
+  const order = ['land-sec hero', 'land-sec options cost', 'ruled needs', 'ruled who', 'ruled proof', 'id="numbers"', 'ruled closing'];
   const idx = order.map((k) => main.indexOf(k));
   // NEGATIVE CONTROL (run 2026-09-02): moving the price section above the
   // proof made this read
   //   FAIL  B1 the nine slots, in the order the sweep settled on
-  check('B1 the nine slots, in the order the sweep settled on',
+  check('B1 the seven slots, in the order the sweep settled on',
     idx.every((v, i) => v >= 0 && (i === 0 || v > idx[i - 1])), idx.join());
 }
 {
@@ -195,9 +212,13 @@ check('B4 the closing carries the number to press, and nothing else',
 // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The footer lists every door but that one.
 // NEGATIVE CONTROL (run 2026-10-12, v7.35): `<a href="/fit.html">Book a free call</a>` put back in the footer made this read
 //   FAIL  B5 no dock offers anything, and the footer lists every door but the free call
-check('B5 no dock offers anything, and the footer lists every door but the free call',
+// RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". The menu's "Reviews" sat beside "What clients say", one door twice; the reviews page is reached from that screen's "Read them all".
+// NEGATIVE CONTROL (run 2026-10-15, v7.38): the Read them all link pointed at /reviews made this read
+//   FAIL  B5 no dock offers anything, and every door but the free call is still reachable from the home
+check('B5 no dock offers anything, and every door but the free call is still reachable from the home',
   !/id="sticky-book"/.test(IDX) && !IDX.includes('href="/fit.html"')
-  && ['/book.html', '/advocate.html', '/stats.html', '/reviews.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`)));
+  && ['/book.html', '/advocate.html', '/stats.html', '/contact.html'].every((h) => IDX.includes(`<a href="${h}">`))
+  && /<a class="pill" id="g-read" href="\/reviews\.html">Read them all<\/a>/.test(IDX));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
 // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." Only the chat card links: to the chat line and to what it includes.
@@ -249,12 +270,16 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b6">/.test(IDX) // RE-PINNED 2026-10-15 (v7.37): the package pages' rules moved the sheet to b6. // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b7">/.test(IDX) // RE-PINNED 2026-10-15 (v7.38): the chat page's what-to-expect note moved the sheet to b7. // RE-PINNED 2026-10-15 (v7.37): the package pages' rules moved the sheet to b6. // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
   // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." The three package pages wear the landing's look too ("Keep the shiny blue/purple aesthetic throughout"); no other page does.
   && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && !['index.html', 'priority-chat.html', 'advocacy-case.html', 'full-service.html'].includes(n)).every((n) => !/landing\.css/.test(f(`public/${n}`)))
-  && ['priority-chat', 'advocacy-case', 'full-service'].every((n) => /<link rel="stylesheet" href="\/css\/landing\.css\?v=b6">/.test(f(`public/${n}.html`)))
+  && ['priority-chat', 'advocacy-case', 'full-service'].every((n) => /<link rel="stylesheet" href="\/css\/landing\.css\?v=b7">/.test(f(`public/${n}.html`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
-  && /dataset\.defaultScheme/.test(code('public/js/theme.js')));
+  // RE-PINNED 2026-10-15 (v7.38): Eric, "everywhere should have this same aesthetic". theme.js no longer reads a page's
+  // default: every page's default is the black look, and High contrast is the one other choice.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): defaultScheme() made to read the page's data-default-scheme again made this read
+  //   FAIL  B9 the page is black on every device and says so to theme.js; a stored High contrast still wins
+  && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(code('public/js/theme.js')));
 
 // ---------------------------------------------------------------------------
 // C. THE PROOF: one list, the header, the themes, the arrows
@@ -321,7 +346,10 @@ console.log('\n--- D. the audit fixes ---');
   // sprite made this read
   //   FAIL  D4 the icons live in one cached file and every <use> on the landing resolves to a symbol in it
   check('D4 the icons live in one cached file and every <use> on the landing resolves to a symbol in it',
-    ids.length === 12 && uses.length > 0 && uses.every((u) => ids.includes(u))
+    // RE-PINNED 2026-10-15 (v7.38): the look audit added eight stroke icons for the tab rails and the case page: 20.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): the i-bolt symbol renamed x-bolt in icons.svg made this read
+    //   FAIL  D4 the icons live in one cached file and every <use> on the landing resolves to a symbol in it
+    ids.length === 20 && uses.length > 0 && uses.every((u) => ids.includes(u))
     && !/<defs>/.test(IDX) && !/<defs>/.test(f('public/services.html'))
     && /\/img\/\*\n  Cache-Control: public, max-age=86400/.test(f('public/_headers')));
   check('D5 the serif and the sans are self-hosted, swapped in, and used only on the landing',

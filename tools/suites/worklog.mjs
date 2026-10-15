@@ -458,7 +458,10 @@ const strip = (ADMIN.match(/groups: \[[\s\S]*?\n    \],/) || [''])[0];
 // unchanged: no tier gate between him and logging his own work.
 ck('L28 and his half of it is on every case as well',
   /pages: \['overview', 'chat', 'files'\] \}/.test(strip)
-  && /'act', label: 'Act', icon: '⚖️', pages: \[\.\.\.\(data\.fullAccess \? \['appeals'\] : \[\]\), 'log', 'milestones'\]/.test(strip)
+  // RE-PINNED 2026-10-15 (v7.38): the look audit swapped the group's emoji for the stroke icon 'i-scale'.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): the Act group's icon put back to the emoji made this read
+  //   FAIL  L28 and his half of it is on every case as well
+  && /'act', label: 'Act', icon: 'i-scale', pages: \[\.\.\.\(data\.fullAccess \? \['appeals'\] : \[\]\), 'log', 'milestones'\]/.test(strip)
   && !/\.\.\.\(data\.fullAccess\s*\? \[\{ id: 'act'/.test(strip),
   'log is behind a tier gate the client\'s half is not');
 // FOUR TABS PER GROUP AT 320px IS A HARD LIMIT, and he has photographed the

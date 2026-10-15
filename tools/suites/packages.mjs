@@ -72,7 +72,12 @@ for (const p of PAGES) {
   check(`B1 ${p.file}: names its own package and no other, shows only its own price, and loads its painter`,
     new RegExp(`<body class="landing pkg" data-package="${p.pkg}">`).test(html)
     && html.includes(`<h1>${p.title}</h1>`) && html.includes(`<title>${p.title} · Pocket Advocate</title>`)
-    && others.every((o) => !html.includes(o.title))
+    // RE-PINNED 2026-10-15 (v7.38): Eric, "It should be emphasized that $45 is a fraction of a fraction of the cost of a
+    // full case management case which guarantees 20hrs of work". The chat page names Full-Service in that one note, by his
+    // ask, and nowhere else; outside the note no other package is named.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): a `<p>Full-Service Case Management</p>` added above the chat page's letter made this read
+    //   FAIL  B1 priority-chat: names its own package and no other, shows only its own price, and loads its painter
+    && others.every((o) => !html.replace(/<aside class="pkg-callout"[\s\S]*?<\/aside>/, '').includes(o.title))
     && ownRates.length >= 1 && ownRates.every((r) => r === p.rate || (p.pkg === 'case' && r === 'addon'))
     && /<script type="module" src="\/js\/package-page\.js\?v=1"><\/script>/.test(html) && !DASH.test(html),
     JSON.stringify(ownRates));
@@ -94,8 +99,53 @@ for (const p of PAGES) {
     /href="\/subscribe\.html">Start chatting</.test(statusHtml('chat', true))
     && /href="\/book\.html">Book a case</.test(statusHtml('case', true))
     && /href="\/book\.html">Book a case first</.test(statusHtml('full', true))
-    && ['chat', 'case', 'full'].every((k) => /Not currently offering/.test(statusHtml(k, false)) && /href="\/#waitlist">Join the waitlist</.test(statusHtml(k, false)) && !/subscribe|book/.test(statusHtml(k, false)))
+    // RE-PINNED 2026-10-15 (v7.38, the tighten audit): the waitlist link names the package it came from, so the
+    // sheet opens with that package already chosen.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): the waitlist link put back to /#waitlist made this read
+    //   FAIL  B3 the way in follows the switch: chat to its own checkout, the case to booking, full service through a case first, and a closed one says so and offers the waitlist
+    && ['chat', 'case', 'full'].every((k) => /Not currently offering/.test(statusHtml(k, false)) && new RegExp(`href="/\\?wl=${k}#waitlist">Join the waitlist<`).test(statusHtml(k, false)) && !/subscribe|book/.test(statusHtml(k, false)))
     && /import \{ packageOpen \} from '\.\/sales\.js';/.test(PKG) && /statusHtml\(pkg, packageOpen\(pkg\)\)/.test(PKG));
+}
+
+{
+  // Eric, 2026-10-15: "And shorten the description:" then his letter. The chat page carries it word for word, in
+  // place of the About copy the other two paint.
+  const chat = f('public/priority-chat.html');
+  const letter = (chat.match(/<section class="pkg-sec pkg-letter">([\s\S]*?)<\/section>/) || ['', ''])[1];
+  const paras = [...letter.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/g)].map((m) => m[1]);
+  // NEGATIVE CONTROL (run 2026-10-15): "often times" changed to "often" in the chat page's letter made this read
+  //   FAIL  B4 the chat page is his letter, word for word and signed, and paints no About copy over it
+  check('B4 the chat page is his letter, word for word and signed, and paints no About copy over it',
+    JSON.stringify(paras) === JSON.stringify([
+      'This chat line is for priority patients. I spend my time helping people in the wild and as a professional, often times so much that I can’t keep up.',
+      'This chat guarantees responses. You can upload files, labs, imaging, chart notes and they all stay private and in your case file. I can look them over and help guide you over time.',
+      'I can also be here to just talk things through, point you in the right direction, or just simply be someone who’s in your corner.',
+      'This is not for full advocacy that comes with the other packages like calling clinics, faxing documents, coordinating care, or attending appointments.',
+      'Your subscription renews monthly unless you choose to cancel it.',
+      'I look forward to chatting with you,<br>- Eric',
+    ]) && !/data-pkg-body/.test(chat) && /data-pkg-body/.test(f('public/advocacy-case.html')) && /data-pkg-body/.test(f('public/full-service.html'))
+    && /if \(body\) body\.innerHTML = bodyHtml\(a\);/.test(PKG), JSON.stringify(paras));
+}
+
+{
+  // Eric, 2026-10-15: "They are guaranteed same day turn around for at least one message. It should be emphasized that
+  // $45 is a fraction of a fraction of the cost of a full case management case which guarantees 20hrs of work, so their
+  // expectation is priority, not in depth case work."
+  const chat = f('public/priority-chat.html');
+  const note = (chat.match(/<aside class="pkg-callout" role="note">([\s\S]*?)<\/aside>/) || ['', ''])[1];
+  const sub = f('public/js/subscribe.js');
+  const about = f('public/about.html');
+  const live = ['public/js/subscribe.js', 'public/about.html', 'public/priority-chat.html', 'public/subscribe.html'].map(f).join('\n');
+  // NEGATIVE CONTROL (run 2026-10-15): "response time is not guaranteed" put back into the subscribe agreement made this read
+  //   FAIL  B5 the chat says what it guarantees and what it is not, first on its page and the same on subscribe and about, with live prices
+  check('B5 the chat says what it guarantees and what it is not, first on its page and the same on subscribe and about, with live prices',
+    /<p class="pkg-callout-h">Same day turnaround for at least one message, guaranteed\.<\/p>/.test(note)
+    && /At <span data-rate="sub">\$50<\/span> a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which guarantees <span data-hours="full">20<\/span> hours of work\. Expect priority, not in-depth case work\./.test(note)
+    && chat.indexOf('pkg-callout') < chat.indexOf('pkg-letter')
+    && /you are guaranteed same day turnaround for at least one message\. At \$\$\{money\(subCents\)\} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which guarantees \$\{fullHours\} hours of work, so expect priority, not in-depth case work\./.test(sub)
+    && /The important part: same day turnaround for at least one message, and priority, not in-depth case work\./.test(sub)
+    && /You are guaranteed same day turnaround for at least one message\./.test(about)
+    && !/not guaranteed/i.test(live) && !/\$45\b/.test(chat.replace(/<!--[\s\S]*?-->/g, '')));
 }
 
 console.log('\n--- C. the look ---');
@@ -106,7 +156,7 @@ console.log('\n--- C. the look ---');
   check('C1 every package page wears the home\'s look: black, its type, the ringed hero and the bubble\'s gradient on its words',
     PAGES.every((p) => {
       const h = f(`public/${p.file}.html`);
-      return /<html lang="en" data-default-scheme="calm">/.test(h) && /landing\.css\?v=b6/.test(h)
+      return /<html lang="en" data-default-scheme="calm">/.test(h) && /landing\.css\?v=b7/.test(h) // RE-PINNED 2026-10-15 (v7.38): the chat page's what-to-expect note moved the sheet to b7.
         && /<section class="pkg-hero opt-gold">/.test(h);
     })
     && /body\.landing \.pkg-tag,\s*body\.landing \.pkg-price \{[\s\S]*?linear-gradient\(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%\)/.test(css));

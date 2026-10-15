@@ -239,16 +239,18 @@ console.log('\n--- add-ons ---');
 await page.evaluate(() => document.querySelector('.folder-tabs .ftab[data-page="addons"]')?.click());
 await page.waitForTimeout(2500);
 const ad = await capture('addons');
-ok('the add-ons page renders', /add|follow|upgrade|extend/i.test(ad.text), ad.text.slice(0, 100));
+// RE-PINNED 2026-10-15 (v7.38, the tighten audit): while sales are closed the Worker refuses every add-on
+// purchase, so the page offers none: no buy button, no price, and the approved closed sentence in their place.
+// The cards and their prices come back on their own when SALES_OPEN does (CLAUDE.md, /open).
+const closedLine = await page.evaluate(() => document.querySelector('[data-addons-closed]:not([hidden])')?.textContent || '');
+ok('the add-ons page renders, with its heading', /Case Enhancements/.test(ad.text), ad.text.slice(0, 100));
 const buys = await page.evaluate(() =>
-  [...document.querySelectorAll('[data-buy-followup],[data-buy-upgrade],[data-buy-extend]')]
-    .map((x) => ({ what: x.dataset.buyFollowup !== undefined ? 'follow-up'
-      : x.dataset.buyUpgrade !== undefined ? 'upgrade' : 'extend',
-      label: (x.textContent || '').trim(), disabled: x.disabled })));
-ok('there is something to buy', buys.length > 0, JSON.stringify(buys));
-console.log(`  note  offers: ${buys.map((x) => `${x.what}${x.disabled ? ' (disabled)' : ''}`).join(', ') || 'none'}`);
-ok('and each offer says its price', /\$[\d,]+/.test(ad.text),
-  (ad.text.match(/\$[\d,]+/g) || []).slice(0, 5).join(' '));
+  [...document.querySelectorAll('[data-buy-followup],[data-buy-upgrade],[data-buy-extend],[data-th-request]')]
+    .map((x) => (x.textContent || '').trim()));
+// NEGATIVE CONTROL (run 2026-10-15): keepCard's offer test switched off made this read
+//   FAIL  while sales are closed there is nothing to buy on it
+ok('while sales are closed there is nothing to buy on it', buys.length === 0, JSON.stringify(buys));
+ok('and it says so in the approved words instead of quoting prices', /Join the waitlist/i.test(closedLine) && !/\$[\d,]+/.test(ad.text.slice(ad.text.indexOf('Case Enhancements'))), closedLine);
 
 // ---- 6. nothing admin leaked along the way -------------------------------
 console.log('\n--- and none of it showed him anything of Eric\'s ---');

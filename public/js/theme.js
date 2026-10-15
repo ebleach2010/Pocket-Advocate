@@ -4,39 +4,30 @@
 // stylesheet paints (no flash); this module is for the Settings picker and
 // anything else that changes the scheme while a page is open.
 //
-// Defaults, since the Daylight restyle (2026-08-29): a stored choice always
-// wins; with nothing stored the app follows the SYSTEM setting, light to
-// Daylight and dark to Night, which is what a phone user already expects.
+// ONE LOOK (Eric, 2026-10-15: "everywhere should have this same aesthetic"):
+// every page paints on the Night base, which look.css turns black. The one
+// choice left is High contrast, for somebody's eyes. A Daylight or Paper
+// choice stored before then reads as the standard look.
 
 const KEY = 'pa-scheme';
 
 // The ids are STORAGE KEYS and never change: a client who picked one in
 // July keeps their choice. Only the labels moved with the restyle.
 export const SCHEMES = [
-  { id: 'neon', label: 'Daylight', blurb: 'The brand look. Powder blue, white, navy.' },
-  { id: 'calm', label: 'Night', blurb: 'The same brand after dark.' },
-  { id: 'paper', label: 'Paper', blurb: 'Warm, light, like the folder itself.' },
+  { id: 'calm', label: 'Standard', blurb: 'Black, with the cyan and violet glow.' },
   { id: 'contrast', label: 'High contrast', blurb: 'Maximum legibility.' },
 ];
 
 // Keep in sync with the theme-color meta each scheme deserves.
 const THEME_COLOR = {
-  neon: '#EAF2FA',
-  calm: '#0A1626',
-  paper: '#F3EEE3',
+  neon: '#0A0A0C',
+  calm: '#0A0A0C',
+  paper: '#0A0A0C',
   contrast: '#000000',
 };
 
 export function defaultScheme() {
-  try {
-    if (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches) return 'calm';
-    // A page may name its own light default (the landing page reads as
-    // Paper since Look A, 2026-09). A stored choice still wins, above.
-    const page = document.documentElement.dataset.defaultScheme;
-    return page && SCHEMES.some((x) => x.id === page) ? page : 'neon';
-  } catch {
-    return 'neon';
-  }
+  return 'calm';
 }
 
 export function currentScheme() {
@@ -50,8 +41,7 @@ export function currentScheme() {
 export function applyScheme(id) {
   if (!SCHEMES.some((x) => x.id === id)) return;
   try { localStorage.setItem(KEY, id); } catch { /* storage blocked */ }
-  if (id === 'neon') delete document.documentElement.dataset.scheme;
-  else document.documentElement.dataset.scheme = id;
+  document.documentElement.dataset.scheme = id;
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute('content', THEME_COLOR[id] || THEME_COLOR.neon);
   // Announced so the night shift (night-shift.js) can stand down for the

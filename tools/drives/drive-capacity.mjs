@@ -115,18 +115,15 @@ for (const width of [390, 320]) {
   const services = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
   ok('the services page names no number of cases he carries at once',
     !NUM.test(services), (services.match(NUM) || ['ok'])[0]);
-  ok('and it still says there IS a limit, so the personal answer makes sense',
-    /a limited number of these at a time/.test(services));
-
-  // The about sheet, opened the way a buyer opens it.
-  await page.evaluate(() => {
-    const btn = [...document.querySelectorAll('[data-about]')]
-      .find((x) => x.dataset.about === 'handsOff');
-    if (btn) btn.click();
-  });
-  await page.waitForTimeout(1200);
+  // RE-PINNED 2026-10-15 (v7.38): the Services card that carried the limit is one line now (the tighten
+  // audit), and the About sheets left Services in v7.37 for one page per package. Both halves are read off
+  // the Full-Service page, which paints the same handsOff copy the sheet carried.
+  await page.goto(`${P}/full-service.html`, { waitUntil: 'networkidle' });
+  await page.waitForTimeout(1500);
   const sheet = await page.evaluate(() => document.body.innerText.replace(/\s+/g, ' '));
-  ok('the About sheet names no number either',
+  ok('and the Full-Service page still says there IS a limit, so the personal answer makes sense',
+    /a limited number of these at a time/.test(sheet));
+  ok('the Full-Service page names no number either',
     !NUM.test(sheet), (sheet.match(NUM) || ['ok'])[0]);
   ok('and it says he answers personally because he cannot take everyone',
     /I carry a limited number of these at a time/.test(sheet));

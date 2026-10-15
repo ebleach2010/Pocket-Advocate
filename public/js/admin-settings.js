@@ -72,7 +72,7 @@ export function adminSettingsHtml() {
     </div>
     <p class="dim small" data-paid-said style="margin:.45rem 0 0;"></p>` : ''}
     <div class="toggle-row" style="margin-top:1rem;">
-      <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the booking page and lands on Admin. Turn off to test the client view.</span></span>
+      <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the home page and lands on Admin. Turn off to test the client view.</span></span>
       <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
         aria-pressed="${localStorage.getItem('pa-open-admin') !== '0'}" aria-label="Open to my dashboard"></button>
     </div>

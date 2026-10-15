@@ -133,8 +133,16 @@ await bookFresh();
 await adminCard();
 const before2 = dialogs.length;
 await page.click('[data-charge="decline"]');
+// RE-PINNED 2026-10-15 (v7.38, the look audit): the reason is asked in the app's own sheet (sheet.js), not the
+// browser's prompt(), which does nothing in a Home Screen app. Same words, split into a title and a line.
+await page.waitForSelector('dialog.ask-sheet[open] .ask-input', { timeout: 5000 }).catch(() => {});
+const askedFor = await page.evaluate(() => document.querySelector('dialog.ask-sheet[open] h2')?.textContent || '');
+await page.fill('dialog.ask-sheet[open] .ask-input', REASON).catch(() => {});
+await page.click('dialog.ask-sheet[open] button[value="ok"]').catch(() => {});
 await page.waitForTimeout(1500);
-ok('declining asks for the reason', dialogs.slice(before2).some((m) => /^prompt: Why can't you take this one\?/.test(m)), dialogs.slice(before2).join(' | '));
+// NEGATIVE CONTROL (run 2026-10-15): the sheet's title changed to 'Why not?' made this read
+//   FAIL  declining asks for the reason
+ok('declining asks for the reason', askedFor === "Why can't you take this one?" && dialogs.length === before2, askedFor || '(no sheet)');
 await until(() => !document.querySelector('[data-charge-card]') ? 'gone' : null);
 const v3 = await clientView();
 ok('the client reads CLOSED, the reason word for word, and that nothing was charged', v3.pill === 'CLOSED' && v3.body.includes(REASON) && v3.released === 'Nothing was charged. The hold on your card is released.', JSON.stringify({ pill: v3.pill, released: v3.released }));

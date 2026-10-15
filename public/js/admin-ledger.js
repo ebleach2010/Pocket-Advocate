@@ -73,7 +73,9 @@ function mount() {
   a.dataset.ledger = '1';
   a.textContent = '💰 Ledger';
   a.addEventListener('click', (e) => { e.preventDefault(); openLedger(); });
-  tabs.appendChild(a);
+  // Above Sign out, not below it.
+  const auth = tabs.querySelector('[data-nav-auth]');
+  if (auth?.parentNode === tabs) tabs.insertBefore(a, auth); else tabs.appendChild(a);
 }
 
 if (document.readyState === 'loading') {

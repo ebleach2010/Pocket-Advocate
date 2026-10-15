@@ -18,6 +18,8 @@ import {
 } from './msg-actions.js';
 import { askName, safeName } from './rename.js';
 import { watchOffice } from './office.js';
+import { mountChatSearch } from './chat-search.js';
+import { ask } from './sheet.js';
 
 const MAX_BYTES = 25 * 1024 * 1024;
 const LONG_PRESS_MS = 550;
@@ -88,25 +90,27 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
          <form class="chat-form" data-form>
            <button type="button" class="attach-btn" data-expand title="Full screen"
              aria-label="Full screen">⤢</button>
-           <label class="attach-btn" title="Attach a file">📎<input type="file" hidden data-attach
+           <label class="attach-btn" title="Attach a file"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-clip"/></svg><input type="file" hidden data-attach
              accept=".pdf,.jpg,.jpeg,.png,.heic,.gif,.webp,.dcm,.dicom,.zip,.mp4,.mov,.doc,.docx,.txt"></label>
            ${(Array.isArray(composerButton) ? composerButton : composerButton ? [composerButton] : []).map((cb, i) => `<button type="button" class="attach-btn" data-extra="${i}"
              title="${esc(cb.title || '')}" aria-label="${esc(cb.title || '')}"
              >${esc(cb.icon || '')}</button>`).join('')}
            <textarea data-input maxlength="2000" rows="1" placeholder="${esc(placeholder)}"
              autocomplete="off" autocapitalize="sentences"></textarea>
-           <button class="btn" type="submit">Send</button>
+           <button class="btn glow" type="submit">Send</button>
          </form>
          <progress data-progress max="100" value="0" hidden></progress>
          <p class="dim small" data-hint hidden>Tip: press and hold a shared file to save it to Documents.</p>
          <p class="error" data-err hidden></p>`}
     <p style="margin:.5rem 0 0; text-align:right;">
-      <button class="btn quiet" type="button" data-export
-        style="font-size:.72rem; padding:.32rem .7rem;">⬇ Export chat (CSV)</button>
+      <button class="btn quiet tiny" type="button" data-export>Export chat (CSV)</button>
     </p>
   `;
   const log = container.querySelector('[data-log]');
   const errEl = container.querySelector('[data-err]');
+  // Search and the down arrow (Eric, 2026-10-15), on his threads and the
+  // client's alike. The other side's name is the one the reader expects.
+  const search = mountChatSearch({ container, log, otherName: myRole === 'admin' ? 'Client' : 'Eric' });
   // Set by send(), cleared by the repaint that draws the result: your own
   // message takes you to the bottom even if you were reading back through the
   // history, because you asked for it. Nobody else's does.
@@ -338,6 +342,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     if (wasAtBottom) log.scrollTop = log.scrollHeight;
     repaintFlags();
     paintSaved();
+    search.refresh();
   };
   onSnapshot(CHAT_Q, paintChat, (err) => {
     log.innerHTML = `<p class="error">Couldn't load messages: ${esc(err.message)}</p>`;
@@ -934,7 +939,7 @@ function toast(text, bad = false) {
 }
 
 async function promptSave(att, saveUid) {
-  if (!confirm(`Save "${att.name}" to Documents?`)) return;
+  if (!(await ask({ title: `Save "${att.name}" to Documents?`, okLabel: 'Save' }))) return;
   try {
     const blob = await (await fetch(att.url)).blob();
     const dest = ref(storage, `profiles/${saveUid}/saved/${Date.now()}-${att.name.replace(/[^\w.\- ]+/g, '_')}`);

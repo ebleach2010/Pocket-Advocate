@@ -558,8 +558,15 @@ check('F5 fit.js lists fit slots and only fit slots',
   check('F14 the dashboard mounts the FREE CALLS block and the calendar paints the fit mark',
     /id="fit-calls"/.test(f('public/admin.html')) && /mountFitCalls\(/.test(code('public/js/admin.js'))
     && /cal-mark fit/.test(code('public/js/admin-calendar.js')) && /\.cal-mark\.fit/.test(f('public/css/admin.css')));
-  check('F15 the availability page can open fit slots and sends the kind, never a length',
-    /name="kind" value="fit"/.test(f('public/admin-availability.html'))
+  // RE-PINNED 2026-10-15 (v7.38, the tighten audit): the free call was removed on 2026-10-12 and
+  // /api/fit-call answers 410, so the "Free call, 15 minutes" choice came off the availability
+  // page; nobody could book what it opened. The code path that sends the kind stays, so old fit
+  // slots still read as free calls and the choice can come back in one line.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): the "Free call, 15 minutes" radio put back on the availability page made this read
+  //   FAIL  F15 the availability page no longer opens free-call slots, and the code that sends the kind, never a length, stays
+  check('F15 the availability page no longer opens free-call slots, and the code that sends the kind, never a length, stays',
+    !/name="kind" value="fit"/.test(f('public/admin-availability.html'))
+    && /name="kind" value="case"|Case, 60 minutes/.test(f('public/admin-availability.html'))
     && /\{ starts, kind: 'fit' \}/.test(code('public/js/admin-availability.js')));
 }
 {

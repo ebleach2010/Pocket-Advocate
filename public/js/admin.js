@@ -349,7 +349,7 @@ async function load() {
     });
   };
   const section = (title, color, rows) => rows.length
-    ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; font-family:ui-monospace,monospace; margin:1.4rem 0 .6rem;">${title}</h2><div class="drawer">${rows.join('')}</div>`
+    ? `<h2 style="font-size:.78rem; letter-spacing:.16em; color:${color}; margin:1.4rem 0 .6rem;">${title}</h2><div class="drawer">${rows.join('')}</div>`
     : '';
 
   // ---- THE COMMAND CENTER ORDER (visual director pass, 2026-08-29) ------
@@ -375,10 +375,22 @@ async function load() {
       else if (days <= 3) loops.push({ href, name, label: `Report due in ${days}d`, tone: 'warm' });
     }
   }
-  const attBlock = loops.length ? `
+  // One row per case, its reasons joined, in the hottest tone it has. The same
+  // name twice in a list this short read as two different people.
+  const byCase = new Map();
+  for (const l of loops) {
+    const row = byCase.get(l.href);
+    if (!row) byCase.set(l.href, { ...l });
+    else {
+      row.label += ` · ${l.label}`;
+      if (l.tone === 'hot') row.tone = 'hot';
+    }
+  }
+  const attention = [...byCase.values()];
+  const attBlock = attention.length ? `
     <section class="cmd" aria-label="Needs attention">
-      <h2 class="cmd-h hot">NEEDS ATTENTION <span class="cmd-count">${loops.length}</span></h2>
-      ${loops.map((a) => `
+      <h2 class="cmd-h hot">NEEDS ATTENTION <span class="cmd-count">${attention.length}</span></h2>
+      ${attention.map((a) => `
       <a class="cmd-row ${a.tone}" href="${a.href}">
         <strong>${esc(a.name)}</strong>
         <span class="cmd-what">${a.label}</span>
@@ -438,8 +450,9 @@ async function load() {
       ...mine.map((c) => rowFor(c, 'nobody on the other end')),
       ...ownClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>${c.confirmedDx?.name ? ` · confirmed ${esc(c.confirmedDx.name)}` : ''}`)),
     ])
-    : '')
-    + `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
+    : '');
+  // The doors are used rarely, so they sit under the shelf, above the rate.
+  const doorsBlock = `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
         <button type="button" class="btn self-open" data-open-door="family">Open a family case</button>
         ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}
         <a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a></div>
@@ -453,6 +466,7 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
+    doorsBlock +
     `<div class="cmd-quiet">` + rateBlock + voiceBlock + summary + `</div>`;
   painted();
   // A door unfolds its form and folds the other; Open sends the form to its

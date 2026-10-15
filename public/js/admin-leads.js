@@ -3,8 +3,10 @@
 // csv that goes row by row for each potential client.")
 //
 // One row per person from /api/admin/leads, shown as a table and saved as a
-// CSV with the same columns in the same order. The file is made in the
-// browser, so the export is exactly what is on the screen.
+// CSV with the same columns. The file is made in the browser from the same
+// rows. On screen, who and how to reach them come first (the tighten audit,
+// 2026-10-15: on a phone the dates filled the first screen); the CSV keeps
+// its date-first order for a spreadsheet.
 import { requireAdmin, hydrateNav } from './auth.js';
 
 export const COLUMNS = [
@@ -17,6 +19,9 @@ export const COLUMNS = [
   ['cameThrough', 'Came through'],
   ['notes', 'Questions and notes'],
 ];
+
+/** The on-screen order, by key. Every CSV column, rearranged. */
+export const SCREEN_ORDER = ['name', 'interestedIn', 'phone', 'email', 'cameThrough', 'firstContact', 'lastContact', 'notes'];
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -50,6 +55,18 @@ export function toCsv(leads) {
   return `${lines.join('\r\n')}\r\n`;
 }
 
+const HEAD = Object.fromEntries(COLUMNS);
+const CELL = {
+  firstContact: (l) => `<td class="n">${esc(day(l.firstContact))}</td>`,
+  lastContact: (l) => `<td class="n">${esc(day(l.lastContact))}</td>`,
+  name: (l) => `<td>${esc(l.name)}</td>`,
+  email: (l) => `<td><a href="mailto:${esc(l.email)}">${esc(l.email)}</a></td>`,
+  phone: (l) => `<td class="n">${l.phone ? `<a href="tel:${esc(String(l.phone).replace(/[^\d+]/g, ''))}">${esc(l.phone)}</a>` : ''}</td>`,
+  interestedIn: (l) => `<td>${esc(l.interestedIn)}</td>`,
+  cameThrough: (l) => `<td>${esc(l.cameThrough)}</td>`,
+  notes: (l) => `<td class="w">${esc(l.notes)}</td>`,
+};
+
 async function main() {
   hydrateNav();
   const user = await requireAdmin();
@@ -76,17 +93,8 @@ async function main() {
     return;
   }
   box.innerHTML = `<div class="leads-wrap"><table class="leads">
-    <thead><tr>${COLUMNS.map(([, h]) => `<th scope="col">${esc(h)}</th>`).join('')}</tr></thead>
-    <tbody>${leads.map((l) => `<tr>
-      <td class="n">${esc(day(l.firstContact))}</td>
-      <td class="n">${esc(day(l.lastContact))}</td>
-      <td>${esc(l.name)}</td>
-      <td><a href="mailto:${esc(l.email)}">${esc(l.email)}</a></td>
-      <td class="n">${l.phone ? `<a href="tel:${esc(String(l.phone).replace(/[^\d+]/g, ''))}">${esc(l.phone)}</a>` : ''}</td>
-      <td>${esc(l.interestedIn)}</td>
-      <td>${esc(l.cameThrough)}</td>
-      <td class="w">${esc(l.notes)}</td>
-    </tr>`).join('')}</tbody></table></div>`;
+    <thead><tr>${SCREEN_ORDER.map((k) => `<th scope="col">${esc(HEAD[k])}</th>`).join('')}</tr></thead>
+    <tbody>${leads.map((l) => `<tr>${SCREEN_ORDER.map((k) => CELL[k](l)).join('')}</tr>`).join('')}</tbody></table></div>`;
   btn.disabled = false;
   btn.addEventListener('click', () => {
     const blob = new Blob([toCsv(leads)], { type: 'text/csv;charset=utf-8' });

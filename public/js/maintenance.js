@@ -91,31 +91,32 @@ export function initMaintenance() {
       position: fixed; inset: 0; z-index: 2147483000;
       display: flex; align-items: center; justify-content: center;
       padding: 1.5rem; text-align: center;
-      background: rgba(8, 10, 16, .82);
+      background: rgba(5, 5, 6, .82);
       -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px);
     }
     .pa-maint-box {
       max-width: 30rem; width: 100%;
-      border: 1px solid rgba(255, 255, 255, .16); border-radius: 14px;
-      background: rgba(18, 22, 32, .96);
+      border: 1px solid rgba(255, 255, 255, .18); border-radius: 18px;
+      background: #17171C;
       padding: 1.6rem 1.3rem;
       box-shadow: 0 18px 60px rgba(0, 0, 0, .55);
-      color: #E8ECF4;
-      font: 400 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      color: #F5F5F7;
+      font: 500 1rem/1.5 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
     }
     .pa-maint-box h1 {
-      margin: 0 0 .6rem; font-size: 1.32rem; line-height: 1.28; font-weight: 700;
+      margin: 0 0 .6rem; font-size: 1.32rem; line-height: 1.28; font-weight: 600; font-family: 'Sora', 'Manrope', sans-serif;
       letter-spacing: .01em; text-wrap: balance; color: #FFFFFF;
     }
-    .pa-maint-box p { margin: 0 0 .5rem; color: #AFB8C9; font-size: .95rem; }
+    .pa-maint-box p { margin: 0 0 .5rem; color: #D2D2D9; font-size: .95rem; }
     .pa-maint-box p.last { margin-bottom: 1.1rem; }
     .pa-maint-box a {
       display: inline-block; margin: .25rem; padding: .6rem 1.1rem; min-height: 44px;
       box-sizing: border-box; line-height: 1.9;
       border-radius: 999px; text-decoration: none; font-weight: 600;
-      border: 1px solid rgba(255, 255, 255, .30); color: #E8ECF4;
+      border: 1px solid rgba(255, 255, 255, .30); color: #F5F5F7;
     }
-    .pa-maint-box a:focus-visible { outline: 2px solid #7FD8FF; outline-offset: 2px; }
+    .pa-maint-box a:first-of-type { border: 0; background: linear-gradient(180deg, #5BE3F7, #3DDCF5 45%, #32B5CA); color: #02161A; font-weight: 700; padding: .7rem 1.4rem; }
+    .pa-maint-box a:focus-visible { outline: 2px solid #3DDCF5; outline-offset: 2px; }
     @media (prefers-reduced-motion: no-preference) {
       .pa-maint { animation: pa-maint-in .18s ease-out; }
     }

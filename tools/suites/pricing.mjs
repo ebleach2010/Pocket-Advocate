@@ -459,9 +459,15 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   const mirror = Number((CASEJS.match(/const FULL_INCLUDED_HOURS = (\d+);/) || [])[1]);
   // NEGATIVE CONTROL (run 2026-09-02): putting "up to 20-22 hours" back into
   // tier-terms.js made H1 read FAIL naming that file. Restored.
+  // RE-PINNED 2026-10-15 (v7.38, the tighten audit): Services lost its "Pricing, in plain terms" block, the last
+  // place it typed the number; it now names the hours only in the live spot the Worker fills
+  // (<span data-hours="full">20</span> included hours), which counts, the seed pinned to the constant.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.38): Services' live spot reworded to "20 hours included" made this read
+  //   FAIL  H1 every client file that names the month's hours names the constant, and no "20-22" survives
+  const NAMES = new RegExp(`\\b${INCLUDED_H} included\\s+hours\\b|data-hours="full">${INCLUDED_H}</span> included\\s+hours\\b`);
   check('H1 every client file that names the month\'s hours names the constant, and no "20-22" survives',
-    bodies.every(([, b]) => new RegExp(`\\b${INCLUDED_H} included\\s+hours\\b`).test(b) && !/20-22/.test(b)),
-    bodies.filter(([, b]) => !new RegExp(`\\b${INCLUDED_H} included\\s+hours\\b`).test(b) || /20-22/.test(b)).map(([f]) => f).join(', ') || 'all five');
+    bodies.every(([, b]) => NAMES.test(b) && !/20-22/.test(b)),
+    bodies.filter(([, b]) => !NAMES.test(b) || /20-22/.test(b)).map(([f]) => f).join(', ') || 'all five');
   check('H2 the client page mirrors the Worker\'s included hours exactly',
     mirror === INCLUDED_H && !/20-22/.test(CASEJS.replace(/\/\*[\s\S]*?\*\//g, '')), `case.js ${mirror}, worker ${INCLUDED_H}`);
 }

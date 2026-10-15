@@ -25,6 +25,7 @@ import {
   APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
+import { ask } from './sheet.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -277,9 +278,9 @@ function render(el) {
     //   Track    where the case stands and what is outstanding
     //   Mine     the things he wrote himself
     groups: [
-      { id: 'case', label: 'Case', icon: '📁', pages: ['overview', 'chat', 'files'] },
-      { id: 'read', label: 'Advisor', icon: '👨‍⚕️', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
-      { id: 'track', label: 'Track', icon: '🗒', pages: ['summary', 'unanswered', 'agenda', 'about'] },
+      { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
+      { id: 'read', label: 'Advisor', icon: 'i-user', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
+      { id: 'track', label: 'Track', icon: 'i-doc', pages: ['summary', 'unanswered', 'agenda', 'about'] },
       // 'calldoc' sits in Mine, beside Notes: both start from something Eric
       // wrote himself. A page absent from every group renders no tab at all,
       // which is how the call document first shipped invisible.
@@ -288,14 +289,14 @@ function render(el) {
       // constraint; he asked for a tab by name, on his own phone, so the tab
       // exists and the strip may wrap on the narrowest screens. Its label is
       // the shortest word that says what it is.
-      { id: 'mine', label: 'Mine', icon: '🔒', pages: ['notes', 'calldoc', 'drafts', 'saved', 'personal'] },
+      { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'calldoc', 'drafts', 'saved', 'personal'] },
       // THE ACT GROUP, ON EVERY CASE NOW (Eric, 2026-08-30: "This and work
       // log should be tabs under 'act' since it has so much space"). The log
       // lived under Case since 2026-08-27 because Act only rendered on a
       // Full-Service case; rather than hide the log behind the tier gate
       // again, the gate moved: Act now exists everywhere, carrying the log
       // and the milestones feed, and only Appeals stays Full-Service.
-      { id: 'act', label: 'Act', icon: '⚖️', pages: [...(data.fullAccess ? ['appeals'] : []), 'log', 'milestones'] },
+      { id: 'act', label: 'Act', icon: 'i-scale', pages: [...(data.fullAccess ? ['appeals'] : []), 'log', 'milestones'] },
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
@@ -309,11 +310,11 @@ function render(el) {
         },
       ] : []),
       {
-        id: 'overview', title: 'Overview', icon: '⚡',
+        id: 'overview', title: 'Overview', icon: 'i-bolt',
         render: (pane) => { paintOverview(pane); paintAuthorityStatus(pane); },
       },
       {
-        id: 'chat', title: 'Chat', icon: '💬', fade: true,
+        id: 'chat', title: 'Chat', icon: 'i-chat', fade: true,
         render: (pane) => {
           pane.innerHTML = `
             <div class="panel">
@@ -332,6 +333,13 @@ function render(el) {
                     <option value="">Nothing right now</option>
                   </select>
                 </label>
+              </div>
+              <!-- What the client reads beside the clock. It sat in the head of
+                   every page of the case; it belongs here, under the picker
+                   for the same thing (the tighten audit, 2026-10-15). -->
+              <div class="doing-row" data-doing-row hidden>
+                <span class="dim small">The client reads:</span>
+                <span class="doing-pills" data-doing-pills></span>
               </div>
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
                 <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
@@ -391,7 +399,7 @@ function render(el) {
       {
         // The page id stays 'files' so a remembered tab still resolves; the
         // page itself is now everything shared on the case, from either side.
-        id: 'files', title: 'Uploads', icon: '📎',
+        id: 'files', title: 'Uploads', icon: 'i-clip',
         render: (pane) => paintFiles(pane),
       },
       // AFTER 'files', NOT BEFORE 'overview'. The strip renders in THIS array's
@@ -479,7 +487,8 @@ function render(el) {
           // the Mine page", and Mine already holds four tabs, which is the
           // hard width constraint at 320px: a fifth slices its own label, and
           // that is a defect he has already photographed once. So it is a card
-          // at the top of Notes, which is the page in this group he opens most
+          // on Notes, under the notes themselves (moved below them on
+          // 2026-10-15, the tighten audit), which is the page in this group he opens most
           // and the one that is already his own working space, rather than a
           // tab that would break the strip to exist.
           const compileCard = document.createElement('div');
@@ -492,7 +501,6 @@ function render(el) {
               a browser cannot print one document inside another.</p>
             <p><button type="button" class="btn" data-compile>Compile it</button></p>
             ${saidHtml('compile')}`;
-          pane.appendChild(compileCard);
           compileCard.querySelector('[data-compile]')?.addEventListener('click', async (ev) => {
             const b = ev.currentTarget;
             b.disabled = true;
@@ -502,6 +510,7 @@ function render(el) {
           });
           const notesHost = document.createElement('div');
           pane.appendChild(notesHost);
+          pane.appendChild(compileCard);
           // Private to Eric: stored under `private/`, which is browser-denied
           // in both directions, so it only ever moves through the admin-gated
           // Worker route. The saved html arrives with the advisor state poll
@@ -525,7 +534,7 @@ function render(el) {
         // The next call's plan, built from the queue the chat lanes feed.
         // Re-fetched every time the page opens: the client adds to the list
         // from their side and a stale agenda defeats the point.
-        id: 'agenda', title: 'Agenda', icon: '🗓',
+        id: 'agenda', title: 'Agenda', icon: 'i-cal',
         render: (pane) => paintAgendaPage(pane),
         onShow: (pane) => pane._reload?.(),
       },
@@ -684,11 +693,7 @@ function render(el) {
     ${c.status === 'closed' ? '' : `
     <button type="button" class="btn quiet work-head" data-work-head
       aria-label="Clock in or out of this case">⏱</button>`}
-    <p class="dim small working-line" data-working hidden></p>
-    <div class="doing-row" data-doing-row hidden>
-      <span class="dim small">The client reads:</span>
-      <span class="doing-pills" data-doing-pills></span>
-    </div>`;
+    <p class="dim small working-line" data-working hidden></p>`;
   const strip = el.querySelector('[data-folder] .folder-tabs');
   if (strip) strip.after(head);
   else el.prepend(head);          // no strip is not a reason to lose the clock
@@ -1220,8 +1225,8 @@ function paintDoing() {
     + (current ? '<button type="button" class="pill" data-doing-clear>clear</button>' : '');
   host.querySelectorAll('[data-doing]').forEach((b) => b.addEventListener('click', () =>
     postWork({ doing: b.dataset.doing }).catch((e) => alert(e.message))));
-  host.querySelector('[data-doing-other]')?.addEventListener('click', () => {
-    const typed = prompt('In a few words, what are you doing? The client reads this beside the clock.', current || '');
+  host.querySelector('[data-doing-other]')?.addEventListener('click', async () => {
+    const typed = await ask({ title: 'In a few words, what are you doing?', body: 'The client reads this beside the clock.', okLabel: 'Save', input: { value: current || '' } });
     if (typed === null) return;
     postWork({ doing: typed.trim().slice(0, 80) }).catch((e) => alert(e.message));
   });
@@ -2354,12 +2359,12 @@ function wireChargeCard(card, c) {
       amountCents = input ? cents() : cap;
       if (!Number.isInteger(amountCents) || amountCents < 0) { say('A number of dollars, zero or more.'); return; }
       if (ch.state === 'held' && amountCents > cap) { say(`Up to $${dollars(cap)}, what their card is holding.`); return; }
-      const ask = amountCents === 0 ? 'Take the case at no charge? The hold on their card is released.'
+      const question = amountCents === 0 ? 'Take the case at no charge? The hold on their card is released.'
         : ch.state === 'held' ? `Charge $${dollars(amountCents)} and take the case?`
           : `Send them a payment link for $${dollars(amountCents)}?`;
-      if (!confirm(ask)) return;
+      if (!confirm(question)) return;
     } else {
-      reason = (prompt('Why can\'t you take this one? They read this word for word, and nothing is charged.') || '').trim();
+      reason = ((await ask({ title: 'Why can\'t you take this one?', body: 'They read this word for word, and nothing is charged.', okLabel: 'Decline', danger: true, input: { value: '' } })) || '').trim();
       if (!reason) return;
     }
     b.disabled = true;
@@ -2399,7 +2404,7 @@ function paintOverview(pane) {
     ${chargeUndecided(c.charge) ? chargeCard(c) : ''}
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
-      <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request — not on your calendar</h3>
+      <h3 style="margin:0 0 .3rem; color:var(--orange);">Booking request: not on your calendar</h3>
       <p class="small" style="margin:0 0 .2rem;">They asked for
         <strong>${start ? esc(mtFmt.format(start)) : 'an unknown time'} MST</strong>, paid in full.
         Nothing is reserved until you confirm.</p>
@@ -2417,17 +2422,17 @@ function paintOverview(pane) {
         <strong>$${((Number(c.fullAccessRequest.monthCents) || 0) / 100).toLocaleString()}/mo</strong>.</p>
       <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged and no
         card was taken. Approving sends them a link to start month one at the rate
-        quoted above — the one they were shown when they asked, not today's.
+        quoted above, the one they were shown when they asked, not today's.
         You carry a set number of these at once, which you choose in
         Settings, and if you are full, approving tells you so and asks before
         it goes ahead.</p>
-      <button class="btn" data-full-request="approve">Approve — send the link</button>
+      <button class="btn" data-full-request="approve">Approve: send the link</button>
       <button class="btn quiet" data-full-request="decline">Can't take it</button>
       <p class="error" data-full-request-error hidden></p>
     </div>` : ''}
     ${c.pendingTelehealth?.state === 'requested' ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
-      <h3 style="margin:0 0 .3rem; color:var(--orange);">Telehealth appointment — they want you there</h3>
+      <h3 style="margin:0 0 .3rem; color:var(--orange);">Telehealth appointment: they want you there</h3>
       <p class="small" style="margin:0 0 .2rem;">
         <strong>${esc(mtFmt.format(toDate(c.pendingTelehealth.when)))} MST</strong>
         · ${esc(c.pendingTelehealth.clinicName || '(clinic)')}
@@ -2619,7 +2624,7 @@ function paintOverview(pane) {
             ${[30, 45, 60, 90, 120].map((m) =>
               `<option value="${m}" ${m === 60 ? 'selected' : ''}>${m} minutes</option>`).join('')}
           </select>
-          <p class="dim small" style="margin:.3rem 0 0;">Times are MST. Evenings, weekends and tomorrow are all fair game — the slot is created for this client only and never shows up on the public picker.</p>
+          <p class="dim small" style="margin:.3rem 0 0;">Times are MST. Evenings, weekends and tomorrow are all fair game: the slot is created for this client only and never shows up on the public picker.</p>
         </div>
         <div id="sched-modes" style="margin-top:.6rem;">
           <label class="small" style="display:block;"><input type="radio" name="sched-mode" value="reschedule" checked>
@@ -2781,7 +2786,7 @@ function paintOverview(pane) {
       let amountCents;
       if (action === 'confirm' && heldTele) {
         const cap = Number(p.heldCents) || 0;
-        const typed = prompt(`Charge them how much? Their card is holding $${dollars(cap)}; any amount up to that, or 0 for no charge.`, dollars(cap).replace(/,/g, ''));
+        const typed = await ask({ title: 'Charge them how much?', body: `Their card is holding $${dollars(cap)}; any amount up to that, or 0 for no charge.`, okLabel: 'Charge', input: { value: dollars(cap).replace(/,/g, ''), type: 'text' } });
         if (typed === null) return;
         const n = Math.round(Number(String(typed).replace(/[^0-9.]/g, '')) * 100);
         if (!Number.isInteger(n) || n < 0 || n > cap) { alert(`A number of dollars from 0 to ${dollars(cap)}.`); return; }
@@ -2813,13 +2818,13 @@ function paintOverview(pane) {
       if (decision === 'decline') {
         // His words, verbatim, the same as a case closure: the client reads
         // this and nothing was charged, so it had better say something.
-        reason = (prompt('Why can\'t you take this one? They read this word for word.') || '').trim();
+        reason = ((await ask({ title: 'Why can\'t you take this one?', body: 'They read this word for word.', okLabel: 'Decline', danger: true, input: { value: '' } })) || '').trim();
         if (!reason) return;
       } else {
         // The amount is his (2026-09-06): the quoted month by default, any
         // figure he types, and zero opens Full-Service with no link at all.
         const quoted = Number(c.fullAccessRequest?.firstMonthCents) || 0;
-        const typed = prompt(`First month, in dollars. They were quoted $${dollars(quoted)}; change it to anything, or 0 to open Full-Service at no charge.`, dollars(quoted).replace(/,/g, ''));
+        const typed = await ask({ title: 'First month, in dollars', body: `They were quoted $${dollars(quoted)}; change it to anything, or 0 to open Full-Service at no charge.`, okLabel: 'Continue', input: { value: dollars(quoted).replace(/,/g, ''), type: 'text' } });
         if (typed === null) return;
         const n = Math.round(Number(String(typed).replace(/[^0-9.]/g, '')) * 100);
         if (!Number.isInteger(n) || n < 0) { alert('A number of dollars, zero or more.'); return; }
@@ -3109,6 +3114,10 @@ async function compileCaseFile() {
   said(`Compiled ${rows.length} file${rows.length === 1 ? '' : 's'}. Choose Save to Files in the share sheet to keep the PDF.`);
 }
 
+/** The picker's recording choice. Not a category: a recording is its own kind. */
+const REC_PICK = 'recording';
+const REC_ACCEPT = 'video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm';
+const DOC_ACCEPT = '.pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic';
 function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">
@@ -3118,9 +3127,6 @@ function paintFiles(pane) {
            button is Update. An instruction naming a control that does not
            exist is worse than no instruction. -->
       <p class="dim small">Everything shared on this case, newest day first. Tap 👨‍⚕️ on a file to hand it to the advisor, then press Update on the Read page.</p>
-      <label class="small" style="margin-top:.7rem;">Upload the recording
-        <input type="file" id="up-recording" accept="video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm">
-      </label>
       <!-- ONE PICKER, TWO DECISIONS, IN THE ORDER HE MAKES THEM. He knows what
            the document IS before he goes looking for it, so the category is
            above the file field rather than beside it, and the sentence under
@@ -3130,11 +3136,12 @@ function paintFiles(pane) {
       <label class="small" style="margin-top:.7rem; display:block;">What are you uploading?
         <select id="up-cat" style="margin-left:.35rem;">
           ${UPLOAD_CATEGORIES.map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join('')}
+          <option value="${REC_PICK}">Recording</option>
         </select>
       </label>
       <p class="dim small" id="up-cat-note" style="margin:.3rem 0 .1rem;"></p>
       <label class="small" style="margin-top:.2rem;">Choose the file
-        <input type="file" id="up-report" accept=".pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic">
+        <input type="file" id="up-report" accept="${DOC_ACCEPT}">
       </label>
       <progress id="bar" max="100" value="0" hidden></progress>
       <p class="error" id="err" hidden></p>
@@ -3145,8 +3152,6 @@ function paintFiles(pane) {
           autocomplete="off" style="width:100%; margin-top:.25rem;"></label>
       <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
     </div>`;
-  pane.querySelector('#up-recording').addEventListener('change', (e) =>
-    upload(e.target.files[0], 'recording', 'recording-uploaded'));
   // The search box lives OUTSIDE #files so repaints never eat a keystroke.
   // A fresh pane always starts unfiltered.
   fileQuery = '';
@@ -3164,7 +3169,15 @@ function paintFiles(pane) {
   // with, so the two can never say different things.
   const cat = pane.querySelector('#up-cat');
   const note = pane.querySelector('#up-cat-note');
+  const fileEl = pane.querySelector('#up-report');
   const sayWhat = () => {
+    // The recording had a picker of its own above this one. It is a choice in
+    // this one now, after his own types in his order so the picker still
+    // opens on Report: one picker, and the file field takes audio and video
+    // only while it is chosen.
+    const rec = cat.value === REC_PICK;
+    fileEl.accept = rec ? REC_ACCEPT : DOC_ACCEPT;
+    if (rec) { note.textContent = 'Starts the 7-day report clock.'; return; }
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
     note.textContent = c.action === 'report-uploaded'
       ? 'Marks the case delivered and starts their 48 hours to ask about it.'
@@ -3177,9 +3190,12 @@ function paintFiles(pane) {
     // client. One sentence says where the file goes.
     const wrap = cat.closest('label');
     if (wrap) wrap.hidden = true;
+    cat.value = UPLOAD_CATEGORIES[0].id;
+    fileEl.accept = DOC_ACCEPT;
     note.textContent = 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
   }
-  pane.querySelector('#up-report').addEventListener('change', (e) => {
+  fileEl.addEventListener('change', (e) => {
+    if (cat.value === REC_PICK) { upload(e.target.files[0], 'recording', 'recording-uploaded'); return; }
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
     upload(e.target.files[0], 'report', c.action, c.id);
   });
@@ -3233,7 +3249,7 @@ async function saveLink() {
           ? 'Saved on the case. Their page shows the number I call YOU at, not this one, so this is a note to yourself.'
           : 'Cleared. Their page was never showing this, so nothing changed for them.')
         : (value
-          ? 'Saved. Your client now sees a "Join the video call" button on their case page.'
+          ? 'Saved. Your client sees a "Join the video call" button on their case page until the call ends.'
           : 'Cleared. Their page is back to saying the join link appears there before the call.'));
     }
     refreshOverview();
@@ -4104,7 +4120,7 @@ function followUpAvailable(c) {
 function followUpUnavailableReason(c) {
   if (!c.addOnFollowUp) return 'not purchased';
   if (c.followUp) return 'already scheduled';
-  return 'expired — use Charge at 0% to honor it';
+  return 'expired: use Charge at 0% to honor it';
 }
 
 /**
@@ -4236,7 +4252,7 @@ function infoBar(c, mtFmt, start, due) {
   {
     const ci = checkInState(c);
     if (ci?.next) row('CHECK-IN', `${fmt.format(ci.next)} MST`, 'var(--cyan)');
-    else if (ci?.due) row('CHECK-IN', `<strong>DUE — ${ci.days}d since the last call</strong>`, 'var(--orange)');
+    else if (ci?.due) row('CHECK-IN', `<strong>DUE: ${ci.days}d since the last call</strong>`, 'var(--orange)');
   }
   if (c.pendingTelehealth?.state === 'requested')
     row('TELEHEALTH', `<strong>AWAITING YOUR CONFIRM</strong> · ${fmt.format(toDate(c.pendingTelehealth.when))} MST · ${esc(c.pendingTelehealth.clinicName || '')}`,
@@ -5297,14 +5313,15 @@ function paintAppeals(pane) {
 
     pane.querySelector('[data-appeal-write]')?.addEventListener('click', (e) =>
       post({ action: 'appeal-draft', appeal: facts() }, e.currentTarget));
-    pane.querySelector('[data-appeal-revise]')?.addEventListener('click', (e) => {
-      const what = prompt('What should change about the letter?');
+    pane.querySelector('[data-appeal-revise]')?.addEventListener('click', async (e) => {
+      const btn = e.currentTarget;
+      const what = await ask({ title: 'What should change about the letter?', okLabel: 'Revise', input: { value: '' } });
       if (what === null) return;
       post({
         action: 'appeal-draft', revise: true,
         base: pane.querySelector('[data-appeal-text]')?.value || '',
         appeal: { ...facts(), instruction: what.slice(0, 1000) },
-      }, e.currentTarget);
+      }, btn);
     });
     pane.querySelector('[data-appeal-clear]')?.addEventListener('click', (e) => {
       if (confirm('Discard this letter?')) post({ action: 'clear-appeal' }, e.currentTarget);
@@ -5436,7 +5453,7 @@ function paintCallNotes(host) {
           <div class="row"><h3 style="margin:0;">🔁 Revise the notes</h3>
             <button class="btn quiet" data-x>Cancel</button></div>
           <p class="dim small" style="margin:.2rem 0 .5rem;">What should change?
-            Add a resource, cut a step, sharpen the pitch — say it plainly.</p>
+            Add a resource, cut a step, sharpen the pitch: say it plainly.</p>
           <textarea class="edit-box" data-inst rows="3" maxlength="1000" style="min-height:4rem;"></textarea>
           <div class="actions" style="margin-top:.7rem;"><button class="btn" data-go>Revise it</button></div>
         </div>`;

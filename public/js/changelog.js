@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.37';
+export const VERSION = '7.38';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '7.37';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS LETTER, A CLEAR CANCEL, CHAT SEARCH, ONE LOOK, TIGHTENED (Eric,
+    // 2026-10-15: the chat page in his words, the same-day guarantee, a
+    // clear way to cancel, search in every chat, the same look everywhere,
+    // and "tighten things up"). Admin only.
+    version: '7.38',
+    quiet: true,
+    client: [],
+    admin: [
+      'The chat page is your letter, word for word, with the same day promise and the fraction of a fraction comparison above it.',
+      'A client can cancel 24/7 Priority Chat from the menu at the top right. It opens Stripe\'s own cancel step, and the chat stays open to the end of the month they paid for.',
+      'Every chat, yours and theirs, has a search. Matching words light up in a list, a tap jumps to that message, a down arrow goes back to the newest, and a tap anywhere else closes it.',
+      'Every page now has the same black look with the cyan and violet glow, including the chat, the files and your side.',
+      'Repeated sections and lines were cut so each thing is said once, and nothing offers a service that is closed. Book links, case extras and paid chat unlocks come back on their own when you send /open.',
+    ],
+  },
   {
     // ONE PACKAGE, ONE PAGE (Eric, 2026-10-15: "it should go to a page
     // dedicated to what the chat is. Same with the other two options. They

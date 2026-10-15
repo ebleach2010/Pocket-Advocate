@@ -391,7 +391,12 @@ const slab = (src, from, to) => {
   for (const [rel, phrase] of [
     ['public/js/tier-terms.js', 'I only take on a limited number of these at once'],
     ['public/js/case.js', 'I only carry a limited'],
-    ['public/services.html', 'I take a limited number of these at a time'],
+    // RE-PINNED 2026-10-15 (v7.38, the tighten audit): the Services card's copy of the whole
+    // Full-Service page went, replaced by the home's one line; the limit is said on the
+    // Full-Service page itself, which paints the handsOff copy pinned on the next line.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.38): package-page.js's full page pointed at the case copy (`full: 'case'`) made this read
+    //   FAIL  C16b public/js/package-page.js still says there IS a limit, without naming it
+    ['public/js/package-page.js', "full: 'handsOff'"],
     ['public/js/service-about.js', 'I carry a limited number of these at a time'],
   ]) {
     ck(`C16b ${rel} still says there IS a limit, without naming it`,
