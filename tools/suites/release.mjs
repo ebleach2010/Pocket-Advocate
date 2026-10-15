@@ -150,6 +150,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // case is, that nothing in it leaves the browser, that Exit wipes it, and that the numbers tab is gone.
   // NEGATIVE CONTROL (run 2026-10-15, v7.42): changelog.js's VERSION left at '7.41' made this read
   //   FAIL  R1 both versions read 7.42 with the new tag, the 7.42 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.43): both versions read 7.43 with the advocates-ground tag, and the 7.43 entry says he is
+  // advocate number one, everything he has is marked his, nothing moved, and every case action is checked on the server.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.43): the worker's BUILD_TAG left at the preview tag made this read
+  //   FAIL  R1 both versions read 7.43 with the new tag, the 7.43 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry743 = (CL.match(/\{\n\s+\/\/ MANY ADVOCATES, THE GROUNDWORK \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry742 = (CL.match(/\{\n\s+\/\/ PREVIEW A CASE, AND THE NUMBERS TAB OFF \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry741 = (CL.match(/\{\n\s+\/\/ THE \+, AND THE CARDS BY STATE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry740 = (CL.match(/\{\n\s+\/\/ TWO WEEKS, AND THE NUMBERS PULLED UP \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
@@ -166,9 +171,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.42 with the new tag, the 7.42 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.42';/.test(CL) && /const VERSION = '7\.42';/.test(W) && /const BUILD_TAG = 'v2026-10-15-preview';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.42'
+  check('R1 both versions read 7.43 with the new tag, the 7.43 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.43';/.test(CL) && /const VERSION = '7\.43';/.test(W) && /const BUILD_TAG = 'v2026-10-15-advocates-ground';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.43'
+    && /version: '7\.43',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry743)
+    && /You are advocate number one/.test(entry743) && /Nothing moved, and nothing looks different/.test(entry743)
+    && /checks, on the server, that whoever is asking works that case/.test(entry743)
+    && !DASH.test(entry743) && !HARD.some((re) => re.test(entry743))
     && /version: '7\.42',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry742)
     && /Preview a case sits at the top left of the home/.test(entry742) && /Nothing they do leaves their browser/.test(entry742)
     && /The numbers tab at the foot of the home is gone/.test(entry742)

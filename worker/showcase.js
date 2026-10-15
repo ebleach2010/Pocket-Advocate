@@ -90,6 +90,8 @@ export async function buildShowcase(env, { adminUid } = {}) {
   const lastFromJoe = [...rows].reverse().find((r) => r.data.role === 'client')?.data.ts || now;
   await patchDoc(env, `cases/${id}`, {
     showcase: true,
+    // The showcase is the advocate's who built it (2026-10-15).
+    advocateId: eric,
     clientUid: null,
     clientEmail: JOE.email,
     clientName: JOE.name,

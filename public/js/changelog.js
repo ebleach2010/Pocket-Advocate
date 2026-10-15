@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.42';
+export const VERSION = '7.43';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.42';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // MANY ADVOCATES, THE GROUNDWORK (Eric, 2026-10-15: "We are expanding
+    // Pocket Advocate from a single-advocate platform into a multi-advocate
+    // platform for independent 1099 patient advocates." And: "Enforce this
+    // server-side, not just in the UI."). Admin only.
+    version: '7.43',
+    quiet: true,
+    client: [],
+    admin: [
+      'Groundwork for more advocates. You are advocate number one, and every case, chat line, invitation and calendar hour you have is marked as yours. Nothing moved, and nothing looks different.',
+      'Every case action now checks, on the server, that whoever is asking works that case. Today that is only you.',
+    ],
+  },
   {
     // PREVIEW A CASE, AND THE NUMBERS TAB OFF (Eric, 2026-10-15: "So
     // clients can see the features before they commit" and "remove the

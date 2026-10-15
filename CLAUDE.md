@@ -184,6 +184,24 @@ something seeable from the client side, it gets secretly added to this."
   on the preview: "This showcase suite should exhibit every feature and be
   fully interactable.")
 
+## Many advocates: every case route checks whose case it is (Eric, 2026-10-15)
+
+"Advocates must never be able to access another advocate's cases or data.
+Enforce this server-side, not just in the UI." And: "One advocate cannot
+access another advocate's data by changing IDs or URLs."
+
+- A route about one case takes `requireStaff` (the admin, or an active
+  advocate), loads the case, and asks `staffSees(staff, data, env)` BEFORE it
+  reads anything private or writes anything. Not theirs is the same 404 a
+  stranger gets. A route about the platform as a whole keeps `requireAdmin`.
+- The shared thread helpers (threadContext, chatContext, notify, uploaded,
+  the pause gate) ask `worksThread`; pings go to the case's own advocate
+  (`advocateIdOf`), never to "every admin".
+- A missing `advocateId` is Eric's, never nobody's. Everything new (a case,
+  invitation, slot, chat line) is stamped with its advocate where it is made.
+- A new route that takes an advocate joins `STAFF_ROUTES` in
+  `tools/suites/advocates.mjs` in the same commit; D1 fails until it does.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin

@@ -24,6 +24,8 @@ const SALES = f('public/js/sales-closed.js');
 const DEMO = f('public/js/demo/api.js');
 const ADM = await import(pathToFileURL(j(ROOT, 'public/js/admin-invites.js')).href);
 const CHARGE = await import(pathToFileURL(j(ROOT, 'worker/charge.js')).href);
+// Whose case (2026-10-15): the real helper, so the lifted routes stamp the advocate.
+const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
 const DASH = new RegExp('[\\u2013\\u2014]');
 
 const results = [];
@@ -98,6 +100,7 @@ function world({ admin = { uid: 'eric' }, user = { uid: 'u-lead' }, profiles = {
     HOLD_INTENT: CHARGE.HOLD_INTENT,
     HOLD_META: CHARGE.HOLD_META,
     heldChargeOf: () => ({ state: 'held' }),
+    advocateIdOf: STAFF.advocateIdOf,
     whenHtml: () => '<p>when</p>',
     homeScreenTips: () => '',
     console: { warn() {}, error() {} },
@@ -112,7 +115,7 @@ function world({ admin = { uid: 'eric' }, user = { uid: 'u-lead' }, profiles = {
   const ccNames = names.filter((n) => n !== 'createCaseFromSession');
   const create = new Function(...ccNames, `${CONSTS}\n${FNS[FNS.length - 1]}\nreturn createCaseFromSession;`)(...ccNames.map((n) => deps[n]));
   const req = (body) => ({ json: async () => body });
-  return { api, create, store, log, req, env: { PUBLIC_BASE_URL: 'https://app.test', ADMIN_EMAIL: 'eric@x.test' } };
+  return { api, create, store, log, req, env: { PUBLIC_BASE_URL: 'https://app.test', ADMIN_EMAIL: 'eric@x.test', ADMIN_UID: 'eric' } };
 }
 
 console.log('\n--- A. the lifts ---');

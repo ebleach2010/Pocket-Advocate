@@ -13,10 +13,12 @@
 // (L63-L66), beside the harness that already drives that route.
 import { readFileSync } from 'node:fs';
 import { dirname as d, join as j } from 'node:path';
-import { fileURLToPath as f2 } from 'node:url';
+import { fileURLToPath as f2, pathToFileURL } from 'node:url';
 
 const ROOT = j(d(f2(import.meta.url)), '..', '..');
 const f = (p) => readFileSync(j(ROOT, p), 'utf8');
+// Who works a case (2026-10-15): the real check, so the lifted route runs it.
+const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
 const WORKER = f('worker/index.js');
 const ADMIN = f('public/js/admin-case.js');
 const BOOK = f('public/js/book.js');
@@ -77,13 +79,15 @@ const run = (caseData = { clientUid: 'client1', clientName: 'Dana Reyes' }, admi
   const written = [];
   const deps = {
     requireAdmin: async () => (admin ? { uid: 'eric' } : null),
+    requireStaff: async () => (admin ? { uid: 'eric', isAdmin: true, advocateId: 'eric' } : null),
+    staffSees: STAFF.staffSees,
     json: (obj, code = 200) => ({ code, obj }),
     getDoc: async (env, path) => (path === 'cases/c1' ? { id: 'c1', data: caseData } : null),
     patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); return true; },
   };
   // eslint-disable-next-line no-new-func
   const fn = new Function('deps', `
-    const { requireAdmin, json, getDoc, patchDoc } = deps;
+    const { requireAdmin, requireStaff, staffSees, json, getDoc, patchDoc } = deps;
     ${phoneRe}
     ${cleanPhoneSrc}
     ${cleanAddressSrc}

@@ -49,8 +49,10 @@
 
 import { WorkflowEntrypoint } from 'cloudflare:workers';
 import { requireUser } from './firebase-auth.js';
+// Who works a case: the admin, or the active advocate it belongs to (2026-10-15).
+import { ADVOCATE_ROLE, advocateIdOf, staffFrom, staffSees, worksThread } from './staff.js';
 import { mintCustomToken, getAccessToken } from './google-auth.js';
-import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, listDocs, tryGet, tryQuery, READ_FAILED, readFailedError } from './firestore.js';
+import { getDoc, patchDoc, deleteDoc, queryDocs, batchCreate, batchDelete, batchWrite, listDocs, tryGet, tryQuery, READ_FAILED, readFailedError } from './firestore.js';
 import { deleteFile, objectMeta, patchObjectMeta, putFile, listFiles, mediaFetch } from './storage.js';
 import { buildShowcase, wipeCase } from './showcase.js';
 import {
@@ -1487,6 +1489,11 @@ export default {
       ctx.waitUntil(fixLogTimes(env));
       ctx.waitUntil(clearOpenSlots(env));
     }
+    // Its own minute, away from the quarter hour's crowd: the one run that
+    // matters lists and writes every case, slot and chat line, and an
+    // invocation's outside calls are shared by everything in it. Every fire
+    // after that one is a single read.
+    if (minute % 15 === 7) ctx.waitUntil(stampAdvocates(env));
 
     // NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420. No scans
     // unless I manually do it. No auto token burn anywhere."). This firing
@@ -2001,6 +2008,81 @@ async function fixLogTimes(env) {
 }
 
 /**
+ * MANY ADVOCATES, THE STAMP (Eric, 2026-10-15: "My existing account should
+ * remain the admin account and also become the first advocate account." And:
+ * "My existing cases should automatically be assigned to my account during
+ * migration.")
+ *
+ * His record goes on advocates/{his uid}, created once and never overwritten,
+ * and every case, chat subscription, invitation, slot and waitlist entry with
+ * no advocateId gets his. Nothing is moved, renamed or deleted, and a missing
+ * field already reads as his everywhere (advocateIdOf), so this only makes the
+ * data say what the code already assumes. The same claim and finish marker
+ * every migration here uses; batched, because an invocation gets fifty outside
+ * calls in all and a write per document would spend them.
+ */
+const ADVOCATE_STAMP_COLLECTIONS = ['cases', 'subscriptions', 'invites', 'availability', 'waitlist'];
+
+function ownerAdvocateRecord(env, profile, now) {
+  return {
+    uid: env.ADMIN_UID,
+    name: String(profile?.name || '').trim(),
+    email: String(env.ADMIN_EMAIL || '').trim().toLowerCase(),
+    active: true,
+    // The owner: no commission comes off his own work, and he is not a line
+    // on the payroll he runs.
+    owner: true,
+    commissionPct: 100,
+    payroll: false,
+    primarySpecialty: '',
+    specialties: [],
+    credentials: '',
+    bio: '',
+    headshotPath: null,
+    acceptingNew: true,
+    tz: 'America/Boise',
+    // His own private reading is his, at no charge, exactly as it was.
+    advisor: { optedIn: true, enabled: true, fee: false },
+    createdAt: now,
+    onboardedAt: null,
+  };
+}
+
+async function stampAdvocates(env) {
+  const MARKER = 'migrations/advocates-2026-10-15';
+  if (!env.ADMIN_UID) return;
+  const m = await getDoc(env, MARKER);
+  if (m?.data.finishedAt) return;
+  if (m && Date.now() - new Date(m.data.startedAt).getTime() < 10 * 60_000) return;
+  const claimed = m
+    ? await patchDoc(env, MARKER, { startedAt: new Date() }, { ifUpdateTime: m.updateTime })
+    : await patchDoc(env, MARKER, { startedAt: new Date() }, { mustNotExist: true });
+  if (!claimed) return;
+  try {
+    const now = new Date();
+    const me = await getDoc(env, `users/${env.ADMIN_UID}`).catch(() => null);
+    // mustNotExist: a record he has already filled in is never replaced.
+    await patchDoc(env, `advocates/${env.ADMIN_UID}`, ownerAdvocateRecord(env, me?.data, now), { mustNotExist: true });
+    const counts = {};
+    for (const coll of ADVOCATE_STAMP_COLLECTIONS) {
+      const rows = await listDocs(env, coll, { pageSize: 300, all: true });
+      const writes = rows
+        .filter((r) => !(typeof r.data?.advocateId === 'string' && r.data.advocateId))
+        .map((r) => ({ path: `${coll}/${r.id}`, data: { advocateId: env.ADMIN_UID }, mask: ['advocateId'] }));
+      let landed = 0;
+      for (let i = 0; i < writes.length; i += 500)
+        landed += (await batchWrite(env, writes.slice(i, i + 500))).filter(Boolean).length;
+      counts[coll] = landed;
+    }
+    await patchDoc(env, MARKER, { startedAt: new Date(), finishedAt: new Date(), counts });
+  } catch (err) {
+    // Unfinished: the next fire past the ten minutes takes it over, and the
+    // stamp is idempotent (a document that has one is skipped).
+    console.error('stamp advocates:', err.message || err);
+  }
+}
+
+/**
  * Eric, 2026-08-30: "Clear my calendar of any open slots." One shot, run by
  * the cron the way every migration runs: every open slot goes, whatever its
  * date. Booked and held appointments are untouched, and the closure switch
@@ -2154,7 +2236,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-preview';
+const BUILD_TAG = 'v2026-10-15-advocates-ground';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2162,7 +2244,7 @@ const BUILD_TAG = 'v2026-10-15-preview';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.42';
+const VERSION = '7.43';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2461,7 +2543,8 @@ async function pausedForClient(request, env, url) {
   const user = await requireUser(request, env).catch(() => null);
   if (!user) return false;
   const profile = await getDoc(env, `users/${user.uid}`).catch(() => null);
-  return profile?.data?.role !== 'admin';
+  // The case's own advocate is never held either (2026-10-15); anyone else is.
+  return !(await worksThread(env, user.uid, profile, c.data, getDoc));
 }
 
 // THERE IS NO APPEAL COUNT ANY MORE. The scope note used to promise two
@@ -2489,13 +2572,13 @@ async function pausedForClient(request, env, url) {
  * client can read whole through the SDK whatever the page chooses to paint.
  */
 async function handleHold(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
-  if (!doc) return json({ error: 'Not found' }, 404);
+  if (!doc || !staffSees(staff, doc.data, env)) return json({ error: 'Not found' }, 404);
   const hold = doc.data.hold || {};
   const want = body?.on === true;
 
@@ -2599,8 +2682,8 @@ async function handleHold(request, env) {
  * correctly, as him only wanting reviews he liked.
  */
 async function handleCloseCase(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
@@ -2608,7 +2691,7 @@ async function handleCloseCase(request, env) {
   if (!reason)
     return json({ error: 'Write the reason for closing. The client reads it word for word.' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
-  if (!doc) return json({ error: 'Not found' }, 404);
+  if (!doc || !staffSees(staff, doc.data, env)) return json({ error: 'Not found' }, 404);
   if (doc.data.status === 'closed') return json({ ok: true, alreadyClosed: true });
   await patchDoc(env, `cases/${caseId}`, {
     status: 'closed',
@@ -2655,13 +2738,13 @@ async function handleCloseCase(request, env) {
  * reads word for word, and gives the slot back.
  */
 async function handleCaseCharge(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const c = await getDoc(env, `cases/${caseId}`);
-  if (!c) return json({ error: 'Not found' }, 404);
+  if (!c || !staffSees(staff, c.data, env)) return json({ error: 'Not found' }, 404);
   if (c.data.self || c.data.showcase) return json({ error: 'Nobody paid for this case.' }, 409);
   const now = new Date();
   const d = chargeDecision(c.data.charge, {
@@ -3386,6 +3469,11 @@ async function activateSubscription(env, session) {
   if (existing === READ_FAILED) throw readFailedError('The subscription could not be read; Stripe will retry.');
   const email = await resolveClientEmail(env, uid, session.metadata.email, session);
   await patchDoc(env, `subscriptions/${uid}`, {
+    // Whose chat line this is (2026-10-15): the advocate the checkout named,
+    // else the one it already had, else his. This write replaces the whole
+    // document, so the field is carried on every activation.
+    advocateId: (typeof session.metadata.advocateId === 'string' && /^[\w-]{1,64}$/.test(session.metadata.advocateId)
+      && session.metadata.advocateId) || advocateIdOf(existing?.data, env),
     stripeCustomerId: session.customer || null,
     subscriptionId: session.subscription || null,
     status: 'active',
@@ -3669,6 +3757,12 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   const isRequest = !m.slotId && !!m.requestedStart && !inviteId;
   const start = (isRequest || inviteId) ? new Date(m.requestedStart) : slot ? new Date(slot.data.start) : null;
   const caseId = inviteId || crypto.randomUUID();
+  // WHOSE CASE THIS IS (2026-10-15). The checkout says, from the advocate the
+  // client booked or the invitation came from; failing that the slot says,
+  // from whose calendar it was; a session from before advocates says
+  // neither, and the case is his.
+  const advocateId = (typeof m.advocateId === 'string' && /^[\w-]{1,64}$/.test(m.advocateId) && m.advocateId)
+    || advocateIdOf(slot?.data, env);
 
   // The rate as it stands at the moment this case is created. Read once and
   // used twice: written onto the case as what this client bought at, and, one
@@ -3683,6 +3777,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
     env,
     `cases/${caseId}`,
     {
+      advocateId,
       clientUid: m.uid,
       clientEmail: email,
       clientName: m.name || null,
@@ -3925,15 +4020,20 @@ async function handleNotify(request, env, ctx) {
   if ((kind !== 'case' && kind !== 'sub') || !id) return json({ error: 'Bad request' }, 400);
 
   const profile = await getDoc(env, `users/${user.uid}`);
-  const isAdmin = profile?.data.role === 'admin';
+  // The advocate side of this thread (2026-10-15): the admin on every one, an
+  // advocate on their own only. Asked once the thread is loaded, below.
+  let isAdmin = false;
 
   let clientUid; // the non-admin side of the thread
   let adminLink;
   let clientLink;
   let threadClientName = '';
+  let thread;
   if (kind === 'case') {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return json({ error: 'Not found' }, 404);
+    thread = doc.data;
+    isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
     // His own case: nobody to tell, and nothing to stamp. The message is his
     // own note to himself; the 💬 badge and the admin pings stay dark. The
     // read still hears it (2026-09-03): his entries ARE the case material,
@@ -3941,7 +4041,7 @@ async function handleNotify(request, env, ctx) {
     if (doc.data.self) {
       // Only he can nudge his own case (audit, 2026-09-03): a stranger with
       // the id was answered ok here and could queue a read at will.
-      if (!isAdmin) return json({ error: 'Not your thread' }, 403);
+      if (!isAdmin) return json({ error: 'Not found' }, 404);
       // Nothing is booked for a read here (2026-09-13); his tap reads it.
       return json({ ok: true, self: true });
     }
@@ -3952,6 +4052,8 @@ async function handleNotify(request, env, ctx) {
   } else {
     const sub = await getDoc(env, `subscriptions/${id}`);
     if (!sub) return json({ error: 'Not found' }, 404);
+    thread = sub.data;
+    isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
     clientUid = id;
     threadClientName = sub.data.name || sub.data.clientName || '';
     adminLink = `/admin-chats.html?sub=${id}`;
@@ -3982,14 +4084,13 @@ async function handleNotify(request, env, ctx) {
     const senderName = firstName(profile?.data.name)
       || firstName(threadClientName)
       || 'A client';
-    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
-    for (const a of admins) {
-      await notifyUser(env, a.id, {
-        title: 'Pocket Advocate',
-        body: `${senderName} sent you a message.`,
-        link: adminLink,
-      });
-    }
+    // The advocate this thread belongs to, and only them (2026-10-15). On
+    // every thread that existed before advocates, that is him.
+    await notifyUser(env, advocateIdOf(thread, env), {
+      title: 'Pocket Advocate',
+      body: `${senderName} sent you a message.`,
+      link: adminLink,
+    });
   } else if (isAdmin) {
     // Eric wrote. His side is folded in at his next tap (2026-09-13).
     await notifyUser(env, clientUid, {
@@ -3998,7 +4099,7 @@ async function handleNotify(request, env, ctx) {
       link: clientLink,
     });
   } else {
-    return json({ error: 'Not your thread' }, 403);
+    return json({ error: 'Not found' }, 404);
   }
   return json({ ok: true });
 }
@@ -4083,24 +4184,32 @@ async function threadContext(env, user, kind, id) {
     return { error: 'Bad request', code: 400 };
 
   const profile = await getDoc(env, `users/${user.uid}`);
-  const isAdmin = profile?.data.role === 'admin';
 
   let clientUid;
   let link;
+  let thread;
   if (kind === 'case') {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return { error: 'Not found', code: 404 };
+    thread = doc.data;
     clientUid = doc.data.clientUid;
     link = `/case.html?id=${id}`;
   } else {
     const sub = await getDoc(env, `subscriptions/${id}`);
     if (!sub) return { error: 'Not found', code: 404 };
+    thread = sub.data;
     clientUid = id;
     link = '/subscription.html';
   }
+  // The advocate side of the thread: the admin on every one, an advocate on
+  // their own only (2026-10-15). The name stays isAdmin because every caller
+  // already branches on it to mean exactly that side.
+  const isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
   // Membership, not merely authentication: being signed in is not permission
-  // to touch a stranger's thread.
-  if (!isAdmin && user.uid !== clientUid) return { error: 'Not your thread', code: 403 };
+  // to touch a stranger's thread. Not theirs is the same 404 as a thread that
+  // is not there (2026-10-15): "One advocate cannot access another advocate's
+  // data by changing IDs or URLs", nor learn that an id they guessed is real.
+  if (!isAdmin && user.uid !== clientUid) return { error: 'Not found', code: 404 };
 
   return { clientUid, link, isAdmin, parent: kind === 'case' ? 'cases' : 'subscriptions' };
 }
@@ -4110,24 +4219,32 @@ async function chatContext(env, user, kind, id, msgId) {
     return { error: 'Bad request', code: 400 };
 
   const profile = await getDoc(env, `users/${user.uid}`);
-  const isAdmin = profile?.data.role === 'admin';
 
   let clientUid;
   let link;
+  let thread;
   if (kind === 'case') {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return { error: 'Not found', code: 404 };
+    thread = doc.data;
     clientUid = doc.data.clientUid;
     link = `/case.html?id=${id}`;
   } else {
     const sub = await getDoc(env, `subscriptions/${id}`);
     if (!sub) return { error: 'Not found', code: 404 };
+    thread = sub.data;
     clientUid = id;
     link = '/subscription.html';
   }
+  // The advocate side of the thread: the admin on every one, an advocate on
+  // their own only (2026-10-15). The name stays isAdmin because every caller
+  // already branches on it to mean exactly that side.
+  const isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
   // Membership, not merely authentication: being signed in is not permission
-  // to touch a stranger's thread.
-  if (!isAdmin && user.uid !== clientUid) return { error: 'Not your thread', code: 403 };
+  // to touch a stranger's thread. Not theirs is the same 404 as a thread that
+  // is not there (2026-10-15): "One advocate cannot access another advocate's
+  // data by changing IDs or URLs", nor learn that an id they guessed is real.
+  if (!isAdmin && user.uid !== clientUid) return { error: 'Not found', code: 404 };
 
   return {
     clientUid, link, isAdmin,
@@ -4284,8 +4401,8 @@ async function handleUploaded(request, env) {
   if (!doc) return json({ error: 'Not found' }, 404);
   const clientUid = kind === 'case' ? doc.data.clientUid : id;
   const profile = await getDoc(env, `users/${user.uid}`);
-  const isAdmin = profile?.data.role === 'admin';
-  if (!isAdmin && user.uid !== clientUid) return json({ error: 'Not your case' }, 403);
+  const isAdmin = await worksThread(env, user.uid, profile, doc.data, getDoc);
+  if (!isAdmin && user.uid !== clientUid) return json({ error: 'Not found' }, 404);
 
   // No read is booked here any more (2026-09-13): a file that lands is
   // read when he taps Update, and not before.
@@ -4307,14 +4424,12 @@ async function handleUploaded(request, env) {
         ? `${names.length} files: ${names.join(', ').slice(0, 120)}`
         : 'a file';
     const link = kind === 'case' ? `/admin-case.html?id=${id}` : `/admin-chats.html?id=${id}`;
-    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5);
-    for (const a of admins) {
-      await notifyUser(env, a.id, {
-        title: 'Pocket Advocate',
-        body: `${who} uploaded ${what}`,
-        link,
-      }).catch(() => { /* the file is up either way */ });
-    }
+    // Their advocate, and only them (2026-10-15).
+    await notifyUser(env, advocateIdOf(doc.data, env), {
+      title: 'Pocket Advocate',
+      body: `${who} uploaded ${what}`,
+      link,
+    }).catch(() => { /* the file is up either way */ });
   }
   return json({ ok: true });
 }
@@ -5008,11 +5123,20 @@ async function customMilestoneKinds(env) {
     && validPillColor(k.color));
 }
 async function handleMilestones(request, env, url) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
   const id = String(body?.caseId || url.searchParams.get('caseId') || '');
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad request' }, 400);
+  // MANY ADVOCATES (2026-10-15): the case is loaded and its advocate checked
+  // before anything private under it is read or written. Not theirs is the
+  // same 404 as a case that is not there.
+  const owner = await getDoc(env, `cases/${id}`).catch(() => null);
+  if (!owner || !staffSees(staff, owner.data, env)) return json({ error: 'Not found' }, 404);
+  // The types are his, shared by every case on the platform: an advocate
+  // uses them, and only he adds or removes one.
+  if (String(body?.action || '').startsWith('kind-') && !staff.isAdmin)
+    return json({ error: 'Only the admin can change the list of types.' }, 403);
   const coll = `cases/${id}/private/milestones/items`;
 
   if (request.method === 'GET') {
@@ -5079,11 +5203,20 @@ async function handleMilestones(request, env, url) {
 }
 
 async function handleClinicCalls(request, env, url) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = request.method === 'POST' ? await request.json().catch(() => null) : null;
   const id = String(body?.caseId || url.searchParams.get('caseId') || '');
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad request' }, 400);
+  // MANY ADVOCATES (2026-10-15): the case is loaded and its advocate checked
+  // before anything private under it is read or written. Not theirs is the
+  // same 404 as a case that is not there.
+  const owner = await getDoc(env, `cases/${id}`).catch(() => null);
+  if (!owner || !staffSees(staff, owner.data, env)) return json({ error: 'Not found' }, 404);
+  // The types are his, shared by every case on the platform: an advocate
+  // uses them, and only he adds or removes one.
+  if (String(body?.action || '').startsWith('kind-') && !staff.isAdmin)
+    return json({ error: 'Only the admin can change the list of types.' }, 403);
   const coll = `cases/${id}/private/clinicCalls/items`;
 
   if (request.method === 'GET') {
@@ -5167,7 +5300,7 @@ async function handleClinicCalls(request, env, url) {
     // Both reads together, because the second costs nothing beside the first.
     const [c, profile] = await Promise.all([
       getDoc(env, `cases/${id}`).catch(() => null),
-      getDoc(env, `users/${admin.uid}`).catch(() => null),
+      getDoc(env, `users/${staff.uid}`).catch(() => null),
     ]);
     const notice = workLogNotice(kind, c?.data, advocateName(profile), kindLabel);
     if (notice) {
@@ -5422,12 +5555,12 @@ const FILING_CATEGORIES = ['report', 'callsummary', 'visitfollowup',
  * cannot be a rename, and why this is a merge rather than a replace.
  */
 async function handleFileMeta(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = (await request.json().catch(() => null)) || {};
   const kind = body.kind === 'sub' ? 'sub' : 'case';
   const id = String(body.id || '');
-  const ctx = await threadContext(env, admin, kind, id);
+  const ctx = await threadContext(env, staff, kind, id);
   if (ctx.error) return json({ error: ctx.error }, ctx.code);
 
   const path = String(body.path || '');
@@ -6296,11 +6429,16 @@ async function handleLedger(request, env) {
  * 30 seconds while open and visible; seconds:0 just reads the total back.
  */
 async function handleChatTime(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => null);
   const id = String(body?.id || '');
   if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
+  // MANY ADVOCATES (2026-10-15): the case is loaded and its advocate checked
+  // before anything private under it is read or written. Not theirs is the
+  // same 404 as a case that is not there.
+  const owner = await getDoc(env, `cases/${id}`).catch(() => null);
+  if (!owner || !staffSees(staff, owner.data, env)) return json({ error: 'Not found' }, 404);
   const seconds = Math.max(0, Math.min(120, Number(body?.seconds) || 0));
   // Locked increment: chat open on the phone and the desktop at once meant
   // two read-modify-writes racing, and the loser's 30 seconds vanished from
@@ -6853,8 +6991,8 @@ async function handleUpgradeCheckout(request, env) {
  */
 async function handleFullRequestDecision(request, env) {
   // 404, not 403, like every other admin route in this file.
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
@@ -6863,7 +7001,7 @@ async function handleFullRequestDecision(request, env) {
   if (!decision) return json({ error: 'Bad request' }, 400);
 
   const c = await getDoc(env, `cases/${caseId}`);
-  if (!c) return json({ error: 'Not found' }, 404);
+  if (!c || !staffSees(staff, c.data, env)) return json({ error: 'Not found' }, 404);
   const req = c.data.fullAccessRequest;
   if (req?.state !== 'pending') return json({ error: 'There is no request waiting.' }, 409);
 
@@ -7481,15 +7619,15 @@ async function confirmTelehealthPurchase(env, session, { held = null } = {}) {
  * pattern as a duplicate payment. Refunds are his tap, never automatic.
  */
 async function handleTelehealthDecide(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const caseId = typeof body?.caseId === 'string' ? body.caseId : '';
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const action = body?.action;
   if (!['confirm', 'deny'].includes(action)) return json({ error: 'Bad action' }, 400);
   const c = await getDoc(env, `cases/${caseId}`);
-  if (!c) return json({ error: 'Not found' }, 404);
+  if (!c || !staffSees(staff, c.data, env)) return json({ error: 'Not found' }, 404);
   const p = c.data.pendingTelehealth;
   if (!p || p.state !== 'requested')
     return json({ error: 'No telehealth request is waiting on this case.' }, 409);
@@ -8836,6 +8974,22 @@ async function requireAdmin(request, env) {
   return user;
 }
 
+/**
+ * The admin, or an active advocate (2026-10-15). A route about one case calls
+ * this, loads the case, and then asks staffSees before reading or writing
+ * anything under it; a route that is not about one case keeps requireAdmin.
+ * Anyone else gets null, which every caller turns into the same 404 a path
+ * that is not there gets.
+ */
+async function requireStaff(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return null;
+  const profile = await getDoc(env, `users/${user.uid}`);
+  const advocate = profile?.data?.role === ADVOCATE_ROLE
+    ? await getDoc(env, `advocates/${user.uid}`).catch(() => null) : null;
+  return staffFrom(env, user, profile, advocate);
+}
+
 function slotIdFor(start) {
   // "2026-07-20_16-00" — same shape the seed script used.
   return start.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 16);
@@ -8879,6 +9033,8 @@ async function handleCreateSlots(request, env) {
       path: `availability/${slotIdFor(start)}`,
       data: {
         start, durationMin, state: 'open',
+        // Whose calendar this hour is on (2026-10-15).
+        advocateId: admin.uid,
         ...(kind ? { kind } : {}),
         ...(soon ? { adminCreated: true } : {}),
       },
@@ -9956,6 +10112,8 @@ async function createSelfCase(env, admin, who, sources = []) {
   const carriedDx = carriedDxOf(sources);
   await patchDoc(env, `cases/${caseId}`, {
     self: true,
+    // His own case is his (2026-10-15).
+    advocateId: admin.uid,
     clientUid: null,
     clientEmail: null,
     clientName: who.name,
@@ -10176,6 +10334,8 @@ async function handleFamilyCase(request, env) {
   const caseId = crypto.randomUUID();
   await patchDoc(env, `cases/${caseId}`, {
     family: true,
+    // The family case is the advocate's who opened it (2026-10-15).
+    advocateId: admin.uid,
     familyRelation: relation || null,
     clientUid: uid || null,
     clientEmail: email,
@@ -10312,6 +10472,8 @@ async function handleLeadInvite(request, env) {
   const now = new Date();
   await patchDoc(env, `invites/${id}`, {
     email, name: name || null, start, priceCents, state: 'sent', createdAt: now, by: admin.uid, caseId: null,
+    // Whose case it becomes (2026-10-15): the advocate who sent it.
+    advocateId: admin.uid,
   }, { mustNotExist: true });
   const link = `${env.PUBLIC_BASE_URL}/book.html?invite=${id}`;
   const mail = inviteEmail({ name, start, priceCents, link });
@@ -10419,6 +10581,8 @@ async function handleInviteConfirm(request, env) {
     acks: JSON.stringify(acks),
     inviteId: got.id,
     priceCents: String(priceCents),
+    // The case is the inviting advocate's (2026-10-15).
+    advocateId: advocateIdOf(got.invite, env),
   };
   if (priceCents === 0) {
     // Nothing to pay: the case opens now, the way the webhook would open it.
@@ -10442,8 +10606,8 @@ async function handleInviteConfirm(request, env) {
 
 // POST /api/admin/case-update  Body: { caseId, action, joinLink?, paidCents?, tierCents? }
 async function handleCaseUpdate(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   // The whole body is kept, not just the three fields the first actions
   // needed. `set-paid` read `body?.paidCents` against a `body` that was never
   // declared, so the route threw a ReferenceError before it could record
@@ -10455,7 +10619,7 @@ async function handleCaseUpdate(request, env) {
   if (typeof caseId !== 'string' || !/^[\w-]{1,64}$/.test(caseId))
     return json({ error: 'Bad case id' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
-  if (!doc) return json({ error: 'No such case' }, 404);
+  if (!doc || !staffSees(staff, doc.data, env)) return json({ error: 'No such case' }, 404);
   const now = new Date();
 
   if (action === 'join-link') {
@@ -10875,8 +11039,8 @@ const ALERT_TRAIL_KEEP = 20;
 
 async function handleClientAlert(request, env) {
   // 404, not 403, like every other admin route in this file.
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   // THE PIN. Two keys, no more. See the note above: an ignored extra field is
   // how a narrow route becomes a wide one without anybody deciding to widen
@@ -10892,7 +11056,7 @@ async function handleClientAlert(request, env) {
   const text = checked.alertText;
 
   const doc = await getDoc(env, `cases/${caseId}`);
-  if (!doc) return json({ error: 'No such case' }, 404);
+  if (!doc || !staffSees(staff, doc.data, env)) return json({ error: 'No such case' }, 404);
   if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
   if (!doc.data.clientUid)
     return json({ error: 'This client has not signed in yet, so there is no phone to reach.' }, 409);
@@ -11058,8 +11222,8 @@ function followUpExpiry(c) {
  * a client where the two of us actually agreed to meet.
  */
 async function handleAdminSchedule(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => null);
   if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
   const { caseId, customStart, customDurationMin, mode, pct, tagline } = body;
@@ -11069,7 +11233,7 @@ async function handleAdminSchedule(request, env) {
     return json({ error: 'Bad mode' }, 400);
 
   const caseDoc = await getDoc(env, `cases/${caseId}`);
-  if (!caseDoc) return json({ error: 'No such case' }, 404);
+  if (!caseDoc || !staffSees(staff, caseDoc.data, env)) return json({ error: 'No such case' }, 404);
   const c = caseDoc.data;
   // His own case: there is nobody to book with, and every mode below ends in
   // an email to the client.
@@ -11091,7 +11255,7 @@ async function handleAdminSchedule(request, env) {
       // away from it deletes it instead of leaving an odd-hour opening on the
       // client picker.
       await patchDoc(env, `availability/${slotId}`,
-        { start: at, durationMin: mins, state: 'open', adminCreated: true },
+        { start: at, durationMin: mins, state: 'open', adminCreated: true, advocateId: advocateIdOf(c, env) },
         { mustNotExist: true });
       slot = await getDoc(env, `availability/${slotId}`);
       if (!slot) return json({ error: "Couldn't open that time — try again." }, 409);

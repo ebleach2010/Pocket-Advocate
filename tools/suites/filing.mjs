@@ -72,6 +72,7 @@ const slab = (src, from, to) => {
   const make = (isAdmin) => new Function('__calls', `
     const json = (o, s) => ({ status: s || 200, body: o });
     const requireAdmin = async () => (${isAdmin} ? { uid: 'admin' } : null);
+    const requireStaff = async () => (${isAdmin} ? { uid: 'admin', isAdmin: true, advocateId: 'admin' } : null);
     const threadContext = async (env, user, kind, id) => ({
       clientUid: 'client-1', isAdmin: true,
       parent: kind === 'case' ? 'cases' : 'subscriptions',
@@ -717,6 +718,7 @@ const slab = (src, from, to) => {
   const wired = new Function('__writer', `
     const json = (o, s) => ({ status: s || 200, body: o });
     const requireAdmin = async () => ({ uid: 'admin' });
+    const requireStaff = async () => ({ uid: 'admin', isAdmin: true, advocateId: 'admin' });
     const threadContext = async (env, user, kind, id) => ({
       clientUid: 'client-1', isAdmin: true, parent: 'cases',
     });

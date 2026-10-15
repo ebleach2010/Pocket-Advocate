@@ -298,6 +298,40 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Many advocates, the groundwork (2026-10-15, v7.43)
+
+Eric: "We are expanding Pocket Advocate from a single-advocate platform into
+a multi-advocate platform for independent 1099 patient advocates." And:
+"Advocates must never be able to access another advocate's cases or data.
+Enforce this server-side, not just in the UI." And: "My existing account
+should remain the admin account and also become the first advocate account."
+`worker/staff.js` decides who works a case: Eric (role admin, pinned to
+ADMIN_UID) sees every case; an advocate (role advocate, advocates/{uid}
+active) sees only cases whose `advocateId` is theirs; a missing advocateId is
+Eric's. Twelve case routes now take `requireStaff` and check `staffSees` on
+the loaded case before reading anything private or writing anything; the
+shared chat and file helpers ask `worksThread`; a client's message or upload
+pings that case's own advocate. Not theirs is the same 404 as a case that is
+not there (the helpers used to answer 403). A run-once cron migration
+(`stampAdvocates`, minute 7 of each quarter hour) writes Eric's
+advocates/{uid} record (owner, no commission, off the payroll) and stamps his
+uid on every case, chat subscription, invitation, slot and waitlist entry
+that has none, batched, nothing moved or overwritten. New cases, invitations,
+slots and chat lines say whose they are.
+
+New suite `advocates.mjs` (29 checks): the staff module imported and run;
+every route that takes an advocate lifted and RUN through a proxy harness in
+which any outside call is recorded, as advocate B on advocate A's case (404,
+nothing read or written), as a stranger, as A and as Eric; the order of the
+ownership check read off each route's source; the router's set of routes
+that take an advocate pinned equal to the checked set; the migration run on a
+stand-in store, twice; and every creation site. Every new check has its
+control recorded. Re-pinned with dated notes and controls: advisor-acts A23b,
+defects (the pause gate), hold (pause/resume, close), worklog L13b, selfcase
+S17/S36/S42 (the 404), release R1. Harness shims gained requireStaff and
+staffSees in charge, contact, filing, invites, pricing, selfcase, stats and
+uploads.
+
 ### The +, and the cards by state (2026-10-15, v7.41)
 
 Eric, with two screenshots: "This menu is blocked. Also, let me delete my own

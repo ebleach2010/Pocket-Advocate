@@ -21,6 +21,8 @@ const ROOT = j(d(f(import.meta.url)), '..', '..');
 const read = (p) => readFileSync(j(ROOT, p), 'utf8');
 
 const ACTS = await import(j(ROOT, 'worker/advisor-acts.js'));
+// Who works a case (2026-10-15): the real check, so the lifted route runs it.
+const STAFF = await import(j(ROOT, 'worker/staff.js'));
 const W = read('worker/index.js');
 const ADV = read('worker/advisor.js');
 const PANELSRC = read('public/js/advisor.js');
@@ -584,9 +586,11 @@ const TABLE = {
 
   const writes = [];
   const pushes = [];
-  const make = (caseDoc, metaDoc) => new Function('__w', '__p', '__validateAction', `
+  const make = (caseDoc, metaDoc) => new Function('__w', '__p', '__validateAction', '__staffSees', `
     const json = (o, s) => ({ status: s || 200, body: o });
     const requireAdmin = async () => ({ uid: 'admin' });
+    const requireStaff = async () => ({ uid: 'admin', isAdmin: true, advocateId: 'admin' });
+    const staffSees = __staffSees;
     const validateAction = __validateAction;
     const getDoc = async (env, path) => {
       if (path.startsWith('caseMeta/')) return ${JSON.stringify(metaDoc)} ? { data: ${JSON.stringify(metaDoc)} } : null;
@@ -597,7 +601,7 @@ const TABLE = {
     ${consts}
     ${fn}
     return handleClientAlert;
-  `)(writes, pushes, validateAction);
+  `)(writes, pushes, validateAction, STAFF.staffSees);
   const run = async (body, caseDoc, metaDoc = null) => {
     writes.length = 0; pushes.length = 0;
     const handler = make(caseDoc, metaDoc);
@@ -810,8 +814,15 @@ const TABLE = {
   // NEGATIVE CONTROL (run 2026-08-28): answering a stranger 403 instead of 404
   // made this read
   //   FAIL  A23b it answers a stranger the way an unknown route answers
+  // RE-PINNED 2026-10-15 (v7.43): Eric, "Advocates must never be able to
+  // access another advocate's cases or data. Enforce this server-side." The
+  // route takes the admin or an active advocate, then refuses, with the same
+  // 404, any case that is not theirs.
+  // NEGATIVE CONTROL (run 2026-10-15): `|| !staffSees(staff, doc.data, env)` taken out of the case check made this read
+  //   FAIL  A23b it answers a stranger the way an unknown route answers
   ck('A23b it answers a stranger the way an unknown route answers',
-    /const admin = await requireAdmin\(request, env\);\n  if \(!admin\) return json\(\{ error: 'Not found' \}, 404\);/.test(fn));
+    /const staff = await requireStaff\(request, env\);\n  if \(!staff\) return json\(\{ error: 'Not found' \}, 404\);/.test(fn)
+      && /if \(!doc \|\| !staffSees\(staff, doc\.data, env\)\) return json\(\{ error: 'No such case' \}, 404\);/.test(fn));
 }
 
 // ---- A24-A26: the advisor proposes and does not execute -----------------

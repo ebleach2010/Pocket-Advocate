@@ -120,10 +120,19 @@ ck('and in the agreement they tick before paying',
    /One clock does not pause/.test(f('public/js/service-terms.js')));
 
 // ---- the routes ---------------------------------------------------------
-ck('pause and resume are admin-only and 404 to anyone else',
-   /async function handleHold\(request, env\) \{\n\s*const admin = await requireAdmin\(request, env\);\n\s*if \(!admin\) return json\(\{ error: 'Not found' \}, 404\);/.test(W));
-ck('closing a case is admin-only too',
-   /async function handleCloseCase\(request, env\) \{\n\s*const admin = await requireAdmin\(request, env\);\n\s*if \(!admin\) return json\(\{ error: 'Not found' \}, 404\);/.test(W));
+// RE-PINNED 2026-10-15 (v7.43): Eric, "Every case must belong to one advocate. ... Advocates can only view
+// cases assigned to them." Pause, resume and close are the admin's or the case's own advocate's, and a case
+// that is not theirs gets the same 404 a stranger gets.
+// NEGATIVE CONTROL (run 2026-10-15): handleHold's `|| !staffSees(staff, doc.data, env)` taken out made this read
+//   FAIL  pause and resume are the admin's or the case's own advocate's, and 404 to anyone else
+ck('pause and resume are the admin\'s or the case\'s own advocate\'s, and 404 to anyone else',
+   /async function handleHold\(request, env\) \{\n\s*const staff = await requireStaff\(request, env\);\n\s*if \(!staff\) return json\(\{ error: 'Not found' \}, 404\);/.test(W)
+   && /if \(!doc \|\| !staffSees\(staff, doc\.data, env\)\) return json\(\{ error: 'Not found' \}, 404\);\n  const hold = doc\.data\.hold/.test(W));
+// NEGATIVE CONTROL (run 2026-10-15): handleCloseCase's `|| !staffSees(staff, doc.data, env)` taken out made this read
+//   FAIL  closing a case is the admin's or its own advocate's too
+ck('closing a case is the admin\'s or its own advocate\'s too',
+   /async function handleCloseCase\(request, env\) \{\n\s*const staff = await requireStaff\(request, env\);\n\s*if \(!staff\) return json\(\{ error: 'Not found' \}, 404\);/.test(W)
+   && /if \(!doc \|\| !staffSees\(staff, doc\.data, env\)\) return json\(\{ error: 'Not found' \}, 404\);\n  if \(doc\.data\.status === 'closed'\)/.test(W));
 ck('resuming banks the stretch rather than discarding it',
    /totalMs: \(Math\.max\(0, Number\(hold\.totalMs\) \|\| 0\)\) \+ stretch,/.test(W));
 ck('the stored report deadline is moved on resume',
@@ -156,6 +165,8 @@ const runHold = ({ caseData, body }) => {
   const written = []; const pushes = []; const mails = [];
   const deps = {
     requireAdmin: async () => ({ uid: 'eric' }),
+    requireStaff: async () => ({ uid: 'eric', isAdmin: true, advocateId: 'eric' }),
+    staffSees: (st) => !!st && st.isAdmin,
     json: (obj, code = 200) => ({ code, obj }),
     getDoc: async (env, path) => (path === 'cases/c1' ? { id: 'c1', data: caseData } : null),
     patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); return true; },
@@ -165,7 +176,7 @@ const runHold = ({ caseData, body }) => {
     MT_FMT: { format: () => 'Monday, September 7' },
   };
   // eslint-disable-next-line no-new-func
-  const fn = new Function('deps', `const { requireAdmin, json, getDoc, patchDoc, notifyUser, sendEmail, escHtml, MT_FMT } = deps;${holdSrc}\n return handleHold;`)(deps);
+  const fn = new Function('deps', `const { requireAdmin, requireStaff, staffSees, json, getDoc, patchDoc, notifyUser, sendEmail, escHtml, MT_FMT } = deps;${holdSrc}\n return handleHold;`)(deps);
   return { post: () => fn({ json: async () => ({ caseId: 'c1', on: true, ...body }) }, { PUBLIC_BASE_URL: 'https://x' }), written, pushes, mails };
 };
 const client = { clientUid: 'u1', clientEmail: 'jordan@example.com', hold: {} };

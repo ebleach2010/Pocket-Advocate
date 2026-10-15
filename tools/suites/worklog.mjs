@@ -254,8 +254,13 @@ ck('L13 the client page asks for the projection, never the admin route',
 // NEGATIVE CONTROL (run 2026-08-27): dropping requireAdmin from
 // handleClinicCalls made this read
 //   FAIL  L13b the record route is still his alone
-ck('L13b the record route is still his alone',
-  /async function handleClinicCalls\(request, env, url\) \{\n  const admin = await requireAdmin\(request, env\);/.test(WORKER));
+// RE-PINNED 2026-10-15 (v7.43): Eric, "Advocates can only view cases assigned to them." The record is the
+// admin's or the case's own advocate's: staff only, and the case is checked before anything under it is read.
+// NEGATIVE CONTROL (run 2026-10-15): the owner check's `|| !staffSees(staff, owner.data, env)` taken out made this read
+//   FAIL  L13b the record route is still his alone, or the case's own advocate's
+ck('L13b the record route is still his alone, or the case\'s own advocate\'s',
+  /async function handleClinicCalls\(request, env, url\) \{\n  const staff = await requireStaff\(request, env\);\n  if \(!staff\) return json\(\{ error: 'Not found' \}, 404\);/.test(WORKER)
+  && /const owner = await getDoc\(env, `cases\/\$\{id\}`\)\.catch\(\(\) => null\);\n  if \(!owner \|\| !staffSees\(staff, owner\.data, env\)\) return json\(\{ error: 'Not found' \}, 404\);[\s\S]{0,600}const coll = `cases\/\$\{id\}\/private\/clinicCalls\/items`;/.test(WORKER));
 
 // ---- L14-L16: nothing auto-populates, and he chooses per entry ------------
 // Eric, asked directly: "only what I log by hand". No check-in, attended
@@ -585,6 +590,8 @@ const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) =
   if (adminData) store.set('users/eric', adminData);
   const deps = {
     requireAdmin: async () => ({ uid: 'eric' }),
+    requireStaff: async () => ({ uid: 'eric', isAdmin: true, advocateId: 'eric' }),
+    staffSees: (st) => !!st && st.isAdmin,
     json: (obj, code = 200) => ({ code, obj }),
     listDocs: async () => [],
     getDoc: async (env, path) => (store.has(path)
@@ -602,7 +609,7 @@ const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) =
   };
   // eslint-disable-next-line no-new-func
   const fn = new Function('deps', `
-    const { requireAdmin, json, listDocs, getDoc, patchDoc, notifyUser, crypto } = deps;
+    const { requireAdmin, requireStaff, staffSees, json, listDocs, getDoc, patchDoc, notifyUser, crypto } = deps;
     const LOG_KINDS = ${workerKinds || "['call']"};
     ${colorIdsLine}
     ${customMaxLine}

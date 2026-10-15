@@ -604,6 +604,8 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   const harness = (caseDoc) => `
     const json = (o, s) => ({ status: s || 200, body: o });
     const requireAdmin = async () => ({ uid: 'admin' });
+    const requireStaff = async () => ({ uid: 'admin', isAdmin: true, advocateId: 'admin' });
+    const staffSees = (st) => !!st && st.isAdmin;
     const getDoc = async () => (${JSON.stringify(caseDoc)} === null ? null : { data: ${JSON.stringify(caseDoc)} });
     const patchDoc = async (env, path, fields) => { __writes.push({ path, fields }); return true; };
     const sendEmail = async (env, m) => { __emails.push(m); };

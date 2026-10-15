@@ -96,6 +96,9 @@ const deps = {
   },
   listDocs: async (env, coll) => { reads.push(coll); return rows(coll); },
   requireAdmin: async () => (adminOk ? { uid: 'eric' } : null),
+  // Pause and resume take the admin or the case's own advocate (2026-10-15).
+  requireStaff: async () => (adminOk ? { uid: 'eric', isAdmin: true, advocateId: 'eric' } : null),
+  staffSees: (st) => !!st && st.isAdmin,
   notifyUser: async (env, uid, msg) => { pushes.push(msg); },
 };
 // The third answer (2026-09-09), on the harness's own stub.

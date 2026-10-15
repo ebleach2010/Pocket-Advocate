@@ -585,6 +585,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     const make = new Function('__writes', '__pushes', `
       const json = (o, s) => ({ status: s || 200, body: o });
       const requireAdmin = async () => ({ uid: 'admin' });
+      const requireStaff = async () => ({ uid: 'admin', isAdmin: true, advocateId: 'admin' });
+      const staffSees = (st) => !!st && st.isAdmin;
       const getDoc = async () => ({ data: ${JSON.stringify(caseDoc)} });
       const patchDoc = async (env, path, fields) => { __writes.push({ path, fields }); return true; };
       const sendEmail = async () => {};

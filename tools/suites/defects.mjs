@@ -1093,11 +1093,15 @@ ck('clock: all switches share one painter set, so no two can disagree',
   const helper = (W.match(/async function pausedForClient\(request, env, url\) \{[\s\S]*?\n\}\n/) || [''])[0];
   // NEGATIVE CONTROL (run 2026-10-03): '/api/notify' taken out of PAUSE_GATED made this read
   //   FAIL  a paused case is paused everywhere ...
+  // RE-PINNED 2026-10-15 (v7.43): Eric, "Every case must belong to one advocate." The one never held is
+  // now the case's own side: the admin, or the active advocate it belongs to (worksThread), not only role admin.
+  // NEGATIVE CONTROL (run 2026-10-15): the helper's last line back to `return profile?.data?.role !== 'admin';` made this read
+  //   FAIL  a paused case is paused everywhere ...
   ck('a paused case is paused everywhere: the chat shows "This case is paused." where the composer was, on the case page and the chat page; the upload box, the next-call add box and the paid chat unlock are gone; the notice no longer invites messages; and the Worker refuses, before any route runs, a client\'s message ping, next-call item, upload, purchase, request or review on a paused case, while never holding the admin',
     gate && W.indexOf(gate) < routes.map((r) => W.indexOf(`url.pathname === '${r}'`)).reduce((a, b) => Math.min(a, b))
     && /return json\(\{ error: 'This case is paused\.', paused: true \}, 409\);/.test(gate)
     && routes.every((r) => setSrc.includes(`'${r}'`))
-    && /if \(!c \|\| !onHold\(c\.data\) \|\| c\.data\.status === 'closed'\) return false;/.test(helper) && /return profile\?\.data\?\.role !== 'admin';/.test(helper)
+    && /if \(!c \|\| !onHold\(c\.data\) \|\| c\.data\.status === 'closed'\) return false;/.test(helper) && /return !\(await worksThread\(env, user\.uid, profile, c\.data, getDoc\)\);/.test(helper)
     && /if \(url\.pathname === '\/api\/notify' && body\?\.kind !== 'case'\) return false;/.test(helper)
     && /disabled: closed \|\| paused \|\| chatLocked,/.test(CASE) && /: paused \? 'This case is paused\.'/.test(CASE)
     && /const chatLocked = !closed && !paused && /.test(CASE) && /\$\{closed \|\| paused \? '' : `<form data-agenda-form/.test(CASE)

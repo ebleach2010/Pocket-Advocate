@@ -343,7 +343,11 @@ const guards = [
   // but him before it wakes the read.
   // Re-pinned 2026-09-13 (v4.5): it wakes nothing now; the refusal and the
   // silence toward everyone else are what this guard holds.
-  ['the chat notice', /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
+  // RE-PINNED 2026-10-15 (v7.43): Eric, "One advocate cannot access another advocate's data by changing IDs
+  // or URLs." Not his is the same 404 as a case that is not there; it was a 403.
+  // NEGATIVE CONTROL (run 2026-10-15): the self branch's refusal back to 403 made S17 read
+  //   FAIL  S17 every place a client would be told or counted checks the flag  -- the chat notice
+  ['the chat notice', /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not found' \}, 404\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/],
   // Re-pinned 2026-09-03 (audit): the one-field mask, so lm.ts is never retyped.
   // Re-pinned 2026-09-06 (Joe Bloe): five of these skip the showcase the same
   // way they skip his own case, and the pins read both flags.
@@ -535,13 +539,15 @@ const runUpdate = (caseData, body) => {
   const written = [];
   const deps = {
     requireAdmin: async () => ({ uid: 'eric' }),
+    requireStaff: async () => ({ uid: 'eric', isAdmin: true, advocateId: 'eric' }),
+    staffSees: (st) => !!st && st.isAdmin,
     json: (obj, code = 200) => ({ code, obj }),
     getDoc: async (env, path) => (path === 'cases/c1' ? { id: 'c1', data: caseData } : null),
     patchDoc: async (env, path, data, opts) => { written.push({ path, data, opts }); return true; },
   };
   // eslint-disable-next-line no-new-func
   const fn = new Function('deps', `
-    const { requireAdmin, json, getDoc, patchDoc } = deps;
+    const { requireAdmin, requireStaff, staffSees, json, getDoc, patchDoc } = deps;
     ${phoneRe}
     ${cleanPhoneSrc}
     ${cleanAddressSrc}
@@ -773,8 +779,11 @@ check('S35 his answer goes through the Worker with the question on it, stamps th
 // wake the read (refreshAdvisor); nothing books a read now but his tap.
 // NEGATIVE CONTROL (run 2026-09-13): the dated comment in the self branch replaced by a `markPending(env, kind, id);` call made this read
 //   FAIL  S36 a note on his own case books no read and pings nobody: it is read at his tap
+// RE-PINNED 2026-10-15 (v7.43): the refusal is the same 404 a case that is not there gets; it was a 403.
+// NEGATIVE CONTROL (run 2026-10-15): the self branch's refusal back to `json({ error: 'Not your thread' }, 403)` made this read
+//   FAIL  S36 a note on his own case books no read and pings nobody: it is read at his tap
 check('S36 a note on his own case books no read and pings nobody: it is read at his tap',
-  /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER)
+  /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not found' \}, 404\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(WORKER)
   && !/refreshAdvisor/.test(WORKER));
 
 // NEGATIVE CONTROL (run 2026-09-03): the Reply button's class renamed to reply-button made this read
@@ -881,9 +890,14 @@ const notifySrc = lift(WORKER, 'async function handleNotify(request, env, ctx) {
 //   FAIL  S42 a stranger with the id of his own case is refused by the notify route, and nobody, not even he, wakes a read from it
 check('S42 a stranger with the id of his own case is refused by the notify route, and nobody, not even he, wakes a read from it',
   !!notifySrc
-  && /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not your thread' \}, 403\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(notifySrc)
+  && /if \(doc\.data\.self\) \{\n[\s\S]{0,200}?if \(!isAdmin\) return json\(\{ error: 'Not found' \}, 404\);\n\s+\/\/ Nothing is booked for a read here \(2026-09-13\); his tap reads it\.\n\s+return json\(\{ ok: true, self: true \}\);\n\s+\}/.test(notifySrc)
   && !/markPending|refreshAdvisor/.test(notifySrc)
-  && notifySrc.indexOf("const isAdmin = profile?.data.role === 'admin';") < notifySrc.indexOf('if (doc.data.self) {'));
+  // RE-PINNED 2026-10-15 (v7.43): who is on the advocate side is asked of the loaded thread (worksThread), still
+  // before the self branch; and the refusal is the 404 a stranger gets.
+  // NEGATIVE CONTROL (run 2026-10-15): the case branch's worksThread line taken out, so the self branch runs before it, made this read
+  //   FAIL  S42 a stranger with the id of his own case is refused by the notify route, and nobody, not even he, wakes a read from it
+  && notifySrc.indexOf('isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);') > 0
+  && notifySrc.indexOf('isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);') < notifySrc.indexOf('if (doc.data.self) {'));
 
 const RP6 = runReply({ body: { id: 'c1?x' } });
 const rp6 = await RP6.post();

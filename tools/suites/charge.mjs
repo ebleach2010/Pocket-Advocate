@@ -33,6 +33,8 @@ const DEMO = f('public/js/demo/api.js');
 const DRIVE = f('tools/drives/drive-approval.mjs');
 const CL = f('public/js/changelog.js');
 const mod = await import(pathToFileURL(j(ROOT, 'worker/charge.js')).href);
+// Who works a case (2026-10-15): the real check, so the lifted route runs it.
+const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
 
 const results = [];
 const check = (name, cond, detail = '') => {
@@ -128,7 +130,7 @@ const day = 86_400_000;
 // ---- CH2: the route, lifted and run in every branch ------------------------
 {
   const body = lift(W, 'async function handleCaseCharge(request, env) {');
-  const names = ['requireAdmin', 'json', 'getDoc', 'chargeDecision', 'captureHold', 'readIntent', 'patchDoc',
+  const names = ['requireAdmin', 'requireStaff', 'staffSees', 'json', 'getDoc', 'chargeDecision', 'captureHold', 'readIntent', 'patchDoc',
     'stripePost', 'caseLineItems', 'raiseRates', 'cancelHold', 'releaseSlotOfCase', 'CHARGE_COPY', 'notifyUser',
     'sendEmail', 'escHtml', 'console'];
   const mk = body ? new Function(...names, `return ${body}`) : null;
@@ -136,6 +138,8 @@ const day = 86_400_000;
     const log = [];
     const fakes = {
       requireAdmin: async () => admin,
+      requireStaff: async () => (admin ? { isAdmin: true, advocateId: admin.uid, ...admin } : null),
+      staffSees: STAFF.staffSees,
       json: (o, s = 200) => ({ o, s }),
       getDoc: async () => (c ? { id: 'c1', data: c, updateTime: 't1' } : null),
       chargeDecision: mod.chargeDecision,
