@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.49';
+export const VERSION = '7.50';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.49';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS FACE, A GREEN DOOR, THEIR PROFILES (Eric, 2026-10-15: "I'd like my
+    // profile picture to be on the landing page. It can scroll." And:
+    // "employer mode (which should be green shine), I should be able to
+    // upload a bio and profile picture for each [contractor]"). Admin only.
+    version: '7.50',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your photo is on the home, just under the headline on the left, whole and uncropped. It links to your story. The home scrolls now.',
+      'Employer mode is a green button with a shine.',
+      'In employer mode, Photo and bio on each card lets you upload the photo, credentials and bio a contractor sends you, and set your own the same way.',
+    ],
+  },
   {
     // PAYROLL, ALL OF IT, AND PAID (Eric, 2026-10-15: "Payroll chart should
     // not be cut off. The whole spreadsheet should be visible once run. When

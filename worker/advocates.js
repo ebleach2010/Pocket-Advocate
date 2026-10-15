@@ -165,6 +165,7 @@ async function adminAdvocates(request, env, h) {
 
   if (action === 'update') {
     const patch = cleanProfile(body);
+    if ('name' in patch && !patch.name) return h.json({ error: 'Their name, please.' }, 400);
     const mask = Object.keys(patch).filter((k) => k !== 'advisorOptIn');
     delete patch.advisorOptIn;
     if ('commissionPct' in body) {
@@ -184,6 +185,8 @@ async function adminAdvocates(request, env, h) {
     }
     if (!mask.length) return h.json({ error: 'Nothing to change.' }, 400);
     await patchDoc(env, `advocates/${uid}`, { ...patch, updatedAt: new Date() }, { mask: [...mask, 'updatedAt'] });
+    // The name on their sign-in profile follows, the way their own change does (never for the sample, who has none).
+    if ('name' in patch && a.sample !== true) await patchDoc(env, `users/${uid}`, { name: patch.name }, { mask: ['name'] }).catch(() => {});
     const fresh = await getDoc(env, `advocates/${uid}`);
     return h.json({ ok: true, advocate: advocateView(uid, fresh?.data || { ...a, ...patch }) });
   }
@@ -272,6 +275,26 @@ async function staffHeadshot(request, env, h) {
   const staff = await h.requireStaff(request, env);
   if (!staff) return h.json({ error: 'Not found' }, 404);
   if (request.method !== 'POST') return h.json({ error: 'Not found' }, 404);
+  return saveHeadshot(request, env, h, staff.uid);
+}
+
+/**
+ * POST /api/admin/advocates/headshot?uid=   his alone (Eric, 2026-10-15:
+ * "I should be able to upload a bio and profile picture for each [contractor]
+ * when they submit it to me."). The same checks and the same place as their
+ * own upload; the bio goes through the update action beside it.
+ */
+async function adminHeadshot(request, env, url, h) {
+  const admin = await h.requireAdmin(request, env);
+  if (!admin) return h.json({ error: 'Not found' }, 404);
+  if (request.method !== 'POST') return h.json({ error: 'Not found' }, 404);
+  const uid = String(url.searchParams.get('uid') || '');
+  if (!UID_RE.test(uid)) return h.json({ error: 'Bad advocate' }, 400);
+  return saveHeadshot(request, env, h, uid);
+}
+
+/** One photo, checked and kept under that advocate, the old one removed. */
+async function saveHeadshot(request, env, h, uid) {
   const type = String(request.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
   const ext = HEADSHOT_TYPES[type];
   if (!ext) return h.json({ error: 'A JPEG, PNG or WebP photo, please.' }, 415);
@@ -281,26 +304,30 @@ async function staffHeadshot(request, env, h) {
   if (!bytes.byteLength) return h.json({ error: 'The photo did not arrive.' }, 400);
   if (bytes.byteLength > HEADSHOT_MAX) return h.json({ error: 'That photo is over 3 MB.' }, 413);
   if (!looksLike(type, bytes)) return h.json({ error: 'That file is not the photo it says it is.' }, 415);
-  const doc = await getDoc(env, `advocates/${staff.uid}`);
+  const doc = await getDoc(env, `advocates/${uid}`);
   if (!doc) return h.json({ error: 'Not found' }, 404);
   // Under advocates/, which no browser can reach in storage.rules; it is
   // served by the route below, and only while the advocate is active.
-  const path = `advocates/${staff.uid}/headshot-${Date.now()}.${ext}`;
+  const path = `advocates/${uid}/headshot-${Date.now()}.${ext}`;
   await putFile(env, path, bytes, type);
-  await patchDoc(env, `advocates/${staff.uid}`, { headshotPath: path, updatedAt: new Date() }, { mask: ['headshotPath', 'updatedAt'] });
+  await patchDoc(env, `advocates/${uid}`, { headshotPath: path, updatedAt: new Date() }, { mask: ['headshotPath', 'updatedAt'] });
   const old = doc.data.headshotPath;
-  if (old && old !== path && old.startsWith(`advocates/${staff.uid}/`)) await deleteFile(env, old).catch(() => {});
-  return h.json({ ok: true });
+  if (old && old !== path && old.startsWith(`advocates/${uid}/`)) await deleteFile(env, old).catch(() => {});
+  return h.json({ ok: true, photoV: path.split('-').pop().split('.')[0] });
 }
 
 async function publicHeadshot(request, env, url, h) {
-  const uid = String(url.searchParams.get('uid') || '');
+  // ?uid=owner is his, whoever his uid is (2026-10-15): the home asks for it
+  // without carrying an account id in its source.
+  const asked = String(url.searchParams.get('uid') || '');
+  const uid = asked === 'owner' ? String(env.ADMIN_UID || '') : asked;
   if (!UID_RE.test(uid)) return h.json({ error: 'Not found' }, 404);
   const doc = await getDoc(env, `advocates/${uid}`).catch(() => null);
   const path = doc?.data?.active === true ? doc.data.headshotPath : null;
   // His own photo ships with the site (public/img), so his cases and the
   // home show his face before he uploads one here (2026-10-15).
-  if (!path && doc?.data?.active === true && doc.data.owner === true)
+  // The home's uid=owner always has a face: his shipped photo until he sets one.
+  if (!path && ((doc?.data?.active === true && doc.data.owner === true) || asked === 'owner'))
     return new Response(null, { status: 302, headers: { location: OWNER_PHOTO, 'cache-control': 'public, max-age=3600' } });
   if (!path || !path.startsWith(`advocates/${uid}/`)) return h.json({ error: 'Not found' }, 404);
   const res = await mediaFetch(env, path).catch(() => null);
@@ -318,6 +345,7 @@ export async function handleAdvocates(request, env, url, h) {
   if (p === '/api/admin/advocates' && request.method === 'POST') return adminAdvocates(request, env, h);
   if (p === '/api/staff/me') return staffMe(request, env, h);
   if (p === '/api/staff/headshot') return staffHeadshot(request, env, h);
+  if (p === '/api/admin/advocates/headshot') return adminHeadshot(request, env, url, h);
   if (p === '/api/advocates/headshot' && request.method === 'GET') return publicHeadshot(request, env, url, h);
   return h.json({ error: 'Not found' }, 404);
 }

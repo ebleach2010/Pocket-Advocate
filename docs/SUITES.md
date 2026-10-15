@@ -298,6 +298,26 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### His face, a green door, their profiles (2026-10-15, v7.50)
+
+Eric: "I'd like my profile picture to be on the landing page. It can scroll.
+Have it just below and to the left of 'Go into your...'" And: "Under employer
+mode (which should be green shine), I should be able to upload a bio and
+profile picture for each [contractor] when they submit it to me." The home
+carries `.hero-face` under the h1 (styled inline in index.html so the shared
+landing sheet's stamp holds), its image `/api/advocates/headshot?uid=owner`,
+which is his uploaded photo or, until there is one, the shipped
+`/img/eric-headshot.jpg`, shown whole. Employer mode's button is green with a
+sweeping shine (admin.css, stamp stat136). Each team card has Photo and bio:
+the photo goes through `/api/admin/advocates/headshot?uid=` (his alone, the
+same checks as their own upload) and the words through the update action,
+which now refuses an empty name and keeps the sign-in profile's name in step.
+
+`advocates.mjs` grew G16 and re-pinned H4; charge CH7 is stat136;
+drive-employer grew two checks; drive-landing's size check is re-pinned and
+renamed (the home scrolls now). Every new check has its control recorded.
+Release R1.
+
 ### Payroll: all of it, and Paid (2026-10-15, v7.49)
 
 Eric: "Payroll chart should not be cut off. The whole spreadsheet should be

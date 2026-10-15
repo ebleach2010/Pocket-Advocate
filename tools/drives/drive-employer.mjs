@@ -64,6 +64,11 @@ const head = await adm.evaluate(() => {
 //   FAIL  beside the big Clients sits his Employer mode, and his + keeps all four doors
 ok('beside the big Clients sits his Employer mode, and his + keeps all four doors',
   /^Employer mode/.test(head.text || '') && head.href === '/admin-employer.html' && head.sameRow && head.plus.length === 4, JSON.stringify(head));
+const shine = await adm.evaluate(() => { const b = document.querySelector('[data-employer]'); const cs = b ? getComputedStyle(b) : null; return cs ? { bg: cs.backgroundImage, anim: cs.animationName } : null; });
+// Eric, 2026-10-15: "employer mode (which should be green shine)".
+// NEGATIVE CONTROL (run 2026-10-15, v7.50): the green button's rule taken off (`.btn.employer-btn {` made `.btn.employer-btn-x {`) made this read
+//   FAIL  Employer mode is green, with a shine that sweeps across it
+ok('Employer mode is green, with a shine that sweeps across it', !!shine && /47, 208, 138/.test(shine.bg) && /255, 255, 255/.test(shine.bg) && shine.anim === 'employer-shine', JSON.stringify(shine));
 const grid = await adm.evaluate(() => {
   const d = [...document.querySelectorAll('.drawer')].find((x) => x.querySelectorAll('.folder').length >= 2);
   if (!d) return null;
@@ -92,6 +97,29 @@ ok('his team: him first, each with their clients by kind and what they stand to 
   /YOU/.test(before[0]?.name || '') && before.some((t) => /Ana Rivera/.test(t.name) && /1 client: 1 Advocacy Case/.test(t.brief) && /\$\d/.test(t.money))
   && !!maya && /SAMPLE/.test(maya.name) && /^3 clients/.test(maya.brief) && maya.acts.includes('See what they see'),
   JSON.stringify({ before, maya }));
+
+// Eric, 2026-10-15: "I should be able to upload a bio and profile picture for each [contractor] when they submit it to me."
+await tap(adm, '.tm-card[data-uid="demo-advocate"] [data-profile]');
+await tryStep(() => adm.waitForSelector('dialog.tm-sheet[open]', { timeout: 8000 }));
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]);
+await tryStep(() => adm.setInputFiles('dialog.tm-sheet [data-pic]', { name: 'ana.jpg', mimeType: 'image/jpeg', buffer: JPEG }));
+await tryStep(() => adm.fill('dialog.tm-sheet [name="credentials"]', 'RN, BCPA', { timeout: 3000 }));
+await tryStep(() => adm.fill('dialog.tm-sheet [name="bio"]', 'Twelve years in neurology clinics, now on your side of the table.', { timeout: 3000 }));
+await tap(adm, 'dialog.tm-sheet[open] button[value="ok"]');
+await tryStep(() => adm.waitForSelector('dialog.tm-sheet', { state: 'detached', timeout: 8000 }));
+await adm.waitForTimeout(800);
+const prof = await adm.evaluate(() => ({ photo: document.querySelector('.tm-card[data-uid="demo-advocate"] .tm-photo')?.getAttribute('src') || '' }));
+await tap(adm, '.tm-card[data-uid="demo-advocate"] [data-profile]');
+await tryStep(() => adm.waitForSelector('dialog.tm-sheet[open]', { timeout: 8000 }));
+const reread = await adm.evaluate(() => ({ bio: document.querySelector('dialog.tm-sheet [name="bio"]')?.value, cred: document.querySelector('dialog.tm-sheet [name="credentials"]')?.value }));
+if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-2b-profile.png` });
+await tap(adm, 'dialog.tm-sheet[open] [data-no]');
+const hisOwn = await adm.evaluate(() => document.querySelector('.tm-card [data-profile]')?.textContent.trim());
+// NEGATIVE CONTROL (run 2026-10-15, v7.50): the sheet's photo upload taken out (the `if (file) {` block skipped) made this read
+//   FAIL  he uploads a contractor's photo and bio from their card, and they read back; his own card has his
+ok('he uploads a contractor\'s photo and bio from their card, and they read back; his own card has his',
+  /\/api\/advocates\/headshot\?uid=demo-advocate&v=\d+/.test(prof.photo) && reread.bio === 'Twelve years in neurology clinics, now on your side of the table.'
+  && reread.cred === 'RN, BCPA' && hisOwn === 'Your photo and bio', JSON.stringify({ prof, reread, hisOwn }));
 
 console.log('\n--- C. the temporary chat ---');
 // The demo keeps each side's store in the browser, so his tab and theirs share

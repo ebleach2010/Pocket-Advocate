@@ -45,7 +45,7 @@ function brief(p) {
 }
 
 function photo(p) {
-  if (p.hasPhoto) return `<img class="tm-photo" src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}" alt="" width="56" height="56">`;
+  if (p.hasPhoto) return `<img class="tm-photo" src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}${p.photoV ? `&v=${encodeURIComponent(p.photoV)}` : ''}" alt="" width="56" height="56">`;
   const init = p.name.split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
   return `<span class="tm-init" aria-hidden="true">${esc(init)}</span>`;
 }
@@ -66,11 +66,11 @@ function card(p) {
       </div>
       <p class="tm-brief">${esc(brief(p))}</p>
       <div class="tm-money"><strong>${money(p.proposedCents)}</strong><span>${p.owner ? 'from the clients you have now' : 'theirs from the clients they have now'}${p.tipsCents ? `, ${money(p.tipsCents)} of it tips` : ''}</span></div>
-      ${p.owner ? '' : `
       <div class="tm-acts">
-        <a class="btn quiet" href="/admin.html?as=${encodeURIComponent(p.uid)}">See what they see</a>
-        <button type="button" class="btn quiet" data-msg>Message${p.unread ? `<span class="tm-badge" aria-label="${p.unread} new">${p.unread}</span>` : ''}</button>
-      </div>`}
+        ${p.owner ? '' : `<a class="btn quiet" href="/admin.html?as=${encodeURIComponent(p.uid)}">See what they see</a>
+        <button type="button" class="btn quiet" data-msg>Message${p.unread ? `<span class="tm-badge" aria-label="${p.unread} new">${p.unread}</span>` : ''}</button>`}
+        <button type="button" class="btn quiet" data-profile>${p.owner ? 'Your photo and bio' : 'Photo and bio'}</button>
+      </div>
     </article>`;
 }
 
@@ -86,8 +86,79 @@ async function load() {
       await openStaffChat(user, { uid: p.uid, name: p.name, onChange: () => {} });
       load();
     });
+    el.querySelector('[data-profile]')?.addEventListener('click', () => editProfile(p));
   }
   paintSample(!!data.sample);
+}
+
+/**
+ * THEIR PHOTO AND BIO, FROM HIM (Eric, 2026-10-15: "I should be able to
+ * upload a bio and profile picture for each [contractor] when they submit it
+ * to me."). The photo goes up first (the same checks as their own upload,
+ * through his door), then the words; the card repaints from the answer.
+ */
+function editProfile(p) {
+  const dlg = document.createElement('dialog');
+  dlg.className = 'cancel-sheet ask-sheet tm-sheet';
+  dlg.innerHTML = `
+    <form method="dialog" class="ask-form">
+      <h2>${p.owner ? 'Your photo and bio' : `${esc(p.name)}'s photo and bio`}</h2>
+      <div class="tm-pic">
+        ${p.hasPhoto ? `<img data-pic-preview src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}${p.photoV ? `&v=${encodeURIComponent(p.photoV)}` : ''}" alt="">` : '<img data-pic-preview alt="" hidden>'}
+        <label class="btn quiet tm-pick">Choose a photo<input type="file" accept="image/jpeg,image/png,image/webp" data-pic hidden></label>
+      </div>
+      <label class="dim small">Name<input class="ask-input" name="name" maxlength="80" value="${esc(p.name)}" autocomplete="off"></label>
+      <label class="dim small">Credentials<input class="ask-input" name="credentials" maxlength="200" value="${esc(p.credentials || '')}" placeholder="For example: RN, BCPA" autocomplete="off"></label>
+      <label class="dim small">Bio<textarea class="ask-input" name="bio" maxlength="1500" rows="6" placeholder="${p.owner ? 'A few lines about you.' : 'The bio they sent you.'}">${esc(p.bio || '')}</textarea></label>
+      <p class="error" data-err hidden></p>
+      <div class="cancel-acts">
+        <button type="submit" class="btn glow" value="ok">Save</button>
+        <button type="button" class="btn quiet" data-no>Cancel</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dlg);
+  const close = () => { dlg.close(); dlg.remove(); };
+  const pic = dlg.querySelector('[data-pic]');
+  const preview = dlg.querySelector('[data-pic-preview]');
+  pic.addEventListener('change', () => {
+    const file = pic.files?.[0];
+    if (!file) return;
+    preview.src = URL.createObjectURL(file);
+    preview.hidden = false;
+  });
+  dlg.querySelector('[data-no]').addEventListener('click', close);
+  dlg.addEventListener('cancel', close);
+  dlg.querySelector('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const err = dlg.querySelector('[data-err]');
+    const save = f.querySelector('button[type="submit"]');
+    err.hidden = true;
+    save.disabled = true;
+    try {
+      const file = pic.files?.[0];
+      if (file) {
+        if (file.size > 3 * 1024 * 1024) throw new Error('That photo is over 3 MB.');
+        const res = await fetch(`/api/admin/advocates/headshot?uid=${encodeURIComponent(p.uid)}`, {
+          method: 'POST',
+          headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': file.type },
+          body: file,
+        });
+        const out = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(out.error || 'The photo did not upload.');
+      }
+      const res = await fetch('/api/admin/advocates', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ action: 'update', uid: p.uid, name: f.elements.namedItem('name').value, credentials: f.elements.namedItem('credentials').value, bio: f.elements.namedItem('bio').value }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || 'That did not save.');
+      close();
+      load();
+    } catch (x) { err.textContent = x.message; err.hidden = false; save.disabled = false; }
+  });
+  dlg.showModal();
 }
 
 function paintSample(have) {

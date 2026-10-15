@@ -2616,7 +2616,7 @@ export function demoApi(role, store) {
       const people = new Map();
       for (const { id, data: a } of docsUnder('advocates/')) {
         if (a.active !== true && !a.owner) continue;
-        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: false, commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
+        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: !!a.headshotPath || !!a.owner, bio: a.bio || '', credentials: a.credentials || '', photoV: String(a.photoV || ''), commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
       }
       for (const { id, data: c } of docsUnder('cases/')) {
         const p = people.get(advOf(c));
@@ -2860,6 +2860,10 @@ export function demoApi(role, store) {
           if (!Number.isInteger(pct) || pct < 0 || pct > 100) return fail(400, 'Commission is a whole percent, 0 to 100.');
           next.commissionPct = pct;
         }
+        // Their card's words, from employer mode (2026-10-15).
+        if ('name' in body) { const n = String(body.name || '').trim().slice(0, 80); if (!n) return fail(400, 'Their name, please.'); next.name = n; }
+        if ('credentials' in body) next.credentials = String(body.credentials || '').trim().slice(0, 200);
+        if ('bio' in body) next.bio = String(body.bio || '').trim().slice(0, 1500);
         if ('advisorEnabled' in body) {
           if (body.advisorEnabled === true && !a.owner && a.advisor?.optedIn !== true) return fail(409, 'They have not opted in. It can be switched on once they do.');
           next.advisor = { ...(a.advisor || {}), enabled: body.advisorEnabled === true };
@@ -2916,6 +2920,22 @@ export function demoApi(role, store) {
       store.docs.set(key, { ...(store.docs.get(key) || {}), headshotPath: `advocates/${me}/headshot` });
       store.persist?.();
       return ok({ ok: true });
+    }
+    // His upload of a contractor's photo from employer mode (2026-10-15).
+    if (path === '/api/admin/advocates/headshot') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const uid = q.get('uid') || '';
+      const key = `advocates/${uid}`;
+      if (!store.docs.get(key)) return fail(404, 'Not found');
+      const type = String(init.headers?.['content-type'] || init.headers?.get?.('content-type') || '').split(';')[0];
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) return fail(415, 'A JPEG, PNG or WebP photo, please.');
+      const blob = init.body instanceof Blob ? init.body : new Blob([init.body || ''], { type });
+      if (blob.size > 3 * 1024 * 1024) return fail(413, 'That photo is over 3 MB.');
+      (window.__paDemoHeadshots ||= {})[uid] = URL.createObjectURL(blob);
+      const v = String(Date.now());
+      store.docs.set(key, { ...store.docs.get(key), headshotPath: `advocates/${uid}/headshot-${v}`, photoV: v });
+      store.persist?.();
+      return ok({ ok: true, photoV: v });
     }
     if (path === '/api/advocates/headshot') {
       const uid = q.get('uid') || '';

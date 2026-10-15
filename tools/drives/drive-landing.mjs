@@ -154,7 +154,7 @@ for (const scheme of ['neon', 'calm', 'paper', 'contrast']) {
   await ctx.close();
 }
 
-console.log('\n--- E. the home fits one screen ---');
+console.log('\n--- E. the home at every size ---');
 {
   // Eric, 2026-10-14: "Reorient everything so everything on the main page fits without scrolling." Phones in
   // Safari with their bars showing, a big phone, a tablet and a laptop: nothing scrolls, either way.
@@ -167,11 +167,23 @@ console.log('\n--- E. the home fits one screen ---');
     const page = await ctx.newPage();
     await page.goto(`${P}/`, { waitUntil: 'networkidle' });
     await page.evaluate(() => document.fonts.ready);
-    const m = await page.evaluate(() => [document.documentElement.scrollHeight - innerHeight, document.documentElement.scrollWidth - innerWidth]);
-    if (m[0] > 0 || m[1] > 0) over.push(`${w}x${h}: ${m[0]}px down, ${m[1]}px across`);
+    // RE-PINNED AND RENAMED 2026-10-15 (v7.50): Eric, "I'd like my profile picture to be on the landing page. It can
+    // scroll. Have it just below and to the left of 'Go into your...'" The home may scroll down now; it never runs
+    // sideways, and his face sits under the headline on its left, whole, at every size.
+    const m = await page.evaluate(() => {
+      const h1 = document.querySelector('.land-sec.hero h1')?.getBoundingClientRect();
+      const img = document.querySelector('.hero-face img');
+      const r = img?.getBoundingClientRect();
+      return [document.documentElement.scrollWidth - innerWidth,
+        !!img && img.complete && img.naturalWidth > 0 && r.top >= h1.bottom - 1 && r.left <= h1.left + 2,
+        img ? Math.abs(r.width / r.height - img.naturalWidth / img.naturalHeight) < 0.02 : false];
+    });
+    if (m[0] > 0 || !m[1] || !m[2]) over.push(`${w}x${h}: ${m[0]}px across, face under and left ${m[1]}, whole ${m[2]}`);
     await ctx.close();
   }
-  ok('the home fits on one screen at every size, with nothing below it to scroll to', over.length === 0, over.join('; '));
+  // NEGATIVE CONTROL (run 2026-10-15, v7.50): the face's image given `aspect-ratio: 3 / 2; object-fit: cover` made this read
+  //   FAIL  the home never runs sideways, and his whole photo sits just under the headline on its left at every size
+  ok('the home never runs sideways, and his whole photo sits just under the headline on its left at every size', over.length === 0, over.join('; '));
   // The menu reaches every other section, and each opens as its own screen with a way back.
   const ctx = await b.newContext({ viewport: { width: 390, height: 664 } });
   const page = await ctx.newPage();

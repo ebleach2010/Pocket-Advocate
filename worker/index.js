@@ -1079,7 +1079,7 @@ export default {
       // A contractor's own settings (2026-10-15): their door sign, prices and limit.
       if (url.pathname === '/api/staff/settings')
         return await handleStaffSettings(request, env, { requireStaff, json, readRates, officeStatus });
-      if (url.pathname === '/api/admin/advocates' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
+      if (url.pathname === '/api/admin/advocates' || url.pathname === '/api/admin/advocates/headshot' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
         return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json });
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
         return await handleSelfCase(request, env);
@@ -2392,7 +2392,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-payroll-paid';
+const BUILD_TAG = 'v2026-10-15-his-face';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2400,7 +2400,7 @@ const BUILD_TAG = 'v2026-10-15-payroll-paid';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.49';
+const VERSION = '7.50';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

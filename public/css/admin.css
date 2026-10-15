@@ -1750,6 +1750,29 @@ main > p > a.small[href="/admin.html"] {
 .employer-btn { position: relative; min-height: 44px; display: inline-flex; align-items: center; white-space: nowrap; }
 .tm-badge { display: inline-block; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #FF7A7A; color: #1A0505; font: 800 .72rem/20px 'Manrope', system-ui, sans-serif; text-align: center; }
 .employer-btn .tm-badge { position: absolute; top: -7px; right: -7px; }
+/* Employer mode, green with a shine (Eric, 2026-10-15: "employer mode (which
+   should be green shine)"). A light sweeps across it every few seconds; with
+   reduced motion it simply stays green. */
+.btn.employer-btn {
+  border-color: transparent;
+  color: #032014;
+  font-weight: 800;
+  font-size: .88rem;
+  padding: 0 .85rem;
+  background:
+    linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .6) 50%, transparent 62%) no-repeat,
+    linear-gradient(110deg, #2FD08A 0%, #8BF0BE 50%, #2FD08A 100%);
+  background-size: 260% 100%, 100% 100%;
+  background-position: 130% 0, 0 0;
+  box-shadow: 0 0 0 1px rgba(79, 214, 156, .65), 0 8px 24px rgba(47, 208, 138, .35);
+  animation: employer-shine 3.6s ease-in-out infinite;
+}
+.btn.employer-btn:focus-visible { outline: 2px solid #8BF0BE; outline-offset: 3px; }
+@keyframes employer-shine {
+  0%, 55% { background-position: 130% 0, 0 0; }
+  100% { background-position: -30% 0, 0 0; }
+}
+@media (prefers-reduced-motion: reduce) { .btn.employer-btn { animation: none; } }
 
 /* A quiet view (2026-10-15): whose shelf, that they cannot tell, the way out. */
 .quiet-bar {

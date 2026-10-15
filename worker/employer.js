@@ -78,6 +78,10 @@ export function teamSummary({ advocates, cases, subs, subCents, adminUid }) {
       active: a.data.active === true,
       onboarded: !!a.data.onboardedAt || a.data.owner === true,
       hasPhoto: !!a.data.headshotPath || a.data.owner === true,
+      // What he can change for them from here (2026-10-15): their card's words, and which photo is current.
+      bio: String(a.data.bio || ''),
+      credentials: String(a.data.credentials || ''),
+      photoV: String(a.data.headshotPath || '').replace(/^.*headshot-(\d+)\..*$/, '$1').slice(0, 20),
       // He keeps all of his own, the way the payroll pays him.
       commissionPct: owner ? 100 : Number.isFinite(Number(a.data.commissionPct)) ? Number(a.data.commissionPct) : DEFAULT_COMMISSION_PCT,
       open: 0, closed: 0, kinds: {}, chatLines: 0,

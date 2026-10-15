@@ -736,6 +736,26 @@ console.log('\n--- G. accounts ---');
   check('G15 his own photo stands in until he uploads one; another advocate without a photo has none',
     hisPhoto.status === 302 && hisPhoto.res.headers.get('location') === '/img/eric-headshot.jpg' && othersNone.status === 404,
     JSON.stringify([hisPhoto.status, hisPhoto.res.headers.get('location'), othersNone.status]));
+  // Eric, 2026-10-15: "I should be able to upload a bio and profile picture for each [contractor] when they submit it
+  // to me." His door for it is his alone; theirs stays their own; the home asks for his face as uid=owner.
+  const JPG2 = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 9, 9, 9, 9]).buffer;
+  // An advocate who is on (Ana was turned off in G12), so their 404 is his door saying no, not their account being off.
+  w.docs.set('users/adv-live', { role: 'advocate' });
+  w.docs.set('advocates/adv-live', { uid: 'adv-live', active: true, owner: false, name: 'Live One' });
+  const hisUpload = await call(w, ERIC, '/api/admin/advocates/headshot?uid=adv-nophoto', { bytes: JPG2, type: 'image/jpeg' });
+  const theirTry = await call(w, 'adv-live', '/api/admin/advocates/headshot?uid=adv-nophoto', { bytes: JPG2, type: 'image/jpeg' });
+  const hisLie = await call(w, ERIC, '/api/admin/advocates/headshot?uid=adv-nophoto', { bytes: fake, type: 'image/jpeg' });
+  const hisBio = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid: 'adv-nophoto', bio: 'Twelve years in neurology clinics.', credentials: 'RN' } });
+  const noName = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid: 'adv-nophoto', name: '   ' } });
+  const owner = await call(w, '', '/api/advocates/headshot?uid=owner', { method: 'GET' });
+  const nophoto = w.docs.get('advocates/adv-nophoto');
+  // NEGATIVE CONTROL (run 2026-10-15, v7.50): adminHeadshot asking requireStaff instead of requireAdmin made this read
+  //   FAIL  G16 he uploads a contractor's photo and bio from employer mode, checked like their own; they cannot use his door; the home finds his face as owner
+  check('G16 he uploads a contractor\'s photo and bio from employer mode, checked like their own; they cannot use his door; the home finds his face as owner',
+    hisUpload.status === 200 && nophoto.headshotPath?.startsWith('advocates/adv-nophoto/headshot-') && theirTry.status === 404 && hisLie.status === 415
+    && hisBio.status === 200 && nophoto.bio === 'Twelve years in neurology clinics.' && nophoto.credentials === 'RN' && noName.status === 400
+    && owner.status === 302 && owner.res.headers.get('location') === '/img/eric-headshot.jpg',
+    JSON.stringify([hisUpload.status, theirTry.status, hisLie.status, hisBio.status, noName.status, owner.status]));
   check('G14 the accounts module carries no dash', !DASH.test(SRC) && !DASH.test(f('public/js/admin-advocates.js')) && !DASH.test(f('public/js/admin-account.js')));
 }
 
@@ -780,8 +800,10 @@ console.log('\n--- H. doors ---');
     && /return withStaffCookie\(env, json\(\{ token \}\), d\.uid\);/.test(lift(W, 'async function handleDeviceSignin(request, env) {')));
   // NEGATIVE CONTROL (run 2026-10-15): the router handing `requireAdmin: requireStaff` to the accounts module made this read
   //   FAIL  H4 the routes reach the accounts module, with his gate and the staff gate handed in
+  // RE-PINNED 2026-10-15 (v7.50): his upload of a contractor's photo (/api/admin/advocates/headshot) reaches it too.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.50): the router handing `requireAdmin: requireStaff` again made H4 read FAIL.
   check('H4 the routes reach the accounts module, with his gate and the staff gate handed in',
-    /if \(url\.pathname === '\/api\/admin\/advocates' \|\| url\.pathname\.startsWith\('\/api\/staff\/'\) \|\| url\.pathname\.startsWith\('\/api\/advocates\/'\)\)\n\s*return await handleAdvocates\(request, env, url, \{ requireAdmin, requireStaff, json \}\);/.test(W));
+    /if \(url\.pathname === '\/api\/admin\/advocates' \|\| url\.pathname === '\/api\/admin\/advocates\/headshot' \|\| url\.pathname\.startsWith\('\/api\/staff\/'\) \|\| url\.pathname\.startsWith\('\/api\/advocates\/'\)\)\n\s*return await handleAdvocates\(request, env, url, \{ requireAdmin, requireStaff, json \}\);/.test(W));
 }
 
 const failed = results.filter((r) => !r.pass).length;
