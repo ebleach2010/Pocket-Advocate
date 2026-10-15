@@ -156,12 +156,14 @@ export async function isAdmin(user) {
  * 'admin', 'advocate', false for anyone else, and null when the profile could
  * not be read, the same three answers isAdmin gives.
  */
-export const STAFF = { role: null, uid: null };
+// `name` is the profile's own name (2026-10-15), so an advocate's pages can say theirs.
+export const STAFF = { role: null, uid: null, name: '' };
 export async function staffRole(user) {
   try {
     const snapshot = await readProfile(user);
     if (snapshot === TOO_SLOW) return null;
     const role = snapshot.exists() ? snapshot.data().role : '';
+    if (snapshot.exists()) STAFF.name = String(snapshot.data().name || '');
     return role === 'admin' || role === 'advocate' ? role : false;
   } catch {
     return null;

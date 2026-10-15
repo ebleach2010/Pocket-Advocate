@@ -316,7 +316,7 @@ export function scopeOfWork(o = {}) {
 HANDS-OFF CASE MANAGEMENT
 
 Client: ${field(o, o.clientName, '(name)')}
-Advocate: Eric Bleach, patient advocate, Pocket Advocate.
+Advocate: ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
 
 This is the agreement your case runs on. It says what I do, what I need
 from you, and where the work stops.

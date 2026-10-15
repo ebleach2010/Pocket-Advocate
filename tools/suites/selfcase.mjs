@@ -358,9 +358,12 @@ const guards = [
   // way they skip his own case, and the pins read both flags.
   ['the chat digest', /if \(row\.data\.self \|\| row\.data\.showcase\) \{\n[\s\S]{0,200}?\{ lastMessage: \{ emailed: true \} \},\n\s+\{ mask: \['lastMessage\.emailed'\] \}/],
   ['the work log notice', /if \(!c \|\| !c\.clientUid \|\| c\.self \|\| c\.status === 'closed'\) return null;/],
-  ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
+  // RE-PINNED 2026-10-15 (v7.52): the clock starts once and a report waits for the call; both comments sit between
+  // the self return and what it guards, which still comes first.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.52): the recording clock's self return taken out made S17 read FAIL -- the recording clock.
+  ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
   ['the document push', /if \(doc\.data\.clientUid && !doc\.data\.self\) \{/],
-  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{ status: 'delivered'/],
+  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{ status: 'delivered'/],
   ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.work\?\.includedDoneAt\) return;/],
   ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self \|\| row\.data\.showcase\) continue;/],
   ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],

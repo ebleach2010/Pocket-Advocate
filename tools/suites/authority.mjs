@@ -287,11 +287,14 @@ check('S25 a signature nobody can draw is not the only route',
   let doc = '';
   if (src) {
     try {
+      // RE-PINNED 2026-10-15 (v7.52): the builder names the case's own advocate (caseAdvocateName, empty is his
+      // name), so the harness hands it in empty, as his own case has it.
+      // NEGATIVE CONTROL (run 2026-10-15, v7.52): the client's name escape taken out of the stored path still made S28 read FAIL.
       const fn = new Function('data', 'recordsAuthorisation', 'representativeDesignation',
-        'authorityDocTitle', 'signatureInk', `${src}\n return authorityDocHtml;`)(
+        'authorityDocTitle', 'signatureInk', 'caseAdvocateName', `${src}\n return authorityDocHtml;`)(
         { clientName: HOSTILE, clientDob: '1990-01-01' },
         recordsAuthorisation, representativeDesignation,
-        () => 'Records authorisation', () => '');
+        () => 'Records authorisation', () => '', '');
       doc = fn({ kind: 'records', blank: false });
     } catch (e) { doc = ''; }
   }
@@ -384,11 +387,12 @@ check('S33 a blank prints ruled lines and no attestation',
   let sdoc = '';
   if (src) {
     try {
+      // RE-PINNED 2026-10-15 (v7.52): caseAdvocateName handed in empty, as on S27's harness.
       const fn = new Function('data', 'recordsAuthorisation', 'representativeDesignation',
-        'scopeOfWork', 'authorityDocTitle', 'signatureInk', `${src}\n return authorityDocHtml;`)(
+        'scopeOfWork', 'authorityDocTitle', 'signatureInk', 'caseAdvocateName', `${src}\n return authorityDocHtml;`)(
         { clientName: HOSTILE, clientDob: '1990-01-01' },
         recordsAuthorisation, representativeDesignation, scopeOfWork,
-        () => 'Scope of work agreement', () => '');
+        () => 'Scope of work agreement', () => '', '');
       sdoc = fn({ kind: 'scope', blank: false });
     } catch { sdoc = ''; }
   }

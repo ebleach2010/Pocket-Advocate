@@ -515,6 +515,10 @@ const slab = (src, from, to) => {
     const time = { format: () => '10:00 AM' };
     const thumbable = () => false;
     const reviewable = () => false;
+    // RE-PINNED 2026-10-15 (v7.52): the row asks whether an advocate is looking (no hand-to-the-reader button for
+    // them); this harness is his page.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.52): the row's escape of the file name taken out still made F25 read FAIL.
+    const advocate = false;
     ${aLabel}
     ${aRow}
     return { html: row(__r), group: fileGroup(__r) };

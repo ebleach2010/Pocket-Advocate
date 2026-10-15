@@ -2390,7 +2390,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-two-off';
+const BUILD_TAG = 'v2026-10-15-wrong-today';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2398,7 +2398,7 @@ const BUILD_TAG = 'v2026-10-15-two-off';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.51';
+const VERSION = '7.52';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4213,7 +4213,8 @@ async function handleNotify(request, env, ctx) {
     }
     clientUid = doc.data.clientUid;
     threadClientName = doc.data.clientName || '';
-    adminLink = `/admin-case.html?id=${id}`;
+    // A message push opens the conversation it is about (2026-10-15).
+    adminLink = `/admin-case.html?id=${id}&page=chat`;
     clientLink = `/case.html?id=${id}`;
   } else {
     const sub = await getDoc(env, `subscriptions/${id}`);
@@ -4307,6 +4308,17 @@ const CHAT_REACTIONS = {
   documents: { label: 'Eric is prepping documents…' },
   notes: { label: 'Eric is taking personal notes on the case…' },
 };
+
+/**
+ * WHOSE NAME A STATUS CARRIES (2026-10-15). The labels above are his words
+ * with his name in them; on a contractor's case their client was told "Eric
+ * is reading..." while somebody else was. An advocate's status carries their
+ * own first name, stored and sent alike. His stay word for word.
+ */
+function statusLabelFor(reaction, uid, env, name) {
+  const label = CHAT_REACTIONS[reaction].label;
+  return uid === env.ADMIN_UID ? label : label.replace(/^Eric\b/, name || 'Your advocate');
+}
 
 /**
  * The ordinary emoji anyone can use, either direction. Clients get these and
@@ -4507,7 +4519,7 @@ async function handleChatReact(request, env) {
   const already = msg.data.reaction?.id === reaction;
   const record = isEmoji
     ? { id: reaction, emoji: EMOJI_REACTIONS[reaction], kind: 'emoji', by: user.uid, at: new Date() }
-    : { id: reaction, label: CHAT_REACTIONS[reaction].label, kind: 'status', by: user.uid, at: new Date() };
+    : { id: reaction, label: statusLabelFor(reaction, user.uid, env, ctx.callerName), kind: 'status', by: user.uid, at: new Date() };
   const wrote = await patchDoc(env, ctx.path, { reaction: record }, { mask: ['reaction'] });
   if (!wrote) return json({ error: 'Could not set that reaction. Try again.' }, 409);
 
@@ -4534,7 +4546,7 @@ async function handleChatReact(request, env) {
     // true without anyone noticing.
     const push = isEmoji
       ? `${ctx.callerName || (ctx.isAdmin ? 'Eric' : 'Your client')} reacted ${EMOJI_REACTIONS[reaction]} to your message.`
-      : CHAT_REACTIONS[reaction].label;
+      : record.label;
     await notifyUser(env, target, { title: 'Pocket Advocate', body: push, link: ctx.link });
   }
   return json({ ok: true, reaction, notified: !already && worthSending });
@@ -4589,7 +4601,8 @@ async function handleUploaded(request, env) {
       : names.length > 1
         ? `${names.length} files: ${names.join(', ').slice(0, 120)}`
         : 'a file';
-    const link = kind === 'case' ? `/admin-case.html?id=${id}` : `/admin-chats.html?id=${id}`;
+    // The chats page reads ?sub= (2026-10-15); ?id= landed on the inbox.
+    const link = kind === 'case' ? `/admin-case.html?id=${id}` : `/admin-chats.html?sub=${id}`;
     // Their advocate, and only them (2026-10-15).
     await notifyUser(env, advocateIdOf(doc.data, env), {
       title: 'Pocket Advocate',
@@ -11083,11 +11096,15 @@ async function handleCaseUpdate(request, env) {
     // His own case: the recording is filed, and no clock starts and nobody
     // is written to. There is no report promise to himself.
     if (doc.data.self) return json({ ok: true, self: true });
+    // THE CLOCK STARTS ONCE (2026-10-15). It used to be set again by every
+    // recording, so a check-in recorded a week later pushed the report out
+    // another two weeks and hid one already overdue. The first call starts it;
+    // a later recording is filed and moves nothing.
     const alreadyStarted = !!doc.data.reportDueAt;
-    const fields = { reportDueAt: new Date(now.getTime() + REPORT_DAYS * 86_400_000) };
-    if (doc.data.status !== 'delivered') fields.status = 'awaiting_report';
-    await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
     if (!alreadyStarted) {
+      const fields = { reportDueAt: new Date(now.getTime() + REPORT_DAYS * 86_400_000) };
+      if (doc.data.status !== 'delivered') fields.status = 'awaiting_report';
+      await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
       await sendEmail(env, {
         to: doc.data.clientEmail,
         subject: 'Great meeting. Your report is on the way',
@@ -11147,6 +11164,11 @@ async function handleCaseUpdate(request, env) {
     // His own case: a document filed under "report" is just a document. No
     // delivered state, no 48-hour close behind it, no email.
     if (doc.data.self) return json({ ok: true, self: true });
+    // NO REPORT BEFORE THE CALL (2026-10-15). One file picked on a booked
+    // case marked it delivered, emailed the client and started the 48 hours
+    // that close their chat, five days before the call. The report follows
+    // the call, so the call is marked first (a recording, or Call done).
+    if (!doc.data.reportDueAt) return json({ error: 'Mark the call done first. The report comes after the call.' }, 409);
     await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {
       mask: ['status', 'reportDeliveredAt'],
     });

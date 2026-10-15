@@ -31,6 +31,16 @@ export const STATUS_REACTIONS = [
   { id: 'notes', emoji: '📝', label: 'Eric is taking personal notes on the case…' },
 ];
 
+// WHOSE NAME A STATUS CARRIES (2026-10-15). The labels are Eric's words with
+// his name in them. An advocate working their own client's case picks from
+// the same list with their own first name in its place, which is also what
+// the Worker stores and sends (statusLabelFor in worker/index.js).
+let statusName = '';
+/** The first name an advocate's statuses carry; empty for Eric. */
+export function setStatusName(name) { statusName = String(name || '').trim().split(/\s+/)[0] || ''; }
+/** A status's label as this person would send it. */
+export const statusLabel = (r) => (statusName ? r.label.replace(/^Eric\b/, statusName) : r.label);
+
 /** How long a message stays editable. Mirrors EDIT_WINDOW_MS in the Worker. */
 export const EDIT_WINDOW_MS = 3 * 60 * 1000;
 
@@ -77,7 +87,7 @@ export function openMessageMenu(opts) {
             <p class="msg-menu-head">Let them know what you're doing</p>
             ${STATUS_REACTIONS.map((r) => `
               <button class="msg-menu-row${r.id === current ? ' on' : ''}" data-react="${r.id}">
-                <span class="react-emoji">${r.emoji}</span><span>${r.label}</span>
+                <span class="react-emoji">${r.emoji}</span><span>${esc(statusLabel(r))}</span>
               </button>`).join('')}
             <p class="msg-menu-note">They get a notification saying exactly this. Nothing from the message itself is included.</p>` : ''}
           ${extraRows.map((r) => `<button class="msg-menu-row" data-act="${esc(r.act)}"><span class="react-emoji">${esc(r.emoji || '')}</span><span>${esc(r.label)}</span></button>`).join('')}
@@ -128,7 +138,7 @@ export function openStatusSheet() {
           <p class="msg-menu-head">Let them know what you're doing</p>
           ${STATUS_REACTIONS.map((r) => `
             <button class="msg-menu-row" data-react="${r.id}">
-              <span class="react-emoji">${r.emoji}</span><span>${r.label}</span>
+              <span class="react-emoji">${r.emoji}</span><span>${esc(statusLabel(r))}</span>
             </button>`).join('')}
           <p class="msg-menu-note">They get a notification saying exactly this. Nothing else is included.</p>
           <button class="msg-menu-row cancel" data-act="cancel"><span>Cancel</span></button>

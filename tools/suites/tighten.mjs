@@ -309,7 +309,10 @@ console.log('\n--- W. Eric\'s side ---');
     !/data-doing-row/.test(head) && chatPane.indexOf('data-status-pick') > 0 && chatPane.indexOf('data-doing-row') > chatPane.indexOf('data-status-pick')
     && /pane\.appendChild\(notesHost\);\s*pane\.appendChild\(compileCard\);/.test(ADMINCASE)
     && (ADMINCASE.match(/pane\.appendChild\(compileCard\)/g) || []).length === 1
-    && !/up-recording/.test(files) && /<select id="up-cat"[^>]*>\s*\$\{UPLOAD_CATEGORIES\.map\([^\n]*\n\s*<option value="\$\{REC_PICK\}">Recording<\/option>\s*<\/select>/.test(files)
+    // RE-PINNED 2026-10-15 (v7.52): the picker opens on "Choose what this is" now, not on Report (one file picked at once
+    // marked a case delivered before its call); his types follow in his order, then Recording.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.52): Recording moved ahead of his types still made W4 read FAIL.
+    && !/up-recording/.test(files) && /<select id="up-cat"[^>]*>\s*<option value="" selected>Choose what this is<\/option>\s*\$\{UPLOAD_CATEGORIES\.map\([^\n]*\n\s*<option value="\$\{REC_PICK\}">Recording<\/option>\s*<\/select>/.test(files)
     && /if \(cat\.value === REC_PICK\) \{ upload\(e\.target\.files\[0\], 'recording', 'recording-uploaded'\); return; \}/.test(files)
     && /fileEl\.accept = rec \? REC_ACCEPT : DOC_ACCEPT;/.test(files));
 

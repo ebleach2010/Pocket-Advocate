@@ -166,6 +166,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // photo is, that Employer mode is green, and that he sets a contractor's photo and bio from their card.
   // NEGATIVE CONTROL (run 2026-10-15, v7.50): the worker's BUILD_TAG left at the payroll-paid tag made this read
   //   FAIL  R1 both versions read 7.50 with the new tag, the 7.50 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.52): both versions read 7.52 with the wrong-today tag, and the 7.52 entry says statuses and
+  // forms carry the contractor's name, a report waits for the call, and the Advisor sign-up keeps its caveat.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.52): changelog.js's VERSION left at '7.51' made this read
+  //   FAIL  R1 both versions read 7.52 with the new tag, the 7.52 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry752 = (CL.match(/\{\n\s+\/\/ WHAT WAS WRONG TODAY \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.51): both versions read 7.51 with the two-off tag, and the 7.51 entry says the Fund
   // queue is off the Clients page with the applications kept, and the Summary tab is gone.
   // NEGATIVE CONTROL (run 2026-10-15, v7.51): the worker's BUILD_TAG left at the his-face tag made this read
@@ -211,9 +216,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.51 with the new tag, the 7.51 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.51';/.test(CL) && /const VERSION = '7\.51';/.test(W) && /const BUILD_TAG = 'v2026-10-15-two-off';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.51'
+  check('R1 both versions read 7.52 with the new tag, the 7.52 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.52';/.test(CL) && /const VERSION = '7\.52';/.test(W) && /const BUILD_TAG = 'v2026-10-15-wrong-today';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.52'
+    && /version: '7\.52',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry752)
+    && /"Ana is reading", not yours/.test(entry752) && /name that contractor as the advocate/.test(entry752)
+    && /cannot be marked delivered before the call/.test(entry752) && /only an aid, not a diagnostic tool/.test(entry752)
+    && !DASH.test(entry752) && !HARD.some((re) => re.test(entry752))
     && /version: '7\.51',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry751)
     && /The Fund queue is off the Clients page\. The applications already sent are kept\./.test(entry751)
     && /The Summary tab on a case, one day read back, is gone\./.test(entry751)

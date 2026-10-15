@@ -11,7 +11,7 @@ import {
 } from './firebase.js';
 import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 import { mountChat, openLightbox } from './chat.js';
-import { STATUS_REACTIONS, openMessageMenu } from './msg-actions.js';
+import { STATUS_REACTIONS, openMessageMenu, setStatusName, statusLabel } from './msg-actions.js';
 import { mountAdvisor, sendToClient } from './advisor.js';
 import { mountNotes } from './notes.js';
 import { mountSaved } from './saved.js';
@@ -176,6 +176,8 @@ const user = await requireAdmin();
 // nor the client can tell he was in it.
 const asUid = STAFF.role === 'admin' ? (new URLSearchParams(location.search).get('as') || '').replace(/[^\w-]/g, '').slice(0, 64) : '';
 const advocate = STAFF.role === 'advocate' || !!asUid;
+// An advocate's statuses carry their own first name (2026-10-15); his, his.
+if (STAFF.role === 'advocate') setStatusName(STAFF.name || 'Your advocate');
 if (user && asUid) quietView(asUid);
 const ADVOCATE_PAGES = new Set(['overview', 'chat', 'files', 'notes', 'agenda', 'saved', 'log', 'milestones']);
 // askIfStillWorking is called from inside load(), not here: prepending its
@@ -185,6 +187,8 @@ const ADVOCATE_PAGES = new Set(['overview', 'chat', 'files', 'notes', 'agenda', 
 if (user && caseId) { loadFloor(); load(); }
 
 let data = null;
+// The case's own advocate as the forms name them (2026-10-15); empty is his name.
+let caseAdvocateName = '';
 // Case id the folder shell (and its one chat + advisor mount) was built for.
 // Refresh paths must never rebuild the chat's or the advisor's DOM.
 let renderedFor = null;
@@ -738,7 +742,7 @@ function render(el) {
     for (const r of STATUS_REACTIONS) {
       const o = document.createElement('option');
       o.value = r.id;
-      o.textContent = `${r.emoji} ${r.label}`;
+      o.textContent = `${r.emoji} ${statusLabel(r)}`;
       statusPick.appendChild(o);
     }
   }
@@ -902,6 +906,22 @@ function render(el) {
   });
 
   renderedFor = caseId;
+  // ?page= from a push (2026-10-15: a message opens on Chat). Taken out of the
+  // address at once, so a reload opens wherever they were last.
+  {
+    const params = new URLSearchParams(location.search);
+    const asked = params.get('page');
+    if (asked) {
+      params.delete('page');
+      history.replaceState({}, '', `${location.pathname}?${params}`);
+      if (folder.el(asked)) folder.show(asked);
+    }
+  }
+  // A contractor's case names them on the forms it sends; his name stays his.
+  if (data.advocateId) {
+    fetch(`/api/advocates/name?uid=${encodeURIComponent(data.advocateId)}`)
+      .then((r) => (r.ok ? r.json() : null)).then((d) => { caseAdvocateName = d?.name || ''; }).catch(() => {});
+  }
 }
 
 /**
@@ -2657,12 +2677,12 @@ function paintOverview(pane) {
       </div>
     </details>
 
-    <details class="mgmt" data-k="review">
+    ${advocate ? '' : `<details class="mgmt" data-k="review">
       <summary>⭐ Their review</summary>
       <div class="mgmt-body" data-case-review>
         <p class="dim small">Loading…</p>
       </div>
-    </details>
+    </details>`}
 
     <p class="eyebrow mgmt-when">Ending it</p>
 
@@ -2718,7 +2738,10 @@ function paintOverview(pane) {
   wireScheduler(pane);
   wireOpenFull(pane, c);
   pane.querySelectorAll('[data-action]').forEach((b) =>
-    b.addEventListener('click', () => milestone(b.dataset.action, b)));
+    b.addEventListener('click', () => {
+      if (b.dataset.action === 'report-uploaded' && !confirm(REPORT_SENT_ASK)) return;
+      milestone(b.dataset.action, b);
+    }));
   // Blank forms print straight from the pure functions — nothing is written
   // down, because nothing has been signed. Deliberately not a [data-action]:
   // those all post a milestone to the server, and this one is just paper.
@@ -3088,6 +3111,8 @@ async function compileCaseFile() {
 const REC_PICK = 'recording';
 const REC_ACCEPT = 'video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm';
 const DOC_ACCEPT = '.pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic';
+// Asked before a report is marked delivered, by upload or by button (2026-10-15).
+const REPORT_SENT_ASK = 'This tells your client the report is delivered and closes their chat in 48 hours. Continue?';
 function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">
@@ -3096,7 +3121,9 @@ function paintFiles(pane) {
            Analyze button on the advisor and has not been one for a while; the
            button is Update. An instruction naming a control that does not
            exist is worse than no instruction. -->
-      <p class="dim small">Everything shared on this case, newest day first. Tap 👨‍⚕️ on a file to hand it to the advisor, then press Update on the Read page.</p>
+      <!-- An advocate has no Read page (2026-10-15), so the second sentence
+           would name a control they do not have; they read the first alone. -->
+      <p class="dim small">Everything shared on this case, newest day first.${advocate ? '' : ' Tap 👨‍⚕️ on a file to hand it to the advisor, then press Update on the Read page.'}</p>
       <!-- ONE PICKER, TWO DECISIONS, IN THE ORDER HE MAKES THEM. He knows what
            the document IS before he goes looking for it, so the category is
            above the file field rather than beside it, and the sentence under
@@ -3105,6 +3132,7 @@ function paintFiles(pane) {
            delivered, which ends the case chat 48 hours later. -->
       <label class="small" style="margin-top:.7rem; display:block;">What are you uploading?
         <select id="up-cat" style="margin-left:.35rem;">
+          <option value="" selected>Choose what this is</option>
           ${UPLOAD_CATEGORIES.map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join('')}
           <option value="${REC_PICK}">Recording</option>
         </select>
@@ -3142,9 +3170,14 @@ function paintFiles(pane) {
   const fileEl = pane.querySelector('#up-report');
   const sayWhat = () => {
     // The recording had a picker of its own above this one. It is a choice in
-    // this one now, after his own types in his order so the picker still
-    // opens on Report: one picker, and the file field takes audio and video
-    // only while it is chosen.
+    // this one now, after his own types in his order: one picker, and the
+    // file field takes audio and video only while it is chosen.
+    // NOTHING CHOSEN, NOTHING UPLOADED (2026-10-15). The picker opened on
+    // Report, so a file picked straight away marked the case delivered,
+    // emailed the client and started their 48 hours, call or no call. It
+    // opens on a question now, and the file field waits for the answer.
+    fileEl.disabled = !cat.value;
+    if (!cat.value) { note.textContent = 'Choose what it is first.'; return; }
     const rec = cat.value === REC_PICK;
     fileEl.accept = rec ? REC_ACCEPT : DOC_ACCEPT;
     if (rec) { note.textContent = 'Starts the 14-day report clock.'; return; }
@@ -3161,12 +3194,22 @@ function paintFiles(pane) {
     const wrap = cat.closest('label');
     if (wrap) wrap.hidden = true;
     cat.value = UPLOAD_CATEGORIES[0].id;
+    fileEl.disabled = false;
     fileEl.accept = DOC_ACCEPT;
     note.textContent = 'Your own records: labs, letters, notes, anything. They go straight into the reading, and nobody is told.';
   }
   fileEl.addEventListener('change', (e) => {
     if (cat.value === REC_PICK) { upload(e.target.files[0], 'recording', 'recording-uploaded'); return; }
-    const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
+    const c = categoryOf(cat.value);
+    if (!c) { e.target.value = ''; return; }
+    // Asked here too, before the file goes anywhere: the Worker refuses a
+    // report before the call, and the file would otherwise be on their case.
+    if (c.action === 'report-uploaded' && !data.self && !data.reportDueAt) {
+      alert('Mark the call done first. The report comes after the call.');
+      e.target.value = '';
+      return;
+    }
+    if (c.action === 'report-uploaded' && !data.self && !confirm(REPORT_SENT_ASK)) { e.target.value = ''; return; }
     upload(e.target.files[0], 'report', c.action, c.id);
   });
 }
@@ -3714,7 +3757,7 @@ async function refreshFiles({ fromCache = false } = {}) {
         style="background:none; border:0; padding:.3rem .35rem; font-size:1.25rem; line-height:1; cursor:pointer;${r.starred ? '' : ' opacity:.35; filter:grayscale(1);'}"
         aria-label="${r.starred ? `Unstar ${esc(readName(r))}` : `Star ${esc(readName(r))}: pin to the top`}"
         title="${r.starred ? 'Unstar: back into its day' : 'Star: pin to the top'}">⭐</button>`}
-      ${reviewable(r)
+      ${!advocate && reviewable(r)
         ? `<button class="btn quiet file-review" data-review="${i}"
              aria-label="Hand ${esc(readName(r))} to the advisor to read"
              title="Hand this to the advisor to read, then press Update on the Read page">👨‍⚕️</button>`
@@ -4396,8 +4439,12 @@ async function wireScheduler(el) {
   try {
     const snapshot = await getDocs(query(collection(db, 'availability'), where('state', '==', 'open')));
     const slots = [];
+    // An advocate books their own client into their own time (2026-10-15):
+    // his open slots, the free calls among them, are not theirs to offer.
+    const onlyFor = advocate ? (asUid || STAFF.uid) : '';
     snapshot.forEach((d) => {
       const s = d.data();
+      if (onlyFor && s.advocateId !== onlyFor) return;
       const start = toDate(s.start);
       if (start.getTime() > Date.now()) slots.push({ id: d.id, start });
     });
@@ -4924,7 +4971,7 @@ function authorityDocTitle(kind) {
 function authorityDocHtml(item) {
   const o = {
     ...item,
-    clientName: data.clientName, clientDob: data.clientDob, advocateName: 'Eric Bleach',
+    clientName: data.clientName, clientDob: data.clientDob, advocateName: caseAdvocateName || 'Eric Bleach',
   };
   const text = item.kind === 'records' ? recordsAuthorisation(o)
     : item.kind === 'scope' ? scopeOfWork(o) : representativeDesignation(o);

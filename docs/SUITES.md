@@ -1683,3 +1683,28 @@ browser never holds the record at all. State persists in the browser
 (`pa-demo-store`, plus `pa-demo-store-advocate` for the admin-only half so a
 client-side tab never holds admin material); the Start over button in the
 demo banner reseeds it.
+
+### What was wrong today (2026-10-15, v7.52)
+
+Eric: "It's confusing as fuck to a new contractor." Three audits came back
+(redundancy, flow, icons) and the plan ships in five pushes; this is the
+first. A contractor's statuses carry their own first name, stored and pushed
+(`statusLabelFor` in the Worker, `setStatusName`/`statusLabel` in
+msg-actions.js); his stay word for word. Forms from a contractor's case name
+them (`/api/advocates/name?uid=`, public like the photo, null for him and for
+anyone unknown or off); his print his legal name. A report is refused before
+the call (no `reportDueAt`), the Uploads picker opens on "Choose what this is"
+with the file field disabled, and both report paths ask first; a later
+recording no longer restarts the clock. A contractor's Uploads name no
+reading tool, their opt-in for it keeps the price with Eric's caveat ("only an
+aid, not a diagnostic tool") on its own line, their + opens the lead form
+straight away, and they no longer get the review panel, his open slots, or
+the empty Calendar. The alerts card sits under the Clients row; message
+pushes carry `&page=chat`; a subscriber's upload push opens `?sub=`; the
+inbox survives an unreadable time.
+
+New: `cleanup.mjs` (A1 to A6) and `drive-cleanup.mjs` (8), every control
+recorded. Re-pinned with controls: authority S27 to S34's harness
+(caseAdvocateName), filing's row harness (advocate), selfcase S17's two
+guards, tighten W4 (the picker's first option), uploads U16 (renamed: after
+the call, refused before), drive-summary (the picker opens on its question), release R1.

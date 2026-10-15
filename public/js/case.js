@@ -2716,9 +2716,13 @@ function openAuthoritySheet(c, kind, onDone) {
       planName: val('planName'), memberId: val('memberId'),
       categories: cats(), scopes: scopesOf(), signedName: val('signedName'),
       contactOk: !!overlay.querySelector('[data-contact]:checked'),
+      advocateName: advName || undefined,
     };
     preview.textContent = (AUTHORITY_KINDS[kind]?.build || recordsAuthorisation)(o);
   };
+  // Whose name the form carries: the case's advocate, painted in when known.
+  let advName = '';
+  advocateNameFor(c.advocateId).then((n) => { advName = n; repaint(); });
   overlay.addEventListener('input', repaint);
   overlay.addEventListener('change', repaint);
   repaint();
@@ -3072,6 +3076,19 @@ function signatureInk(item) {
  * the case export and the prep sheet already use; there is no PDF library in
  * this stack and none is being added for this.
  */
+// The case's own advocate on the forms (2026-10-15). His cases, and any the
+// lookup cannot answer, print his name as they always have.
+const advocateNames = new Map();
+function advocateNameFor(uid) {
+  const id = String(uid || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return Promise.resolve('');
+  if (!advocateNames.has(id)) {
+    advocateNames.set(id, fetch(`/api/advocates/name?uid=${encodeURIComponent(id)}`)
+      .then((r) => (r.ok ? r.json() : null)).then((d) => d?.name || '').catch(() => ''));
+  }
+  return advocateNames.get(id);
+}
+
 async function printAuthority(c, item) {
   if (!item) return;
   // The list no longer carries the signature blobs, so the one document
@@ -3081,7 +3098,7 @@ async function printAuthority(c, item) {
   const o = {
     ...item,
     clientName: c.clientName, clientDob: c.clientDob,
-    advocateName: 'Eric Bleach',
+    advocateName: (await advocateNameFor(c.advocateId)) || 'Eric Bleach',
   };
   const text = (AUTHORITY_KINDS[item.kind]?.build || recordsAuthorisation)(o);
   const win = window.open('', '_blank');

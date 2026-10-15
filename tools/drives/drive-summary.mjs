@@ -64,6 +64,7 @@ for (const width of [390, 320]) {
       found: !!sel,
       options: sel ? [...sel.options].map((o) => o.textContent.trim()) : [],
       note: document.getElementById('up-cat-note')?.textContent.trim() || '',
+      fileOff: document.getElementById('up-report')?.disabled === true,
       // The new row must not push the panel sideways at 320.
       overflow: Math.round(document.documentElement.scrollWidth
         - document.documentElement.clientWidth),
@@ -82,12 +83,16 @@ for (const width of [390, 320]) {
   // RE-PINNED 2026-10-15 (v7.38, the tighten audit): the recording's separate picker became one more choice in
   // this one. It comes after his types, so his list is still word for word and in his order, and the picker
   // still opens on Report.
+  // RE-PINNED 2026-10-15 (v7.52): the picker opens on "Choose what this is". Opening on Report made one file picked
+  // straight away mark a case delivered, email the client and start the 48 hours, before the call had happened;
+  // his types still follow word for word and in his order, then Recording.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.52): the "Choose what this is" option taken out made both of these read FAIL.
   ok('with the types he named, spelled the way he said them, in his order, then Recording',
-    picker.options.join(' | ') === 'Report | Call summary | Visit follow-up | '
+    picker.options.join(' | ') === 'Choose what this is | Report | Call summary | Visit follow-up | '
       + 'Appointment summary | Form sent to client | Filled form | Recording',
     picker.options.join(' | '));
-  ok('and it starts on Report, so the common case is no taps',
-    /Marks the case delivered/.test(picker.note), picker.note);
+  ok('and it starts on a question, with the file field waiting, so nothing moves until he says what it is',
+    /^Choose what it is first\./.test(picker.note) && picker.fileOff, JSON.stringify({ note: picker.note, fileOff: picker.fileOff }));
   ok('the page does not scroll sideways', picker.overflow <= 1, `${picker.overflow}px over`);
 
   // Switching it changes the sentence, so the consequence is on screen before

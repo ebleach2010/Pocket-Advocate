@@ -98,9 +98,13 @@ export async function initPushPrompt(user, mount) {
       <button class="btn glow" data-push="on">Turn on notifications</button>
       <button class="btn quiet" data-push="later">Not now</button>
     </div>`;
-  // Under the page's title, not above it (2026-10-15, the look audit).
+  // Under the page's title, not above it (2026-10-15, the look audit). On
+  // Clients the title shares a row with the + and Employer mode, and the card
+  // inside that row pushed both off a phone's screen (2026-10-15), so it goes
+  // under the whole row there.
   const h1 = mount.querySelector('h1');
-  if (h1) h1.after(panel); else mount.prepend(panel);
+  const under = h1?.closest('.clients-head') || h1;
+  if (under) under.after(panel); else mount.prepend(panel);
 
   panel.querySelector('[data-push="later"]').addEventListener('click', () => {
     localStorage.setItem(DISMISS_KEY, '1');

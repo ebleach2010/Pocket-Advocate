@@ -11,7 +11,9 @@
 // An advocate also gets their chat with him (admin-staffchat.js).
 
 // What only he works on, by the tab's own link.
-const HIS_ALONE = ['/admin-leads.html', '/admin-availability.html', '/admin-dictionary.html', '/admin-fund.html'];
+// Calendar joined them 2026-10-15: an advocate cannot open time slots yet, so
+// theirs was an empty grid; their booked calls are on Clients under BOOKED.
+const HIS_ALONE = ['/admin-leads.html', '/admin-availability.html', '/admin-dictionary.html', '/admin-fund.html', '/admin-calendar.html'];
 
 function addTab(tabs, href, label) {
   if (!tabs || tabs.querySelector(`a[href="${href}"]`)) return;

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.51';
+export const VERSION = '7.52';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.51';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WHAT WAS WRONG TODAY (Eric, 2026-10-15: "It's confusing as fuck to a
+    // new contractor." The first of five cleanup pushes). Admin only.
+    version: '7.52',
+    quiet: true,
+    client: [],
+    admin: [
+      'A contractor\'s client now reads their name in a status, "Ana is reading", not yours. Yours still say Eric.',
+      'Forms sent from a contractor\'s case name that contractor as the advocate.',
+      'A report cannot be marked delivered before the call, and the upload asks first. A later recording no longer restarts the report clock.',
+      'A contractor\'s Uploads page no longer points to a reading tool they do not have. Their sign-up for it keeps the price and says it is only an aid, not a diagnostic tool.',
+      'A contractor\'s + opens their lead form straight away, and they no longer see an empty Calendar, a review panel they cannot use, or your open times.',
+      'The message alerts card no longer pushes the + off your screen, and a message notification opens the chat.',
+    ],
+  },
   {
     // TWO THINGS OFF (Eric, 2026-10-15: "Remove the fund queue, one day
     // summary"). Admin only.

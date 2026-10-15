@@ -707,13 +707,20 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
     `${long.pushes[0]?.body.length} chars`);
 
   // The report still does what the report always did.
-  const rep = await run(CASEDOC, { action: 'report-uploaded', fileName: 'Report.pdf' });
+  // RE-PINNED AND RENAMED 2026-10-15 (v7.52): a report follows the call. One file picked on a booked case marked it
+  // delivered five days before the call, so a case with no report clock (no call yet) is refused and nothing moves;
+  // after the call it delivers, as it always did.
+  const rep = await run({ ...CASEDOC, reportDueAt: new Date(Date.now() + 5 * 86_400_000) }, { action: 'report-uploaded', fileName: 'Report.pdf' });
+  const early = await run(CASEDOC, { action: 'report-uploaded', fileName: 'Report.pdf' });
   // NEGATIVE CONTROL: dropping `status: 'delivered'` from report-uploaded made
   // this read
   //   FAIL  U16 ... -- [{"reportDeliveredAt":"..."}]
-  ck('U16 and uploading the REPORT still delivers the case, as it always did',
-    rep.writes.some((w) => w.fields.status === 'delivered'),
-    JSON.stringify(rep.writes.map((w) => w.fields)));
+  // NEGATIVE CONTROL (run 2026-10-15, v7.52): the `if (!doc.data.reportDueAt)` refusal taken out made this read
+  //   FAIL  U16 and uploading the REPORT delivers the case after the call, as it always did, and is refused before it
+  ck('U16 and uploading the REPORT delivers the case after the call, as it always did, and is refused before it',
+    rep.writes.some((w) => w.fields.status === 'delivered')
+    && early.res?.status === 409 && early.writes.length === 0,
+    JSON.stringify({ after: rep.writes.map((w) => w.fields), before: early.res?.status, wrote: early.writes.length }));
 
   // A FORM HE SENT, which is this same route pointed at the same client from
   // a different panel. Eric, 2026-08-27: "I need to be able to select forms

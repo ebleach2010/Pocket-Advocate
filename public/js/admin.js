@@ -60,6 +60,10 @@ if (user && advocate) {
   for (const item of menu ? [...menu.querySelectorAll('[role="menuitem"]')] : []) {
     if (item.dataset.openDoor !== 'lead') item.remove();
   }
+  // With one door left, the + is that door (2026-10-15), not a one-line menu.
+  const plus = document.querySelector('[data-add-open]');
+  plus?.removeAttribute('aria-haspopup');
+  plus?.setAttribute('aria-label', 'Schedule a case from a lead');
   if (asUid) {
     document.querySelector('[data-add-open]')?.closest('.add-wrap')?.remove();
     document.getElementById('invites')?.remove();
@@ -620,6 +624,9 @@ function wireAddMenu() {
     btn.setAttribute('aria-expanded', on ? 'true' : 'false');
   };
   btn.addEventListener('click', () => {
+    // One door (a contractor's +, 2026-10-15): the + opens it straight away.
+    const items = menu.querySelectorAll('[role="menuitem"]');
+    if (items.length === 1) { items[0].click(); return; }
     setOpen(menu.hidden);
     if (!menu.hidden) menu.querySelector('[role="menuitem"]')?.focus();
   });

@@ -117,7 +117,11 @@ function render(host, admin) {
     <form class="panel" id="advisor-form">
       <h3 style="margin:0;">Pocket Advocate Advisor</h3>
       <p class="small" style="margin:0;">Advisor reads what is in each of your cases (records, labs, imaging reports, notes, messages, reports, insurance details and the timeline) and gives you a written read: what changed, what is missing, what contradicts, questions to ask, priorities, and insurance or referral issues. It updates every 6 hours when a case has changed, and whenever you tap Update.</p>
-      <p class="dim small" style="margin:0;">Advisor is AI-generated guidance. It can be wrong, it does not diagnose, and it does not replace anyone's professional medical judgment. Nothing it writes is ever sent to a client. It costs $79 a month, taken from your earnings, which includes $60 of reading; past that, automatic updates pause and each Update you tap is billed at cost.</p>
+      <!-- Eric, 2026-10-15: "Keep it with the up charge and caveat that it's
+           only an aid, not a diagnostic tool." The caveat is its own line, not
+           tucked into the small print. -->
+      <p class="small" style="margin:0;"><strong>It is only an aid, not a diagnostic tool.</strong> Advisor is AI-generated guidance. It can be wrong, and it does not replace anyone's professional medical judgment. Nothing it writes is ever sent to a client.</p>
+      <p class="dim small" style="margin:0;">It costs $79 a month, taken from your earnings, which includes $60 of reading; past that, automatic updates pause and each Update you tap is billed at cost.</p>
       <label class="toggle"><input type="checkbox" name="optin"${a.advisorOptIn ? ' checked' : ''}> I want Advisor</label>
       <p class="dim small" style="margin:0;">${a.advisorEnabled ? 'It is switched on for you.' : a.advisorOptIn ? 'You have asked for it. It is switched on for you once Eric turns it on.' : 'Off. Tick the box to ask for it.'}</p>
       <div class="row-btn"><button type="submit" class="btn quiet">Save my choice</button><span class="dim small" data-said role="status"></span></div>

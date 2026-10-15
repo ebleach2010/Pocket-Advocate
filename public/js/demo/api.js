@@ -831,11 +831,13 @@ export function demoApi(role, store) {
         return ok({ ok: true, phone: phone || null, address: address || null });
       } else if (body.action === 'recording-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
-        const next = { ...c, reportDueAt: new Date(now.getTime() + 14 * 86400000) };
-        // Delivered stays delivered: a second recording on a finished case
-        // restarts the clock without undoing the delivery, same as the Worker.
-        if (c.status !== 'delivered') next.status = 'awaiting_report';
-        store.docs.set(key, next);
+        // The clock starts once (2026-10-15), as the Worker's does: a later
+        // recording is filed and moves nothing.
+        if (!c.reportDueAt) {
+          const next = { ...c, reportDueAt: new Date(now.getTime() + 14 * 86400000) };
+          if (c.status !== 'delivered') next.status = 'awaiting_report';
+          store.docs.set(key, next);
+        }
       } else if (body.action === 'summary-uploaded') {
         // A document he wrote, filed on the case under its own label. The
         // Worker's rules, mirrored: the case does NOT move, the label comes
@@ -852,6 +854,7 @@ export function demoApi(role, store) {
         return ok({ ok: true, category: body.category, notified: true });
       } else if (body.action === 'report-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
+        if (!c.self && !c.reportDueAt) return fail(409, 'Mark the call done first. The report comes after the call.');
         store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now });
       } else if (body.action === 'set-paid') {
         // Missing entirely until now, which is how a demo can agree with a
@@ -2913,6 +2916,10 @@ export function demoApi(role, store) {
       store.persist?.();
       return ok({ ok: true, photoV: v });
     }
+    if (path === '/api/advocates/name') {
+      const d = demoContractor(q.get('uid') || '');
+      return ok({ name: d ? String(d.name || '').trim() || null : null });
+    }
     if (path === '/api/advocates/headshot') {
       const uid = q.get('uid') || '';
       const url = window.__paDemoHeadshots?.[uid];
@@ -2998,7 +3005,8 @@ export function demoApi(role, store) {
         const rec = emo
           ? { id: reaction, emoji: emo.emoji, kind: 'emoji', by: myUid, at: new Date() }
           : stat
-            ? { id: reaction, label: stat.label, kind: 'status', by: myUid, at: new Date() }
+            // An advocate's status carries their first name, as the Worker's statusLabelFor does.
+            ? { id: reaction, label: role === 'advocate' ? stat.label.replace(/^Eric\b/, String(store.docs.get(`users/${myUid}`)?.name || '').split(' ')[0] || 'Your advocate') : stat.label, kind: 'status', by: myUid, at: new Date() }
             : null;
         store.docs.set(msgPath, { ...msg, reaction: rec });
       }

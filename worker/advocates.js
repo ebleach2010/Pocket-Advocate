@@ -339,6 +339,21 @@ async function publicHeadshot(request, env, url, h) {
   });
 }
 
+/**
+ * GET /api/advocates/name?uid=  A contractor's name, as their client's forms
+ * print it (2026-10-15: a records release sent from a contractor's case named
+ * Eric as the client's advocate). Public, like their photo, and only for an
+ * active advocate who is not him: his forms print his legal name as they
+ * always have, so he, and anyone unknown or turned off, answers null.
+ */
+async function publicName(request, env, url, h) {
+  const uid = String(url.searchParams.get('uid') || '');
+  if (!UID_RE.test(uid) || uid === env.ADMIN_UID) return h.json({ name: null });
+  const d = (await getDoc(env, `advocates/${uid}`).catch(() => null))?.data;
+  const name = d?.active === true && d.owner !== true && typeof d.name === 'string' ? d.name.trim().slice(0, 80) : '';
+  return h.json({ name: name || null });
+}
+
 /** The one entry point the Worker's router calls for everything above. */
 export async function handleAdvocates(request, env, url, h) {
   const p = url.pathname;
@@ -347,5 +362,6 @@ export async function handleAdvocates(request, env, url, h) {
   if (p === '/api/staff/headshot') return staffHeadshot(request, env, h);
   if (p === '/api/admin/advocates/headshot') return adminHeadshot(request, env, url, h);
   if (p === '/api/advocates/headshot' && request.method === 'GET') return publicHeadshot(request, env, url, h);
+  if (p === '/api/advocates/name' && request.method === 'GET') return publicName(request, env, url, h);
   return h.json({ error: 'Not found' }, 404);
 }

@@ -95,7 +95,7 @@ async function loadInbox() {
             </span>
           </div>
           <p class="dim small" style="margin:.3rem 0 0;">
-            ${t.lm ? `${t.lm.role === 'admin' ? 'You: ' : ''}${esc(t.lm.text)} · ${fmt.format(lmTime(t))}` : 'No messages yet.'}
+            ${t.lm ? `${t.lm.role === 'admin' ? 'You: ' : ''}${esc(t.lm.text)}${lmTime(t) ? ` · ${fmt.format(lmTime(t))}` : ''}` : 'No messages yet.'}
           </p>
         </a>`).join('') : '<p class="dim">No conversations yet.</p>'}
     </div>`;
@@ -108,9 +108,14 @@ async function loadInbox() {
   // beside the in/out switch, and served from exactly one place.
 }
 
+// A time that cannot be read is no time (2026-10-15): one unreadable stamp
+// threw "Invalid time value" in the date formatter and left the whole inbox
+// on Loading.
 function lmTime(t) {
-  if (!t.lm || !t.lm.ts) return 0;
-  return t.lm.ts.toDate ? t.lm.ts.toDate().getTime() : new Date(t.lm.ts).getTime();
+  const ts = t.lm?.ts;
+  if (!ts) return 0;
+  const ms = ts.toDate ? ts.toDate().getTime() : typeof ts.seconds === 'number' ? ts.seconds * 1000 : new Date(ts).getTime();
+  return Number.isFinite(ms) ? ms : 0;
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
