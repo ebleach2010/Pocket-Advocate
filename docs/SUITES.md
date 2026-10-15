@@ -298,6 +298,22 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Warm public pages (2026-10-15, v7.48)
+
+Eric: "try adding the same warm style from the preview suite to the landing
+page. Something I can easily undo." `public/css/landing-warm.css` is linked
+from no page: the Worker (`warmLook`) lays it after landing.css on the four
+pages that wear it (the home and the three package pages) while his switch is
+on (`config/look`, `landingWarm`, on until he turns it off), read at most once
+a minute. The switch is the Warm public pages row in his settings
+(`/api/admin/look`, his alone). Off, the pages are byte for byte as in the
+repository. Every rule in the sheet sits under
+`:root:not([data-scheme="contrast"])`.
+
+New suite `landingwarm.mjs` (5) and drive `drive-warmlanding.mjs` (5), every
+check with its control recorded. Re-pinned and renamed with a dated note and
+control: drive-landing's "on black" check. Release R1.
+
 ### Contractors' own settings (2026-10-15, v7.47)
 
 Eric: "Contractors have controls in settings just like me." His settings are

@@ -1,0 +1,114 @@
+/* THE PUBLIC PAGES, WARM (Eric, 2026-10-15: "try adding the same warm style
+   from the preview suite to the landing page. Something I can easily undo.")
+
+   Not linked from any page. The Worker lays it over landing.css on the home
+   and the three package pages while his switch is on (Settings, Warm public
+   pages), and leaves them black while it is off. Deleting this file and the
+   warmLook() call in worker/index.js removes it entirely.
+
+   The same world as the client's side (warm.css): a plum brown ground,
+   peach and rose light where the black look had cyan and violet. The
+   Priority Chat card keeps its gold, and High contrast, chosen for
+   somebody's eyes, is never touched. */
+
+:root:not([data-scheme="contrast"]):has(body.landing) {
+  background: #1E1519;
+}
+:root:not([data-scheme="contrast"]) body.landing {
+  --bg: #1E1519;
+  --bg-deep: #160F12;
+  --panel: #2A1E24;
+  --panel-2: #33252C;
+  --ink: #FFF5EE;
+  --soft: #F2E1D6;
+  --dim: #CDB5A8;
+  --muted: #A38D82;
+  --line: #45333B;
+  --cyan: #FFB27A;
+  --cyan-dim: #C9814F;
+  --magenta: #F59BBF;
+  --gold: #FFCF6B;
+  --on-accent: #2B1207;
+  --sur-quiet: #251B20;
+  --sur-base: #2A1E24;
+  --sur-lit: #34262D;
+  --sur-floating: #30232A;
+  --sur-inset: #20171B;
+  --edge-quiet: rgba(255, 214, 190, .07);
+  --edge-base: rgba(255, 214, 190, .13);
+  --edge-lit: rgba(255, 214, 190, .22);
+  --edge-focus: #FFB27A;
+  --el-cta: 0 10px 30px rgba(255, 140, 100, .30), 0 0 0 1px rgba(255, 178, 122, .55);
+  --glow-c: 0 10px 30px rgba(255, 140, 100, .26);
+  --bar: rgba(30, 21, 25, .86);
+  --deep: #160F12;
+  --deep-2: #160F12;
+  --deep-ink: #FFF5EE;
+  --deep-dim: #CDB5A8;
+  --deep-line: rgba(255, 214, 190, .1);
+  --warm-pop: linear-gradient(110deg, #FFC48A 0%, #FF9E7D 50%, #F59BBF 100%);
+  background-color: #1E1519;
+  background-image:
+    radial-gradient(900px 460px at 90% -8%, rgba(255, 150, 105, .20), transparent 62%),
+    radial-gradient(760px 420px at -14% 28%, rgba(245, 155, 191, .12), transparent 60%),
+    radial-gradient(800px 500px at 50% 110%, rgba(255, 196, 138, .08), transparent 60%);
+}
+
+/* The wordmark keeps the brand's cyan, the way it does on the client's side. */
+:root:not([data-scheme="contrast"]) body.landing .brand .spark { color: #3DDCF5; }
+
+/* The live card: a peach rim and wash instead of the cyan. */
+:root:not([data-scheme="contrast"]) body.landing .opt-live {
+  border-color: rgba(255, 178, 122, .62);
+  background:
+    linear-gradient(180deg, rgba(255, 178, 122, .12), rgba(255, 178, 122, .02) 58%),
+    var(--sur-base);
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .22), 0 22px 60px rgba(255, 140, 100, .14);
+}
+:root:not([data-scheme="contrast"]) body.landing .opt-live .opt-ic,
+:root:not([data-scheme="contrast"]) body.landing .num { border-color: rgba(255, 178, 122, .4); }
+
+/* Everything that wore the cyan to violet wears the warm pop. */
+:root:not([data-scheme="contrast"]) body.landing :is(.wl-bubble, .ask-fab) {
+  background: var(--warm-pop);
+  color: #2B1207;
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .32);
+}
+:root:not([data-scheme="contrast"]) body.landing .wl-bubble::after { background: #F59BBF; }
+:root:not([data-scheme="contrast"]) body.landing .pv-bubble::after { background: #FFC48A; }
+:root:not([data-scheme="contrast"]) body.landing .opt-gold {
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .32);
+}
+:root:not([data-scheme="contrast"]) body.landing .opt-gold::before,
+:root:not([data-scheme="contrast"]) body.landing .opt-gold::after {
+  background:
+    conic-gradient(from var(--pa-ring), transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg),
+    var(--warm-pop);
+}
+:root:not([data-scheme="contrast"]) body.landing .pkg-callout {
+  background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box;
+  box-shadow: 0 10px 30px rgba(255, 140, 100, .14);
+}
+:root:not([data-scheme="contrast"]) body.landing .pkg-tldr { box-shadow: inset 3px 0 0 #FFB27A; }
+:root:not([data-scheme="contrast"]) body.landing .pkg-hero {
+  background:
+    linear-gradient(160deg, rgba(255, 178, 122, .14), rgba(245, 155, 191, .07) 55%, transparent 80%),
+    var(--sur-base);
+}
+:root:not([data-scheme="contrast"]) body.landing :is(.pkg-tag, .pkg-price) { background: var(--warm-pop); -webkit-background-clip: text; background-clip: text; }
+:root:not([data-scheme="contrast"]) body.landing .pkg-points li::before { background: linear-gradient(110deg, #FFC48A, #F59BBF); -webkit-background-clip: text; background-clip: text; }
+
+/* The bubbles' breathing glow, in peach. Loaded only while the warm look is
+   on, so this takes the animation's place only then. */
+@keyframes wl-glow {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .32); }
+  50% { box-shadow: 0 0 0 1px rgba(255, 178, 122, .8), 0 8px 34px rgba(255, 140, 100, .55); }
+}
+
+/* Buttons that act. */
+:root:not([data-scheme="contrast"]) body.landing :is(.btn.glow, .btn.mag.glow) {
+  border-color: transparent;
+  background: var(--warm-pop);
+  color: #2B1207;
+  box-shadow: var(--el-cta);
+}

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.47';
+export const VERSION = '7.48';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.47';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WARM PUBLIC PAGES (Eric, 2026-10-15: "try adding the same warm style
+    // from the preview suite to the landing page. Something I can easily
+    // undo."). Admin only.
+    version: '7.48',
+    quiet: true,
+    client: [],
+    admin: [
+      'The home and the package pages wear the warm look your clients see on their case. To undo it, turn off Warm public pages in your settings: the black look is back within a minute, nothing to deploy.',
+    ],
+  },
   {
     // CONTRACTORS' OWN SETTINGS (Eric, 2026-10-15: "Contractors have controls
     // in settings just like me."). Admin only.

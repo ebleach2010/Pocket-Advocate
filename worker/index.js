@@ -900,6 +900,55 @@ async function adminCookieUid(request, env) {
   return timingSafeEqual(hex, want) ? uid : null;
 }
 
+// ---- THE WARM LOOK ON THE PUBLIC PAGES (Eric, 2026-10-15) ------------------
+// "Try adding the same warm style from the preview suite to the landing page.
+// Something I can easily undo." The four pages that wear landing.css (the
+// home and the three package pages) are sent with public/css/landing-warm.css
+// laid over it while his switch is on (config/look, landingWarm; on until he
+// turns it off), and exactly as they are in the repository while it is off.
+// The switch is the Warm public pages row in his settings; flipping it needs
+// no deploy, and every page reads it again within a minute.
+const LOOK_PATH = 'config/look';
+const LOOK_TTL_MS = 60_000;
+let lookCache = { at: 0, warm: true };
+async function landingWarmOn(env) {
+  if (Date.now() - lookCache.at < LOOK_TTL_MS) return lookCache.warm;
+  const doc = await getDoc(env, LOOK_PATH).catch(() => undefined);
+  // An unreadable switch keeps whatever it last said; an unset one is on.
+  if (doc !== undefined) lookCache = { at: Date.now(), warm: doc?.data?.landingWarm !== false };
+  else lookCache = { ...lookCache, at: Date.now() };
+  return lookCache.warm;
+}
+async function warmLook(env, res) {
+  if (!res.ok || !/^text\/html/i.test(res.headers.get('content-type') || '')) return res;
+  if (!(await landingWarmOn(env).catch(() => false))) return res;
+  // Only a page that wears landing.css gets the warm sheet, right after it.
+  return new HTMLRewriter()
+    .on('link[rel="stylesheet"][href^="/css/landing.css"]', {
+      element(el) { el.after('<link rel="stylesheet" href="/css/landing-warm.css?v=1">', { html: true }); },
+    })
+    .transform(res);
+}
+
+/**
+ * GET/POST /api/admin/look   his alone. { landingWarm: true | false }
+ * The switch behind the warm public pages.
+ */
+async function handleLook(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    if (typeof body?.landingWarm !== 'boolean') return json({ error: 'On or off.' }, 400);
+    await patchDoc(env, LOOK_PATH, { landingWarm: body.landingWarm, setAt: new Date() }, { mask: ['landingWarm', 'setAt'] });
+    lookCache = { at: Date.now(), warm: body.landingWarm };
+  } else if (request.method !== 'GET') {
+    return json({ error: 'Not found' }, 404);
+  }
+  const doc = await getDoc(env, LOOK_PATH).catch(() => null);
+  return json({ landingWarm: doc?.data?.landingWarm !== false });
+}
+
 /**
  * Why a cookie of ours was refused, in one word, for the flight recorder:
  * 'none', 'shape', 'expired' or 'signature'. Never the cookie itself.
@@ -1024,6 +1073,9 @@ export default {
         return await handlePayroll(request, env, url, { requireAdmin, requireStaff, json });
       if (url.pathname === '/api/staff/leads' && request.method === 'GET')
         return await handleStaffLeads(request, env);
+      // The warm public pages' switch (2026-10-15).
+      if (url.pathname === '/api/admin/look')
+        return await handleLook(request, env);
       // A contractor's own settings (2026-10-15): their door sign, prices and limit.
       if (url.pathname === '/api/staff/settings')
         return await handleStaffSettings(request, env, { requireStaff, json, readRates, officeStatus });
@@ -1539,9 +1591,9 @@ export default {
       const out = new Response(res.body, res);
       out.headers.set('cache-control', 'no-store');
       out.headers.append('set-cookie', demoCookie(demo));
-      return out;
+      return warmLook(env, out);
     }
-    return env.ASSETS.fetch(request);
+    return warmLook(env, await env.ASSETS.fetch(request));
   },
 
   async scheduled(event, env, ctx) {
@@ -2340,7 +2392,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-contractor-settings';
+const BUILD_TAG = 'v2026-10-15-warm-public';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2348,7 +2400,7 @@ const BUILD_TAG = 'v2026-10-15-contractor-settings';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.47';
+const VERSION = '7.48';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

@@ -52,12 +52,19 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     closing: [...document.querySelectorAll('#closing .actions a')].map((a) => a.getAttribute('href')),
     serif: getComputedStyle(document.querySelector('main h1')).fontFamily,
     scheme: document.documentElement.dataset.scheme || 'neon',
+    warm: !!document.querySelector('link[href^="/css/landing-warm.css"]'),
     steps: document.querySelectorAll('.steps li').length,
     needs: document.querySelectorAll('.needs-list li').length,
   }));
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat".
   // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything."
-  ok('his headline, in Sora, on black', shape.h1 === 'Go into your next appointment with a plan.' && /^Sora/.test(shape.serif) && shape.scheme === 'calm' && shape.bg === 'rgb(10, 10, 12)', `${shape.scheme} / ${shape.bg} / ${shape.serif}`);
+  // RE-PINNED AND RENAMED 2026-10-15 (v7.48): Eric, "try adding the same warm style from the preview suite to the
+  // landing page. Something I can easily undo." While his switch is on the Worker lays landing-warm.css over the
+  // page and the ground is the client side's plum brown; off, it is black, as before.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.48): landing-warm.css's ground made #2A1E24 made this read
+  //   FAIL  his headline, in Sora, on black, or on the warm ground while his switch is on
+  ok('his headline, in Sora, on black, or on the warm ground while his switch is on', shape.h1 === 'Go into your next appointment with a plan.' && /^Sora/.test(shape.serif) && shape.scheme === 'calm'
+    && shape.bg === (shape.warm ? 'rgb(30, 21, 25)' : 'rgb(10, 10, 12)'), `${shape.scheme} / ${shape.bg} / ${shape.serif} / warm ${shape.warm}`);
   // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works and Straight answers went.
   // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow". The numbers left the screens for the pull-up sheet, outside main.
   ok('the five headings after the hero, in order, the options first',

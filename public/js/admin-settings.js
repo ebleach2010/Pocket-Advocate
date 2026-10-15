@@ -103,6 +103,14 @@ export function adminSettingsHtml() {
       <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
         aria-pressed="${localStorage.getItem('pa-open-admin') !== '0'}" aria-label="Open to my dashboard"></button>
     </div>
+    <div class="toggle-row" style="margin-top:1rem;">
+      <!-- Eric, 2026-10-15: "try adding the same warm style from the preview
+           suite to the landing page. Something I can easily undo." This is
+           the undo: off, and the public pages are black again within a
+           minute, with nothing to deploy. -->
+      <span><strong>Warm public pages</strong><br><span class="dim small" data-look-said>The home and the package pages in the warm look your clients see. Turn off for the black look.</span></span>
+      <button class="switch" data-look-warm aria-pressed="false" aria-label="Warm public pages" disabled></button>
+    </div>
     <h4 style="margin:1.2rem 0 .1rem;">Full-Service cases at once</h4>
     <!-- THE TAP THE WORKER'S OWN COMMENT PROMISED. FULL_MAX_OPEN_DEFAULT said
          "one tap on his dashboard changes it" and there was no tap: the field
@@ -140,12 +148,44 @@ export function wireAdminSettings(overlay, user) {
   wirePrices(overlay, user);
   wirePaid(overlay, user);
   wireCapacity(overlay, user);
+  wireLook(overlay, user);
   overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
     const btn = e.currentTarget;
     const on = !btn.classList.contains('on');
     localStorage.setItem('pa-open-admin', on ? '1' : '0');
     btn.classList.toggle('on', on);
     btn.setAttribute('aria-pressed', String(on));
+  });
+}
+
+/** The warm public pages switch: asked first, painted from the answer, then live. */
+function wireLook(overlay, user) {
+  const btn = overlay.querySelector('[data-look-warm]');
+  const said = overlay.querySelector('[data-look-said]');
+  if (!btn) return;
+  const paint = (on) => {
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', String(on));
+    btn.disabled = false;
+  };
+  const call = async (body) => {
+    const res = await fetch('/api/admin/look', {
+      method: body ? 'POST' : 'GET',
+      headers: { authorization: `Bearer ${await user.getIdToken()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `That did not save (${res.status}).`);
+    return out;
+  };
+  call().then((o) => paint(o.landingWarm === true)).catch(() => { said.textContent = 'Could not read it. Try again in a moment.'; });
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const o = await call({ landingWarm: !btn.classList.contains('on') });
+      paint(o.landingWarm === true);
+      said.textContent = o.landingWarm ? 'Warm. The public pages show it within a minute.' : 'Black again. The public pages show it within a minute.';
+    } catch (x) { said.textContent = x.message; btn.disabled = false; }
   });
 }
 

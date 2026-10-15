@@ -159,6 +159,16 @@ export function demoApi(role, store) {
     // Prices, as one stored doc (2026-10-15), so a save in his settings is
     // read back by every page the way the real rates doc is. Same rails and
     // the same refusal words as handleSetRates.
+    // The warm public pages switch (2026-10-15), kept so the row in his settings works in the demo.
+    if (path === '/api/admin/look') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      if ((init.method || 'GET') === 'POST') {
+        if (typeof body.landingWarm !== 'boolean') return fail(400, 'On or off.');
+        store.docs.set('config/look', { landingWarm: body.landingWarm });
+        store.persist?.();
+      }
+      return ok({ landingWarm: store.docs.get('config/look')?.landingWarm !== false });
+    }
     if (path === '/api/rates' || path === '/api/admin/rates') {
       const SEEDS = { caseCents: 210000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500 };
       const now = { ...SEEDS, ...(store.docs.get('config/rates') || {}) };

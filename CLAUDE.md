@@ -239,6 +239,11 @@ preview opens on its guided tour (`public/js/preview/tour.js`); a new section
 on the client's case page should get a step there. His Clients shelf is tan
 manila again, set on `.drawer` only.
 
+The public pages (home and the three package pages) are warm too while his
+Warm public pages switch is on (v7.48): the Worker adds
+`public/css/landing-warm.css` after landing.css, so a change to the black
+landing look needs its warm twin there, or the warm look shows a gap.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin
