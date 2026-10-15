@@ -29,7 +29,7 @@
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/glowup.css?v=sp9">
 <link rel="stylesheet" href="/css/look.css?v=7">
-<link rel="stylesheet" href="/css/landing.css?v=b8">
+<link rel="stylesheet" href="/css/landing.css?v=b9">
 <script>
 // A returning account holder skips the booking page. Inline in <head> so there
 // is no flash of it first; the marker is set at sign-in and cleared at
@@ -136,9 +136,15 @@
     <img class="hero-logo" src="/img/logo-192.png" alt="" width="56" height="56">
     <!-- The waitlist bubble keeps the top right (2026-10-12), now sharing its
          row with the eyebrow so the home fits one screen (2026-10-14). -->
+    <!-- PREVIEW A CASE (Eric, 2026-10-15: "This showcase suite will be on the
+         top left in the same aesthetic as the waitlist button, but it will say
+         'preview a case' or something similar. So clients can see the features
+         before they commit."). An invented case of their own, in this tab only;
+         Exit inside it, or coming back here, wipes it. -->
     <div class="hero-top">
-      <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
+      <a class="wl-bubble pv-bubble" href="/case.html?preview=1"><span class="wl-spark" aria-hidden="true">&#10022;</span>Preview a case</a>
       <button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog"><span class="wl-spark" aria-hidden="true">&#10022;</span>Join the waitlist</button>
+      <p class="hero-eyebrow eyebrow">Patient advocacy for complicated neurological conditions. US and Canada.</p>
     </div>
     <h1>Go into your next appointment with a plan.</h1>
     <p class="hero-sub measure">I review your labs, imaging, records, and history, then help you sort out what deserves attention, what questions to ask next, and how to present the case clearly to your care team.</p>
@@ -283,8 +289,6 @@
     GOOGLE_REVIEWS_URL, GOOGLE_REVIEW_WRITE_URL, REVIEWS, REVIEW_THEMES, reviewSummary, loadReviews,
   } from '/js/reviews-config.js';
   import { enhanceReviewsStrip } from '/js/reviews-strip.js';
-  // By the numbers: paints the pull-up sheet at the foot of the page.
-  import('/js/stats.js').catch(() => {});
 
   const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
@@ -354,45 +358,6 @@
      their name and email and question and press send to have it sent to my
      inbox. Once sent, remind them to check their spam box in case my reply
      gets sent there."). /js/question.js sends it to /api/question. -->
-<!-- BY THE NUMBERS, PULLED UP FROM THE BOTTOM (Eric, 2026-10-15: "put my
-     stats at the bottom of the landing page in brief; it will be a tab with an
-     arrow that glows like the waitlist button and softly eases up and down in
-     an ease in, ease out fashion every 1.5 seconds. When they grab it and swipe
-     up it shows all of my stats."). It replaces the strip that sat behind the
-     menu, which nobody could reach. Hidden until stats.js has real figures, so
-     a fresh deploy never shows a tab of ellipses. A tap opens it too. -->
-<button type="button" class="stats-tab" data-stats-tab aria-controls="stats-sheet" aria-expanded="false" hidden>
-  <span class="stats-arrow" aria-hidden="true"><svg class="ico"><use href="/img/icons.svg#i-chev"/></svg></span>
-  <span class="stats-label">By the numbers</span>
-  <span class="stats-brief" data-stats-brief></span>
-</button>
-<div class="stats-sheet" id="stats-sheet" data-stats-sheet role="dialog" aria-modal="true" aria-labelledby="stats-sheet-h" hidden>
-  <div class="stats-card" data-stats-card>
-    <div class="stats-grab" data-stats-grab>
-      <span class="stats-grip" aria-hidden="true"></span>
-      <div class="stats-head">
-        <h2 id="stats-sheet-h">By the numbers</h2>
-        <button type="button" class="btn quiet tiny" data-stats-close>Close</button>
-      </div>
-    </div>
-    <p class="dim">How I actually work, measured across every case and updated daily.</p>
-    <div class="numbers">
-      <div class="tile"><b data-stat="replyMedian">…</b><span>median time to reply to a client message</span></div>
-      <div class="tile"><b data-stat="withinHour">…</b><span>of client messages answered within an hour</span></div>
-      <div class="tile"><b data-stat="reports">…</b><span>reports delivered within the time promised</span></div>
-      <div class="tile"><b data-stat="hours">…</b><span>of casework logged</span></div>
-    </div>
-    <p class="dim small" data-stat-floor hidden></p>
-    <ul class="ledger" data-ledger>
-      <li><b data-stat="messages">…</b><span>messages exchanged with clients</span></li>
-      <li><b data-stat="milestones">…</b><span data-stat="milestonesLine">milestones reached</span></li>
-      <li><b data-stat="logged">…</b><span>calls, appeals and other actions logged on clients' behalf</span></li>
-      <li><b data-stat="cases">…</b><span data-stat="casesLine">cases taken</span></li>
-    </ul>
-    <p class="dim small" data-stat="stamp">Measured across every case. Updated daily.</p>
-    <p class="dim small"><a class="pill" href="/stats.html">How these are measured</a></p>
-  </div>
-</div>
 <button type="button" class="ask-fab" data-ask-open aria-haspopup="dialog" aria-label="Questions? Send me a message"><svg class="ico" aria-hidden="true"><use href="/img/icons.svg#i-chat"/></svg></button>
 <dialog class="wl-sheet ask-sheet" id="ask" aria-labelledby="ask-title">
   <div class="wl-head">
@@ -414,10 +379,14 @@
     <button type="button" class="btn quiet" data-ask-close>Close</button>
   </div>
 </dialog>
+<script>
+  // Back on the home is out of the preview: whatever was typed, uploaded or
+  // signed in it goes, the same as a tap on Exit.
+  try { sessionStorage.removeItem('pa-preview'); sessionStorage.removeItem('pa-preview-store'); } catch (e) { /* nothing was kept */ }
+</script>
 <script type="module" src="/js/waitlist.js?v=2"></script>
 <script type="module" src="/js/question.js?v=1"></script>
 <script type="module" src="/js/landing-tabs.js?v=1"></script>
-<script type="module" src="/js/stats-tab.js?v=1"></script>
 <script type="module">
   // The About sheets (Eric, 2026-08-25). Its own module with no Firebase
   // dependency, so the sheets open even on a day the app cannot.

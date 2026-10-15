@@ -146,6 +146,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // how a lead is scheduled and pays, where Delete is, and how the cards look by state.
   // NEGATIVE CONTROL (run 2026-10-15, v7.41): the worker's BUILD_TAG left at the two-weeks tag made this read
   //   FAIL  R1 both versions read 7.41 with the new tag, the 7.41 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.42): both versions read 7.42 with the preview tag, and the 7.42 entry says where Preview a
+  // case is, that nothing in it leaves the browser, that Exit wipes it, and that the numbers tab is gone.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.42): changelog.js's VERSION left at '7.41' made this read
+  //   FAIL  R1 both versions read 7.42 with the new tag, the 7.42 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry742 = (CL.match(/\{\n\s+\/\/ PREVIEW A CASE, AND THE NUMBERS TAB OFF \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry741 = (CL.match(/\{\n\s+\/\/ THE \+, AND THE CARDS BY STATE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry740 = (CL.match(/\{\n\s+\/\/ TWO WEEKS, AND THE NUMBERS PULLED UP \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.39): both versions read 7.39 with the his-prices tag, and the 7.39 entry says the case
@@ -161,9 +166,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.41 with the new tag, the 7.41 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.41';/.test(CL) && /const VERSION = '7\.41';/.test(W) && /const BUILD_TAG = 'v2026-10-15-the-plus';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.41'
+  check('R1 both versions read 7.42 with the new tag, the 7.42 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.42';/.test(CL) && /const VERSION = '7\.42';/.test(W) && /const BUILD_TAG = 'v2026-10-15-preview';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.42'
+    && /version: '7\.42',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry742)
+    && /Preview a case sits at the top left of the home/.test(entry742) && /Nothing they do leaves their browser/.test(entry742)
+    && /The numbers tab at the foot of the home is gone/.test(entry742)
+    && !DASH.test(entry742) && !HARD.some((re) => re.test(entry742))
     && /version: '7\.41',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry741)
     && /A \+ at the top of Clients: Showcase, My own case, Schedule a case from a lead, and Family case\./.test(entry741)
     && /paying your price then; 0 is no charge/.test(entry741) && /Delete is on your own cases/.test(entry741) && /paused ones gold/.test(entry741)

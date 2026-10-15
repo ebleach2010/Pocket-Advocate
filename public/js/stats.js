@@ -5,8 +5,7 @@
 // ever sees.
 //
 // The shipped text is the "not measured yet" state. A fetch that fails, or
-// a server that has not measured anything yet, leaves it in place; the
-// home's pull-up tab (stats-tab.js) stays hidden until there are real figures.
+// a server that has not measured anything yet, leaves it in place.
 
 const money = (n) => Number(n).toLocaleString('en-US');
 

@@ -36,6 +36,7 @@ const CLAUDE = f('CLAUDE.md');
 const { folderCardHtml } = await import(pathToFileURL(j(ROOT, 'public/js/drawer.js')).href);
 const mod = await import(pathToFileURL(j(ROOT, 'worker/showcase.js')).href);
 const pdf = await import(pathToFileURL(j(ROOT, 'public/js/textpdf.js')).href);
+const JOEMOD = await import(pathToFileURL(j(ROOT, 'public/js/preview/joe.js')).href);
 
 const results = [];
 function check(name, cond, detail = '') {
@@ -156,19 +157,20 @@ console.log('\n--- E. the showcase stays current ---');
   const buildSrc = lift(SHOW, 'export async function buildShowcase(env, { adminUid } = {}) {').replace(/^export /, '');
   const created = [];
   const writes = [];
+  const puts = [];
   let n = 0;
   const build = new Function('deps', `
-    const { queryDocs, patchDoc, batchCreate, putFile, patchObjectMeta, markPending, BUCKET, crypto, JOE, CHAT, docsFor, textPdf, MILESTONES, WORK_LOG, AUTHORITY, AGENDA, TELEHEALTH, DAY } = deps;
-    ${lift(SHOW, 'function at(now, days, hour = 9, minute = 0) {')}
+    const { queryDocs, patchDoc, batchCreate, putFile, patchObjectMeta, markPending, BUCKET, crypto, JOE, CHAT, docsFor, textPdf, MILESTONES, WORK_LOG, AUTHORITY, AGENDA, TELEHEALTH, CHECK_IN, silentWav, DAY } = deps;
+    ${lift(f('public/js/preview/joe.js'), 'export function at(now, days, hour = 9, minute = 0) {').replace(/^export /, '')}
     ${lift(SHOW, 'function authorityItem(now, [days, hour, kind, fields]) {')}
     ${buildSrc}
     return buildShowcase;
   `)({
     queryDocs: async () => [], patchDoc: async (env, path, data) => { writes.push({ path, data }); return true; },
     batchCreate: async (env, rows) => { created.push(...rows); return { created: rows.length }; },
-    putFile: async (env, path, bytes) => ({ path, size: bytes.byteLength }), patchObjectMeta: async () => ({}), markPending: async () => {},
+    putFile: async (env, path, bytes, type) => { puts.push({ path, type }); return { path, size: bytes.byteLength }; }, patchObjectMeta: async () => ({}), markPending: async () => {},
     BUCKET: 'b', crypto: { randomUUID: () => `u${++n}` }, JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: pdf.textPdf,
-    MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, AGENDA: mod.AGENDA, TELEHEALTH: mod.TELEHEALTH, DAY: 86_400_000,
+    MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, AGENDA: mod.AGENDA, TELEHEALTH: mod.TELEHEALTH, CHECK_IN: mod.CHECK_IN, silentWav: JOEMOD.silentWav, DAY: 86_400_000,
   });
   const out = await build({}, { adminUid: 'eric' });
   const caseDoc = writes.find((w) => /^cases\/[^/]+$/.test(w.path))?.data || {};
@@ -187,11 +189,17 @@ console.log('\n--- E. the showcase stays current ---');
       && under('/agenda/').some((r) => r.data.role === 'admin' && r.data.by === 'eric') && under('/agenda/').some((r) => r.data.role === 'client' && r.data.by === 'showcase-joe-bloe'),
     telehealth: () => Array.isArray(caseDoc.telehealthVisits) && caseDoc.telehealthVisits.length === 1
       && caseDoc.telehealthVisits[0].when > new Date() && caseDoc.telehealthVisits[0].confirmedAt && caseDoc.telehealthVisits[0].clinicName,
+    // Added 2026-10-15 (v7.42) with the public preview: the next check-in and the call's recording.
+    checkIn: () => Array.isArray(caseDoc.checkIns) && caseDoc.checkIns.some((x) => x.start > new Date()),
+    recording: () => puts.some((p) => /\/recording\/[^/]+\.wav$/.test(p.path) && p.type === 'audio/wav'),
   };
   const covers = mod.SHOWCASE_COVERS || [];
   const missing = covers.filter((k) => !proof[k] || !proof[k]());
   // NEGATIVE CONTROL (run 2026-10-15): the build's agenda batchCreate taken out made this read
   //   FAIL  E1 the showcase writes every client-visible thing on its list: the chat with its documents, the call, the report, Full-Service, milestones, the log, permissions, the next-call list and a confirmed telehealth visit
+  // RE-PINNED 2026-10-15 (v7.42): the list grew by the next check-in and the call's recording.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.42): a cover named 'nothing' added to SHOWCASE_COVERS made this read
+  //   FAIL  E1 the showcase writes every client-visible thing on its list: ...
   check('E1 the showcase writes every client-visible thing on its list: the chat with its documents, the call, the report, Full-Service, milestones, the log, permissions, the next-call list and a confirmed telehealth visit',
     covers.length === Object.keys(proof).length && covers.every((k) => k in proof) && !missing.length && out.agenda === 3,
     JSON.stringify({ covers, missing, out }));

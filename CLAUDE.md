@@ -170,12 +170,19 @@ promise the pull as working until that key exists.
 something seeable from the client side, it gets secretly added to this."
 
 - Anything a client can see on their case gets an example on the showcase
-  (Joe Bloe) IN THE SAME PUSH: `buildShowcase` in `worker/showcase.js`, and
-  the demo's sketch of him in `public/js/demo/api.js`.
-- Add the feature to `SHOWCASE_COVERS` in `worker/showcase.js`; the
-  opencases suite checks the build writes every entry on that list.
-- "Secretly": nothing on a client surface mentions the showcase. It opens
-  from the + on the Clients screen and is shut with Delete.
+  (Joe Bloe) IN THE SAME PUSH. His story lives once, in
+  `public/js/preview/joe.js`, and three things build from it: `buildShowcase`
+  in `worker/showcase.js` (his case in the database, opened from the + on
+  the Clients screen and shut with Delete), the public "Preview a case"
+  (`public/js/preview/seed.js`, a visitor's own tab, wiped on Exit), and the
+  demo's sketch of him in `public/js/demo/api.js`.
+- Add the feature to `SHOWCASE_COVERS` in `joe.js`; opencases.mjs checks the
+  showcase build writes every entry, and preview.mjs checks the preview does.
+- The preview is served to everyone: nothing under `public/js/preview/` may
+  carry a word on the blindness list, in code, copy or comments.
+- "Secretly": the showcase is never named to a client. (Eric, 2026-10-15,
+  on the preview: "This showcase suite should exhibit every feature and be
+  fully interactable.")
 
 ## Iron rules (long-standing, do not relax)
 

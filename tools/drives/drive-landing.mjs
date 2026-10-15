@@ -47,7 +47,8 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
     // No notice; the bubble rides the hero's first row, above the headline.
     banner: !document.querySelector('.out-banner') && !/out of remission/.test(document.body.textContent),
-    bubble: (() => { const r = document.querySelector('.wl-bubble').getBoundingClientRect(); const h = document.querySelector('main h1').getBoundingClientRect(); return { right: Math.round(innerWidth - r.right), gap: Math.round(h.top - r.bottom), h: Math.round(r.height), inTop: !!document.querySelector('.hero-top .wl-bubble') }; })(),
+    // RE-PINNED 2026-10-15 (v7.42): the row holds two bubbles now; this one is the waitlist's.
+    bubble: (() => { const r = document.querySelector('[data-waitlist-open]').getBoundingClientRect(); const h = document.querySelector('main h1').getBoundingClientRect(); return { right: Math.round(innerWidth - r.right), gap: Math.round(h.top - r.bottom), h: Math.round(r.height), inTop: !!document.querySelector('.hero-top .wl-bubble') }; })(),
     closing: [...document.querySelectorAll('#closing .actions a')].map((a) => a.getAttribute('href')),
     serif: getComputedStyle(document.querySelector('main h1')).fontFamily,
     scheme: document.documentElement.dataset.scheme || 'neon',
@@ -109,13 +110,14 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     themes: document.querySelectorAll('#themes-list li').length,
     write: document.getElementById('g-write').getAttribute('href'),
     // RE-PINNED 2026-10-15 (v7.40): the strip is the pull-up tab and its sheet now.
-    stats: !document.querySelector('[data-stats-tab]').hidden,
+    // RE-PINNED 2026-10-15 (v7.42): Eric, "remove the stats tab on the landing page".
+    stats: !document.querySelector('[data-stats-tab], [data-stats-sheet]'),
     figs: [...document.querySelectorAll('#stats-sheet .tile [data-stat]')].map((e) => e.textContent),
   }));
   ok('the header says 5.0 and counts the list; the cards are that list twice (the loop), minus the wordless one',
     proof.avg === '5.0' && proof.count >= 5 && proof.count === proof.count2 && proof.cards === 2 * (proof.count - 1), JSON.stringify(proof));
   ok('three theme lines, the write link on Google', proof.themes === 3 && /g\.page/.test(proof.write));
-  ok('the numbers tab is on, and its sheet carries the real figures', proof.stats && proof.figs.join('|') === '3 min|84%|4 of 4|61 hrs', proof.figs.join('|'));
+  ok('the numbers tab is gone from the home, and nothing on it still paints figures', proof.stats && proof.figs.length === 0, proof.figs.join('|'));
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The strip lives on its own screen now; open it first.
   await page.evaluate(() => { location.hash = 'proof'; });
   await page.waitForTimeout(500);

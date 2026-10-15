@@ -274,9 +274,14 @@ console.log('\n--- D. the wiring ---');
   // NEGATIVE CONTROL (run 2026-10-14, v7.36): the bubble moved below the h1 made this read
   //   FAIL  D3 the bubble sits at the top right of the hero, on its first row, and opens the sheet that leads main
   const heroTop = (main.match(/<div class="hero-top">([\s\S]*?)<\/div>/) || ['', ''])[1];
+  // RE-PINNED 2026-10-15 (v7.42): Eric, "This showcase suite will be on the top left in the same aesthetic as the waitlist
+  // button, but it will say 'preview a case'". The row is the Preview bubble (left), then this one (right); the eyebrow
+  // runs under both.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.42): the waitlist bubble moved ahead of the Preview bubble made this read
+  //   FAIL  D3 the bubble sits at the top right of the hero, on its first row, and opens the sheet that leads main
   check('D3 the bubble sits at the top right of the hero, on its first row, and opens the sheet that leads main',
     /^<main>\s*<!--[\s\S]*?-->\s*<dialog class="wl-sheet" id="waitlist"/.test(main)
-    && /^\s*<p class="hero-eyebrow eyebrow">[^<]+<\/p>\s*<button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog">[\s\S]*?Join the waitlist<\/button>\s*$/.test(heroTop)
+    && /^\s*<a class="wl-bubble pv-bubble" href="\/case\.html\?preview=1">[\s\S]*?Preview a case<\/a>\s*<button type="button" class="wl-bubble" data-waitlist-open aria-haspopup="dialog">[\s\S]*?Join the waitlist<\/button>\s*<p class="hero-eyebrow eyebrow">[^<]+<\/p>\s*$/.test(heroTop)
     && main.indexOf('class="hero-top"') < main.indexOf('<h1>'));
   // NEGATIVE CONTROL (run 2026-10-12): the Full-Service option deleted made this read
   //   FAIL  D4 the sheet asks for first name, last name, email, phone and a package from a dropdown of the three, named as the cards name them
@@ -317,12 +322,17 @@ console.log('\n--- D. the wiring ---');
   // NEGATIVE CONTROL (run 2026-10-14, v7.36): `grid-template-columns: minmax(0, 1fr) auto;` on .hero-top turned to `auto minmax(0, 1fr)` made this read
   //   FAIL  D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion
   check('D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion',
-    /body\.landing \.hero-top \{\s*display: grid;\s*grid-template-columns: minmax\(0, 1fr\) auto;/.test(rowRule)
+    // RE-PINNED 2026-10-15 (v7.42): two bubbles on the row, preview at the left, this one held to the right.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.42): `justify-self: end` taken off the waitlist bubble made this read
+    //   FAIL  D7 the bubble is a bubble with a tail, at the right, and it shines only for people who have not asked for less motion
+    /body\.landing \.hero-top \{\s*display: grid;/.test(rowRule)
+    && /body\.landing \.hero-top \{ grid-template-columns: auto auto; justify-content: space-between; row-gap: \.45rem; \}/.test(f('public/css/landing.css'))
+    && /body\.landing \.hero-top \[data-waitlist-open\] \{ justify-self: end; \}/.test(f('public/css/landing.css'))
     && /\.wl-bubble \{[\s\S]*?border-radius: 20px 20px 4px 20px;/.test(block) && /\.wl-bubble::after \{[\s\S]*?clip-path/.test(block)
     && /@keyframes wl-shine/.test(block)
     && (block.match(/animation:/g) || []).length === 3
     && /@media \(prefers-reduced-motion: no-preference\) \{\n(  body\.landing [^\n]*animation:[^\n]*\n){3}\}/.test(block)
-    && /landing\.css\?v=b8/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): b7. // RE-PINNED 2026-10-15 (v7.37): b6
+    && /landing\.css\?v=b9/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.42): b9. // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): b7. // RE-PINNED 2026-10-15 (v7.37): b6
 }
 {
   const a = f('public/js/admin.js');

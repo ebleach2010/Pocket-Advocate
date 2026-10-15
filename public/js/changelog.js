@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.41';
+export const VERSION = '7.42';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.41';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // PREVIEW A CASE, AND THE NUMBERS TAB OFF (Eric, 2026-10-15: "So
+    // clients can see the features before they commit" and "remove the
+    // stats tab on the landing page"). Admin only.
+    version: '7.42',
+    quiet: true,
+    client: [],
+    admin: [
+      'Preview a case sits at the top left of the home, the waitlist button\'s twin. It opens a whole invented case anyone can use: chat, upload, sign, add to the next-call list. Nothing they do leaves their browser, and Exit at the top left takes them home with all of it gone.',
+      'The numbers tab at the foot of the home is gone. Your numbers keep their own page, linked from the footer.',
+    ],
+  },
   {
     // THE +, AND THE CARDS BY STATE (Eric, 2026-10-15: "This menu is
     // blocked. Also, let me delete my own cases... It will be a + at the top

@@ -33,55 +33,23 @@ await page.reload({ waitUntil: 'networkidle' });
 await settle();
 // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab
 // with an arrow that glows like the waitlist button and softly eases up and down in an ease in, ease out fashion
-// every 1.5 seconds. When they grab it and swipe up it shows all of my stats." The strip behind the menu, which
-// nobody could reach, became a pull-up tab; it is grabbed and pulled here, not read from markup.
-console.log('\n--- A. the pull-up tab ---');
-const tabNow = await page.evaluate(() => {
-  const t = document.querySelector('[data-stats-tab]');
-  const a = getComputedStyle(t.querySelector('.stats-arrow'));
-  return { hidden: t.hidden, brief: t.querySelector('[data-stats-brief]').textContent, anim: a.animationName, dur: a.animationDuration, timing: a.animationTimingFunction };
-});
-ok('the tab is at the foot of the home with the brief on it', !tabNow.hidden && tabNow.brief === '3 min median reply \u00b7 84% within an hour', tabNow.brief);
-ok('its arrow eases up and down every 1.5 seconds and glows on the bubble\'s beat', /^stats-bob, wl-glow$/.test(tabNow.anim) && /^1\.5s, 3s$/.test(tabNow.dur) && /^ease-in-out, ease-in-out$/.test(tabNow.timing), `${tabNow.anim} / ${tabNow.dur} / ${tabNow.timing}`);
-await shot('01-landing-tab');
-const box = await page.locator('[data-stats-tab]').boundingBox();
-const gx = box.x + box.width / 2; const gy = box.y + 18;
-await page.mouse.move(gx, gy);
-await page.mouse.down();
-for (let i = 1; i <= 6; i++) { await page.mouse.move(gx, gy - i * 18); await page.waitForTimeout(20); }
-const midway = await page.evaluate(() => ({ shown: !document.querySelector('[data-stats-sheet]').hidden, y: Math.round(document.querySelector('[data-stats-card]').getBoundingClientRect().top) }));
-for (let i = 7; i <= 14; i++) { await page.mouse.move(gx, gy - i * 18); await page.waitForTimeout(20); }
-await page.mouse.up();
-await page.waitForTimeout(600);
-// NEGATIVE CONTROL (run 2026-10-15): the pointermove handler's `place(drag.h - up);` taken out made this read
-//   FAIL  grabbed and pulled up, the sheet rises under the finger and settles open
-ok('grabbed and pulled up, the sheet rises under the finger and settles open', midway.shown && midway.y > 300
-  && await page.evaluate(() => document.querySelector('[data-stats-sheet]').classList.contains('open') && Math.round(document.querySelector('[data-stats-card]').getBoundingClientRect().bottom) === innerHeight), JSON.stringify(midway));
-const sheet = await page.evaluate(() => {
-  const s = document.querySelector('[data-stats-sheet]');
-  return { figs: [...s.querySelectorAll('.numbers [data-stat]')].map((e) => e.textContent), ledger: [...s.querySelectorAll('.ledger [data-stat]:not(span)')].map((e) => e.textContent), ledgerShown: !s.querySelector('[data-ledger]').hidden };
-});
-ok('it shows every figure: the four tiles and the ledger', sheet.figs.join('|') === '3 min|84%|4 of 4|61 hrs' && sheet.ledgerShown && sheet.ledger.join('|') === '412|9|33|6', `${sheet.figs.join('|')} / ${sheet.ledger.join('|')}`);
-await shot('02-landing-sheet');
-await page.keyboard.press('Escape');
-await page.waitForTimeout(600);
-const shut = await page.evaluate(() => document.querySelector('[data-stats-sheet]').hidden && document.querySelector('[data-stats-tab]').getAttribute('aria-expanded') === 'false');
-await page.click('[data-stats-tab]');
-await page.waitForTimeout(600);
-const tapped = await page.evaluate(() => document.querySelector('[data-stats-sheet]').classList.contains('open'));
-ok('Escape puts it away, and a plain tap opens it too', shut && tapped);
-await page.keyboard.press('Escape');
-await page.waitForTimeout(500);
-{
-  const still = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
-  await still.addCookies([{ name: 'pa_demo', value: '1', domain: '127.0.0.1', path: '/' }]);
-  const sp = await still.newPage();
-  await sp.goto(`${P}/?demo=1`, { waitUntil: 'networkidle' });
-  await sp.waitForTimeout(1500);
-  const anim = await sp.evaluate(() => getComputedStyle(document.querySelector('.stats-arrow')).animationName);
-  ok('for anyone who asked for less motion the arrow holds still', anim === 'none', anim);
-  await still.close();
-}
+// every 1.5 seconds. When they grab it and swipe up it shows all of my stats."
+// RE-PINNED 2026-10-15 (v7.42): Eric, "Once you've drafted my listing remove the stats tab on the landing page."
+// The tab, its sheet and its arrow are gone; the home's footer still leads to the numbers' own page.
+console.log('\n--- A. the home, without the tab ---');
+const home = await page.evaluate(() => ({
+  tab: !!document.querySelector('[data-stats-tab], .stats-tab'),
+  sheet: !!document.querySelector('[data-stats-sheet], .stats-sheet'),
+  arrow: !!document.querySelector('.stats-arrow'),
+  link: [...document.querySelectorAll('a[href="/stats.html"]')].map((a) => a.textContent.trim()),
+}));
+await shot('01-landing-no-tab');
+// NEGATIVE CONTROL (run 2026-10-15, v7.42): the tab's button put back on the home made this read
+//   FAIL  the home carries no numbers tab, no sheet and no arrow
+ok('the home carries no numbers tab, no sheet and no arrow', !home.tab && !home.sheet && !home.arrow, JSON.stringify(home));
+// NEGATIVE CONTROL (run 2026-10-15, v7.42): the home footer's By the numbers link renamed made this read
+//   FAIL  its numbers are still one tap away, on their own page
+ok('its numbers are still one tap away, on their own page', home.link.includes('By the numbers'), home.link.join(' | '));
 
 console.log('\n--- B. the page ---');
 await page.goto(`${P}/stats.html`, { waitUntil: 'networkidle' });

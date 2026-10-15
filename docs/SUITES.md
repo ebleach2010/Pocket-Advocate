@@ -266,6 +266,38 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Preview a case, and the numbers tab off (2026-10-15, v7.42)
+
+Eric: "This showcase suite should exhibit every feature and be fully
+interactable. They can even chat and upload documents but they get deleted
+as soon as they exit the showcase suite. This showcase suite will be on the
+top left in the same aesthetic as the waitlist button, but it will say
+'preview a case' or something similar... When they're in the showcase suite,
+a button of the same design is in the top left (make sure it's not blocking
+any interactable UI elements) that say exit." And: "remove the stats tab on
+the landing page." The home's top row is Preview a case (left) and the
+waitlist (right). It opens /case.html?preview=1, where firebase.js mounts
+`public/js/preview/`: a client-only stand-in for the database, the files and
+the routes, seeded with Joe Bloe's whole case and kept in sessionStorage.
+Chat, uploads, the next-call list, permissions and a telehealth request all
+work; purchases say it is a preview; nothing reaches the server. Exit, at the
+top left in a strip of its own, wipes it and goes home, and arriving home
+wipes it too. Joe Bloe's story moved to `public/js/preview/joe.js`, so the
+showcase on Eric's side and the preview build from one story; both gained the
+next check-in and the call's recording.
+
+New suite `preview.mjs` (10 checks: the store, seed and routes imported and
+run against a stand-in tab, the switch in firebase.js lifted and run, and the
+preview's files scanned against the blindness list). New drive
+`drive-preview.mjs` (13 checks, home to Exit, counting every request that
+would write). Every new check has its control recorded. Re-pinned with dated
+notes and controls: `numbers-tab.mjs` (all six, now holding the removal),
+`stats.mjs` D2, `waitlist.mjs` D3 and D7, `landing.mjs` and `packages.mjs`
+stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
+`opencases.mjs` E1 and its harness, release R1, and the drives
+`drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
+the headline two lines keeps the home on one screen with the second bubble.
+
 ### The +, and the cards by state (2026-10-15, v7.41)
 
 Eric, with two screenshots: "This menu is blocked. Also, let me delete my own

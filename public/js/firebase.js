@@ -27,11 +27,33 @@ const DEMO = (() => {
   }
 })();
 
+/**
+ * THE CASE PREVIEW (Eric, 2026-10-15: "So clients can see the features before
+ * they commit"). "Preview a case" on the home opens /case.html?preview=1, and
+ * from then on this tab runs an invented case of its own (js/preview/) instead
+ * of the real database, until Exit wipes it or the tab closes. On the live
+ * site too: nothing it does reaches the server. Never on an advocate page.
+ */
+const PREVIEW = (() => {
+  try {
+    if (/^\/admin/.test(location.pathname)) return false;
+    const q = new URLSearchParams(location.search).get('preview');
+    if (q === '1') sessionStorage.setItem('pa-preview', '1');
+    if (q === '0') { sessionStorage.removeItem('pa-preview'); sessionStorage.removeItem('pa-preview-store'); }
+    return sessionStorage.getItem('pa-preview') === '1';
+  } catch {
+    return false;   // storage blocked: the preview cannot hold anything, so it does not start
+  }
+})();
+
 // A dynamic import, so the demo files are never fetched on a real page — and
-// they are not served from production at all.
-const impl = DEMO
-  ? await import('./demo/store.js').then((m) => m.mountDemo(DEMO))
-  : await import('./firebase-real.js');
+// they are not served from production at all. The preview's files are small,
+// client-only, and fetched only once a visitor asks for one.
+const impl = PREVIEW
+  ? await import('./preview/store.js').then((m) => m.mountPreview())
+  : DEMO
+    ? await import('./demo/store.js').then((m) => m.mountDemo(DEMO))
+    : await import('./firebase-real.js');
 
 export const {
   auth,

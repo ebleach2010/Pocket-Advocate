@@ -31,6 +31,7 @@ const mod = await import(pathToFileURL(j(ROOT, 'worker/showcase.js')).href);
 // Re-pinned 2026-09-22 (v5.0): the PDF writer moved to public/js/textpdf.js, shared with the
 // trade desk and the demo; the showcase imports it and no longer exports one of its own.
 const pdf = await import(pathToFileURL(j(ROOT, 'public/js/textpdf.js')).href);
+const JOEMOD = await import(pathToFileURL(j(ROOT, 'public/js/preview/joe.js')).href);
 
 const results = [];
 const check = (name, cond, detail = '') => {
@@ -105,7 +106,8 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
 // ---- the builder, lifted and run against fakes --------------------------
 {
   const buildSrc = lift(SRC, 'export async function buildShowcase(env, { adminUid } = {}) {').replace(/^export /, '');
-  const atSrc = lift(SRC, 'function at(now, days, hour = 9, minute = 0) {');
+  // RE-PINNED 2026-10-15 (v7.42): the story (and its clock) moved to public/js/preview/joe.js, shared with the public preview.
+  const atSrc = lift(f('public/js/preview/joe.js'), 'export function at(now, days, hour = 9, minute = 0) {').replace(/^export /, '');
   const run = async ({ existing = false } = {}) => {
     const writes = [];
     const puts = [];
@@ -114,7 +116,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
     const pend = [];
     let n = 0;
     const api = new Function('deps', `
-      const { queryDocs, patchDoc, batchCreate, putFile, patchObjectMeta, markPending, BUCKET, crypto, JOE, CHAT, docsFor, textPdf, MILESTONES, WORK_LOG, AUTHORITY, AGENDA, TELEHEALTH, DAY } = deps;
+      const { queryDocs, patchDoc, batchCreate, putFile, patchObjectMeta, markPending, BUCKET, crypto, JOE, CHAT, docsFor, textPdf, MILESTONES, WORK_LOG, AUTHORITY, AGENDA, TELEHEALTH, CHECK_IN, silentWav, DAY } = deps;
       ${atSrc}
       ${lift(SRC, 'function authorityItem(now, [days, hour, kind, fields]) {')}
       ${buildSrc}
@@ -129,7 +131,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
       BUCKET: 'bucket.appspot.com',
       crypto: { randomUUID: () => `u${++n}` },
       // The next-call list and the telehealth visit joined the build on 2026-10-15 (v7.41); opencases.mjs checks them.
-      JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: pdf.textPdf, MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, AGENDA: mod.AGENDA, TELEHEALTH: mod.TELEHEALTH, DAY: 86_400_000,
+      JOE: mod.JOE, CHAT: mod.CHAT, docsFor: mod.docsFor, textPdf: pdf.textPdf, MILESTONES: mod.MILESTONES, WORK_LOG: mod.WORK_LOG, AUTHORITY: mod.AUTHORITY, AGENDA: mod.AGENDA, TELEHEALTH: mod.TELEHEALTH, CHECK_IN: mod.CHECK_IN, silentWav: JOEMOD.silentWav, DAY: 86_400_000,
     });
     const out = await api({}, { adminUid: 'eric-uid' });
     return { out, writes, puts, metas, created, pend };
@@ -157,11 +159,17 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
     && chat.every((e, i) => i === 0 || e.data.ts > chat[i - 1].data.ts)
     && withFiles.length === 4 && withFiles.every((e) => /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/bucket\.appspot\.com\/o\/cases%2F/.test(e.data.attachment.url)
       && /alt=media&token=u\d+$/.test(e.data.attachment.url) && e.data.attachment.path.startsWith(`cases/${id}/chat-files/`) && e.data.attachment.contentType === 'application/pdf')
-    && built.puts.length === 10 && built.puts.every((p) => p.contentType === 'application/pdf' && p.size > 800)
+    // RE-PINNED 2026-10-15 (v7.42): Eric, "Every time we add something seeable from the client side, it gets secretly
+    // added to this." The call's recording joined the ten PDFs: eleven files, one of them the recording.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.42): the recording's putFile skipped made this read
+    //   FAIL  X3 the builder writes a client-shaped case ...
+    && built.puts.length === 11 && built.puts.filter((p) => p.contentType === 'application/pdf').length === 10
+    && built.puts.filter((p) => p.contentType === 'application/pdf').every((p) => p.size > 800)
+    && built.puts.filter((p) => p.contentType === 'audio/wav' && p.path.startsWith(`cases/${id}/recording/`)).length === 1
     && built.puts.filter((p) => p.path.startsWith(`cases/${id}/chat-files/`)).length === 4
     && built.puts.filter((p) => p.path.startsWith(`cases/${id}/uploads/`)).length === 4
     && built.puts.filter((p) => p.path.startsWith(`cases/${id}/report/`)).length === 2
-    && built.metas.length === 10 && built.metas.every((m) => /^u\d+$/.test(m.custom.firebaseStorageDownloadTokens))
+    && built.metas.length === 11 && built.metas.every((m) => /^u\d+$/.test(m.custom.firebaseStorageDownloadTokens))
     && miles.length === 6 && miles.every((e) => e.data.what && e.data.kindLabel && e.data.at)
     && log.length === 7 && log.every((e) => e.data.clinic && e.data.summary && /555/.test(e.data.phone))
     && perms.length === 4 && perms.every((e) => e.data.signedName === 'Joe Bloe' && e.data.signedAt && e.data.revokedAt === null && e.data.expiresAt > new Date())

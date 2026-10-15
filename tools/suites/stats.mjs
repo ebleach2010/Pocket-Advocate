@@ -350,14 +350,14 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
   // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow ... When they grab it and swipe up it shows all of my stats."
   // NEGATIVE CONTROL (run 2026-10-15, v7.40): the tab's `hidden` taken off in index.html made this read
   //   FAIL  D2 the home's numbers sit in a pull-up sheet: the tab waits for real figures, the sheet waits to be opened, and it carries all four tiles, the ledger and the way to how they are measured
-  check('D2 the home\'s numbers sit in a pull-up sheet: the tab waits for real figures, the sheet waits to be opened, and it carries all four tiles, the ledger and the way to how they are measured',
-    /<button type="button" class="stats-tab" data-stats-tab aria-controls="stats-sheet" aria-expanded="false" hidden>/.test(idx)
-    && /<div class="stats-sheet" id="stats-sheet" data-stats-sheet role="dialog" aria-modal="true" aria-labelledby="stats-sheet-h" hidden>/.test(idx)
-    && ['replyMedian', 'withinHour', 'reports', 'hours', 'messages', 'milestones', 'logged', 'cases', 'stamp'].every((k) => strip.includes(`data-stat="${k}"`))
-    && /data-stat-floor hidden/.test(strip) && /<ul class="ledger" data-ledger>/.test(strip)
-    && /<a class="pill" href="\/stats\.html">How these are measured<\/a>/.test(strip)
-    && !/id="numbers"|data-numbers-strip/.test(idx + code('public/js/stats.js'))
-    && /import\('\/js\/stats\.js'\)/.test(idx) && /<script type="module" src="\/js\/stats-tab\.js\?v=1"><\/script>/.test(idx));
+  // RE-PINNED 2026-10-15 (v7.42): Eric, "remove the stats tab on the landing page". The home carries no numbers now; they
+  // live on their own page, which the footer links.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.42): the tab's button put back in index.html made this read
+  //   FAIL  D2 the home carries no numbers of its own: no tab, no sheet, no strip and no script; the footer leads to the page that has them
+  check('D2 the home carries no numbers of its own: no tab, no sheet, no strip and no script; the footer leads to the page that has them',
+    !/data-stats-tab|data-stats-sheet|id="numbers"|data-numbers-strip|data-stat=/.test(idx)
+    && !/stats-tab\.js|import\('\/js\/stats\.js'\)/.test(idx)
+    && /<a href="\/stats\.html">By the numbers<\/a>/.test(idx));
   check('D3 the footer on both pages lists By the numbers',
     /<a href="\/stats\.html">By the numbers<\/a>/.test(idx) && /<a href="\/stats\.html">By the numbers<\/a>/.test(page));
   // NEGATIVE CONTROL (run 2026-09-02): "paused cases are left out" typed into stats.html made this read
