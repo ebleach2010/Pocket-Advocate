@@ -69,7 +69,24 @@ export function watchPresence(el) {
  * the composer row, left of the text box. The caller owns what it means; this
  * file only knows where it goes.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…' }) {
+/**
+ * The face of whoever works a case or a subscription, for the client's side:
+ * their own photo, served by the Worker (his falls back to the one shipped
+ * with the site). The preview and the demo, which never reach the Worker for
+ * a person, show his.
+ */
+export function advocatePhoto(advocateId) {
+  const id = String(advocateId || '');
+  if (!id || /^(demo|preview)-/.test(id)) return '/img/eric-avatar.jpg';
+  return `/api/advocates/headshot?uid=${encodeURIComponent(id)}`;
+}
+
+/**
+ * otherAvatar: a photo of the other side, shown beside the first message of
+ *   each run of theirs (the client's side, 2026-10-15). dayLines: a line
+ *   naming the day between the days of the conversation.
+ */
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false }) {
   container.classList.add('chat-root');
   // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
   // of them. They're pointless. Have it just be a chat."). Do not rebuild a
@@ -169,9 +186,33 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       currentStatusId = rid && statusById(rid) ? rid : '';
       onStatus?.(currentStatusId);
     }
+    // Eric, 2026-10-15: "I'd like the client side to look warm and
+    // engaging." The day each stretch of the conversation happened, and his
+    // face on the first of each run of his messages.
+    const dayFmt = new Intl.DateTimeFormat('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+    const dayName = (d) => {
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const that = new Date(d); that.setHours(0, 0, 0, 0);
+      const diff = Math.round((today - that) / 86400000);
+      return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : dayFmt.format(d);
+    };
+    let prevDay = '';
+    let prevTheirs = false;
     for (const m of ordered) {
       const data = m.data();
       const mine = data.from === user.uid;
+      if (dayLines) {
+        const at = data.ts?.toDate ? data.ts.toDate() : null;
+        const key = at ? at.toDateString() : prevDay;
+        if (at && key !== prevDay) {
+          const line = document.createElement('div');
+          line.className = 'chat-day';
+          line.textContent = dayName(at);
+          log.appendChild(line);
+          prevTheirs = false;
+        }
+        prevDay = key;
+      }
       // A question row: something asked of him on his own case (2026-09-03).
       // Only his own case ever carries one, and only the Worker writes them;
       // a client's thread never has any to paint.
@@ -314,7 +355,20 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
         });
       }
 
-      log.appendChild(div);
+      if (otherAvatar && !mine && !isQ) {
+        const row = document.createElement('div');
+        row.className = 'msg-row';
+        const ava = document.createElement('img');
+        ava.className = prevTheirs ? 'msg-ava gap' : 'msg-ava';
+        ava.src = otherAvatar;
+        ava.alt = prevTheirs ? '' : (otherName || '');
+        if (prevTheirs) ava.setAttribute('aria-hidden', 'true');
+        row.append(ava, div);
+        log.appendChild(row);
+      } else {
+        log.appendChild(div);
+      }
+      prevTheirs = !mine && !isQ;
     }
     const hint = container.querySelector('[data-hint]');
     if (hint) {

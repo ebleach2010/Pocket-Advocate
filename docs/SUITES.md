@@ -298,6 +298,40 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Warm, guided, tan (2026-10-15, v7.45)
+
+Eric, with a screenshot of the preview: "Revert to the old file look in 'all
+cases' for admin" (asked which: "Tan, keep the glow"). And: "Have it go step
+by step through what each tab means by starting with a short welcome to the
+preview ... Highlighting each section one at a time with a small window
+explaining what it is." And: "make me 'in office,' make a couple file uploads
+per day, highlight the progress section with a celebratory icon, fix the chat
+aesthetic so it doesn't look so black/dead. I'd like the client side to look
+warm and engaging." (Asked: the warm look goes on all client pages; the tour
+is the preview's alone.)
+
+`public/css/warm.css` loads after the look on the four pages a client lives
+in (case, chat, subscription, return) and nowhere else: a plum brown ground,
+peach and rose light, the client's bubbles in the warm pop, his on a warm
+card. `chat.js` takes `otherAvatar`, `otherName` and `dayLines` from the
+client's mounts only: his photo beside the first of each run of his words,
+and a line for each day. `public/img/eric-headshot.jpg` and
+`eric-avatar.jpg` are his photo; the Worker's headshot route sends his cases
+there until he uploads one. Progress gets `cheerCard` (a party popper, the
+case's line, the steps done). The preview answers `/api/availability` in
+office, seeds two of Joe's own uploads a day for nine days, and opens on
+`public/js/preview/tour.js`: a welcome, then each section ringed one at a
+time with a card at the foot of the screen, once per visit (the flag is on
+the preview store, so Exit gives the next visitor the tour). The shelf's
+folders are manila again (tokens set on `.drawer` only), with the open and
+paused rims kept.
+
+New suite `warm.mjs` (14). `preview.mjs` grew A3, B4 and F1 to F4,
+`advocates.mjs` G15. New drive `drive-tour.mjs` (11). Every new check has its
+control recorded. Re-pinned with dated notes and controls: cancelsearch C1,
+charge CH7 (stat134), preview A1 (22 uploads) and E1 (six files), selfcase
+S37, release R1; drive-preview skips the tour.
+
 ### Advocate accounts (2026-10-15, v7.44)
 
 Eric: "Admin creates advocate accounts from the admin dashboard." And:

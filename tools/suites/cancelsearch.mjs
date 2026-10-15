@@ -182,13 +182,19 @@ console.log('\n--- C. one look ---');
     const links = [...h.matchAll(/<link rel="stylesheet" href="\/css\/([\w-]+)\.css[^"]*">/g)].map((m) => m[1]);
     const look = links.indexOf('look');
     const landing = links.indexOf('landing');
-    const ok = look >= 0 && (landing >= 0 ? look === landing - 1 && landing === links.length - 1 : look === links.length - 1)
+    // RE-PINNED 2026-10-15 (v7.45): Eric, "I'd like the client side to look warm and engaging", on all client
+    // pages: the four a client lives in load warm.css right after the look, and no other page loads it.
+    const warm = links.indexOf('warm');
+    const WARM_PAGES = ['case.html', 'chat.html', 'subscription.html', 'return.html'];
+    const ok = look >= 0 && (WARM_PAGES.includes(n) ? warm === look + 1 && warm === links.length - 1 : warm === -1)
+      && (landing >= 0 ? look === landing - 1 && landing === links.length - 1 : WARM_PAGES.includes(n) || look === links.length - 1)
       && /<html lang="en" data-default-scheme="calm">/.test(h)
       && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(h)
       && /<meta name="theme-color" content="#0A0A0C">/.test(h);
     if (!ok) bad.push(`${n}:${links.join('/')}`);
   }
   // NEGATIVE CONTROL (run 2026-10-15): look.css's link taken off chat.html made this read
+  // NEGATIVE CONTROL (run 2026-10-15, v7.45): warm.css's link put on admin.html made this read
   //   FAIL  C1 every page but the hidden fund form loads the look last (the home's own sheet after it), paints black, and keeps High contrast
   check('C1 every page but the hidden fund form loads the look last (the home\'s own sheet after it), paints black, and keeps High contrast',
     pages.length >= 25 && bad.length === 0, bad.join(' '));

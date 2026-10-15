@@ -4,7 +4,7 @@
 // there's more than one thread.
 import { db, collection, getDocs, doc, getDoc, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
-import { mountChat, watchPresence } from './chat.js';
+import { mountChat, watchPresence, advocatePhoto } from './chat.js';
 import { officeCueHtml } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
@@ -93,6 +93,9 @@ async function load() {
       user,
       myRole: 'client',
       saveUid: user.uid,
+      otherAvatar: advocatePhoto(''),
+      otherName: 'Eric',
+      dayLines: true,
       disabled: t.closed || t.paused,
       notice: t.closed
         ? 'This conversation is closed. Your history stays here; subscribe to reach me.'

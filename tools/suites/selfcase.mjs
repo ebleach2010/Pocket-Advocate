@@ -794,7 +794,9 @@ check('S37 the chat paints a question with a Reply, his answer with the question
   && /qt\.className = 'msg-quote';/.test(CHAT)
   && /if \(isQ\) \{[\s\S]*?if \(myRole === 'admin' && !disabled\) \{[\s\S]*?rb\.className = 'reply-btn';[\s\S]*?\} else if \(!mine \|\| editable \|\| data\.text \|\| canStage\) \{/.test(CHAT)
   && /if \(replyTo && text && !attachment && myRole === 'admin'\) \{[\s\S]*?post\('\/api\/chat\/reply',/.test(CHAT)
-  && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…' \}\) \{/.test(CHAT)
+  // RE-PINNED 2026-10-15 (v7.45): the client's side passes his photo and the day lines after the placeholder.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.45): dayLines defaulting to true (so his side would get them too) made S37 read FAIL.
+  && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false \}\) \{/.test(CHAT)
   && /self: !!data\.self,/.test(CASE) && /placeholder: data\.self \? /.test(CASE)
   && /unansweredSelf = !!data\.self;/.test(CASE) && /\$\{unansweredSelf \? '' : `<button class="btn quiet" data-again=/.test(CASE)
   // Re-pinned 2026-09-22 (v6.0): the desk has its own app, so the panel is

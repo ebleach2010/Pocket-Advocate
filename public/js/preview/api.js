@@ -6,7 +6,7 @@ import { EMOJI_REACTIONS } from '../msg-actions.js';
 import { PREVIEW_UID, PREVIEW_CASE, ERIC_UID } from './seed.js';
 
 // Reads anyone may make, passed through untouched.
-const PASS = new Set(['/api/rates', '/api/reviews', '/api/changelog', '/api/version', '/api/availability', '/api/stats']);
+const PASS = new Set(['/api/rates', '/api/reviews', '/api/changelog', '/api/version', '/api/stats']);
 // Every route that would take money or book a time.
 const SHOP = new Set(['/api/checkout', '/api/chat-unlock', '/api/upgrade', '/api/followup', '/api/extend',
   '/api/subscribe', '/api/portal', '/api/invite', '/api/invite/confirm']);
@@ -34,6 +34,9 @@ export function previewApi(store) {
 
     // His routes are not part of a client's case, here or anywhere.
     if (path.startsWith('/api/admin')) return fail(404, 'Not found');
+    // In the preview he is always in (Eric, 2026-10-15: "make me 'in office'"),
+    // whatever his real switch says.
+    if (path === '/api/availability') return ok({ inOffice: true, responseTime: null });
     if (SHOP.has(path)) { await beat(); return fail(409, NOT_HERE); }
 
     // ---- the chat ------------------------------------------------------------

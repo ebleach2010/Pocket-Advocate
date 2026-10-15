@@ -642,6 +642,15 @@ console.log('\n--- G. accounts ---');
     pct.status === 200 && w.docs.get(`advocates/${uid}`).commissionPct === 55 && badPct.status === 400);
   // NEGATIVE CONTROL (run 2026-10-15): an em dash put in admin-advocates.js's header made this read
   //   FAIL  G14 the accounts module carries no dash
+  // His own photo ships with the site (2026-10-15): his cases show his face before he uploads one.
+  const hisPhoto = await call(w, '', `/api/advocates/headshot?uid=${ERIC}`, { method: 'GET' });
+  w.docs.set('advocates/adv-nophoto', { uid: 'adv-nophoto', active: true, owner: false });
+  const othersNone = await call(w, '', '/api/advocates/headshot?uid=adv-nophoto', { method: 'GET' });
+  // NEGATIVE CONTROL (run 2026-10-15): the owner fallback answering for any active advocate without a photo made this read
+  //   FAIL  G15 his own photo stands in until he uploads one; another advocate without a photo has none
+  check('G15 his own photo stands in until he uploads one; another advocate without a photo has none',
+    hisPhoto.status === 302 && hisPhoto.res.headers.get('location') === '/img/eric-headshot.jpg' && othersNone.status === 404,
+    JSON.stringify([hisPhoto.status, hisPhoto.res.headers.get('location'), othersNone.status]));
   check('G14 the accounts module carries no dash', !DASH.test(SRC) && !DASH.test(f('public/js/admin-advocates.js')) && !DASH.test(f('public/js/admin-account.js')));
 }
 

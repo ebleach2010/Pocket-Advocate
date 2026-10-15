@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.44';
+export const VERSION = '7.45';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.44';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WARM, GUIDED, TAN (Eric, 2026-10-15: "Revert to the old file look in
+    // 'all cases' for admin." And: "I'd like the client side to look warm and
+    // engaging. Right now it's cold and confusing." And: "Have it go step by
+    // step through what each tab means"). Admin only.
+    version: '7.45',
+    quiet: true,
+    client: [],
+    admin: [
+      'Your Clients shelf is back to the tan folders, and open and paused cases keep their glow.',
+      'The client side is warm now: a plum ground instead of black, their messages in a peach to rose bubble, yours on a warm card with your photo beside them, and a line for each day. The top of their chat shows your face and whether you are in.',
+      'Progress has a card that celebrates where the case is, with a 🎉 and the steps done so far.',
+      'The preview opens with a short guided tour: a welcome, then each section lit up one at a time with a small card saying what it is. In the preview you are always in office, and Joe uploads a couple of files a day.',
+    ],
+  },
   {
     // ADVOCATE ACCOUNTS (Eric, 2026-10-15: "Admin creates advocate accounts
     // from the admin dashboard." And: "Each advocate gets their own isolated

@@ -5,7 +5,7 @@
 import { db, doc, getDoc } from './firebase.js';
 import { paintRates } from './rates.js';
 import { requireUser, hydrateNav, renewing } from './auth.js';
-import { mountChat, watchPresence } from './chat.js';
+import { mountChat, watchPresence, advocatePhoto } from './chat.js';
 import { initPushPrompt } from './push.js';
 import { initSetupGuide } from './onboarding.js';
 import { officeCueHtml, officeLineHtml } from './office.js';
@@ -98,6 +98,9 @@ async function load() {
     user,
     myRole: 'client',
     saveUid: user.uid,
+    otherAvatar: advocatePhoto(''),
+    otherName: 'Eric',
+    dayLines: true,
     disabled: !active,
     notice: 'Chat is paused. Your subscription has ended. Resubscribe any time; your history stays.',
   });

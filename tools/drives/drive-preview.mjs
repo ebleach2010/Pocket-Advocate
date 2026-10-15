@@ -61,6 +61,9 @@ ok('the home carries Preview a case at the top left, the waitlist bubble\'s twin
 console.log('\n--- B. inside: the case, and Exit covering nothing ---');
 await page.click('.pv-bubble');
 await page.waitForURL(/\/case(\.html)?\?preview=1/, { timeout: 15000 });
+// RE-PINNED 2026-10-15 (v7.45): a first visit opens on the guided tour (walked in drive-tour.mjs); this drive skips it.
+await page.waitForSelector('.pv-tour', { timeout: 8000 }).catch(() => {});
+await page.click('[data-tour-skip]').catch(() => {});
 await settle(2500);
 const inside = await page.evaluate(() => {
   const exit = document.querySelector('[data-preview-exit]');
@@ -158,6 +161,8 @@ console.log('\n--- E. the phone\'s narrowest width ---');
   const c2 = await b.newContext({ viewport: { width: 320, height: 640 } });
   const p2 = await c2.newPage();
   await p2.goto(`${P}/case.html?preview=1`, { waitUntil: 'networkidle' });
+  await p2.waitForSelector('.pv-tour', { timeout: 8000 }).catch(() => {});
+  await p2.click('[data-tour-skip]').catch(() => {});
   await p2.waitForTimeout(2500);
   // The page clips sideways overflow, so the strip is measured itself: its words wrap inside it and nothing in it
   // runs past the screen's edge.

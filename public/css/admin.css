@@ -1687,3 +1687,36 @@ main > p > a.small[href="/admin.html"] {
 
 /* Delete at the top of his own case (2026-10-15), on the right, out of the way of the facts. */
 .self-del-row { justify-content: flex-end; margin: 0 0 .5rem; }
+
+/* THE TAN FOLDERS, BACK (Eric, 2026-10-15: "Revert to the old file look in
+   'all cases' for admin." Asked which, he chose "Tan, keep the glow"). The
+   manila card stock from before the black look, on the Clients shelf only:
+   the tokens are set on the drawer, so the folder tabs on a case page keep
+   theirs. The open and paused rims above still light the back cover, and his
+   own purple and the running clock's green keep their own. Declared at a
+   weight that beats the dark folder rules in look.css. */
+:root:not([data-scheme="contrast"]) .drawer {
+  --manila: #DEC791; --manila-2: #F0DFB0; --manila-ink: #2A2113; --manila-edge: #A98F5F; --manila-fold: rgba(10, 7, 2, .7);
+  --manila-strong: #14100A; --manila-alert: #8A2B00; --manila-note: #14432F; --manila-flag: #4A1D6E;
+}
+:root:not([data-scheme="contrast"]) .drawer .folder::before,
+:root:not([data-scheme="contrast"]) .drawer .folder::after { background: linear-gradient(180deg, rgba(250, 247, 238, .95), rgba(226, 219, 200, .8)); }
+:root:not([data-scheme="contrast"]) .drawer .folder-tab { box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55); }
+:root:not([data-scheme="contrast"]) .drawer .folder-body {
+  border-color: var(--manila-edge);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .45), rgba(255, 255, 255, 0) 40%),
+    linear-gradient(180deg, var(--manila-2), var(--manila) 80%);
+}
+:root:not([data-scheme="contrast"]) .drawer .folder-flags { color: #52462F; color: color-mix(in srgb, var(--manila-ink) 78%, var(--manila)); }
+:root:not([data-scheme="contrast"]) .drawer .folder-clock { background: rgba(0, 0, 0, .10); }
+:root:not([data-scheme="contrast"]) .drawer .folder-clock .wk-sw { background: rgba(0, 0, 0, .30); }
+:root:not([data-scheme="contrast"]) .drawer .fld-alert { background: #7A271F; border: 1px solid #52140F; color: #FFFFFF; border-radius: 8px; }
+/* Words that were bright on black, in ink that reads on the stock. */
+:root:not([data-scheme="contrast"]) .drawer .folder-body { --orange: #7A4A00; }
+:root:not([data-scheme="contrast"]) .drawer .folder-body .fld-family { color: var(--manila-flag); }
+:root:not([data-scheme="contrast"]) .drawer .folder-del { border-color: rgba(122, 39, 31, .55); background: rgba(122, 39, 31, .10); color: #7A271F; }
+:root:not([data-scheme="contrast"]) .drawer .folder-del:focus-visible { outline-color: #7A271F; }
+/* On a lit rim the clock keeps its dark backing (above), so its words go light. */
+:root .drawer .folder:is(.st-open, .st-paused):not(.working):not(.self) .folder-clock { color: #F5F5F7; opacity: 1; }
+:root .drawer .folder:is(.st-open, .st-paused):not(.working):not(.self) .folder-clock .wk-sw { background: rgba(255, 255, 255, .22); }

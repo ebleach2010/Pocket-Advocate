@@ -85,7 +85,9 @@ console.log('\n--- A. the case they walk ---');
   check('A1 the preview is Joe Bloe\'s whole case as its client sees it, every entry on the showcase\'s list included, with a case he is working on right now',
     mine.size === 1 && c.clientName === 'Joe Bloe' && c.status === 'delivered' && !missing.length
     && c.work?.startedAt && c.work.doing === 'reading your angiography report' && now - c.work.startedAt.toDate().getTime() < 3600_000
-    && report.length === 2 && uploads.length === 4 && chatFiles.length === 4 && /^data:application\/pdf;base64,/.test(opened),
+    // RE-PINNED 2026-10-15 (v7.45): Eric, "make a couple file uploads per day": the story's 4 and 18 of the preview's own.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.45): one of the daily uploads taken out of seed.js made A1 read FAIL.
+    && report.length === 2 && uploads.length === 22 && chatFiles.length === 4 && /^data:application\/pdf;base64,/.test(opened),
     JSON.stringify({ missing, size: mine.size, report: report.length, uploads: uploads.length, chatFiles: chatFiles.length }));
   const items = log.o.items || [];
   // NEGATIVE CONTROL (run 2026-10-15): the seed's caseLog rows written with `phone: clinic phone` made this read
@@ -97,6 +99,23 @@ console.log('\n--- A. the case they walk ---');
     && Object.keys(JSON.parse(mem.get(store.STORE_KEY) || '{"docs":[]}').docs.find(([k]) => k.includes('/caseLog/'))?.[1] || {}).sort().join() === 'at,kind,summary,who'
     && [...mem.values()].every((v) => !/Scheduler; prior authorization desk|Appeals fax line|Health information management/.test(v)),
     JSON.stringify(items[0]));
+}
+
+// Eric, 2026-10-15: "make a couple file uploads per day". Two of Joe's own on
+// each of the last nine days, by the date stamped in each file's name.
+{
+  const ups = await files('uploads');
+  const perDay = new Map();
+  for (const it of ups) {
+    const ms = Number(String(it.name).split('-')[0]);
+    const day = new Date(ms - 7 * 3600_000).toISOString().slice(0, 10);
+    perDay.set(day, (perDay.get(day) || 0) + 1);
+  }
+  const lastNine = Array.from({ length: 9 }, (_, k) => new Date(Date.now() - 7 * 3600_000 - k * 86_400_000).toISOString().slice(0, 10));
+  // NEGATIVE CONTROL (run 2026-10-15): the two uploads dated three days ago moved to a month ago in seed.js made this read
+  //   FAIL  A3 Joe uploads a couple of files a day: at least two on each of the last nine days
+  check('A3 Joe uploads a couple of files a day: at least two on each of the last nine days',
+    lastNine.every((day) => (perDay.get(day) || 0) >= 2), JSON.stringify(Object.fromEntries(perDay)));
 }
 
 console.log('\n--- B. everything works, and nothing leaves ---');
@@ -146,6 +165,17 @@ console.log('\n--- B. everything works, and nothing leaves ---');
   check('B3 their message lands, and the first one gets a single answer saying nobody reads it here; a second does not',
     after.some((m) => m.text === 'Hello' && m.role === 'client') && replies.length === 1 && replies[0].role === 'admin',
     `${replies.length} replies`);
+}
+
+// Eric, 2026-10-15: "make me 'in office'". In the preview he is in, whatever
+// his real switch says, and the question never reaches the server.
+{
+  const before = realCalls.length;
+  const av = await call('/api/availability', null, 'GET');
+  // NEGATIVE CONTROL (run 2026-10-15): '/api/availability' put back on the preview's pass-through list made this read
+  //   FAIL  B4 in the preview he is in office, answered in the tab, never asked of the server
+  check('B4 in the preview he is in office, answered in the tab, never asked of the server',
+    av.s === 200 && av.o.inOffice === true && realCalls.length === before, JSON.stringify({ av, real: realCalls.slice(before) }));
 }
 
 console.log('\n--- C. Exit ---');
@@ -216,9 +246,53 @@ console.log('\n--- E. what anyone can download ---');
   // NEGATIVE CONTROL (run 2026-10-15): the MRI report's "Possible causes include" put back to "Differential includes" made this read
   //   FAIL  E1 every preview file is served to anyone and carries no word a client must not read, and the story behind the showcase lives there once
   check('E1 every preview file is served to anyone and carries no word a client must not read, and the story behind the showcase lives there once',
-    names.length === 5 && !hits.length && names.every((n) => !ADMIN_ASSET.test(`/js/preview/${n}`) && !DEMO_ASSET.test(`/js/preview/${n}`))
+    // RE-PINNED 2026-10-15 (v7.45): six files now; the guided tour is the sixth.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.45): the word differential put in tour.js's header made E1 read FAIL.
+    names.length === 6 && !hits.length && names.every((n) => !ADMIN_ASSET.test(`/js/preview/${n}`) && !DEMO_ASSET.test(`/js/preview/${n}`))
     && /from '\.\.\/public\/js\/preview\/joe\.js';/.test(f('worker/showcase.js')) && !/export const CHAT = \[/.test(f('worker/showcase.js')),
     hits.join(', ') || names.join(','));
+}
+
+// ---- F. the guided tour (Eric, 2026-10-15) ------------------------------------
+// "Have it go step by step through what each tab means by starting with a
+// short welcome to the preview and what they'll find in there / what they'll
+// be able to do in real life and what they can test in the suite.
+// Highlighting each section one at a time with a small window explaining
+// what it is. Then hit next for the next section of the tutorial/overview
+// until they can browse the suite." Walked step by step in drive-tour.mjs.
+console.log('\n--- F. the tour ---');
+{
+  const T = f('public/js/preview/tour.js');
+  const STEPS = new Function(`${(T.match(/const STEPS = \[[\s\S]*?\n\];/) || ['const STEPS = [];'])[0]} return STEPS;`)();
+  const first = STEPS[0] || {};
+  const last = STEPS[STEPS.length - 1] || {};
+  // NEGATIVE CONTROL (run 2026-10-15): the welcome's "Here you can try all of it." sentence taken out made this read
+  //   FAIL  F1 it opens with a welcome saying what is in the preview, what a real client does there and what they can try, and ends handing it to them
+  check('F1 it opens with a welcome saying what is in the preview, what a real client does there and what they can try, and ends handing it to them',
+    !first.at && /Welcome to the preview/.test(first.title) && /A real client sees exactly this/.test(first.body) && /Here you can try all of it/.test(first.body)
+    && /disappears when you tap Exit/.test(first.body) && !last.at && last.next === 'Start exploring',
+    JSON.stringify({ first, last }));
+  const tabs = STEPS.map((x) => x.tab).filter(Boolean).filter((t, k, a) => a.indexOf(t) === k);
+  // NEGATIVE CONTROL (run 2026-10-15): the Enhance step taken out of the tour made this read
+  //   FAIL  F2 one section at a time, every tab in its order, each step pointing at something, and Exit shown last
+  check('F2 one section at a time, every tab in its order, each step pointing at something, and Exit shown last',
+    JSON.stringify(tabs) === JSON.stringify(['progress', 'chat', 'docs', 'addons', 'saved'])
+    && STEPS.slice(1, -1).every((x) => typeof x.at === 'string' && x.title && x.body)
+    && STEPS[STEPS.length - 2].at === '.pv-exit' && STEPS.some((x) => x.at === '[data-cheer]'),
+    JSON.stringify(STEPS.map((x) => x.tab || x.at || '-')));
+  const S = f('public/js/preview/store.js');
+  // NEGATIVE CONTROL (run 2026-10-15): end() no longer calling markSeen made this read
+  //   FAIL  F3 it runs once a visit: the flag is the preview store's, set when it ends, and Exit's wipe gives the next visitor the tour
+  check('F3 it runs once a visit: the flag is the preview store\'s, set when it ends, and Exit\'s wipe gives the next visitor the tour',
+    /seen: \(\) => !!docs\.get\('preview\/meta'\)\?\.toured,/.test(S) && /markSeen: \(\) => \{ docs\.set\('preview\/meta', \{ \.\.\.\(docs\.get\('preview\/meta'\) \|\| \{\}\), toured: true \}\); persist\(\); \},/.test(S)
+    && /if \(seen\(\) \|\| !\/\^\\\/case\(\\\.html\)\?\$\/\.test\(location\.pathname\)\) return;/.test(T)
+    && /root\.remove\(\);\n\s*style\.remove\(\);\n\s*markSeen\(\);/.test(T)
+    && /sessionStorage\.removeItem\(STORE_KEY\)/.test(S));
+  // NEGATIVE CONTROL (run 2026-10-15): the Skip button relabelled "Skip tour" made this read
+  //   FAIL  F4 Skip says Skip, Escape ends it, the arrows step it, and the tour carries no dash
+  check('F4 Skip says Skip, Escape ends it, the arrows step it, and the tour carries no dash',
+    /data-tour-skip>Skip<\/button>/.test(T) && /e\.key === 'Escape'\) \{ e\.preventDefault\(\); end\(\); \}/.test(T)
+    && /ArrowRight/.test(T) && /ArrowLeft/.test(T) && !DASH.test(T));
 }
 
 const failed = results.filter((r) => !r.pass);

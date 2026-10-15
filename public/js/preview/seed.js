@@ -17,6 +17,28 @@ function dataUrl(bytes, type) {
   return `data:${type};base64,${btoa(bin)}`;
 }
 
+/** [days ago, hour, file name, lines]: two a day for the last nine days. */
+const DAILY = [
+  [0, 8, 'symptom-diary-today.pdf', ['# Symptom diary', 'Morning: headache behind the eyes, 3 out of 10.', 'No new spots in my vision. Hearing about the same.', 'Slept about seven hours.']],
+  [0, 11, 'questions-for-the-angiography-read.pdf', ['# Questions for the angiography read', 'How many branches are blocked, and which eye is worse?', 'Is this enough to start treatment now?', 'Do I need to stop driving?']],
+  [-1, 9, 'symptom-diary-yesterday.pdf', ['# Symptom diary', 'Headache 4 out of 10 after lunch.', 'Ringing in the left ear for about an hour.', 'Took nothing for it.']],
+  [-1, 15, 'pharmacy-receipt.pdf', ['# Pharmacy receipt', 'Sumatriptan 50 mg, 9 tablets.', 'Paid $18.40 with insurance.']],
+  [-2, 10, 'insurance-card-front-and-back.pdf', ['# Insurance card', 'Gem State Health Plan, PPO.', 'Member ID on file with the case.', 'Prior authorization line on the back.']],
+  [-2, 17, 'blood-pressure-log.pdf', ['# Blood pressure log', 'Morning 128 over 82. Evening 132 over 84.', 'Taken seated, left arm.']],
+  [-3, 9, 'visual-field-printout.pdf', ['# Visual field test', 'Patchy loss in the upper right of the right eye.', 'Left eye within normal limits.']],
+  [-3, 14, 'work-note-from-hr.pdf', ['# Work note', 'Two days off approved for appointments this week.', 'Return to light duty after.']],
+  [-4, 8, 'symptom-diary-sunday.pdf', ['# Symptom diary', 'Bad morning. Confused for about twenty minutes, my wife noticed first.', 'Better by ten.']],
+  [-4, 16, 'neurology-referral.pdf', ['# Referral', 'Referred to neurology for recurrent headache with transient confusion and hearing change.', 'Urgent, within two weeks.']],
+  [-5, 10, 'hearing-change-notes.pdf', ['# Hearing notes', 'Low tones sound muffled on the left.', 'Worse at the end of the day.']],
+  [-5, 13, 'prior-auth-request-copy.pdf', ['# Prior authorization request', 'Request sent by the clinic for the angiography.', 'Reference number on file.']],
+  [-6, 9, 'symptom-diary-friday.pdf', ['# Symptom diary', 'Headache 2 out of 10.', 'Good day overall, walked thirty minutes.']],
+  [-6, 18, 'family-history.pdf', ['# Family history', 'Mother: migraines. Father: high blood pressure.', 'No known autoimmune illness in the family.']],
+  [-7, 11, 'old-eye-exam-2024.pdf', ['# Eye exam, 2024', 'Routine exam. Glasses prescription only.', 'Retina normal at the time.']],
+  [-7, 15, 'insurance-explanation-of-benefits.pdf', ['# Explanation of benefits', 'MRI brain: allowed, applied to deductible.', 'You may owe $412.']],
+  [-8, 10, 'photo-of-eye-spots-notes.pdf', ['# Notes on the eye spots', 'Grey patches in the upper right, come and go.', 'Last about ten minutes each time.']],
+  [-8, 16, 'medication-allergies.pdf', ['# Allergies', 'Penicillin: rash as a child.', 'No other known allergies.']],
+];
+
 /** Every client-visible part of the case, written into the preview store. */
 export function seedPreview(now, { set, file }) {
   const id = PREVIEW_CASE;
@@ -35,6 +57,15 @@ export function seedPreview(now, { set, file }) {
       : d.name === 'appeal-letter.pdf' ? { paCategory: 'formsent', paStarred: String(when.getTime()) } : null;
     file(path, { name: `${when.getTime()}-${d.name}`, type: 'application/pdf', size: bytes.length, at: when.toISOString(), url, meta });
     attached[d.name] = { name: d.name, path, size: bytes.length, contentType: 'application/pdf', url };
+  }
+  // A couple of his own uploads a day (Eric, 2026-10-15: "make a couple file
+  // uploads per day"), so the Docs tab reads like a case being worked. The
+  // preview's alone: the showcase keeps the story's own set.
+  for (const [days, hour, name, lines] of DAILY) {
+    const bytes = textPdf(lines);
+    const when = at(now, days, hour, 20);
+    const path = `cases/${id}/uploads/${when.getTime()}-${name}`;
+    file(path, { name: `${when.getTime()}-${name}`, type: 'application/pdf', size: bytes.length, at: when.toISOString(), url: dataUrl(bytes, 'application/pdf'), meta: null });
   }
   const call = at(now, -14, 10, 0);
   const rec = silentWav();

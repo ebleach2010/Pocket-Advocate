@@ -9,7 +9,7 @@ import {
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
-import { mountChat, watchPresence } from './chat.js';
+import { mountChat, watchPresence, advocatePhoto } from './chat.js';
 import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
@@ -33,6 +33,10 @@ import { SALES_OPEN, SALES_CLOSED_MESSAGE } from './sales.js';
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 const ACCEPT = '.pdf,.jpg,.jpeg,.png,.heic,.dcm,.dicom,.zip';
 const MAX_BYTES = 25 * 1024 * 1024;
+
+// The public preview (2026-10-15) has a tour of its own, so the device's
+// first-run guide and the tab hint stay out of its way.
+const IN_PREVIEW = (() => { try { return sessionStorage.getItem('pa-preview') === '1'; } catch { return false; } })();
 
 const STEPS = [
   ['paid', 'Paid'],
@@ -114,7 +118,7 @@ if (user) {
   const setupHost = document.createElement('div');
   const mainEl = document.querySelector('main');
   mainEl?.insertBefore(setupHost, mainEl.querySelector('.footer-disclaimer'));
-  initSetupGuide(user, setupHost);
+  if (!IN_PREVIEW) initSetupGuide(user, setupHost);
 }
 
 async function boot() {
@@ -158,6 +162,38 @@ async function boot() {
     history.replaceState(null, '', `/case.html?id=${currentId}`);
     if (!document.getElementById('pa-intro')) openCaseHelp();
   }
+}
+
+/**
+ * YOUR PROGRESS, CELEBRATED (Eric, 2026-10-15: "highlight the progress
+ * section with a celebratory icon"). Where the case is, in one line, with the
+ * steps done so far as a bar and a party popper for getting there. Not on a
+ * paused case: nothing is moving, so nothing is celebrated.
+ */
+const CHEER = {
+  paid: 'You are in. Your case is open.',
+  forms: 'You are in. Your case is open.',
+  confirmed: 'Your call is booked.',
+  awaiting_report: 'The call is done. Your report is on its way.',
+  delivered: 'Your report is ready.',
+  closed: 'Your case is complete. The file is yours forever.',
+};
+function cheerCard(c, rank, closed) {
+  const line = CHEER[c.status];
+  if (!line || c.hold?.pausedAt) return '';
+  const total = STEPS.length;
+  const done = Math.max(1, Math.min(total, closed ? total : c.status === 'delivered' ? rank : rank - 1));
+  const pct = Math.round((done / total) * 100);
+  return `
+    <section class="card cheer" data-cheer>
+      <span class="cheer-ic" aria-hidden="true">🎉</span>
+      <div class="cheer-body">
+        <p class="cheer-k">Your progress</p>
+        <p class="cheer-t">${esc(line)}</p>
+        <div class="cheer-bar" role="img" aria-label="${done} of ${total} steps done"><i style="width:${pct}%"></i></div>
+        <p class="cheer-n">${done} of ${total} steps done</p>
+      </div>
+    </section>`;
 }
 
 function render() {
@@ -261,7 +297,7 @@ function render() {
 const NAV_HINT_KEY = 'pa-seen-nav-hint';
 
 function navHint(host) {
-  if (!host) return;
+  if (!host || IN_PREVIEW) return;
   try { if (localStorage.getItem(NAV_HINT_KEY)) return; } catch { return; }
   const note = document.createElement('p');
   note.className = 'nav-hint';
@@ -717,6 +753,7 @@ function renderProgress(el, c) {
       ${primaryAction}
       ${requestedNote}
     </section>
+    ${cheerCard(c, rank, closed)}
     ${hoursCard(c)}
     ${checkInLine(c, localFmt)}
     <hr class="divide">
@@ -836,11 +873,17 @@ function renderChat(el, c) {
   }).format(new Date(startMs - 7 * 86_400_000)) : '';
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
-    <p class="dim small" style="margin:.1rem 0 .3rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
-    <p class="office-row" style="margin:.2rem 0 .3rem;">${officeCueHtml()}</p>
+    <div class="chat-who" data-chat-who>
+      <img src="${esc(advocatePhoto(c.advocateId))}" alt="Eric" width="52" height="52" data-who-ava>
+      <div>
+        <p class="who-name">Eric, your advocate</p>
+        <p class="office-row" style="margin:.3rem 0 0;">${officeCueHtml()}</p>
+      </div>
+    </div>
     ${c.work?.startedAt && c.work?.doing
     ? `<p class="dim small doing-line" data-doing style="margin:0 0 .4rem;">Eric is ${esc(String(c.work.doing))} right now.</p>`
     : ''}
+    <p class="dim small" style="margin:.1rem 0 .5rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
     <div class="panel" data-chat></div>
     ${chatLocked && SALES_OPEN ? `
     <div class="panel" data-chat-unlock style="margin-top:.7rem;">
@@ -860,6 +903,8 @@ function renderChat(el, c) {
       </form>
       <p class="error" data-agenda-err hidden></p>`}
     </div>`;
+  // No photo to show (none uploaded yet): the name stands alone.
+  el.querySelector('[data-who-ava]')?.addEventListener('error', (e) => e.currentTarget.remove(), { once: true });
   watchPresence(el);
   // The "?" beside the in/out pill. This block repaints, so it is wired here
   // and not once at page load, or the button goes dead the first time the case
@@ -873,6 +918,9 @@ function renderChat(el, c) {
     user,
     myRole: 'client',
     saveUid: user.uid,
+    otherAvatar: advocatePhoto(c.advocateId),
+    otherName: 'Eric',
+    dayLines: true,
     disabled: closed || paused || chatLocked,
     notice: closed
       ? 'This chat ended when the case closed. Your documents remain yours forever.'

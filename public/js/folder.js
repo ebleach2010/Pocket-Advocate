@@ -199,8 +199,12 @@ export function mountPages({ container, pages, storageKey = '', groups = null } 
     // tap at the top of a short page does not yank anything.
     try {
       const strip = nav;
-      const barH = parseInt(getComputedStyle(document.documentElement)
-        .getPropertyValue('--bar-h'), 10) || 52;
+      // The bar's bottom, not its height: under the demo or preview strip
+      // the bar sticks lower by the strip's height (2026-10-15: the preview
+      // opened with its tabs hidden under the Exit strip).
+      const rootCss = getComputedStyle(document.documentElement);
+      const barH = (parseInt(rootCss.getPropertyValue('--bar-h'), 10) || 52)
+        + (document.body.classList.contains('has-demo-bar') ? (parseInt(rootCss.getPropertyValue('--demo-bar-h'), 10) || 0) : 0);
       // In BOTH directions. This used to fire only when the strip sat below
       // its docked spot (a page scrolled near the top), so opening a tab from
       // halfway down a long page left you staring at the MIDDLE of the new

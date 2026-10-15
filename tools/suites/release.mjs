@@ -158,6 +158,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // the Advocates tab does, that advocates see their own clients only, where his card is, and that the locks publish themselves.
   // NEGATIVE CONTROL (run 2026-10-15, v7.44): the worker's BUILD_TAG left at the advocates-ground tag made this read
   //   FAIL  R1 both versions read 7.44 with the new tag, the 7.44 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.45): both versions read 7.45 with the warm-tour tag, and the 7.45 entry says the shelf is
+  // tan again with its glow, the client side is warm with his photo, Progress celebrates, and the preview has its tour.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.45): changelog.js's VERSION left at '7.44' made this read
+  //   FAIL  R1 both versions read 7.45 with the new tag, the 7.45 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry745 = (CL.match(/\{\n\s+\/\/ WARM, GUIDED, TAN \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry744 = (CL.match(/\{\n\s+\/\/ ADVOCATE ACCOUNTS \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry743 = (CL.match(/\{\n\s+\/\/ MANY ADVOCATES, THE GROUNDWORK \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry742 = (CL.match(/\{\n\s+\/\/ PREVIEW A CASE, AND THE NUMBERS TAB OFF \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
@@ -176,9 +181,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.44 with the new tag, the 7.44 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.44';/.test(CL) && /const VERSION = '7\.44';/.test(W) && /const BUILD_TAG = 'v2026-10-15-advocate-accounts';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.44'
+  check('R1 both versions read 7.45 with the new tag, the 7.45 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.45';/.test(CL) && /const VERSION = '7\.45';/.test(W) && /const BUILD_TAG = 'v2026-10-15-warm-tour';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.45'
+    && /version: '7\.45',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry745)
+    && /back to the tan folders/.test(entry745) && /The client side is warm now/.test(entry745) && /your photo beside them/.test(entry745)
+    && /Progress has a card that celebrates/.test(entry745) && /short guided tour/.test(entry745) && /always in office/.test(entry745)
+    && !DASH.test(entry745) && !HARD.some((re) => re.test(entry745))
     && /version: '7\.44',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry744)
     && /A new Advocates tab/.test(entry744) && /They see their own clients and nothing else/.test(entry744)
     && /A new My profile tab for your own card/.test(entry744) && /nothing for you to deploy/.test(entry744)

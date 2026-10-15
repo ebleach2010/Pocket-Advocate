@@ -313,6 +313,12 @@ export function mountPreview() {
     if (document.body) m.mountBar(wipePreview);
     else document.addEventListener('DOMContentLoaded', () => m.mountBar(wipePreview));
   }).catch(() => { /* the preview still works; Exit is also the home link */ });
+  // The guided tour (2026-10-15), once per visit: the flag rides the store,
+  // so Exit's wipe gives the next visitor the tour again.
+  import('./tour.js').then((m) => m.startTour({
+    seen: () => !!docs.get('preview/meta')?.toured,
+    markSeen: () => { docs.set('preview/meta', { ...(docs.get('preview/meta') || {}), toured: true }); persist(); },
+  })).catch(() => { /* the case works without its tour */ });
 
   return {
     auth,

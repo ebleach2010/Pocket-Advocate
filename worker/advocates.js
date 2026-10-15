@@ -30,6 +30,7 @@ import {
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const UID_RE = /^[\w-]{1,64}$/;
+const OWNER_PHOTO = '/img/eric-headshot.jpg';
 const HEADSHOT_MAX = 3 * 1024 * 1024;
 const HEADSHOT_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
 
@@ -295,6 +296,10 @@ async function publicHeadshot(request, env, url, h) {
   if (!UID_RE.test(uid)) return h.json({ error: 'Not found' }, 404);
   const doc = await getDoc(env, `advocates/${uid}`).catch(() => null);
   const path = doc?.data?.active === true ? doc.data.headshotPath : null;
+  // His own photo ships with the site (public/img), so his cases and the
+  // home show his face before he uploads one here (2026-10-15).
+  if (!path && doc?.data?.active === true && doc.data.owner === true)
+    return new Response(null, { status: 302, headers: { location: OWNER_PHOTO, 'cache-control': 'public, max-age=3600' } });
   if (!path || !path.startsWith(`advocates/${uid}/`)) return h.json({ error: 'Not found' }, 404);
   const res = await mediaFetch(env, path).catch(() => null);
   if (!res?.ok) return h.json({ error: 'Not found' }, 404);

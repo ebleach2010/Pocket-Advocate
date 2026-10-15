@@ -213,7 +213,9 @@ await adm.goto(`${P}${navs[0]}`, { waitUntil: 'networkidle' });
 await adm.waitForSelector('a:has-text("Fund queue")', { timeout: 8000 }).catch(() => {});
 const door = await adm.getAttribute('a:has-text("Fund queue")', 'href').catch(() => null);
 // RE-PINNED 2026-10-15 (v7.38): Leads joined the advocacy tabs after Clients on 2026-10-14 (v7.36); this drive had not followed.
-check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with a quiet door back to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html'
+// RE-PINNED 2026-10-15 (v7.45): v7.44 gave his tabs Advocates and My profile (admin-staffnav.js), after the six.
+// NEGATIVE CONTROL (run 2026-10-15, v7.45): the Advocates addTab taken out of admin-staffnav.js made B10 read FAIL.
+check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with a quiet door back to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html,/admin-advocates.html,/admin-account.html'
   && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname) && door === '/admin-fund.html',
   JSON.stringify({ navs, clients: adm.url(), door }));
 

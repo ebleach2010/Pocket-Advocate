@@ -1,0 +1,218 @@
+/* THE CLIENT'S SIDE, WARM (Eric, 2026-10-15, looking at the preview: "fix
+   the chat aesthetic so it doesn't look so black/dead. I'd like the client
+   side to look warm and engaging. Right now it's cold and confusing." Asked
+   whether real clients get it too: "All client pages").
+
+   Loaded last, and only on the pages a client lives in: their case, their
+   chat, their subscription and the page after paying. His side never loads
+   it, so his working pages keep the black look. The home and the package
+   pages keep theirs too.
+
+   The ground is a deep plum brown instead of black, the light is peach and
+   rose instead of cyan, and the chat is lit: his words on a warm raised
+   card, theirs in a peach to rose wash. High contrast, chosen for
+   somebody's eyes, still wins: nothing here touches it. */
+
+:root:not([data-scheme="contrast"]) {
+  background: #1E1519;
+}
+:root:not([data-scheme="contrast"]) body {
+  --bg: #1E1519;
+  --bg-deep: #160F12;
+  --panel: #2A1E24;
+  --panel-2: #33252C;
+  --ink: #FFF5EE;
+  --soft: #F2E1D6;
+  --dim: #CDB5A8;
+  --muted: #A38D82;
+  --line: #45333B;
+  --cyan: #FFB27A;
+  --cyan-dim: #C9814F;
+  --magenta: #F59BBF;
+  --blue: #A9C1FF;
+  --green: #74DCA6;
+  --gold: #FFCF6B;
+  --danger: #FF8E8E;
+  --on-accent: #2B1207;
+  --sur-quiet: #251B20;
+  --sur-base: #2A1E24;
+  --sur-lit: #34262D;
+  --sur-floating: #30232A;
+  --sur-inset: #20171B;
+  --edge-quiet: rgba(255, 214, 190, .07);
+  --edge-base: rgba(255, 214, 190, .13);
+  --edge-lit: rgba(255, 214, 190, .22);
+  --edge-focus: #FFB27A;
+  --el-2: 0 18px 50px rgba(10, 4, 6, .5);
+  --el-3: 0 24px 70px rgba(10, 4, 6, .6);
+  --el-cta: 0 10px 30px rgba(255, 140, 100, .30), 0 0 0 1px rgba(255, 178, 122, .55);
+  --glow-c: 0 10px 30px rgba(255, 140, 100, .26);
+  --glow-c-peak: 0 12px 34px rgba(255, 140, 100, .32), 0 0 0 1px rgba(255, 178, 122, .45);
+  --bar: rgba(30, 21, 25, .86);
+  --deep: #160F12;
+  --deep-2: #160F12;
+  --deep-ink: #FFF5EE;
+  --deep-dim: #CDB5A8;
+  --deep-line: rgba(255, 214, 190, .1);
+  --paper: #2A1E24;
+  --orange: #FFCF6B;
+  --wash-b: rgba(255, 178, 122, .06);
+  --chip-wash: rgba(255, 178, 122, .12);
+  /* The warm pop, where the black look had its cyan to violet. */
+  --warm-pop: linear-gradient(110deg, #FFC48A 0%, #FF9E7D 50%, #F59BBF 100%);
+  background-color: #1E1519;
+  background-image:
+    radial-gradient(900px 460px at 90% -8%, rgba(255, 150, 105, .20), transparent 62%),
+    radial-gradient(760px 420px at -14% 28%, rgba(245, 155, 191, .12), transparent 60%),
+    radial-gradient(800px 500px at 50% 110%, rgba(255, 196, 138, .08), transparent 60%);
+  background-attachment: fixed;
+}
+
+/* The wordmark keeps the brand's cyan, so the client knows whose app it is. */
+:root:not([data-scheme="contrast"]) .brand .spark { color: #3DDCF5; }
+
+/* Buttons that act: the warm pop. */
+:root:not([data-scheme="contrast"]) :is(.btn.glow, .btn.mag.glow) {
+  border-color: transparent;
+  background: var(--warm-pop);
+  color: var(--on-accent);
+  box-shadow: var(--el-cta);
+}
+
+/* The case's tab rail, lit in peach; Enhance in rose. */
+:root:not([data-scheme="contrast"]) :is(.folder-tabs > a.on, .fgrp.on) :is(.ftab-ic, .fgrp-ic) { color: #FFB27A; }
+:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a[data-page="addons"] .ftab-ic { color: #F59BBF; }
+:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a.on { border-color: #FFB27A; background: rgba(255, 178, 122, .10); box-shadow: 0 0 0 1px rgba(255, 178, 122, .35), 0 6px 18px rgba(255, 140, 100, .18); }
+:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a[data-page="addons"].on { border-color: #F59BBF; background: rgba(245, 155, 191, .10); box-shadow: 0 0 0 1px rgba(245, 155, 191, .4), 0 6px 18px rgba(245, 155, 191, .18); }
+
+/* Cards: a little warmth from above instead of a flat slab. */
+:root:not([data-scheme="contrast"]) :is(.card-lit, .panel) {
+  background: linear-gradient(180deg, rgba(255, 196, 150, .05), rgba(255, 196, 150, 0) 50%), var(--sur-base);
+}
+:root:not([data-scheme="contrast"]) .card-lit { background: linear-gradient(180deg, rgba(255, 196, 150, .07), rgba(255, 196, 150, 0) 55%), var(--sur-lit); }
+
+/* ---- THE CHAT, LIT ------------------------------------------------------- */
+:root:not([data-scheme="contrast"]) .panel.chat-root,
+:root:not([data-scheme="contrast"]) #chat.panel {
+  background:
+    radial-gradient(120% 60% at 100% 0%, rgba(255, 150, 105, .12), transparent 60%),
+    radial-gradient(90% 50% at 0% 100%, rgba(245, 155, 191, .09), transparent 60%),
+    #261B21;
+  border-color: rgba(255, 196, 150, .18);
+}
+/* His words on a warm raised card, with his face beside the first of a run. */
+:root:not([data-scheme="contrast"]) .msg.them {
+  background: linear-gradient(180deg, #47343D, #3D2D35);
+  border: 1px solid rgba(255, 214, 190, .16);
+  color: #FFF5EE;
+  box-shadow: 0 6px 16px rgba(10, 4, 6, .28);
+}
+/* Theirs in the warm pop, like a message app's own colour. */
+:root:not([data-scheme="contrast"]) .msg.me {
+  background: linear-gradient(135deg, #FFC08F 0%, #FFA287 55%, #F7A6C6 100%);
+  border: 0;
+  color: #2B1207;
+  box-shadow: 0 6px 18px rgba(255, 120, 90, .22);
+}
+:root:not([data-scheme="contrast"]) .msg.me .msg-meta { color: rgba(43, 18, 7, .72); }
+:root:not([data-scheme="contrast"]) .msg.me a { color: #5A1E06; }
+:root:not([data-scheme="contrast"]) .msg.them .msg-meta { color: #D9C2B5; }
+:root:not([data-scheme="contrast"]) .msg-react { border-color: rgba(255, 178, 122, .55); background: rgba(255, 178, 122, .14); color: #FFD2AE; }
+:root:not([data-scheme="contrast"]) .msg-emoji-react { background: #34262D; border-color: rgba(255, 214, 190, .2); }
+:root:not([data-scheme="contrast"]) .chat-form textarea { background: #20171B; border-color: rgba(255, 214, 190, .18); color: var(--ink); }
+:root:not([data-scheme="contrast"]) .chat-form textarea::placeholder { color: #A38D82; }
+:root:not([data-scheme="contrast"]) :is(.attach-btn, .chat-expand) { background: #2E2228; border-color: rgba(255, 214, 190, .16); color: var(--soft); }
+:root:not([data-scheme="contrast"]) .chat-search-btn { background: #34262D; color: var(--soft); border-color: rgba(255, 214, 190, .16); }
+
+/* His face beside his messages: on the first of each run of his. */
+.msg-row { display: flex; align-items: flex-end; gap: .5rem; }
+.msg-row > .msg { flex: 0 1 auto; }
+.msg-ava {
+  flex: none; width: 34px; height: 34px; border-radius: 50%;
+  object-fit: cover; object-position: 50% 50%;
+  border: 2px solid rgba(255, 196, 150, .55);
+  box-shadow: 0 4px 12px rgba(10, 4, 6, .35);
+}
+.msg-ava.gap { visibility: hidden; }
+
+/* A day's line between the days of a conversation. */
+.chat-day {
+  align-self: center; margin: .6rem 0 .1rem; padding: .2rem .75rem;
+  border-radius: 999px; font-size: .74rem; font-weight: 700; letter-spacing: .04em;
+  color: #F2E1D6; background: rgba(255, 196, 150, .10); border: 1px solid rgba(255, 196, 150, .18);
+}
+
+/* Who they are talking to, at the top of the chat. */
+.chat-who { display: flex; align-items: center; gap: .75rem; margin: 0 0 .6rem; }
+.chat-who img {
+  width: 52px; height: 52px; border-radius: 50%; object-fit: cover; object-position: 50% 50%;
+  border: 2px solid transparent;
+  background: linear-gradient(#261B21, #261B21) padding-box, var(--warm-pop) border-box;
+  box-shadow: 0 6px 18px rgba(255, 120, 90, .22);
+}
+.chat-who .who-name { margin: 0; font-weight: 700; font-size: 1.02rem; color: var(--ink); }
+.chat-who .who-line { margin: .1rem 0 0; font-size: .86rem; color: var(--dim); }
+
+/* The status line beneath the pill. */
+:root:not([data-scheme="contrast"]) .doing-line { color: #FFD2AE; }
+
+/* Search and the down arrow, in the warm pop. */
+:root:not([data-scheme="contrast"]) .chat-search { box-shadow: 0 0 0 1px rgba(255, 178, 122, .25), 0 8px 24px rgba(255, 140, 100, .14); }
+:root:not([data-scheme="contrast"]) :is(.chat-result mark, mark.chat-hit) { background: var(--warm-pop); color: #2B1207; }
+:root:not([data-scheme="contrast"]) .msg.chat-found { box-shadow: inset 0 0 0 2px #FFB27A, inset 0 0 18px rgba(255, 140, 100, .25); }
+:root:not([data-scheme="contrast"]) .chat-bottom { background: var(--warm-pop); color: #2B1207; box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 22px rgba(10, 4, 6, .45); }
+
+/* Focus is peach on their side. */
+:root:not([data-scheme="contrast"]) :focus-visible { outline-color: #FFB27A; }
+:where(:root:not([data-scheme="contrast"])) :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid #FFB27A; outline-offset: 2px; }
+:root:not([data-scheme="contrast"]) :is(input[type=checkbox], input[type=radio]) { accent-color: #FFB27A; }
+
+/* Progress bars and prices in the warm pop. */
+:root:not([data-scheme="contrast"]) progress::-webkit-progress-value { background: var(--warm-pop); }
+:root:not([data-scheme="contrast"]) progress::-moz-progress-bar { background: var(--warm-pop); }
+:root:not([data-scheme="contrast"]) :is(.pack .price, .fu-buy .price, .price-line strong:first-child) { background: var(--warm-pop); -webkit-background-clip: text; background-clip: text; }
+:root:not([data-scheme="contrast"]) .price-line { background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box; box-shadow: 0 10px 30px rgba(255, 140, 100, .16); }
+:root:not([data-scheme="contrast"]) .push-prompt { border-color: rgba(255, 178, 122, .45); box-shadow: 0 10px 30px rgba(255, 140, 100, .12); }
+:root:not([data-scheme="contrast"]) .star:not(.on) { color: rgba(255, 214, 190, .3); }
+:where(:root:not([data-scheme="contrast"])) hr { background: rgba(255, 214, 190, .12); }
+
+/* ---- YOUR PROGRESS, CELEBRATED (Eric, 2026-10-15: "highlight the progress
+   section with a celebratory icon") ---------------------------------------- */
+.cheer {
+  position: relative; overflow: hidden;
+  display: flex; align-items: center; gap: .9rem;
+  padding: 1rem 1.1rem;
+  border: 1.5px solid transparent; border-radius: 20px;
+  background: linear-gradient(var(--sur-lit, #34262D), var(--sur-lit, #34262D)) padding-box, var(--warm-pop, linear-gradient(110deg, #FFC48A, #F59BBF)) border-box;
+  box-shadow: 0 10px 30px rgba(255, 140, 100, .18);
+}
+.cheer-ic {
+  flex: none; display: grid; place-items: center;
+  width: 58px; height: 58px; border-radius: 50%;
+  font-size: 1.9rem; line-height: 1;
+  background: radial-gradient(circle at 35% 30%, rgba(255, 214, 160, .35), rgba(255, 150, 105, .14) 60%, transparent 70%);
+  box-shadow: inset 0 0 0 1px rgba(255, 196, 150, .35);
+}
+.cheer-body { flex: 1; min-width: 0; }
+.cheer-k { margin: 0; font-size: .74rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: #FFC48A; }
+.cheer-t { margin: .15rem 0 .5rem; font-family: 'Sora', 'Manrope', system-ui, sans-serif; font-weight: 600; font-size: 1.08rem; line-height: 1.3; color: var(--ink); }
+.cheer-bar { height: 8px; border-radius: 999px; background: rgba(255, 214, 190, .12); overflow: hidden; }
+.cheer-bar > i { display: block; height: 100%; border-radius: inherit; background: var(--warm-pop, linear-gradient(110deg, #FFC48A, #F59BBF)); }
+.cheer-n { margin: .35rem 0 0; font-size: .8rem; color: var(--dim); }
+/* A little confetti and a pop as it arrives; still for anyone who asked for less motion. */
+.cheer::before,
+.cheer::after {
+  content: ''; position: absolute; top: -6px; width: 6px; height: 10px; border-radius: 2px; pointer-events: none; opacity: 0;
+}
+.cheer::before { left: 30px; background: #FFC48A; }
+.cheer::after { left: 52px; background: #F59BBF; }
+@media (prefers-reduced-motion: no-preference) {
+  .cheer-ic { animation: cheer-pop .7s cubic-bezier(.2, 1.4, .4, 1) both; }
+  .cheer::before { animation: cheer-fall 1.6s ease-out .15s both; }
+  .cheer::after { animation: cheer-fall 1.9s ease-out .3s both; }
+  .cheer-bar > i { animation: cheer-fill 1.1s ease-out both; }
+}
+@keyframes cheer-pop { 0% { transform: scale(.4) rotate(-20deg); opacity: 0; } 100% { transform: none; opacity: 1; } }
+@keyframes cheer-fall { 0% { opacity: 1; transform: translateY(0) rotate(0); } 100% { opacity: 0; transform: translateY(70px) rotate(220deg); } }
+@keyframes cheer-fill { from { width: 0; } }
+:root[data-scheme="contrast"] .cheer { background: var(--panel); border-color: var(--ink); box-shadow: none; }

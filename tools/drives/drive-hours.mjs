@@ -580,13 +580,17 @@ const hoursCard = await page.evaluate(() => {
   if (!card) return { there: false };
   return {
     there: true,
-    frontAndCenter: !!document.querySelector('[data-appt]')?.nextElementSibling?.matches('[data-hours-card]'),
+    // RE-PINNED 2026-10-15 (v7.45): Eric, "highlight the progress section with a celebratory icon": the
+    // progress card sits between them now, so the hours card is the next card after it.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.45): cheerCard's line taken out of case.js made this read FAIL.
+    frontAndCenter: !!document.querySelector('[data-appt]')?.nextElementSibling?.matches('[data-cheer]')
+      && !!document.querySelector('[data-cheer]')?.nextElementSibling?.matches('[data-hours-card]'),
     text: card.textContent.replace(/\s+/g, ' ').trim(),
     meter: !!card.querySelector('.hours-meter span'),
   };
 });
 ok('the Hands-Off case carries the hours card', hoursCard.there);
-ok('and it is front and center: directly under the appointment card',
+ok('and it is front and center: directly under the appointment card and its progress',
   hoursCard.frontAndCenter);
 ok('it says what is used and what a month includes',
   /2h 30m used/.test(hoursCard.text || '')

@@ -214,6 +214,16 @@ access another advocate's data by changing IDs or URLs."
   `node tools/rules/sync-rules.mjs` (rulesync S1 fails until you do), and run
   the emulator checks in `tools/rules/rules-check.mjs`.
 
+## The client's side is warm; his side is black (Eric, 2026-10-15)
+
+"I'd like the client side to look warm and engaging." `public/css/warm.css`
+loads last on case, chat, subscription and return only (cancelsearch C1 and
+warm.mjs A1 pin the list). Colour rules in it sit under
+`:root:not([data-scheme="contrast"])` so High contrast keeps its own. The
+preview opens on its guided tour (`public/js/preview/tour.js`); a new section
+on the client's case page should get a step there. His Clients shelf is tan
+manila again, set on `.drawer` only.
+
 ## Iron rules (long-standing, do not relax)
 
 - Clients must be completely blind to admin information and tools. Admin
