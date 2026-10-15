@@ -426,9 +426,6 @@ async function load() {
       ...ownClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>${c.confirmedDx?.name ? ` · confirmed ${esc(c.confirmedDx.name)}` : ''}`)),
     ])
     : '');
-  // The doors moved to the + at the top (Eric, 2026-10-15); the fund queue
-  // link is the one quiet tool left under the shelf.
-  const quietLinks = advocate ? '' : '<div class="open-doors"><a class="btn quiet" href="/admin-fund.html">🤝 Fund queue</a></div>';
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
     section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
       `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
@@ -438,7 +435,6 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
-    quietLinks +
     `<div class="cmd-quiet">` + voiceBlock + summary + `</div>`;
   painted();
   const voiceSay = listEl.querySelector('#voice-said');

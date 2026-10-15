@@ -71,24 +71,6 @@ const fail = (status, error, extra = null) => ({
   text: async () => JSON.stringify({ error, ...(extra || {}) }),
 });
 
-const SUMMARY = `## Key points
-- She has called the practice twice for the March panel and not got through.
-- The rheumatology referral was mentioned by the second doctor and never confirmed.
-- She has been photographing the hand rash herself, which is the best evidence in the file.
-
-## Progress
-The script for the phone call went out and she said she would use it. Nothing
-has come back yet.
-
-## Loose ends
-- The full March blood panel with reference ranges.
-- Written confirmation the rheumatology referral was sent.
-potentially forgot to or have not provided. Helpful, but optional.
-
-## Where it stands
-Waiting on paperwork she has to prise out of a practice that does not answer
-the phone. The referral question is the one that changes the shape of the case.`;
-
 // A plausible running total for the chat-hours meter, so the admin suite
 // shows the number doing its job the moment the page opens. Demo only.
 let demoChatSecs = 3 * 3600 + 40 * 60;
@@ -2349,12 +2331,6 @@ export function demoApi(role, store) {
             category: d.category || 'General', learned: !!d.learnedAt, learnedVia: d.learnedVia || null,
           })),
       });
-    }
-
-    // ---- one day, read back ----------------------------------------------
-    if (path === '/api/summary') {
-      await beat(900);
-      return ok({ day: body.day, text: SUMMARY, cached: false });
     }
 
     // ---- saved messages ---------------------------------------------------

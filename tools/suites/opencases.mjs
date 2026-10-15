@@ -126,7 +126,11 @@ console.log('\n--- C. the + ---');
     // a contractor's + paints the lead form alone; his paints all three, as before.
     // NEGATIVE CONTROL (run 2026-10-15, v7.46): `advocate ? leadFormHtml() : ` dropped made C2 read FAIL.
     && /addEl\.innerHTML = advocate \? leadFormHtml\(\) : person\('self', false, pullPicker\) \+ person\('family', true\) \+ leadFormHtml\(\);/.test(ADMIN)
-    && !/data-open-door="/.test(ADMIN) && /const quietLinks = /.test(ADMIN));
+    // RE-PINNED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". The fund queue link was the last
+    // thing under the shelf, so nothing is: no doors and no quiet links, straight into the quiet tools.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.51): `quietLinks +` put back under the shelf made C2 read FAIL.
+    && !/data-open-door="/.test(ADMIN) && !/quietLinks|admin-fund/.test(ADMIN)
+    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\n\s+`<div class="cmd-quiet">`/.test(ADMIN));
 }
 
 console.log('\n--- D. the cards by state ---');

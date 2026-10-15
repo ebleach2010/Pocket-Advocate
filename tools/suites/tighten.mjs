@@ -284,12 +284,16 @@ console.log('\n--- W. Eric\'s side ---');
   // still just above the quiet tools.
   // NEGATIVE CONTROL (run 2026-10-15, v7.41): quietLinks renamed made this read
   //   FAIL  W3 the doors are the + beside the heading; under the shelf only the fund queue link stays, just above the quiet tools
-  check('W3 the doors are the + beside the heading; under the shelf only the fund queue link stays, just above the quiet tools',
+  // RE-PINNED AND RENAMED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". The fund queue link
+  // left the shelf, for him and (as before) for an advocate; the quiet tools follow the last section directly.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.51): `quietLinks +` put back between the last section and the quiet tools made this read
+  //   FAIL  W3 the doors are the + beside the heading, and nothing sits under the shelf but the quiet tools
+  check('W3 the doors are the + beside the heading, and nothing sits under the shelf but the quiet tools',
     // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate's shelf has no fund link.
     // NEGATIVE CONTROL (run 2026-10-15, v7.44): quietLinks' `advocate ? '' :` taken out made this read FAIL W3 through the drive
     // (drive-advocates); here the pin is the line itself:
-    /const quietLinks = advocate \? '' : '<div class="open-doors"><a class="btn quiet" href="\/admin-fund\.html">/.test(ADMIN)
-    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*quietLinks \+\s*`<div class="cmd-quiet">` \+ voiceBlock/.test(ADMIN)
+    !/admin-fund|Fund queue/.test(ADMIN)
+    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*`<div class="cmd-quiet">` \+ voiceBlock/.test(ADMIN)
     && !/data-open-door="|data-showcase-door>/.test(ADMIN)
     && /<div class="clients-head">\s*<h1>Clients<\/h1>\s*<div class="add-wrap">\s*<button type="button" class="add-btn" data-add-open/.test(f('public/admin.html')));
 

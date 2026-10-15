@@ -1024,14 +1024,6 @@ main > p > a.small[href="/admin.html"] {
 .un-acts .btn { padding: .3rem .7rem; font-size: .78rem; }
 .un-limit { margin: .7rem 0 0; }
 
-.sum-out { margin-top: .9rem; }
-.sum-sec { margin: 0 0 .8rem; }
-.sum-sec h4 {
-  margin: 0 0 .25rem; font-size: .82rem; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--cyan);
-}
-.sum-sec p { margin: 0; font-size: .92rem; line-height: 1.6; color: var(--soft); white-space: pre-wrap; }
-
 /* ---- the work clock's correction sheet ----
    Eric, 2026-08-25: "I should be able to tap on the time and subtract time or
    add time." So the total is a button, not a label.

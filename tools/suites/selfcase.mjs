@@ -202,9 +202,14 @@ check('S8 every run the cron drain starts, and the analysis it re-runs, enter un
   && /withCasePolicy\(env, kind, id, \(\) => runAnalysis\(/.test(drain));
 // NEGATIVE CONTROL (run 2026-09-03): the advisor route calling handleAdvisorAction directly made this read
 //   FAIL  S9 the advisor route and the day summary enter under the policy too
-check('S9 the advisor route and the day summary enter under the policy too',
+// RE-PINNED AND RENAMED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". The day summary left with
+// its route, so nothing of it is left to enter anywhere.
+// NEGATIVE CONTROL (run 2026-10-15, v7.51): the summary's route put back
+// (`if (url.pathname === '/api/summary') return await handleDaySummary(request, env);`) made this read
+//   FAIL  S9 the advisor route enters under the policy too, and the day summary is gone with its route
+check('S9 the advisor route enters under the policy too, and the day summary is gone with its route',
   /return withCasePolicy\(env, kind, id, \(\) => handleAdvisorAction\(\{/.test(WORKER)
-  && /const out = await withCasePolicy\(env, kind, id, \(\) => runDaySummary\(env, kind, id, day\)\);/.test(WORKER)
+  && !/runDaySummary|handleDaySummary|\/api\/summary/.test(WORKER + ADV)
   && /withCasePolicy,/.test(grab(WORKER, /import \{[\s\S]*?\} from '\.\/advisor\.js';/)));
 // Re-pinned 2026-09-09 (v3.8): the pass no longer chooses between high and
 // medium by pass type. Eric asked for the top effort on every case, so the
@@ -927,14 +932,16 @@ check('S44 a reaction or a status cannot land on a question row',
 
 // NEGATIVE CONTROL (run 2026-09-03): the CSV label for a question row changed to 'Q' made this read
 //   FAIL  S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list, the day summary), and the saved shelf on his own case is his
-check('S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list, the day summary), and the saved shelf on his own case is his',
+// RE-PINNED AND RENAMED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". The day summary, one of
+// the places a row was labelled, is gone; the other three still name a question as one.
+// NEGATIVE CONTROL (run 2026-10-15, v7.51): the CSV label for a question row changed to 'Q' still made this read
+//   FAIL  S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list), and the saved shelf on his own case is his
+check('S45 a question row is named as one wherever a row is labelled (the CSV, the saved shelf, the chats list), and the saved shelf on his own case is his',
   /d\.role === 'admin' \? 'Advocate' : d\.role === 'question' \? 'Question' : 'Client',/.test(CHAT)
   && /d\.quote \? `Re: \$\{d\.quote\}\\n\$\{d\.text \|\| ''\}` : \(d\.text \|\| ''\),/.test(CHAT)
   && /role: msg\.data\.role === 'admin' \? 'admin' : msg\.data\.role === 'question' \? 'question' : 'client',/.test(WORKER)
   && /r\.role === 'question' \? 'Asked of you' : r\.role === 'admin' \? 'Eric' : 'You'/.test(SAVED)
   && /who: c\.self \? `\$\{c\.clientName \|\| 'My own case'\} \(mine\)` : \(c\.clientEmail \|\| c\.clientUid\),/.test(CHATS)
-  && /const who = r\.data\.role === 'admin' \? 'Eric'\n\s+: r\.data\.role === 'question' \? 'Asked of Eric' : 'Client';/.test(ADV)
-  && /const ownDay = !!turnPolicy\.getStore\(\)\?\.self;/.test(ADV) && /\$\{ownDay\n\s+\? `You summarise one day of Eric's own log/.test(ADV)
   // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate saves nothing to a client's
   // shelf and does not list it (it follows the client across advocates); his own case's shelf is still his.
   // NEGATIVE CONTROL (run 2026-10-15, v7.44): the case page's saveUid put back to `c.self ? user.uid : c.clientUid` made this read

@@ -372,7 +372,10 @@ console.log('\n--- D. the router ---');
   // Everything about the platform as a whole stays his alone.
   // RE-PINNED 2026-10-15 (v7.46): handleLeadInvite is staff now (a contractor's own leads, section I); his leads list stays his.
   // NEGATIVE CONTROL (run 2026-10-15, v7.46): handleAdminLeads asking requireStaff made D1 and D3 read FAIL.
-  const hisAlone = ['handleSetRates', 'handleCreateSlots', 'handleAdminLeads', 'handleLedger', 'handleStatsRecompute', 'handleSelfCase', 'handleShowcaseCase', 'handleDeleteCase', 'handleFamilyCase', 'handleBookingClosure', 'handleOfficeHoursControl', 'handleFullCapacity', 'handleDaySummary', 'handleChatReply', 'handlePersonal'];
+  // RE-PINNED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". handleDaySummary is gone with its
+  // route; the rest stay his alone.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.51): handleSetRates asking requireStaff still made D3 read FAIL.
+  const hisAlone = ['handleSetRates', 'handleCreateSlots', 'handleAdminLeads', 'handleLedger', 'handleStatsRecompute', 'handleSelfCase', 'handleShowcaseCase', 'handleDeleteCase', 'handleFamilyCase', 'handleBookingClosure', 'handleOfficeHoursControl', 'handleFullCapacity', 'handleChatReply', 'handlePersonal'];
   const wrong = hisAlone.filter((n) => { const m = W.match(new RegExp(`\\n(?:async )?function ${n}\\([^)]*\\) \\{[\\s\\S]{0,300}`)); return !m || !/await requireAdmin\(request, env\)/.test(m[0]); });
   // NEGATIVE CONTROL (run 2026-10-15): handleSetRates asking requireStaff made this read
   //   FAIL  D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase and the private reading stay his alone for now

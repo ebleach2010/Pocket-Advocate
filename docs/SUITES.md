@@ -318,6 +318,22 @@ drive-employer grew two checks; drive-landing's size check is re-pinned and
 renamed (the home scrolls now). Every new check has its control recorded.
 Release R1.
 
+### Two things off (2026-10-15, v7.51)
+
+Eric: "Remove the fund queue, one day summary." The Clients page no longer
+links the Fund queue; like the public fund page since v7.30, the queue's page,
+its routes and the applications already sent are kept, reachable only by
+address. The Summary tab (one day of a thread, read back) is gone from his
+Track group, with its page code, its styles (admin.css, stamp stat137), the
+demo's route, and the Worker's `/api/summary` route, `handleDaySummary` and
+`runDaySummary`. Summaries already made stay where they were stored.
+
+Re-pinned, each with its control recorded: advocates D3 (the his-alone list
+loses handleDaySummary), selfcase S9 and S45 (renamed: the day summary is gone),
+opencases C2, tighten W3 (renamed: nothing under the shelf but the quiet
+tools), fund F19 (renamed: no door, the queue kept), charge CH7 (stat137),
+drive-fund B10 (renamed: no door to the queue), release R1.
+
 ### Payroll: all of it, and Paid (2026-10-15, v7.49)
 
 Eric: "Payroll chart should not be cut off. The whole spreadsheet should be

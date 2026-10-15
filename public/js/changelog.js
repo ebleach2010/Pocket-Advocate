@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.50';
+export const VERSION = '7.51';
 
 /**
  * Newest first.
@@ -51,6 +51,17 @@ export const VERSION = '7.50';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // TWO THINGS OFF (Eric, 2026-10-15: "Remove the fund queue, one day
+    // summary"). Admin only.
+    version: '7.51',
+    quiet: true,
+    client: [],
+    admin: [
+      'The Fund queue is off the Clients page. The applications already sent are kept.',
+      'The Summary tab on a case, one day read back, is gone.',
+    ],
+  },
   {
     // HIS FACE, A GREEN DOOR, THEIR PROFILES (Eric, 2026-10-15: "I'd like my
     // profile picture to be on the landing page. It can scroll." And:

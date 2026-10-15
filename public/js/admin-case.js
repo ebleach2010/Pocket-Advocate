@@ -302,7 +302,7 @@ function render(el) {
     ] : [
       { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: 'i-user', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
-      { id: 'track', label: 'Track', icon: 'i-doc', pages: ['summary', 'unanswered', 'agenda', 'about'] },
+      { id: 'track', label: 'Track', icon: 'i-doc', pages: ['unanswered', 'agenda', 'about'] },
       // 'calldoc' sits in Mine, beside Notes: both start from something Eric
       // wrote himself. A page absent from every group renders no tab at all,
       // which is how the call document first shipped invisible.
@@ -598,12 +598,6 @@ function render(el) {
           pane.appendChild(host);
           mountPersonal(host, { getToken: () => user.getIdToken(), scope: 'case', caseId, open: true });
         },
-      },
-      {
-        // One day of the thread, read back to him. His side only: he took this
-        // off the client's side deliberately.
-        id: 'summary', title: 'Summary', icon: '🗒',
-        render: (pane) => paintSummary(pane),
       },
       {
         id: 'drafts', title: 'Drafts', icon: '✍️',
@@ -1736,77 +1730,6 @@ function startChatMeter() {
     if (folder?.current() !== 'chat') return;
     beat(30);
   }, 30_000);
-}
-
-function paintSummary(pane) {
-  if (!pane) return;
-  const today = new Date();
-  const iso = (d) => d.toISOString().slice(0, 10);
-  pane.innerHTML = `
-    <div class="panel">
-      <h3>Day summary</h3>
-      <p class="dim small">One day of this thread, read back to you: what was
-        said, what moved, and what is still hanging. Once per day, and the same
-        day always reads the same.</p>
-      <div class="row" style="gap:.5rem; flex-wrap:wrap; align-items:center;">
-        <input type="date" data-day value="${iso(today)}" max="${iso(today)}">
-        <button class="btn glow" data-go>Read that day</button>
-      </div>
-      <p class="error" data-err hidden style="margin:.5rem 0 0;"></p>
-      <div class="sum-out" data-out hidden></div>
-    </div>`;
-
-  const dayEl = pane.querySelector('[data-day]');
-  const errEl = pane.querySelector('[data-err]');
-  const outEl = pane.querySelector('[data-out]');
-  const btn = pane.querySelector('[data-go]');
-
-  btn.addEventListener('click', async () => {
-    const day = dayEl.value;
-    if (!day) return;
-    btn.disabled = true;
-    btn.textContent = 'Reading…';
-    errEl.hidden = true;
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/summary', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ kind: 'case', id: caseId, day }),
-      });
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
-      // Rendered as text, section by section: this came back from a model and
-      // never goes near innerHTML as markup.
-      outEl.innerHTML = '';
-      for (const block of String(d.text || '').split(/\n(?=## )/)) {
-        const head = block.match(/^## (.+)$/m);
-        const sec = document.createElement('section');
-        sec.className = 'sum-sec';
-        if (head) {
-          const h = document.createElement('h4');
-          h.textContent = head[1].trim();
-          sec.appendChild(h);
-        }
-        const body = document.createElement('p');
-        body.textContent = block.replace(/^## .+$/m, '').trim();
-        sec.appendChild(body);
-        outEl.appendChild(sec);
-      }
-      const note = document.createElement('p');
-      note.className = 'dim small';
-      note.textContent = d.cached
-        ? 'Read earlier today; this is the same one.'
-        : 'Saved. Opening this day again shows exactly this.';
-      outEl.appendChild(note);
-      outEl.hidden = false;
-    } catch (err) {
-      errEl.textContent = err.message;
-      errEl.hidden = false;
-    }
-    btn.disabled = false;
-    btn.textContent = 'Read that day';
-  });
 }
 
 let unKey = null;

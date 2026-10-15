@@ -626,9 +626,13 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const pages = readdirSync(j(ROOT, 'public')).filter((n) => n.endsWith('.html'));
   const named = [...pages.map((n) => f(`public/${n}`)), W, f('public/js/admin.js'), f('tools/blindness-audit.mjs'), f('tools/drives/drive-nosideways.mjs')]
     .filter((t) => /admin-pr1/.test(t.replace(/^\s*(\/\/|\*).*$/gm, '')));
-  check('F19 PR 1 is live again: no hub and no parked copy, nothing in the pages, the Worker or the lists names either, and the Clients page keeps a quiet door to the Fund queue',
+  // RE-PINNED AND RENAMED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". The door left the Clients
+  // page; like the public fund page since v7.30, the queue's page, its routes and what was sent stay where they are.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.51): the Fund queue door put back under the shelf made this read
+  //   FAIL  F19 PR 1 is live again: no hub and no parked copy, nothing in the pages, the Worker or the lists names either; the Clients page no longer links the Fund queue, and the queue and its applications are kept
+  check('F19 PR 1 is live again: no hub and no parked copy, nothing in the pages, the Worker or the lists names either; the Clients page no longer links the Fund queue, and the queue and its applications are kept',
     !existsSync(j(ROOT, 'public/admin-pr1.html')) && !existsSync(j(ROOT, 'public/admin-pr1-landing.html')) && named.length === 0
-    && /<a class="btn quiet" href="\/admin-fund\.html">🤝 Fund queue<\/a>/.test(f('public/js/admin.js')),
+    && !/admin-fund|Fund queue/.test(f('public/js/admin.js')) && existsSync(j(ROOT, 'public/admin-fund.html')) && existsSync(j(ROOT, 'public/js/admin-fund.js')),
     JSON.stringify({ named: named.length }));
 }
 

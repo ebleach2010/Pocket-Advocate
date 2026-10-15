@@ -87,7 +87,7 @@ import { SALES_OPEN, CHAT_OPEN, SALES_CLOSED_MESSAGE } from '../public/js/sales.
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
-  runDaySummary, maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel, diagLog, LEGACY_TRADE_CATEGORIES,
+  maybeVoiceStudy, voiceLoopState, setVoiceLoop, pingModel, diagLog, LEGACY_TRADE_CATEGORIES,
 } from './advisor.js';
 
 /**
@@ -1398,8 +1398,6 @@ export default {
           cronByWatchdog: hb?.data?.watchdog === true,
         });
       }
-      if (url.pathname === '/api/summary' && request.method === 'POST')
-        return await handleDaySummary(request, env);
       if (url.pathname === '/api/saved')
         return await handleSaved(request, env, url);
       if (url.pathname === '/api/clinic-calls')
@@ -2392,7 +2390,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-his-face';
+const BUILD_TAG = 'v2026-10-15-two-off';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2400,7 +2398,7 @@ const BUILD_TAG = 'v2026-10-15-his-face';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.50';
+const VERSION = '7.51';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4600,59 +4598,6 @@ async function handleUploaded(request, env) {
     }).catch(() => { /* the file is up either way */ });
   }
   return json({ ok: true });
-}
-
-/**
- * POST /api/summary  Body: { kind, id, day: 'YYYY-MM-DD' }
- *
- * One day of a thread, read back to him. ADMIN ONLY, and deliberately so:
- * Eric asked for this on his side after taking it off the client's, and a
- * client is never to be handed anything generated for them.
- *
- * Once per day per case is enforced here rather than by a disabled button.
- * The day is cached on first generation and served from cache after, so the
- * limit is a property of the data rather than of the UI.
- */
-async function handleDaySummary(request, env) {
-  const admin = await requireAdmin(request, env);
-  // 404 for the same reason the advisor routes give one: a status code that
-  // differs from an unknown route confirms the route is there.
-  if (!admin) return json({ error: 'Not found' }, 404);
-  const body = await request.json().catch(() => null);
-  const kind = body?.kind === 'sub' ? 'sub' : 'case';
-  const id = String(body?.id || '');
-  const day = String(body?.day || '');
-  if (!/^[\w-]{1,64}$/.test(id)) return json({ error: 'Bad id' }, 400);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return json({ error: 'Bad day' }, 400);
-  // A day that has not happened has nothing in it.
-  if (new Date(`${day}T00:00:00Z`).getTime() > Date.now() + 86_400_000)
-    return json({ error: 'That day has not happened yet.' }, 400);
-
-  const parent = kind === 'case' ? 'cases' : 'subscriptions';
-  const doc = await getDoc(env, `${parent}/${id}`);
-  if (!doc) return json({ error: 'Not found' }, 404);
-
-  // Awaited rather than run through keepaliveRun: that helper reports only
-  // ok/failed, and the whole point here is the text it produces. One day of
-  // one thread at low effort is a short call, and he pressed a button and is
-  // waiting for an answer.
-  try {
-    const out = await withCasePolicy(env, kind, id, () => runDaySummary(env, kind, id, day));
-    if (out.empty) return json({ error: 'Nothing was said that day.' }, 404);
-    return json(out);
-  } catch (err) {
-    console.error('day summary:', err.stack || err);
-    // The REAL reason, because this route is requireAdmin-gated: only Eric's
-    // panel ever sees it. Every other advisor path already reports raw
-    // (keepaliveRun {raw:true}); this was the one place that hid the cause
-    // behind a shrug, which left him guessing about API keys from his phone.
-    // (Eric, 2026-08-21: "Same error. Send an agent to run diagnostics.")
-    // The status from the provider rides along when there is one - a 401
-    // means the key, a 529 means Anthropic is overloaded, and the two need
-    // opposite responses.
-    const detail = [err.status, err.message || String(err)].filter(Boolean).join(': ');
-    return json({ error: `Day summary failed - ${detail}` }, 502);
-  }
 }
 
 /**

@@ -166,6 +166,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // photo is, that Employer mode is green, and that he sets a contractor's photo and bio from their card.
   // NEGATIVE CONTROL (run 2026-10-15, v7.50): the worker's BUILD_TAG left at the payroll-paid tag made this read
   //   FAIL  R1 both versions read 7.50 with the new tag, the 7.50 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.51): both versions read 7.51 with the two-off tag, and the 7.51 entry says the Fund
+  // queue is off the Clients page with the applications kept, and the Summary tab is gone.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.51): the worker's BUILD_TAG left at the his-face tag made this read
+  //   FAIL  R1 both versions read 7.51 with the new tag, the 7.51 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry751 = (CL.match(/\{\n\s+\/\/ TWO THINGS OFF \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry750 = (CL.match(/\{\n\s+\/\/ HIS FACE, A GREEN DOOR, THEIR PROFILES \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.49): both versions read 7.49 with the payroll-paid tag, and the 7.49 entry says the
   // report fits his phone, Paid files it by month, and editing a paid one asks first in his words.
@@ -206,9 +211,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.50 with the new tag, the 7.50 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.50';/.test(CL) && /const VERSION = '7\.50';/.test(W) && /const BUILD_TAG = 'v2026-10-15-his-face';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.50'
+  check('R1 both versions read 7.51 with the new tag, the 7.51 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.51';/.test(CL) && /const VERSION = '7\.51';/.test(W) && /const BUILD_TAG = 'v2026-10-15-two-off';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.51'
+    && /version: '7\.51',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry751)
+    && /The Fund queue is off the Clients page\. The applications already sent are kept\./.test(entry751)
+    && /The Summary tab on a case, one day read back, is gone\./.test(entry751)
+    && !DASH.test(entry751) && !HARD.some((re) => re.test(entry751))
     && /version: '7\.50',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry750)
     && /just under the headline on the left, whole and uncropped/.test(entry750) && /green button with a shine/.test(entry750)
     && /Photo and bio on each card/.test(entry750)

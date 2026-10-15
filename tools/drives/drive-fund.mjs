@@ -210,13 +210,18 @@ check('B9 the alerts card says every application notifies him and emails him, an
 // carries the advocacy tabs, Clients opens, and the Clients page keeps a quiet door back to the queue.
 const navs = await adm.$$eval('nav.tabs > a', (as) => as.map((a) => a.getAttribute('href')));
 await adm.goto(`${P}${navs[0]}`, { waitUntil: 'networkidle' });
-await adm.waitForSelector('a:has-text("Fund queue")', { timeout: 8000 }).catch(() => {});
-const door = await adm.getAttribute('a:has-text("Fund queue")', 'href').catch(() => null);
+// RE-PINNED AND RENAMED 2026-10-15 (v7.51): Eric, "Remove the fund queue, one day summary". Clients keeps no door to
+// the queue now; the queue itself still opens at its address, as this drive shows above.
+// NEGATIVE CONTROL (run 2026-10-15, v7.51): the Fund queue door put back under the shelf made this read
+//   FAIL  B10 the queue's nav is the advocacy tabs; Clients opens, with no door to the Fund queue
+await adm.waitForSelector('#list', { timeout: 8000 }).catch(() => {});
+await adm.waitForTimeout(1500);
+const door = await adm.$$eval('a', (as) => as.filter((a) => /Fund queue/.test(a.textContent) || /admin-fund/.test(a.getAttribute('href') || '')).map((a) => a.getAttribute('href'))[0] || null).catch(() => 'unread');
 // RE-PINNED 2026-10-15 (v7.38): Leads joined the advocacy tabs after Clients on 2026-10-14 (v7.36); this drive had not followed.
 // RE-PINNED 2026-10-15 (v7.45): v7.44 gave his tabs Advocates and My profile (admin-staffnav.js), after the six.
 // NEGATIVE CONTROL (run 2026-10-15, v7.45): the Advocates addTab taken out of admin-staffnav.js made B10 read FAIL.
-check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with a quiet door back to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html,/admin-advocates.html,/admin-account.html'
-  && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname) && door === '/admin-fund.html',
+check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with no door to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html,/admin-advocates.html,/admin-account.html'
+  && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname) && door === null,
   JSON.stringify({ navs, clients: adm.url(), door }));
 
 await page.reload({ waitUntil: 'networkidle' });
