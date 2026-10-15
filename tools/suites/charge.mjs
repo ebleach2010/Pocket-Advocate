@@ -458,13 +458,15 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     //   FAIL  CH7 the pages: ...
     // RE-PINNED 2026-10-15 (v7.38): the look audit's doing pills and colour fixes moved the sheet to stat132.
     // RE-PINNED 2026-10-15 (v7.41): Eric, "Closed files should look like Chris's current aesthetic. But open ones should
-    // RE-PINNED 2026-10-15 (v7.45): Eric, "Revert to the old file look in 'all cases'" ("Tan, keep the glow"):
-    // the tan folders moved the sheet to stat134.
-    // NEGATIVE CONTROL (run 2026-10-15, v7.45): admin.html's stamp left at stat133 made CH7 read FAIL.
     // be highlighted"; the + menu, Delete on the card and the state rims moved the sheet to stat133.
     // NEGATIVE CONTROL (run 2026-10-15, v7.41): admin-fund.html put back to stat132 made this read
     //   FAIL  CH7 the pages: ...
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat134/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-15 (v7.45): Eric, "Revert to the old file look in 'all cases'" ("Tan, keep the glow"):
+    // the tan folders moved the sheet to stat134.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.45): admin.html's stamp left at stat133 made CH7 read FAIL.
+    // RE-PINNED 2026-10-15 (v7.46): Eric, employer mode and "the files are in a 2xinfinity grid": the sheet is stat135.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.46): admin-calendar.html's stamp left at stat134 made CH7 read FAIL.
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat135/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

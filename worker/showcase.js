@@ -44,7 +44,9 @@ function authorityItem(now, [days, hour, kind, fields]) {
  * shelf can say so. Deleted, it can be built again.
  */
 export async function buildShowcase(env, { adminUid } = {}) {
-  const existing = await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 1).catch(() => []);
+  // The sample contractor's invented clients (2026-10-15) are showcase cases
+  // too, so the counts and emails skip them; they are never his showcase.
+  const existing = (await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 10).catch(() => [])).filter((r) => !r.data?.sample);
   if (existing.length) return { id: existing[0].id, existing: true };
   const eric = adminUid || (await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 1).catch(() => []))[0]?.id || 'eric';
   const now = new Date();

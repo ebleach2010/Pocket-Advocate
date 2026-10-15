@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en" data-default-scheme="calm">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="/img/logo-192.png">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Pocket Advocate">
+<meta name="theme-color" content="#0A0A0C">
+<title>Employer mode · Pocket Advocate</title>
+<script>
+// Every page is black now (Eric, 2026-10-15: "everywhere should have this
+// same aesthetic"): the Night base, turned black by look.css. Somebody who
+// chose High contrast for their eyes keeps it.
+(function () {
+  try {
+    var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
+    document.documentElement.dataset.scheme = s;
+    var m = document.querySelector('meta[name="theme-color"]');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+  } catch (e) { /* storage blocked: the shipped default is already correct */ }
+})();
+</script>
+<link rel="stylesheet" href="/css/site.css?v=sp16">
+<link rel="stylesheet" href="/css/admin.css?v=stat135">
+<link rel="stylesheet" href="/css/look.css?v=7">
+<script type="module" src="/js/nav-menu.js"></script>
+<style>
+  /* Employer mode (2026-10-15): his team at a glance, and the way into each. */
+  .emp-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem; }
+  .emp-head h1 { margin: 0; }
+  .emp-back { font-weight: 600; }
+  .emp-tabs { display: flex; gap: .4rem; margin: .9rem 0 1rem; }
+  .emp-tabs button { min-height: 44px; padding: .4rem 1rem; border-radius: 999px; border: 1px solid var(--edge-base); background: var(--sur-base); color: var(--soft); font: inherit; font-weight: 700; cursor: pointer; }
+  .emp-tabs button.on { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px rgba(61, 220, 245, .35); }
+  .team { display: grid; gap: .8rem; }
+  .tm-card { display: grid; gap: .6rem; }
+  .tm-top { display: flex; align-items: center; gap: .8rem; }
+  .tm-photo { flex: none; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid var(--edge-lit); background: var(--sur-lit); }
+  .tm-init { flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #3DDCF5, #B9A6FF); color: #02161A; font: 700 1.2rem/1 'Sora', 'Manrope', system-ui, sans-serif; }
+  .tm-name { margin: 0; font: 600 1.1rem/1.25 'Sora', 'Manrope', system-ui, sans-serif; }
+  .tm-sub { margin: .1rem 0 0; color: var(--dim); font-size: .86rem; }
+  .tm-brief { margin: 0; color: var(--soft); }
+  .tm-money { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+  .tm-money strong { font: 600 1.6rem/1.1 'Sora', 'Manrope', system-ui, sans-serif; background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tm-money span { color: var(--dim); font-size: .86rem; }
+  .tm-acts { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .tm-acts .btn { min-height: 44px; position: relative; }
+  .tm-badge { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #FF7A7A; color: #1A0505; font: 800 .72rem/20px 'Manrope', system-ui, sans-serif; text-align: center; }
+  .tm-pill { display: inline-block; margin-left: .35rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--edge-lit); color: var(--soft); font-size: .72rem; font-weight: 800; letter-spacing: .06em; vertical-align: middle; }
+  .tm-pill.sample { border-color: rgba(242, 193, 78, .6); color: #F2C14E; }
+  .emp-sample { margin-top: 1.2rem; }
+  /* His side of the temporary chat: the same white box they see. */
+  /* Payroll, the Mangomint way (2026-10-15). */
+  .pr-form { display: grid; gap: .8rem; }
+  .pr-presets { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; border: 0; }
+  .pr-presets legend { padding: 0; margin-bottom: .4rem; font-weight: 700; }
+  .pr-presets label { flex: 1 1 calc(50% - .4rem); display: inline-flex; align-items: center; gap: .45rem; min-height: 44px; padding: 0 .9rem; border: 1px solid var(--edge-base); border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .pr-presets label:has(input:checked) { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px rgba(61, 220, 245, .35); }
+  .pr-presets input { accent-color: #3DDCF5; }
+  .pr-dates { display: flex; flex-wrap: wrap; gap: .6rem; }
+  .pr-dates label { display: grid; gap: .25rem; font-size: .88rem; }
+  .pr-dates input { min-height: 44px; }
+  .pr-opt { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; }
+  .pr-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; justify-content: space-between; margin: 1.2rem 0 .6rem; }
+  .pr-head h2 { margin: 0; font-size: 1.15rem; }
+  .pr-acts { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .pr-acts .btn { min-height: 44px; }
+  .pr-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--edge-base); border-radius: 14px; }
+  table.pr { width: max-content; min-width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: .9rem; }
+  table.pr th, table.pr td { padding: .6rem .7rem; border-bottom: 1px solid var(--edge-quiet); text-align: right; white-space: nowrap; }
+  table.pr th { color: var(--dim); font-size: .74rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 800; background: var(--sur-lit); }
+  table.pr th:first-child, table.pr td:first-child { position: sticky; left: 0; text-align: left; background: var(--sur-base); z-index: 1; }
+  table.pr th:first-child { background: var(--sur-lit); }
+  table.pr tr.pr-total td { font-weight: 800; border-top: 2px solid var(--edge-lit); }
+  table.pr button.pr-amt { min-height: 36px; padding: .2rem .55rem; border: 1px solid transparent; border-radius: 10px; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
+  table.pr button.pr-amt:hover, table.pr button.pr-amt:focus-visible { border-color: var(--cyan); }
+  table.pr button.pr-plus { min-width: 36px; min-height: 36px; margin-left: .3rem; border: 1px solid var(--edge-lit); border-radius: 10px; background: var(--sur-lit); color: var(--ink); font: 700 1rem/1 inherit; cursor: pointer; }
+  table.pr button.pr-who { min-height: 36px; padding: 0; border: 0; background: none; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; text-align: left; }
+  table.pr td.pr-detail { text-align: left; white-space: normal; background: var(--sur-quiet); }
+  .pr-lines { width: 100%; border-collapse: collapse; font-size: .84rem; }
+  .pr-lines td { padding: .35rem .4rem; border-bottom: 1px solid var(--edge-quiet); text-align: left; white-space: nowrap; }
+  .pr-lines td.n { text-align: right; }
+  .pr-neg { color: #FF9A9A; }
+  .pr-chip { display: inline-block; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--edge-lit); font-size: .72rem; font-weight: 800; letter-spacing: .06em; }
+  .pr-chip.draft { border-color: rgba(242, 193, 78, .6); color: #F2C14E; }
+  .pr-chip.done { border-color: rgba(79, 214, 156, .6); color: #4FD69C; }
+  .pr-note { margin: .6rem 0 0; color: var(--dim); font-size: .84rem; }
+  .pr-list { display: grid; gap: .5rem; margin: 1rem 0 0; }
+  .pr-item { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; justify-content: space-between; }
+  .pr-month { margin: 1.2rem 0 .4rem; font-size: 1rem; }
+  dialog.sc-sheet { width: min(30rem, calc(100vw - 32px)); margin: auto; padding: 0; border: 0; border-radius: 18px; background: #FFFFFF; color: #16161A; box-shadow: 0 24px 70px rgba(0, 0, 0, .6); }
+  dialog.sc-sheet::backdrop { background: rgba(0, 0, 0, .6); }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>
+    <nav class="tabs">
+      <a href="/admin.html">Clients</a>
+      <a href="/admin-leads.html">Leads</a>
+      <a href="/admin-calendar.html">Calendar</a>
+      <a href="/admin-chats.html">Chats</a>
+      <a href="/admin-availability.html">Availability</a>
+      <a href="/admin-dictionary.html">📚 Terms</a>
+      <span data-nav-auth></span>
+    </nav>
+  </div>
+</header>
+<main>
+  <!-- EMPLOYER MODE (Eric, 2026-10-15: "I (and only I) need a button to enter
+       employer mode. This is where I can see all current employees (including
+       myself) with a short brief of how many cases they're handling and if
+       what type, and their current proposed income from clients they have
+       retained."). Built from /api/admin/team, which answers him alone. -->
+  <div class="emp-head">
+    <h1>Employer mode</h1>
+    <a class="emp-back" href="/admin.html">&#8249; Clients</a>
+  </div>
+  <div class="emp-tabs" role="tablist">
+    <button type="button" role="tab" class="on" aria-selected="true" data-emp-tab="team">Team</button>
+    <button type="button" role="tab" aria-selected="false" data-emp-tab="payroll">Payroll</button>
+    <button type="button" role="tab" aria-selected="false" data-emp-tab="history">Pay history</button>
+  </div>
+  <section data-emp-page="team">
+    <div id="team" class="team"><p class="dim">Loading…</p></div>
+    <div class="emp-sample panel" id="emp-sample" hidden></div>
+  </section>
+  <section data-emp-page="payroll" hidden>
+    <form class="panel pr-form" id="pr-form">
+      <fieldset class="pr-presets">
+        <legend>Pay period</legend>
+        <label><input type="radio" name="preset" value="week"> Last week</label>
+        <label><input type="radio" name="preset" value="twoweeks"> Last 2 weeks</label>
+        <label><input type="radio" name="preset" value="month" checked> Last month</label>
+        <label><input type="radio" name="preset" value="custom"> Custom</label>
+      </fieldset>
+      <div class="pr-dates">
+        <label>From<input type="date" name="start" required></label>
+        <label>To<input type="date" name="end" required></label>
+      </div>
+      <label class="pr-opt"><input type="checkbox" name="includeAll" checked> Include all staff members</label>
+      <button type="submit" class="btn glow">Run report</button>
+      <p class="dim small" id="pr-said" role="status" style="margin:0;"></p>
+    </form>
+    <div id="pr-drafts"></div>
+    <div id="pr-report"></div>
+  </section>
+  <section data-emp-page="history" hidden>
+    <div id="pr-history"><p class="dim">Loading…</p></div>
+  </section>
+</main>
+<script type="module" src="/js/admin-employer.js"></script>
+<script type="module" src="/js/admin-presence.js"></script>
+</body>
+</html>

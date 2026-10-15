@@ -138,6 +138,8 @@ async function adminAdvocates(request, env, h) {
   if (!doc) return h.json({ error: 'Not found' }, 404);
   const a = doc.data;
 
+  // The sample contractor (employer mode) has no sign-in and no switch; she is removed there.
+  if (a.sample === true && action !== 'update') return h.json({ error: 'This is the sample contractor. Remove her in employer mode.' }, 409);
   if (action === 'deactivate' || action === 'activate') {
     if (a.owner) return h.json({ error: 'You are the owner; your account stays on.' }, 409);
     const on = action === 'activate';

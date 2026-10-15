@@ -122,9 +122,25 @@ function render(host, admin) {
       <p class="dim small" style="margin:0;">${a.advisorEnabled ? 'It is switched on for you.' : a.advisorOptIn ? 'You have asked for it. It is switched on for you once Eric turns it on.' : 'Off. Tick the box to ask for it.'}</p>
       <div class="row-btn"><button type="submit" class="btn quiet">Save my choice</button><span class="dim small" data-said role="status"></span></div>
     </form>
+    <form class="panel" id="payout-form" autocomplete="off">
+      <h3 style="margin:0;">How you get paid</h3>
+      <p class="dim small" style="margin:0;">Eric runs payroll once a month and pays you this way. Only he can see it, and it is kept encrypted.</p>
+      <p class="small" style="margin:0;" data-payout-now>Loading…</p>
+      <label>Method<select name="method">
+        <option value="">Choose one</option>
+        <option value="ach">Direct deposit (ACH)</option>
+        <option value="check">Paper check</option>
+        <option value="zelle">Zelle</option>
+        <option value="paypal">PayPal</option>
+        <option value="venmo">Venmo</option>
+        <option value="other">Other</option>
+      </select></label>
+      <div data-payout-fields></div>
+      <div class="row-btn"><button type="submit" class="btn quiet">Save how I get paid</button><span class="dim small" data-said role="status"></span></div>
+    </form>
     <section class="panel">
-      <h3 style="margin:0;">Prices and payment</h3>
-      <p class="dim small" style="margin:0;">You will set your own prices for the three services when your calendar opens, and add how you want to be paid when payroll opens. Neither is needed to finish setting up.</p>
+      <h3 style="margin:0;">Prices</h3>
+      <p class="dim small" style="margin:0;">You will set your own prices for the three services when your calendar opens. It is not needed to finish setting up.</p>
     </section>`}
     ${!admin && !a.onboardedAt ? `
     <section class="panel">
@@ -133,7 +149,54 @@ function render(host, admin) {
   wire(host, admin);
 }
 
+/** The fields each way of being paid needs (2026-10-15, payroll). */
+const PAYOUT_FIELDS = {
+  ach: [['name', 'Name on the account'], ['routing', 'Routing number (9 digits)', 'numeric'], ['account', 'Account number', 'numeric'], ['type', 'Checking or savings', 'type']],
+  check: [['name', 'Name for the check'], ['address', 'Mailing address', 'area']],
+  zelle: [['name', 'Your name'], ['handle', 'Zelle email or phone']],
+  paypal: [['name', 'Your name'], ['handle', 'PayPal email']],
+  venmo: [['name', 'Your name'], ['handle', 'Venmo handle or phone']],
+  other: [['name', 'Your name'], ['text', 'How you want to be paid', 'area']],
+};
+function wirePayout(form) {
+  if (!form) return;
+  const now = form.querySelector('[data-payout-now]');
+  const box = form.querySelector('[data-payout-fields]');
+  const said = form.querySelector('[data-said]');
+  const draw = () => {
+    box.innerHTML = (PAYOUT_FIELDS[form.method.value] || []).map(([k, label, kind]) => (kind === 'type'
+      ? `<label>${label}<select name="f-${k}"><option value="checking">Checking</option><option value="savings">Savings</option></select></label>`
+      : kind === 'area' ? `<label>${label}<textarea name="f-${k}" maxlength="300" rows="3"></textarea></label>`
+        : `<label>${label}<input type="text" name="f-${k}" maxlength="120" autocomplete="off" spellcheck="false"${kind === 'numeric' ? ' inputmode="numeric"' : ''}></label>`)).join('');
+  };
+  form.method.addEventListener('change', draw);
+  const show = (out) => { now.textContent = out?.label ? `Now: ${out.label}, ${out.hint}.` : 'Not set yet.'; };
+  user.getIdToken().then((token) => fetch('/api/staff/payout', { headers: { authorization: `Bearer ${token}` } }))
+    .then((r) => r.json()).then(show).catch(() => { now.textContent = ''; });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fields = {};
+    for (const el of box.querySelectorAll('[name^="f-"]')) fields[el.name.slice(2)] = el.value.trim();
+    said.textContent = 'Saving…';
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/staff/payout', {
+        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ method: form.method.value, fields }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `That did not save (${res.status}).`);
+      show(out);
+      // The details leave the page once they are saved; only the hint stays.
+      form.method.value = '';
+      draw();
+      said.textContent = 'Saved.';
+    } catch (err) { said.textContent = err.message; }
+  });
+}
+
 function wire(host, admin) {
+  wirePayout(host.querySelector('#payout-form'));
   const said = (form, text) => { const s = form.querySelector('[data-said]'); if (s) s.textContent = text; };
   const pw = host.querySelector('#pw-form');
   pw?.addEventListener('submit', async (e) => {

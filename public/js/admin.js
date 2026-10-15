@@ -2,7 +2,7 @@
 // countdown that keeps the report promise (14 days since 2026-10-15) from silently slipping (SPEC §F).
 
 import './admin-ledger.js';
-import { db, collection, getDocs } from './firebase.js';
+import { db, collection, getDocs, query, where } from './firebase.js';
 import { requireAdmin, hydrateNav, STAFF, staffCasesQuery } from './auth.js';
 import { initPushPrompt } from './push.js';
 import {
@@ -39,14 +39,41 @@ let leadForm = { prepare() {} };
 // An advocate's shelf (2026-10-15): their own cases, and none of his
 // platform-wide panels (office hours, free calls, the waitlist, his personal
 // uploads, invitations, the +). Each of those routes refuses them anyway.
-const advocate = STAFF.role === 'advocate';
+//
+// QUIET VIEW (Eric, 2026-10-15: "I should then be able to tap in to each
+// client and see everything they see without them knowing I'm there. This is
+// strictly for quality control and safety."). /admin.html?as=<uid> is that
+// advocate's shelf exactly as they see it, for his eyes: read from the
+// database he can already read, nothing on it can be changed, and nothing
+// on it tells them or their clients he looked.
+const asUid = STAFF.role === 'admin' ? (new URLSearchParams(location.search).get('as') || '').replace(/[^\w-]/g, '').slice(0, 64) : '';
+const advocate = STAFF.role === 'advocate' || !!asUid;
+const caseHref = (id) => `/admin-case.html?id=${encodeURIComponent(id)}${asUid ? `&as=${encodeURIComponent(asUid)}` : ''}`;
 if (user && advocate) {
-  for (const id of ['office', 'fit-calls', 'waitlist', 'personal', 'invites']) document.getElementById(id)?.remove();
-  document.querySelector('[data-add-open]')?.closest('.add-wrap, .add-menu-wrap, [data-add-wrap]')?.remove();
-  document.querySelector('[data-add-open]')?.remove();
-  wireShelfDelete(document.getElementById('list'));
+  for (const id of ['office', 'fit-calls', 'waitlist', 'personal']) document.getElementById(id)?.remove();
+  // A CONTRACTOR'S + (Eric, 2026-10-15: "Remove the ability to make their
+  // own case or family case for contractors. The + sign under all cases
+  // should only be there to schedule a case from any lead they themselves
+  // acquire."). One door in it; his showcase, own and family doors go, and
+  // the Worker refuses those routes to anyone but him.
+  const menu = document.getElementById('add-menu');
+  for (const item of menu ? [...menu.querySelectorAll('[role="menuitem"]')] : []) {
+    if (item.dataset.openDoor !== 'lead') item.remove();
+  }
+  if (asUid) {
+    document.querySelector('[data-add-open]')?.closest('.add-wrap')?.remove();
+    document.getElementById('invites')?.remove();
+    mountQuietBar(asUid);
+  } else {
+    invites = mountInvites(document.getElementById('invites'), { getToken: () => user.getIdToken() });
+    wireAddMenu();
+    wireShelfDelete(document.getElementById('list'));
+  }
   load();
 } else if (user) {
+  // EMPLOYER MODE (Eric, 2026-10-15: "Next to the big 'clients' on the all
+  // cases page, I (and only I) need a button to enter employer mode.").
+  mountEmployerDoor();
   // In or out, at the top of the page he actually opens. The same control is
   // on the availability page; both read and write settings/officeHours through
   // the Worker, so they cannot disagree.
@@ -106,7 +133,9 @@ async function load() {
   try {
     // Fifteen seconds (2026-09-24): a read that never answers says so, with Try again, instead of Loading forever.
     // Every case for him, their own for an advocate (2026-10-15).
-    const snapshot = await within(15_000, () => getDocs(staffCasesQuery(user)));
+    const snapshot = await within(15_000, () => getDocs(asUid
+      ? query(collection(db, 'cases'), where('advocateId', '==', asUid))
+      : staffCasesQuery(user)));
     if (snapshot === TOO_SLOW) throw new Error('the database did not answer');
     // The retired trade desk's case (PR 420, gone 2026-10-04) stays out of
     // every shelf; its document is still in the database.
@@ -280,10 +309,10 @@ async function load() {
     return folderCardHtml({
       noRead: advocate,
       id: c.id,
-      href: `/admin-case.html?id=${c.id}`,
+      href: caseHref(c.id),
       // A closed case gets no clock at all: there is no more work to bill to
       // it, and a stray tap on the FORMER CLIENTS shelf used to start one.
-      clock: c.status === 'closed' ? null : {
+      clock: c.status === 'closed' || asUid ? null : {
         running: !!started,
         // Never wordless. This used to be '' below sixty seconds, which is
         // every case the first time he goes looking - so the control was a
@@ -309,7 +338,7 @@ async function load() {
       state: c.status === 'closed' ? 'closed' : c.hold?.pausedAt ? 'paused' : 'open',
       // His own cases and the showcase can go (Eric, 2026-10-15: "let me
       // delete my own cases"); a client's case is closed, never deleted.
-      deletable: !!(c.self || c.showcase),
+      deletable: !asUid && !!(c.self || c.showcase),
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -319,6 +348,7 @@ async function load() {
       }${checkInDue(c) ? ' <strong class="fld-alert">CHECK-IN DUE</strong>' : ''
       }${c.pendingTelehealth?.state === 'requested' ? ' <strong class="fld-alert">TELEHEALTH, CONFIRM</strong>' : ''
       }${c.family ? ` <strong class="fld-family">FAMILY · FREE${c.familyRelation ? `, ${esc(c.familyRelation)}` : ''}</strong>` : ''
+      }${c.sample ? ' <strong class="fld-family">SAMPLE · NOT A REAL CLIENT</strong>' : ''
       }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
     });
   };
@@ -338,7 +368,7 @@ async function load() {
   const loops = [];
   for (const c of [...current, ...future]) {
     const name = c.clientName || c.clientEmail || c.clientUid;
-    const href = `/admin-case.html?id=${c.id}`;
+    const href = caseHref(c.id);
     if (c.needsReschedule) loops.push({ href, name, label: 'Needs rescheduling', tone: 'hot' });
     if (checkInDue(c)) loops.push({ href, name, label: 'Check-in due', tone: 'hot' });
     if (c.pendingTelehealth?.state === 'requested')
@@ -382,7 +412,7 @@ async function load() {
     <section class="cmd" aria-label="Today">
       <h2 class="cmd-h">TODAY</h2>
       ${today.map((c) => `
-      <a class="cmd-row" href="/admin-case.html?id=${c.id}">
+      <a class="cmd-row" href="${caseHref(c.id)}">
         <strong>${esc(c.clientName || c.clientEmail || c.clientUid)}</strong>
         <span class="cmd-what">${mtFmt.format(toDate(c.appointment.start))} MST &#183; ${esc(c.appointment.method || '')}</span>
         <span class="cmd-go" aria-hidden="true">&#8250;</span>
@@ -451,6 +481,7 @@ async function load() {
   // ... I want a toggle-able pill like a light switch"); the switch is the
   // one door on the shelf now. The diagnosis long press below is a different
   // feature and stays.
+  if (asUid) return;
   wireFolderClocks(listEl, { getToken: () => user.getIdToken() });
   wireDxLongPress(listEl, overrideDx);
 }
@@ -502,9 +533,10 @@ function paintAddForms(cases) {
         </fieldset>` : '';
   // Whichever form he had open stays open across a repaint.
   const open = addEl.querySelector('[data-open-form]:not([hidden])')?.dataset.openForm || '';
-  addEl.innerHTML = person('self', false, pullPicker) + person('family', true) + leadFormHtml();
+  // A contractor's + opens one form: a case from a lead of their own.
+  addEl.innerHTML = advocate ? leadFormHtml() : person('self', false, pullPicker) + person('family', true) + leadFormHtml();
   if (open) addEl.querySelector(`[data-open-form="${open}"]`).hidden = false;
-  leadForm = wireLeadForm(addEl, { getToken: () => user.getIdToken(), onSent: () => invites.refresh() });
+  leadForm = wireLeadForm(addEl, { getToken: () => user.getIdToken(), onSent: () => invites.refresh(), leadsPath: advocate ? '/api/staff/leads' : '/api/admin/leads' });
   if (open === 'lead') leadForm.prepare();
   // Open sends the form to its route and walks into the case it made.
   for (const go of addEl.querySelectorAll('[data-open-go]')) {
@@ -741,4 +773,54 @@ function toDate(v) {
 }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+/**
+ * The door to employer mode, beside the Clients heading, his alone; a red
+ * count when an advocate has written to him (2026-10-15).
+ */
+function mountEmployerDoor() {
+  const head = document.querySelector('.clients-head');
+  if (!head || head.querySelector('[data-employer]')) return;
+  const a = document.createElement('a');
+  a.className = 'btn quiet employer-btn';
+  a.href = '/admin-employer.html';
+  a.dataset.employer = '';
+  a.textContent = 'Employer mode';
+  const group = document.createElement('div');
+  group.className = 'clients-acts';
+  const plus = head.querySelector('.add-wrap');
+  head.insertBefore(group, plus || null);
+  group.append(a);
+  if (plus) group.append(plus);
+  const paint = async () => {
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/team', { headers: { authorization: `Bearer ${token}` } });
+      if (!res.ok) return;
+      const n = ((await res.json()).team || []).reduce((t, p) => t + (Number(p.unread) || 0), 0);
+      a.querySelector('.tm-badge')?.remove();
+      if (n) a.insertAdjacentHTML('beforeend', ` <span class="tm-badge" aria-label="${n} new">${n}</span>`);
+    } catch { /* the door still works */ }
+  };
+  paint();
+  setInterval(() => { if (document.visibilityState === 'visible') paint(); }, 60_000);
+}
+
+/** The strip across the top of a quiet view: whose shelf this is, that they cannot tell, and the way out. */
+function mountQuietBar(uid) {
+  const main = document.querySelector('main');
+  const bar = document.createElement('div');
+  bar.className = 'quiet-bar';
+  bar.setAttribute('role', 'status');
+  bar.innerHTML = '<span>Seeing what <strong data-quiet-name>this advocate</strong> sees. They cannot tell you are here, and nothing here can be changed.</span> <a class="btn quiet" href="/admin-employer.html">Exit</a>';
+  main?.prepend(bar);
+  document.body.classList.add('quiet');
+  document.title = 'Their shelf · Pocket Advocate';
+  user.getIdToken().then((token) => fetch('/api/admin/advocates', {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{"action":"list"}',
+  })).then((r) => r.json()).then((out) => {
+    const a = (out.advocates || []).find((x) => x.uid === uid);
+    if (a) bar.querySelector('[data-quiet-name]').textContent = a.name || a.email;
+  }).catch(() => {});
 }

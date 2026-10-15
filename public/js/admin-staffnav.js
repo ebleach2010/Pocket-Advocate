@@ -8,6 +8,7 @@
 //
 // His tabs gain Advocates. Both gain the account page: his public profile,
 // since he is advocate number one, and an advocate's own setup and password.
+// An advocate also gets their chat with him (admin-staffchat.js).
 
 // What only he works on, by the tab's own link.
 const HIS_ALONE = ['/admin-leads.html', '/admin-availability.html', '/admin-dictionary.html', '/admin-fund.html'];
@@ -36,6 +37,12 @@ export function mountStaffNav(role) {
     style.textContent = '[data-ledger]{display:none !important}';
     document.head.appendChild(style);
     addTab(tabs, '/admin-account.html', 'My account');
+    // Their line to him (2026-10-15): the chat icon at the bottom right, and
+    // his messages in a white box at the top of the screen.
+    import('./firebase.js').then(({ auth }) => import('./admin-staffchat.js').then((m) => {
+      const go = () => (auth.currentUser ? m.mountStaffChat(auth.currentUser) : setTimeout(go, 500));
+      go();
+    })).catch(() => {});
   } else {
     addTab(tabs, '/admin-advocates.html', 'Advocates');
     addTab(tabs, '/admin-account.html', 'My profile');

@@ -67,7 +67,7 @@ export function leadFormHtml() {
  * Wire the form inside `root`. The leads and the live price are read the
  * first time it opens (prepare), not on every visit to the page.
  */
-export function wireLeadForm(root, { getToken, onSent }) {
+export function wireLeadForm(root, { getToken, onSent, leadsPath = '/api/admin/leads' }) {
   const form = root.querySelector('[data-open-form="lead"]');
   if (!form) return { prepare() {} };
   const val = (k) => form.querySelector(`[data-lf="${k}"]`);
@@ -88,7 +88,8 @@ export function wireLeadForm(root, { getToken, onSent }) {
     if (loaded) return;
     loaded = true;
     const [got, rate] = await Promise.all([
-      call(getToken, '/api/admin/leads').catch(() => null),
+      // His leads, or a contractor's own (2026-10-15: "any lead they themselves acquire").
+      call(getToken, leadsPath).catch(() => null),
       fetch('/api/rates').then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ]);
     leads = (got?.leads || []).filter((l) => l.email);
@@ -142,7 +143,7 @@ export function mountInvites(el, { getToken }) {
       <h2 class="cmd-h">SCHEDULED, WAITING ON THEM <span class="cmd-count">${invites.length}</span></h2>
       ${invites.map((v) => `
       <div class="cmd-row inv-row" data-inv="${esc(v.id)}">
-        <strong>${esc(v.name || v.email)}</strong>
+        <strong>${esc(v.name || v.email)}</strong>${v.mine === false ? ' <span class="dim small">· a contractor\'s</span>' : ''}
         <span class="cmd-what">${whenFmt.format(new Date(v.start))} MST · ${priceText(v.priceCents)}${v.past ? ' · <span class="inv-past">the time has passed</span>' : ''}</span>
         <button type="button" class="btn quiet tiny" data-inv-cancel="${esc(v.id)}">Cancel</button>
       </div>`).join('')}

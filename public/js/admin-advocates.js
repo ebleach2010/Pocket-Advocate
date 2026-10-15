@@ -56,6 +56,7 @@ function wireAdd() {
 }
 
 function statusOf(a) {
+  if (a.sample) return { label: 'SAMPLE', cls: 'paused' };
   if (!a.active) return { label: 'OFF', cls: 'closed pill-off' };
   if (a.owner) return { label: 'YOU', cls: '' };
   if (a.onboardedAt) return { label: 'READY', cls: '' };
@@ -77,7 +78,8 @@ function cardHtml(a) {
         ${specialties.length ? `<span>${esc(specialties.join(' · '))}</span>` : '<span>No specialty yet</span>'}
         ${a.missing.length && !a.owner ? `<span>Still to add: ${esc(a.missing.join(', '))}</span>` : ''}
       </div>
-      ${a.owner ? '<p class="dim small" style="margin:0;">Your own profile is under My profile. It is what clients will see on your card.</p>' : `
+      ${a.owner ? '<p class="dim small" style="margin:0;">Your own profile is under My profile. It is what clients will see on your card.</p>'
+    : a.sample ? '<p class="dim small" style="margin:0;">A sample contractor with invented clients, so you can see the team with someone on it. Remove her in <a href="/admin-employer.html">employer mode</a>.</p>' : `
       <div class="adv-row">
         <label class="adv-row">Their share <input type="number" min="0" max="100" step="1" value="${Number(a.commissionPct)}" data-pct aria-label="Their share, percent"> %</label>
         <button type="button" class="btn quiet" data-save-pct>Save share</button>

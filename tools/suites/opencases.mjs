@@ -86,7 +86,9 @@ console.log('\n--- B. Delete on his own cases ---');
   //   FAIL  B2 a tap on Delete never opens the case; it asks in the app's own sheet, posts to the delete route, and only his own cases and the showcase carry it
   check('B2 a tap on Delete never opens the case; it asks in the app\'s own sheet, posts to the delete route, and only his own cases and the showcase carry it',
     /if \(e\.target\.closest\?\.\('\[data-del\]'\)\) \{\n\s+e\.preventDefault\(\);\n\s+return;\n\s+\}/.test(DRAWER)
-    && /deletable: !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
+    // RE-PINNED 2026-10-15 (v7.46): Eric's quiet view of a contractor's shelf is read-only, so no card in it carries Delete.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.46): `deletable: !asUid && ` dropped back to `deletable: ` made B2 read FAIL.
+    && /deletable: !asUid && !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
     && /function wireShelfDelete\(listEl\) \{[\s\S]*?const yes = await ask\(\{\n\s+title: `Delete \$\{name\}\?`,[\s\S]*?danger: true,[\s\S]*?fetch\('\/api\/admin\/delete-case', \{[\s\S]*?body: JSON\.stringify\(\{ caseId: el\.dataset\.del \}\),[\s\S]*?load\(\);/.test(ADMIN)
     && /if \(\(e\.key === 'Enter' \|\| e\.key === ' '\) && e\.target\.matches\?\.\('\[data-del\]'\)\)/.test(ADMIN)
     && /import \{ ask \} from '\.\/sheet\.js';/.test(ADMIN) && /wireShelfDelete\(document\.getElementById\('list'\)\);/.test(ADMIN));
@@ -120,7 +122,10 @@ console.log('\n--- C. the + ---');
     && /door\.addEventListener\('click', \(\) => \{ setOpen\(false\); openForm\(door\.dataset\.openDoor\); \}\);/.test(wire)
     && /fetch\('\/api\/admin\/showcase-case', \{/.test(wire)
     && /paintAddForms\(cases\);\n\s+if \(!cases\.length\) \{/.test(ADMIN)
-    && /addEl\.innerHTML = person\('self', false, pullPicker\) \+ person\('family', true\) \+ leadFormHtml\(\);/.test(ADMIN)
+    // RE-PINNED 2026-10-15 (v7.46): Eric, "Remove the ability to make their own case or family case for contractors":
+    // a contractor's + paints the lead form alone; his paints all three, as before.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.46): `advocate ? leadFormHtml() : ` dropped made C2 read FAIL.
+    && /addEl\.innerHTML = advocate \? leadFormHtml\(\) : person\('self', false, pullPicker\) \+ person\('family', true\) \+ leadFormHtml\(\);/.test(ADMIN)
     && !/data-open-door="/.test(ADMIN) && /const quietLinks = /.test(ADMIN));
 }
 

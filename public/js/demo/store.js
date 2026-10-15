@@ -73,6 +73,8 @@ const NOT_FOR_CLIENTS = [/\/advisor\//, /^advisorStyle\//, /^advisorKnowledge\//
   /^caseMeta\//, /^advisorQueue\//, /\/private\//,
   // The advocates' own records (2026-10-15): Worker-only in the real app.
   /^advocates\//, /^staffClocks\//,
+  // Employer mode (2026-10-15): the temporary chats, payout methods and payroll runs.
+  /^staffChats\//, /^payouts\//, /^payrollRuns\//,
   // The Trade portal (2026-09-21): his desk, never a client's.
   /^trade\//];
 let clientSide = false;

@@ -298,6 +298,48 @@ stylesheet stamps (b9), `showcase.mjs` X3 (eleven files) and its harness,
 `drive-stats` (section A) and `drive-landing`. The short-phone rule that gives
 the headline two lines keeps the home on one screen with the second bubble.
 
+### Employer mode and payroll (2026-10-15, v7.46)
+
+Eric: "Next to the big 'clients' on the all cases page, I (and only I) need a
+button to enter employer mode ... I should then be able to tap in to each
+client and see everything they see without them knowing I'm there. This is
+strictly for quality control and safety." And: "I also need to be able to run
+payroll through this page. And that includes myself ... I want it to be
+EXACTLY how mangomint runs payroll." And: "Remove the ability to make their
+own case or family case for contractors. The + sign under all cases should
+only be there to schedule a case from any lead they themselves acquire."
+
+`worker/employer.js` holds the team (`/api/admin/team`: everyone who works
+cases, him first, their open cases by kind and what they stand to earn), the
+temporary chat (`/api/staff/chat`, one Worker-only `staffChats/{uid}` doc that
+closing deletes) and the sample contractor (Maya Torres, `sample: true`, her
+three cases `showcase: true` so every count and email skips them).
+`worker/payroll.js` holds the runs (`/api/admin/payroll`: generate, adjust,
+unadjust, delete a draft, confirm into the history) and each person's way to
+be paid (`/api/staff/payout`, AES-GCM sealed; only the method and a masked
+hint are in the clear, and a run never stores the details). His quiet view is
+`?as=<uid>` on admin.html and admin-case.html: their shelf read the way they
+read it, no clock, no +, no Delete, every non-GET to /api/ refused in the
+browser. The invitation routes take staff now, each seeing only their own.
+
+Money typed in by hand (`set-paid`, and `open-full` with a payment) is his
+alone now, since payroll pays a share of it.
+
+Eric, the same day: "The website currently loads a blank white page"
+(opening the site). A refused working page answered with an empty 404, which
+a phone paints white. Every miss is the dark `public/404.html` now
+(`not_found_handling` in wrangler.jsonc, one page for every path), and a
+working page refused to someone carrying our cookie, or sent there by the
+sign-in page, is noted in the flight recorder (`gate-refused`, with why).
+`defects.mjs` grew two checks for it.
+
+New suite `employer.mjs` (20). `advocates.mjs` grew I1 to I4. New drive
+`drive-employer.mjs` (14, both sides in one browser so the demo's two tabs
+share a store). Every new check has its control recorded. Re-pinned with dated
+notes and controls: advocates D1 and D3, charge CH7 (stat135), defects (the
+shelf clock and the cases read), invites (the harness takes requireStaff),
+opencases B2 and C2, selfcase S37 (viewAs), release R1.
+
 ### Warm, guided, tan (2026-10-15, v7.45)
 
 Eric, with a screenshot of the preview: "Revert to the old file look in 'all

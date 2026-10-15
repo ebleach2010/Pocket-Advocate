@@ -49,7 +49,7 @@ const CONSTS = [
   line(/const RATE_MAX_CENTS = [^\n]+;/), line(/const REQUIRED_ACKS = [^\n]+;/), line(/const METHODS = [^\n]+;/),
   line(/const PHONE_RE = [^\n]+;/), line(/const FULL_ACCESS_ACK = [^\n]+;/),
 ].join('\n');
-const FNS = ['function inviteDollars(cents) {', 'function inviteWhen(start) {', 'function inviteEmail({ name, start, priceCents, link }) {',
+const FNS = ['function inviteDollars(cents) {', 'function inviteWhen(start) {', 'function inviteEmail({ name, start, priceCents, link, from = \'Eric\' }) {',
   'function maskEmail(email) {', 'async function handleLeadInvite(request, env) {', 'async function handleLeadInvites(request, env) {',
   'async function handleLeadInviteCancel(request, env) {', 'async function readInviteFor(env, user, id) {',
   'async function handleInviteRead(request, env) {', 'async function handleInviteConfirm(request, env) {',
@@ -64,6 +64,13 @@ function world({ admin = { uid: 'eric' }, user = { uid: 'u-lead' }, profiles = {
   const log = [];
   const deps = {
     requireAdmin: async () => admin,
+    // RE-PINNED 2026-10-15 (v7.46): Eric, "The + sign ... should only be there to schedule a case from any lead they
+    // themselves acquire": the three invitation routes take staff now, each seeing only their own (advocates.mjs I1 to
+    // I3 run a contractor through them). Here the caller is him, so he sees every invitation, as before; the email
+    // takes the sender's name (his, Eric).
+    // NEGATIVE CONTROL (run 2026-10-15, v7.46): staffSees made `() => false` made B3 read FAIL (his list came back empty).
+    requireStaff: async () => (admin ? { isAdmin: true, ...admin } : null),
+    staffSees: STAFF.staffSees,
     requireUser: async () => user,
     requireAdultProfile: async (env, uid) => ({ name: 'Dana Reyes', dob: '1980-02-02', email: store.get(`users/${uid}`)?.email || null }),
     json: (o, s = 200) => ({ o, s }),

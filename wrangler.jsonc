@@ -26,7 +26,11 @@
     // request for /js/advisor.js matched a file and was answered before any
     // of our code saw it. Running the Worker first is what makes the gate a
     // gate. Everything it does not claim still falls through to ASSETS.
-    "run_worker_first": true
+    "run_worker_first": true,
+    // A miss is the dark public/404.html (2026-10-15), never an empty answer:
+    // a phone shows an empty 404 as a blank white page with no way out. Every
+    // missing path gets the same page, so the gate's byte-identical miss holds.
+    "not_found_handling": "404-page"
   },
   "triggers": {
     // Every minute: the advisor queue drains one job per firing, and with

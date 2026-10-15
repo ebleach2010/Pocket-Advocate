@@ -208,6 +208,16 @@ access another advocate's data by changing IDs or URLs."
   devices, no public photo.
 - The demo has an advocate persona (`?demo=advocate`, Ana Rivera, case
   `demo-case-ana`). Walk both sides with `tools/drives/drive-advocates.mjs`.
+- Employer mode (v7.46) is his alone: `/api/admin/team` and
+  `/api/admin/payroll` take `requireAdmin`. His quiet view (`?as=<uid>`) must
+  stay read-only; anything new on the shelf or a case page that writes needs
+  to be off when `asUid` is set. A contractor's + holds one door, a case from
+  their own lead. The sample contractor's records carry `sample: true` (and
+  her cases `showcase: true`); anything that counts, emails or pays must skip
+  them. Payout details are sealed (`sealPayout`) and never written into a
+  payroll run or sent anywhere but his payroll screen.
+  Anything that records money by hand (`set-paid`, `open-full`) is his
+  alone: payroll pays contractors a share of what a case says was paid.
 - The security rules are published by the Worker (`worker/rules-release.js`,
   cron minute 11 of each quarter hour; outcome in `/api/diag?do=rules`). After
   ANY edit to firestore.rules or storage.rules run

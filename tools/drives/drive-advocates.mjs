@@ -57,8 +57,13 @@ const shelf = await adv.evaluate(() => ({
 if (SHOTS) await adv.screenshot({ path: `${SHOTS}/advocates-1-shelf.png` });
 // NEGATIVE CONTROL (run 2026-10-15): the advocate branch's panel removal taken out of admin.js made this read
 //   FAIL  their shelf holds their own client alone, with none of his panels, his + or his ledger
-ok('their shelf holds their own client alone, with none of his panels, his + or his ledger',
-  shelf.names.length === 1 && /Priya/.test(shelf.names[0]) && !shelf.panels.length && !shelf.plus && !shelf.ledger, JSON.stringify(shelf));
+// RE-PINNED AND RENAMED 2026-10-15 (v7.46): Eric, "The + sign under all cases should only be there to schedule a
+// case from any lead they themselves acquire." Their + is back with that one door (drive-employer F checks the
+// door), and the invitations they sent wait under it; every panel of his is still gone.
+// NEGATIVE CONTROL (run 2026-10-15, v7.46): the advocate branch's panel removal taken out of admin.js made this read
+//   FAIL  their shelf holds their own client alone, with none of his panels or his ledger; their + and their waiting invitations are their own
+ok('their shelf holds their own client alone, with none of his panels or his ledger; their + and their waiting invitations are their own',
+  shelf.names.length === 1 && /Priya/.test(shelf.names[0]) && shelf.panels.join() === 'invites' && shelf.plus && !shelf.ledger, JSON.stringify(shelf));
 
 console.log('\n--- B. their case ---');
 await adv.goto(`${P}/admin-case.html?id=demo-case-ana&demo=advocate`, { waitUntil: 'networkidle' });

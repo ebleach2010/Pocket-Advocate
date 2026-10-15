@@ -162,6 +162,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // tan again with its glow, the client side is warm with his photo, Progress celebrates, and the preview has its tour.
   // NEGATIVE CONTROL (run 2026-10-15, v7.45): changelog.js's VERSION left at '7.44' made this read
   //   FAIL  R1 both versions read 7.45 with the new tag, the 7.45 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.46): both versions read 7.46 with the employer-mode tag, and the 7.46 entry says what employer
+  // mode shows, how payroll runs the Mangomint way, that Clients is two columns, and what contractors get.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.46): the worker's BUILD_TAG left at the warm-tour tag made this read
+  //   FAIL  R1 both versions read 7.46 with the new tag, the 7.46 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry746 = (CL.match(/\{\n\s+\/\/ EMPLOYER MODE AND PAYROLL \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry745 = (CL.match(/\{\n\s+\/\/ WARM, GUIDED, TAN \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry744 = (CL.match(/\{\n\s+\/\/ ADVOCATE ACCOUNTS \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry743 = (CL.match(/\{\n\s+\/\/ MANY ADVOCATES, THE GROUNDWORK \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
@@ -181,9 +186,14 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.45 with the new tag, the 7.45 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.45';/.test(CL) && /const VERSION = '7\.45';/.test(W) && /const BUILD_TAG = 'v2026-10-15-warm-tour';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.45'
+  check('R1 both versions read 7.46 with the new tag, the 7.46 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.46';/.test(CL) && /const VERSION = '7\.46';/.test(W) && /const BUILD_TAG = 'v2026-10-15-employer-mode';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.46'
+    && /version: '7\.46',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry746)
+    && /Employer mode, beside Clients/.test(entry746) && /they cannot tell/.test(entry746) && /closing it deletes every message/.test(entry746)
+    && /the Mangomint way/.test(entry746) && /Pay history by month/.test(entry746) && /two column grid/.test(entry746)
+    && /only schedules a case from a lead of their own/.test(entry746)
+    && !DASH.test(entry746) && !HARD.some((re) => re.test(entry746))
     && /version: '7\.45',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry745)
     && /back to the tan folders/.test(entry745) && /The client side is warm now/.test(entry745) && /your photo beside them/.test(entry745)
     && /Progress has a card that celebrates/.test(entry745) && /short guided tour/.test(entry745) && /always in office/.test(entry745)

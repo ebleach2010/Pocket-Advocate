@@ -167,7 +167,10 @@ const STAFF_ROUTES = [
 ];
 // Routes about the staff member themselves, not one case: the presence
 // beacon writes their own clock doc and nothing else.
-const STAFF_OWN_ROUTES = ['handleWorkPresence'];
+// RE-PINNED 2026-10-15 (v7.46): Eric, "The + sign under all cases should only be there to schedule a case from any
+// lead they themselves acquire": the invitation routes take an advocate now, each on their own (section I).
+// NEGATIVE CONTROL (run 2026-10-15, v7.46): handleAdminLeads switched to `const staff = await requireStaff(request, env);` made D1 read FAIL.
+const STAFF_OWN_ROUTES = ['handleWorkPresence', 'handleLeadInvite', 'handleLeadInvites', 'handleLeadInviteCancel', 'handleStaffLeads'];
 // The helpers the lifted routes need by name, lifted with them so they run as shipped.
 const HELPERS = ['async function threadContext(env, user, kind, id) {'].map((dcl) => lift(W, dcl));
 {
@@ -367,13 +370,95 @@ console.log('\n--- D. the router ---');
     /const profile = await getDoc\(env, `users\/\$\{user\.uid\}`\);/.test(reqStaff) && /advocates\/\$\{user\.uid\}/.test(reqStaff)
     && /return staffFrom\(env, user, profile, advocate\);/.test(reqStaff));
   // Everything about the platform as a whole stays his alone.
-  const hisAlone = ['handleSetRates', 'handleCreateSlots', 'handleAdminLeads', 'handleLedger', 'handleLeadInvite', 'handleStatsRecompute', 'handleSelfCase', 'handleShowcaseCase', 'handleDeleteCase', 'handleFamilyCase', 'handleBookingClosure', 'handleOfficeHoursControl', 'handleFullCapacity', 'handleDaySummary', 'handleChatReply', 'handlePersonal'];
+  // RE-PINNED 2026-10-15 (v7.46): handleLeadInvite is staff now (a contractor's own leads, section I); his leads list stays his.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.46): handleAdminLeads asking requireStaff made D1 and D3 read FAIL.
+  const hisAlone = ['handleSetRates', 'handleCreateSlots', 'handleAdminLeads', 'handleLedger', 'handleStatsRecompute', 'handleSelfCase', 'handleShowcaseCase', 'handleDeleteCase', 'handleFamilyCase', 'handleBookingClosure', 'handleOfficeHoursControl', 'handleFullCapacity', 'handleDaySummary', 'handleChatReply', 'handlePersonal'];
   const wrong = hisAlone.filter((n) => { const m = W.match(new RegExp(`\\n(?:async )?function ${n}\\([^)]*\\) \\{[\\s\\S]{0,300}`)); return !m || !/await requireAdmin\(request, env\)/.test(m[0]); });
   // NEGATIVE CONTROL (run 2026-10-15): handleSetRates asking requireStaff made this read
   //   FAIL  D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase and the private reading stay his alone for now
   // RE-PINNED 2026-10-15 (v7.44): the work clock is every advocate's now, on their own clock doc (STAFF_ROUTES above).
   check('D3 prices, calendar, leads, the ledger, invitations, his own and family cases, the showcase and the private reading stay his alone for now',
     !wrong.length, wrong.join(','));
+}
+
+// ---- I. a contractor's own leads (Eric, 2026-10-15) ---------------------------
+// "Remove the ability to make their own case or family case for contractors.
+// The + sign under all cases should only be there to schedule a case from any
+// lead they themselves acquire." The invitation routes RUN as A, B and Eric.
+console.log('\n--- I. their own leads ---');
+{
+  const consts = [(W.match(/const INVITE_ID_RE = [^\n]+;/) || [''])[0], (W.match(/const INVITE_MIN_LEAD_MS = [^\n]+;/) || [''])[0],
+    (W.match(/const INVITE_MAX_LEAD_MS = [^\n]+;/) || [''])[0], (W.match(/const RATE_MAX_CENTS = [^\n]+;/) || [''])[0]];
+  const src = [...consts, lift(W, 'function inviteDollars(cents) {'), lift(W, 'function inviteWhen(start) {'), lift(W, 'function escHtml(s) {'),
+    lift(W, 'function inviteEmail({ name, start, priceCents, link, from = \'Eric\' }) {'), lift(W, 'async function handleLeadInvite(request, env) {'),
+    lift(W, 'async function handleLeadInvites(request, env) {'), lift(W, 'async function handleLeadInviteCancel(request, env) {'), lift(W, 'async function handleStaffLeads(request, env) {')];
+  const later = new Date(Date.now() + 5 * 86_400_000).toISOString();
+  const send = async (staff) => {
+    const store = new Map([['advocates/adv-a', { name: 'Ana Rivera', active: true }]]);
+    const written = [];
+    const mails = [];
+    const { fn } = runLifted(src, 'handleLeadInvite', { staff, store, extra: {
+      patchDoc: async (env, p, d) => { written.push([p, d]); return true; }, sendEmail: async (env, m) => { mails.push(m); return true; },
+    } });
+    const out = await fn(req({ email: 'lead@x.test', name: 'Lee Lead', start: later, priceCents: 210000 }), ENV);
+    return { out, written, mails };
+  };
+  const a = await send(A);
+  const e = await send(ADMIN);
+  const nobody = await send(null);
+  // NEGATIVE CONTROL (run 2026-10-15): the invitation's `advocateId: admin.uid` written as `env.ADMIN_UID` made this read
+  //   FAIL  I1 a contractor's invitation is theirs: it, and the case it becomes, carry their uid, and the email is signed with their name; his is signed Eric; a stranger gets the 404
+  check('I1 a contractor\'s invitation is theirs: it, and the case it becomes, carry their uid, and the email is signed with their name; his is signed Eric; a stranger gets the 404',
+    a.out?.s === 200 && a.written[0]?.[1]?.advocateId === 'adv-a' && a.written[0][1].by === 'adv-a' && /<p>Ana Rivera<\/p>/.test(a.mails[0]?.html || '')
+    && e.written[0]?.[1]?.advocateId === ERIC && /<p>Eric<\/p>/.test(e.mails[0]?.html || '') && nobody.out?.s === 404,
+    JSON.stringify({ a: a.written[0]?.[1]?.advocateId, e: e.written[0]?.[1]?.advocateId, nobody: nobody.out?.s }));
+  const rows = [
+    { id: 'inv-aaa1', data: { state: 'sent', email: 'one@x.test', start: later, priceCents: 1, advocateId: 'adv-a' } },
+    { id: 'inv-bbb1', data: { state: 'sent', email: 'two@x.test', start: later, priceCents: 1, advocateId: 'adv-b' } },
+    { id: 'inv-eee1', data: { state: 'sent', email: 'three@x.test', start: later, priceCents: 1 } },
+  ];
+  const list = async (staff) => {
+    const { fn } = runLifted(src, 'handleLeadInvites', { staff, store: new Map(), extra: { listDocs: async () => rows } });
+    return (await fn(req({}), ENV))?.o?.invites?.map((v) => v.id).sort().join() || '';
+  };
+  const leads = async (staff) => {
+    const { fn } = runLifted(src, 'handleStaffLeads', { staff, store: new Map(), extra: { listDocs: async (env, coll) => (coll === 'invites' ? rows : [{ id: 'l1', data: { email: 'mine@x.test', name: 'Mine', advocateId: 'adv-a' } }]) } });
+    return (await fn({ method: 'GET' }, ENV))?.o?.leads?.map((l) => l.email).sort().join() || '';
+  };
+  const cancel = async (staff, id) => {
+    const store = new Map(rows.map((r) => [`invites/${r.id}`, r.data]));
+    const written = [];
+    const { fn } = runLifted(src, 'handleLeadInviteCancel', { staff, store, extra: { patchDoc: async (env, p, d) => { written.push(p); return true; } } });
+    return { s: (await fn(req({ id }), ENV))?.s, written };
+  };
+  const listA = await list(A);
+  const listE = await list(ADMIN);
+  const leadsA = await leads(A);
+  const leadsB = await leads(B);
+  const cancelOther = await cancel(A, 'inv-bbb1');
+  const cancelOwn = await cancel(A, 'inv-aaa1');
+  const cancelHis = await cancel(ADMIN, 'inv-bbb1');
+  // NEGATIVE CONTROL (run 2026-10-15): handleLeadInvites dropping its staffSees filter made this read
+  //   FAIL  I2 a contractor lists, picks from and withdraws only their own; another's invitation is the same 404 a stranger gets; he sees and may withdraw any
+  check('I2 a contractor lists, picks from and withdraws only their own; another\'s invitation is the same 404 a stranger gets; he sees and may withdraw any',
+    listA === 'inv-aaa1' && listE === 'inv-aaa1,inv-bbb1,inv-eee1' && leadsA === 'mine@x.test,one@x.test' && leadsB === 'two@x.test'
+    && cancelOther.s === 404 && !cancelOther.written.length && cancelOwn.s === 200 && cancelHis.s === 200,
+    JSON.stringify({ listA, listE, leadsA, leadsB, cancelOther, cancelOwn: cancelOwn.s, cancelHis: cancelHis.s }));
+  // NEGATIVE CONTROL (run 2026-10-15): the advocate branch keeping every item of the + menu made this read
+  //   FAIL  I3 a contractor's + holds one door, a case from their own lead; his own, family and showcase doors stay his, and their routes his alone
+  const ADM = f('public/js/admin.js');
+  check('I3 a contractor\'s + holds one door, a case from their own lead; his own, family and showcase doors stay his, and their routes his alone',
+    /if \(item\.dataset\.openDoor !== 'lead'\) item\.remove\(\);/.test(ADM) && /addEl\.innerHTML = advocate \? leadFormHtml\(\) :/.test(ADM)
+    && /leadsPath: advocate \? '\/api\/staff\/leads' : '\/api\/admin\/leads'/.test(ADM)
+    && ['handleSelfCase', 'handleFamilyCase', 'handleShowcaseCase'].every((n) => /await requireAdmin\(request, env\)/.test((W.match(new RegExp(`\\n(?:async )?function ${n}\\([^)]*\\) \\{[\\s\\S]{0,300}`)) || [''])[0])));
+  // Payroll pays a share of what a client paid, so money typed in by hand is his to type (2026-10-15).
+  // NEGATIVE CONTROL (run 2026-10-15): set-paid's `if (!staff.isAdmin)` line, open-full's, and the case page's `|| advocate`, each taken out on its own, made this read
+  //   FAIL  I4 money paid outside the app is his alone to record: set-paid and open-full refuse a contractor with the 404 a stranger gets, and their case page does not offer it
+  const guard = (action) => new RegExp(`\\} else if \\(action === '${action}'\\) \\{\\n(?:\\s*//[^\\n]*\\n)*\\s*if \\(!staff\\.isAdmin\\) return json\\(\\{ error: 'No such case' \\}, 404\\);`).test(W);
+  check('I4 money paid outside the app is his alone to record: set-paid and open-full refuse a contractor with the 404 a stranger gets, and their case page does not offer it',
+    guard('set-paid') && guard('open-full')
+    && /\$\{c\.fullAccess \|\| advocate \? '' : `\n\s+<!-- OPENING THE TIER BY HAND/.test(f('public/js/admin-case.js')),
+    JSON.stringify({ setPaid: guard('set-paid'), openFull: guard('open-full') }));
 }
 
 // ---- E. the migration --------------------------------------------------------

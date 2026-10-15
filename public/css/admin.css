@@ -1720,3 +1720,44 @@ main > p > a.small[href="/admin.html"] {
 /* On a lit rim the clock keeps its dark backing (above), so its words go light. */
 :root .drawer .folder:is(.st-open, .st-paused):not(.working):not(.self) .folder-clock { color: #F5F5F7; opacity: 1; }
 :root .drawer .folder:is(.st-open, .st-paused):not(.working):not(.self) .folder-clock .wk-sw { background: rgba(255, 255, 255, .22); }
+
+/* THE SHELF IN TWO COLUMNS (Eric, 2026-10-15: "reorient the 'all cases' page
+   so the files are in a 2xinfinity grid"). Two folders a row on every
+   screen, each the same height as its neighbour. At that width the tabs stop
+   stepping across the shelf, the clock moves to the folder's foot so it never
+   sits on the name, and the body is one column so a pill or Delete never
+   squeezes the words. */
+.drawer { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem .6rem; align-items: stretch; }
+.drawer .folder { display: flex; flex-direction: column; }
+.drawer .folder:nth-child(n) .folder-tab { margin-left: 0; max-width: 94%; }
+.drawer .folder-name { font-size: .82rem; }
+.drawer .folder-body { flex: 1; grid-template-columns: minmax(0, 1fr); align-content: start; gap: .3rem; padding: .55rem .6rem 2.9rem; }
+.drawer .folder .status-pill, .drawer .folder-del { grid-column: 1; justify-self: start; }
+.drawer .folder-dx { min-height: 0; font-size: .86rem; }
+.drawer .folder-meta, .drawer .folder-flags { font-size: .72rem; }
+.drawer .folder-clock { top: auto; bottom: 9px; right: 8px; left: 8px; justify-content: flex-end; }
+.drawer .folder::before { width: 34%; }
+.drawer .folder::after { width: 24%; }
+
+/* The door to employer mode, beside the Clients heading (his alone). */
+.clients-acts { display: flex; align-items: center; gap: .5rem; }
+/* The narrowest phones (320px) cannot hold the heading, Employer mode and the +
+   on one line: the buttons step down under the heading, still on the right. */
+@media (max-width: 380px) {
+  .clients-head { flex-wrap: wrap; row-gap: .5rem; }
+  .clients-acts { margin-left: auto; }
+}
+.employer-btn { position: relative; min-height: 44px; display: inline-flex; align-items: center; white-space: nowrap; }
+.tm-badge { display: inline-block; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #FF7A7A; color: #1A0505; font: 800 .72rem/20px 'Manrope', system-ui, sans-serif; text-align: center; }
+.employer-btn .tm-badge { position: absolute; top: -7px; right: -7px; }
+
+/* A quiet view (2026-10-15): whose shelf, that they cannot tell, the way out. */
+.quiet-bar {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .5rem .8rem;
+  margin: 0 0 1rem; padding: .7rem .9rem; border-radius: 14px;
+  border: 1px solid rgba(242, 193, 78, .55); background: rgba(242, 193, 78, .08); color: var(--soft); font-size: .9rem;
+}
+.quiet-bar strong { color: #F2C14E; }
+.quiet-bar .btn { min-height: 44px; }
+body.quiet header .tabs > a { display: none; }
+.quiet-toast { position: fixed; left: 16px; right: 16px; bottom: 20px; z-index: 90; max-width: 26rem; margin: 0 auto; padding: .7rem 1rem; border-radius: 14px; background: #1B1B21; border: 1px solid rgba(242, 193, 78, .55); color: var(--ink); text-align: center; box-shadow: 0 18px 50px rgba(0, 0, 0, .5); }

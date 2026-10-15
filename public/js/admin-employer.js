@@ -1,0 +1,405 @@
+// Employer mode (Eric, 2026-10-15): "This is where I can see all current
+// employees (including myself) with a short brief of how many cases they're
+// handling and if what type, and their current proposed income from clients
+// they have retained. I should then be able to tap in to each client and see
+// everything they see without them knowing I'm there." Everything here is
+// asked of /api/admin/team, which answers him alone; an advocate who finds
+// this page is sent to their own shelf.
+
+import { requireAdmin, hydrateNav, STAFF } from './auth.js';
+import { ask } from './sheet.js';
+import { openStaffChat } from './admin-staffchat.js';
+
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+// Whole dollars bare, anything with cents to two places ($1,234.50, never $1,234.5).
+const money = (cents) => {
+  const c = Math.round(Number(cents) || 0);
+  const places = c % 100 ? 2 : 0;
+  return `$${(c / 100).toLocaleString('en-US', { minimumFractionDigits: places, maximumFractionDigits: places })}`;
+};
+const ORDER = ['Advocacy Case', 'Full-Service', 'Priority Chat', 'Family', 'Own case', 'Showcase', 'Sample'];
+
+hydrateNav();
+const user = await requireAdmin();
+if (user && STAFF.role !== 'admin') location.replace('/admin.html');
+else if (user) load();
+
+async function call(method, body) {
+  const token = await user.getIdToken();
+  const res = await fetch('/api/admin/team', {
+    method,
+    headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `That did not work (${res.status}).`);
+  return out;
+}
+
+/** "4 open cases: 2 Advocacy Case, 1 Full-Service, 1 Priority Chat" */
+function brief(p) {
+  const kinds = Object.entries(p.kinds).sort((a, b) => ORDER.indexOf(a[0]) - ORDER.indexOf(b[0]));
+  const total = p.open + p.chatLines;
+  if (!total) return 'No clients right now.';
+  return `${total} ${total === 1 ? 'client' : 'clients'}: ${kinds.map(([k, n]) => `${n} ${k}`).join(', ')}`;
+}
+
+function photo(p) {
+  if (p.hasPhoto) return `<img class="tm-photo" src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}" alt="" width="56" height="56">`;
+  const init = p.name.split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  return `<span class="tm-init" aria-hidden="true">${esc(init)}</span>`;
+}
+
+function card(p) {
+  const pill = p.owner ? '<span class="tm-pill">YOU</span>'
+    : p.sample ? '<span class="tm-pill sample">SAMPLE</span>'
+    : !p.onboarded ? '<span class="tm-pill">SETTING UP</span>' : '';
+  const share = p.owner ? 'All of it is yours' : `Their share: ${p.commissionPct}%`;
+  return `
+    <article class="panel tm-card" data-uid="${esc(p.uid)}">
+      <div class="tm-top">
+        ${photo(p)}
+        <div>
+          <p class="tm-name">${esc(p.name)}${pill}</p>
+          <p class="tm-sub">${esc(share)}${p.closed ? ` · ${p.closed} closed` : ''}</p>
+        </div>
+      </div>
+      <p class="tm-brief">${esc(brief(p))}</p>
+      <div class="tm-money"><strong>${money(p.proposedCents)}</strong><span>${p.owner ? 'from the clients you have now' : 'theirs from the clients they have now'}${p.tipsCents ? `, ${money(p.tipsCents)} of it tips` : ''}</span></div>
+      ${p.owner ? '' : `
+      <div class="tm-acts">
+        <a class="btn quiet" href="/admin.html?as=${encodeURIComponent(p.uid)}">See what they see</a>
+        <button type="button" class="btn quiet" data-msg>Message${p.unread ? `<span class="tm-badge" aria-label="${p.unread} new">${p.unread}</span>` : ''}</button>
+      </div>`}
+    </article>`;
+}
+
+async function load() {
+  const list = document.getElementById('team');
+  let data;
+  try { data = await call('GET'); } catch (err) { list.innerHTML = `<p class="error">${esc(err.message)}</p>`; return; }
+  const team = data.team || [];
+  list.innerHTML = team.length ? team.map(card).join('') : '<p class="dim">Nobody yet.</p>';
+  for (const el of list.querySelectorAll('[data-uid]')) {
+    const p = team.find((x) => x.uid === el.dataset.uid);
+    el.querySelector('[data-msg]')?.addEventListener('click', async () => {
+      await openStaffChat(user, { uid: p.uid, name: p.name, onChange: () => {} });
+      load();
+    });
+  }
+  paintSample(!!data.sample);
+}
+
+function paintSample(have) {
+  const box = document.getElementById('emp-sample');
+  box.hidden = false;
+  box.innerHTML = have
+    ? `<p style="margin:0 0 .6rem;">Maya Torres is a sample contractor with three invented clients, so you can see the team with someone on it. She is never on the public site and never paid.</p>
+       <button type="button" class="btn danger" data-sample="remove">Remove the sample contractor</button>`
+    : `<p style="margin:0 0 .6rem;">Want to see how this looks with a contractor on it? Add a sample one with three invented clients. Remove her any time.</p>
+       <button type="button" class="btn glow" data-sample="create">Add a sample contractor</button>`;
+  box.querySelector('[data-sample]').addEventListener('click', async (e) => {
+    const make = e.currentTarget.dataset.sample === 'create';
+    if (!make) {
+      const sure = await ask({ title: 'Remove the sample contractor?', body: 'Maya Torres, her three invented clients and their chats are deleted. Nothing real is touched.', okLabel: 'Remove', danger: true });
+      if (!sure) return;
+    }
+    e.currentTarget.disabled = true;
+    try { await call('POST', { action: make ? 'sample-create' : 'sample-remove' }); } catch (err) { box.insertAdjacentHTML('beforeend', `<p class="error">${esc(err.message)}</p>`); }
+    load();
+  });
+}
+
+// ---- the tabs --------------------------------------------------------------------
+for (const b of document.querySelectorAll('[data-emp-tab]')) {
+  b.addEventListener('click', () => showTab(b.dataset.empTab));
+}
+function showTab(name) {
+  for (const b of document.querySelectorAll('[data-emp-tab]')) {
+    const on = b.dataset.empTab === name;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  }
+  for (const s of document.querySelectorAll('[data-emp-page]')) s.hidden = s.dataset.empPage !== name;
+  if (name === 'payroll') loadDrafts();
+  if (name === 'history') loadHistory();
+  try { history.replaceState(null, '', name === 'team' ? location.pathname : `${location.pathname}#${name}`); } catch { /* fine */ }
+}
+if (user && STAFF.role === 'admin' && ['#payroll', '#history'].includes(location.hash)) showTab(location.hash.slice(1));
+
+// ---- payroll, the Mangomint way (Eric, 2026-10-15) ---------------------------------
+// "I can run the last week, the last two weeks, the last month, and a custom
+// time frame. When I hit 'run report' it generates a spreadsheet with a
+// breakdown of all income minus deductions and how much they're owed. I can
+// tap on any pay amount to adjust it if there's an error. I also need to see
+// each employees preferred payout method. I want it to be EXACTLY how
+// mangomint runs payroll. I can delete a generated payroll with no
+// consequence. Any payroll I press confirm on gets put into another tab with
+// each month's generated payroll."
+
+const dayStr = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const longDay = (s) => new Date(`${s}T12:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+const shortDay = (s) => new Date(s).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+const signed = (cents) => (cents < 0 ? `<span class="pr-neg">&minus;${money(-cents)}</span>` : money(cents));
+
+/** The presets, on this phone's calendar: whole weeks Monday to Sunday, and the whole month before this one. */
+export function presetRange(preset, today = new Date()) {
+  const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const dow = (d.getDay() + 6) % 7;
+  const lastSun = addDays(d, -(dow + 1));
+  if (preset === 'week') return { start: dayStr(addDays(lastSun, -6)), end: dayStr(lastSun) };
+  if (preset === 'twoweeks') return { start: dayStr(addDays(lastSun, -13)), end: dayStr(lastSun) };
+  const first = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  const last = new Date(d.getFullYear(), d.getMonth(), 0);
+  return { start: dayStr(first), end: dayStr(last) };
+}
+
+async function payroll(method, body, id) {
+  const token = await user.getIdToken();
+  const res = await fetch(`/api/admin/payroll${id ? `?id=${encodeURIComponent(id)}` : ''}`, {
+    method,
+    headers: { authorization: `Bearer ${token}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `That did not work (${res.status}).`);
+  return out;
+}
+
+const form = document.getElementById('pr-form');
+const fillDates = () => {
+  const preset = form.preset.value;
+  if (preset === 'custom') return;
+  const r = presetRange(preset);
+  form.start.value = r.start;
+  form.end.value = r.end;
+};
+form.addEventListener('change', (e) => {
+  if (e.target.name === 'preset') fillDates();
+  if (e.target.name === 'start' || e.target.name === 'end') form.querySelector('input[value="custom"]').checked = true;
+});
+fillDates();
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const said = document.getElementById('pr-said');
+  const btn = form.querySelector('button[type="submit"]');
+  btn.disabled = true;
+  said.textContent = 'Running the report…';
+  try {
+    const { run } = await payroll('POST', { action: 'generate', start: form.start.value, end: form.end.value, preset: form.preset.value, includeAll: form.includeAll.checked });
+    said.textContent = '';
+    showRun(run);
+    loadDrafts();
+  } catch (err) { said.textContent = err.message; }
+  finally { btn.disabled = false; }
+});
+
+async function loadDrafts() {
+  const box = document.getElementById('pr-drafts');
+  try {
+    const { runs } = await payroll('GET');
+    const drafts = runs.filter((r) => r.status === 'draft');
+    box.innerHTML = drafts.length ? `<div class="pr-list">${drafts.map((r) => `
+      <div class="panel pr-item">
+        <span><span class="pr-chip draft">DRAFT</span> ${esc(longDay(r.start))} to ${esc(longDay(r.end))}</span>
+        <span><strong>${money(r.totals?.totalCents)}</strong></span>
+        <span class="pr-acts"><button type="button" class="btn quiet" data-open="${esc(r.id)}">Open</button></span>
+      </div>`).join('')}</div>` : '';
+    box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', async () => showRun((await payroll('GET', null, b.dataset.open)).run)));
+  } catch (err) { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+}
+
+async function loadHistory() {
+  const box = document.getElementById('pr-history');
+  try {
+    const { runs } = await payroll('GET');
+    const done = runs.filter((r) => r.status === 'confirmed');
+    if (!done.length) { box.innerHTML = '<p class="dim">Nothing confirmed yet. A payroll you confirm lands here, by month.</p>'; return; }
+    const byMonth = new Map();
+    for (const r of done) {
+      const m = new Date(`${r.end}T12:00:00`).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      if (!byMonth.has(m)) byMonth.set(m, []);
+      byMonth.get(m).push(r);
+    }
+    box.innerHTML = [...byMonth.entries()].map(([m, rs]) => `
+      <h2 class="pr-month">${esc(m)}</h2>
+      <div class="pr-list">${rs.map((r) => `
+        <div class="panel pr-item">
+          <span><span class="pr-chip done">CONFIRMED</span> ${esc(longDay(r.start))} to ${esc(longDay(r.end))}</span>
+          <span>${r.people} ${r.people === 1 ? 'person' : 'people'} · <strong>${money(r.totals?.totalCents)}</strong></span>
+          <span class="pr-acts"><button type="button" class="btn quiet" data-open="${esc(r.id)}">View</button></span>
+        </div>`).join('')}</div>`).join('');
+    box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', async () => {
+      const { run } = await payroll('GET', null, b.dataset.open);
+      showTab('payroll');
+      showRun(run);
+    }));
+  } catch (err) { box.innerHTML = `<p class="error">${esc(err.message)}</p>`; }
+}
+
+/** The report: Mangomint's columns, a row per person, the totals under them. */
+function showRun(run) {
+  const box = document.getElementById('pr-report');
+  const draft = run.status === 'draft';
+  const rows = run.rows || [];
+  const t = run.totals || {};
+  const payCell = (r) => (r.payout?.label ? `${esc(r.payout.label)}<br><span class="dim small">${esc(r.payout.hint || '')}</span>` : '<span class="dim">Not set yet</span>');
+  box.innerHTML = `
+    <div class="pr-head">
+      <h2>${esc(longDay(run.start))} to ${esc(longDay(run.end))} <span class="pr-chip ${draft ? 'draft' : 'done'}">${draft ? 'DRAFT' : 'CONFIRMED'}</span></h2>
+      <div class="pr-acts">
+        <button type="button" class="btn quiet" data-dl>Download spreadsheet</button>
+        ${draft ? '<button type="button" class="btn danger" data-del>Delete</button><button type="button" class="btn glow" data-confirm>Confirm payroll</button>' : ''}
+      </div>
+    </div>
+    <div class="pr-scroll">
+      <table class="pr">
+        <thead><tr><th>Staff</th><th>Cases</th><th>Client sales</th><th>Deductions</th><th>Commission</th><th>Tips</th><th>Pay adjustments</th><th>Total</th><th>Payout method</th></tr></thead>
+        <tbody>
+          ${rows.map((r) => `
+          <tr data-row="${esc(r.uid)}">
+            <td><button type="button" class="pr-who" data-expand="${esc(r.uid)}" aria-expanded="false">${esc(r.name)}${r.sample ? ' <span class="pr-chip draft">SAMPLE</span>' : ''}</button><br><span class="dim small">${r.owner ? 'All yours' : `${r.commissionPct}% share`}</span></td>
+            <td>${r.cases}</td>
+            <td>${money(r.salesCents)}</td>
+            <td>${r.deductionsCents ? signed(-r.deductionsCents) : money(0)}</td>
+            <td>${money(r.commissionCents)}</td>
+            <td>${money(r.tipsCents)}</td>
+            <td>${signed(r.adjustmentsCents)}${draft ? `<button type="button" class="pr-plus" data-plus="${esc(r.uid)}" aria-label="Add a pay adjustment for ${esc(r.name)}">+</button>` : ''}</td>
+            <td>${draft ? `<button type="button" class="pr-amt" data-set="${esc(r.uid)}" aria-label="Adjust ${esc(r.name)}'s pay">${signed(r.totalCents)}</button>` : signed(r.totalCents)}</td>
+            <td style="text-align:left;">${payCell(r)}</td>
+          </tr>
+          <tr data-detail="${esc(r.uid)}" hidden><td class="pr-detail" colspan="9">${detailHtml(r, draft)}</td></tr>`).join('')}
+          <tr class="pr-total"><td>Total</td><td>${t.cases || 0}</td><td>${money(t.salesCents)}</td><td>${t.deductionsCents ? signed(-t.deductionsCents) : money(0)}</td><td>${money(t.commissionCents)}</td><td>${money(t.tipsCents)}</td><td>${signed(t.adjustmentsCents || 0)}</td><td>${signed(t.totalCents || 0)}</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+    ${(run.notes || []).map((n) => `<p class="pr-note">${esc(n)}</p>`).join('')}
+    ${rows.some((r) => r.sample) ? '<p class="pr-note">The sample contractor is shown so you can see the layout. Confirming leaves her out.</p>' : ''}
+    <p class="pr-note">Tap a name for every line behind it. ${draft ? 'Tap a total to correct it, or + to add a bonus, a reimbursement or a pay adjustment. A minus takes money off.' : 'Confirmed: this payroll no longer changes.'}</p>`;
+  box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  box.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', () => {
+    const row = box.querySelector(`[data-detail="${CSS.escape(b.dataset.expand)}"]`);
+    row.hidden = !row.hidden;
+    b.setAttribute('aria-expanded', String(!row.hidden));
+  }));
+  box.querySelectorAll('[data-plus]').forEach((b) => b.addEventListener('click', () => adjust(run, b.dataset.plus, 'add')));
+  box.querySelectorAll('[data-set]').forEach((b) => b.addEventListener('click', () => adjust(run, b.dataset.set, 'set')));
+  box.querySelectorAll('[data-unadj]').forEach((b) => b.addEventListener('click', async () => showRun((await payroll('POST', { action: 'unadjust', id: run.id, adjId: b.dataset.unadj })).run)));
+  box.querySelectorAll('[data-reveal]').forEach((b) => b.addEventListener('click', () => reveal(rows.find((r) => r.uid === b.dataset.reveal))));
+  box.querySelector('[data-dl]').addEventListener('click', () => download(run));
+  box.querySelector('[data-del]')?.addEventListener('click', async () => {
+    const sure = await ask({ title: 'Delete this payroll?', body: 'Nothing is paid or changed by it, so deleting it changes nothing else. You can run it again any time.', okLabel: 'Delete', danger: true });
+    if (!sure) return;
+    await payroll('POST', { action: 'delete', id: run.id });
+    box.innerHTML = '';
+    loadDrafts();
+  });
+  box.querySelector('[data-confirm]')?.addEventListener('click', async () => {
+    const sure = await ask({ title: 'Confirm this payroll?', body: `${longDay(run.start)} to ${longDay(run.end)}, ${money(t.totalCents)} in all. It moves to Pay history and can no longer change.`, okLabel: 'Confirm payroll' });
+    if (!sure) return;
+    const out = await payroll('POST', { action: 'confirm', id: run.id });
+    showRun(out.run);
+    loadDrafts();
+  });
+}
+
+function detailHtml(r, draft) {
+  const lines = r.lines || [];
+  const adj = r.adjustments || [];
+  return `
+    <table class="pr-lines">
+      ${lines.length ? lines.map((l) => `<tr><td>${esc(shortDay(l.at))}</td><td>${esc(l.client || '')}</td><td>${esc(l.label)}</td><td class="n">${l.kind === 'advisor' ? '' : money(l.cents)}</td><td class="n">${signed(l.payCents)}</td></tr>`).join('') : '<tr><td>No sales, tips or deductions in this period.</td></tr>'}
+      ${adj.map((a) => `<tr><td>${esc(shortDay(a.at))}</td><td colspan="2">${esc(a.type)}${a.note ? `: ${esc(a.note)}` : ''}</td><td></td><td class="n">${signed(a.cents)}${draft ? ` <button type="button" class="btn quiet tiny" data-unadj="${esc(a.id)}">Remove</button>` : ''}</td></tr>`).join('')}
+    </table>
+    ${r.payout?.details ? `<p style="margin:.6rem 0 0;"><button type="button" class="btn quiet" data-reveal="${esc(r.uid)}">Show how to pay ${esc(r.name)}</button></p>` : ''}`;
+}
+
+/** His correction: + adds a typed adjustment; a tap on the total sets what they are owed. */
+function adjust(run, uid, mode) {
+  const r = run.rows.find((x) => x.uid === uid);
+  const dlg = document.createElement('dialog');
+  dlg.className = 'cancel-sheet ask-sheet';
+  dlg.innerHTML = `
+    <form method="dialog" class="ask-form">
+      <h2>${mode === 'set' ? `Correct ${esc(r.name)}'s pay` : `Add to ${esc(r.name)}'s pay`}</h2>
+      ${mode === 'set'
+    ? `<p>Now ${esc(money(r.totalCents))}. Type what they should be paid; the difference is recorded as a correction.</p>
+       <input class="ask-input" name="amount" inputmode="decimal" placeholder="What they are owed, e.g. 1260.00" autocomplete="off">`
+    : `<p>A minus takes money off.</p>
+       <select class="ask-input" name="type"><option>Pay adjustment</option><option>Bonus</option><option>Reimbursement</option></select>
+       <input class="ask-input" name="amount" inputmode="decimal" placeholder="Amount, e.g. 50 or -25" autocomplete="off">`}
+      <input class="ask-input" name="note" maxlength="200" placeholder="A note (optional)" autocomplete="off">
+      <p class="error" data-err hidden></p>
+      <div class="cancel-acts">
+        <button type="submit" class="btn glow" value="ok">Save</button>
+        <button type="button" class="btn quiet" data-no>Cancel</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dlg);
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.querySelector('[data-no]').addEventListener('click', close);
+  dlg.addEventListener('cancel', close);
+  dlg.querySelector('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget;
+    const err = dlg.querySelector('[data-err]');
+    const typed = Math.round(Number(String(f.amount.value).replace(/[$,\s]/g, '')) * 100);
+    if (!Number.isFinite(typed)) { err.textContent = 'A number, please.'; err.hidden = false; return; }
+    const cents = mode === 'set' ? typed - r.totalCents : typed;
+    if (!cents) { close(); return; }
+    try {
+      const out = await payroll('POST', { action: 'adjust', id: run.id, uid, cents, type: mode === 'set' ? 'Correction' : f.type.value, note: f.note.value });
+      close();
+      showRun(out.run);
+    } catch (x) { err.textContent = x.message; err.hidden = false; }
+  });
+  dlg.showModal();
+  dlg.querySelector('[name="amount"]').focus();
+}
+
+/** How to pay them, opened on his screen only when he asks. */
+function reveal(r) {
+  const d = r?.payout?.details || {};
+  const rows = Object.entries({ Name: d.name, Routing: d.routing, Account: d.account, Type: d.type, Address: d.address, 'Send to': d.handle, Note: d.text })
+    .filter(([, v]) => v);
+  const dlg = document.createElement('dialog');
+  dlg.className = 'cancel-sheet ask-sheet';
+  dlg.innerHTML = `
+    <form method="dialog" class="ask-form">
+      <h2>Pay ${esc(r.name)}: ${esc(r.payout.label)}</h2>
+      ${rows.map(([k, v]) => `<p style="margin:0 0 .4rem;"><span class="dim small">${esc(k)}</span><br><strong style="user-select:all;">${esc(v)}</strong></p>`).join('')}
+      <div class="cancel-acts"><button type="submit" class="btn glow" value="ok">Done</button></div>
+    </form>`;
+  document.body.appendChild(dlg);
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.showModal();
+}
+
+/** The spreadsheet: the summary, every line behind it, and every adjustment. Account numbers never go in it. */
+function download(run) {
+  const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const d = (c) => ((Number(c) || 0) / 100).toFixed(2);
+  const out = [];
+  out.push(['Payroll', `${run.start} to ${run.end}`, run.status === 'draft' ? 'Draft' : 'Confirmed']);
+  out.push([]);
+  out.push(['Staff', 'Share %', 'Cases', 'Client sales', 'Deductions', 'Commission', 'Tips', 'Pay adjustments', 'Total owed', 'Payout method']);
+  for (const r of run.rows || []) {
+    out.push([r.name + (r.sample ? ' (sample)' : ''), r.commissionPct, r.cases, d(r.salesCents), d(-r.deductionsCents), d(r.commissionCents), d(r.tipsCents), d(r.adjustmentsCents), d(r.totalCents), r.payout ? `${r.payout.label} ${r.payout.hint || ''}`.trim() : 'Not set']);
+  }
+  const t = run.totals || {};
+  out.push(['Total', '', t.cases, d(t.salesCents), d(-(t.deductionsCents || 0)), d(t.commissionCents), d(t.tipsCents), d(t.adjustmentsCents), d(t.totalCents), '']);
+  out.push([]);
+  out.push(['Staff', 'Date', 'Client', 'Item', 'Amount', 'Their pay']);
+  for (const r of run.rows || []) for (const l of r.lines || []) out.push([r.name, String(l.at).slice(0, 10), l.client || '', l.label, l.kind === 'advisor' ? '' : d(l.cents), d(l.payCents)]);
+  out.push([]);
+  out.push(['Staff', 'Date', 'Adjustment', 'Amount', 'Note']);
+  for (const r of run.rows || []) for (const a of r.adjustments || []) out.push([r.name, String(a.at).slice(0, 10), a.type, d(a.cents), a.note || '']);
+  const blob = new Blob([`${out.map((row) => row.map(cell).join(',')).join('\r\n')}\r\n`], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `payroll-${run.start}-to-${run.end}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}

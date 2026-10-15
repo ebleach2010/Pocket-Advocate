@@ -82,11 +82,13 @@ export function advocatePhoto(advocateId) {
 }
 
 /**
+ * viewAs: whose side the thread is read from, for his quiet view of an
+ *   advocate's case; the composer is off there.
  * otherAvatar: a photo of the other side, shown beside the first message of
  *   each run of theirs (the client's side, 2026-10-15). dayLines: a line
  *   naming the day between the days of the conversation.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false, viewAs = '' }) {
   container.classList.add('chat-root');
   // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
   // of them. They're pointless. Have it just be a chat."). Do not rebuild a
@@ -200,7 +202,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     let prevTheirs = false;
     for (const m of ordered) {
       const data = m.data();
-      const mine = data.from === user.uid;
+      // A quiet view (2026-10-15) reads the thread from the advocate's side.
+      const mine = data.from === (viewAs || user.uid);
       if (dayLines) {
         const at = data.ts?.toDate ? data.ts.toDate() : null;
         const key = at ? at.toDateString() : prevDay;

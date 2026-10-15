@@ -153,8 +153,11 @@ ck('clock: the review hours behind the tier mark come off what he is shown',
    String(liveOf({ seconds: 24.5 * 3600, mark: 22 * 3600, startedAt: 0 }, 0)));
 ck('clock: nothing may start on a closed case',
    /doc\.data\.status === 'closed' && body\?\.on === true/.test(W));
+// RE-PINNED 2026-10-15 (v7.46): Eric's quiet view of a contractor's shelf ("see everything they see") shows no clock
+// either, so the badge is gone on a closed case or in that view.
+// NEGATIVE CONTROL (run 2026-10-15, v7.46): the closed test dropped (`c.status === 'closed' || asUid` made `asUid`) made this read FAIL
 ck('clock: a closed case gets no badge on the shelf',
-   /clock: c\.status === 'closed' \? null : \{/.test(f('public/js/admin.js')));
+   /clock: c\.status === 'closed' \|\| asUid \? null : \{/.test(f('public/js/admin.js')));
 ck('clock: the shelf badge always carries a word',
    /: \(started \? '0m' : 'Start'\)/.test(f('public/js/admin.js')));
 ck('clock: the badge carries the state its ticker reads',
@@ -944,7 +947,9 @@ ck('clock: all switches share one painter set, so no two can disagree',
     // RE-PINNED 2026-10-15 (v7.44): Eric, "Advocates can only view cases assigned to them." The read is every case for
     // him and an advocate's own (staffCasesQuery), under the same fifteen seconds.
     // NEGATIVE CONTROL (run 2026-10-15, v7.44): the cases read put back to a bare `await getDocs(staffCasesQuery(user))` made this read FAIL
-    && /const snapshot = await within\(15_000, \(\) => getDocs\(staffCasesQuery\(user\)\)\);\n\s+if \(snapshot === TOO_SLOW\) throw new Error\('the database did not answer'\);/.test(APP)
+    // RE-PINNED 2026-10-15 (v7.46): Eric's quiet view (?as=) reads that contractor's own cases, under the same fifteen.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.46): `within(15_000, () => getDocs(asUid` made `(async () => getDocs(asUid` made this read FAIL
+    && /const snapshot = await within\(15_000, \(\) => getDocs\(asUid\n\s+\? query\(collection\(db, 'cases'\), where\('advocateId', '==', asUid\)\)\n\s+: staffCasesQuery\(user\)\)\);\n\s+if \(snapshot === TOO_SLOW\) throw new Error\('the database did not answer'\);/.test(APP)
     && /return within\(10_000, async \(\) => \{\n\s+const token = await user\.getIdToken\(\);\n\s+const res = await fetch\('\/api\/advisor\/covers'/.test(APP)
     // RE-PINNED 2026-10-15 (v7.39): the rate panel and its read moved into the settings cog (Eric, "let me adjust
     // price for each effective immediately"), so the voice study is the one extra left on this page.
@@ -1122,6 +1127,34 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && !/Message me any time/.test(CASE)
     && /disabled: t\.closed \|\| t\.paused,/.test(PAGE) && /t\.paused \? 'This case is paused\.' : ''/.test(PAGE),
     JSON.stringify({ gate: gate.length, helper: helper.length }));
+}
+
+// ---- never a blank white page (Eric, 2026-10-15: "The website currently loads a blank white page", opening the site) ----
+// A refused working page answered with an EMPTY 404, which a phone paints as a blank white page with no way out. Every
+// miss is the dark 404 page now (one page for every path, so the gate's byte-identical miss holds), and a working page
+// refused to someone carrying our cookie, or sent there by the sign-in page, is noted in the flight recorder with why.
+{
+  const PAGE = f('public/404.html');
+  const WR = f('wrangler.jsonc');
+  // NEGATIVE CONTROL (run 2026-10-15, v7.46): wrangler.jsonc's not_found_handling taken out made this read
+  //   FAIL  white page: every miss is the dark 404 page with a way home and a way to sign in, styled inline so it is never white
+  ck('white page: every miss is the dark 404 page with a way home and a way to sign in, styled inline so it is never white',
+    /"not_found_handling": "404-page"/.test(WR)
+    && /<style>\n\s+html, body \{ margin: 0; background: #0A0A0C; color: #F5F5F7; \}/.test(PAGE)
+    && /<a class="go" href="\/">Home<\/a>/.test(PAGE) && /<a href="\/signin\.html">Sign in<\/a>/.test(PAGE)
+    && !/admin/i.test(PAGE.replace(/<!--[\s\S]*?-->/g, '')) && !new RegExp('[\\u2013\\u2014]').test(PAGE));
+  const lift = (decl) => { const a = W.indexOf(decl); if (a < 0) return ''; let d = 0; for (let i = W.indexOf('{', a + decl.length - 1); i < W.length; i++) { if (W[i] === '{') d++; else if (W[i] === '}') { d--; if (!d) return W.slice(a, i + 1); } } return ''; };
+  const whySrc = lift('async function adminCookieWhy(request, env) {');
+  const why = whySrc ? new Function('ADMIN_COOKIE', 'adminCookieUid', `${whySrc}\nreturn adminCookieWhy;`)('pa_adm', async (req) => (/pa_adm=eric\.9999999999999\.good/.test(req.headers.get('cookie')) ? 'eric' : null)) : null;
+  const req = (cookie) => ({ headers: { get: (k) => (k === 'cookie' ? cookie : null) } });
+  const answers = why ? await Promise.all(['', 'x=1', 'pa_adm=junk', 'pa_adm=eric.1000.abc', 'pa_adm=eric.9999999999999.bad', 'pa_adm=eric.9999999999999.good'].map((c) => why(req(c), {}))) : [];
+  // NEGATIVE CONTROL (run 2026-10-15, v7.46): the gate's `why !== 'none' || ` taken out (noting only arrivals from sign-in) made this read
+  //   FAIL  white page: a refused working page is noted with why
+  ck('white page: a refused working page is noted with why (no cookie, a malformed one, an expired one, a bad signature), only when it carried our cookie or came from sign-in, and never with the cookie itself',
+    JSON.stringify(answers) === JSON.stringify(['none', 'none', 'shape', 'expired', 'signature', 'ok'])
+    && /if \(why !== 'none' \|\| \/\^\\\/signin\(\\\.html\)\?\$\/\.test\(from\)\) \{\n\s+ctx\.waitUntil\(diagLog\(env, \{ ev: 'gate-refused', page: assetPath\.slice\(0, 32\), why, from: from\.slice\(0, 32\) \}\)/.test(W)
+    && W.indexOf("ev: 'gate-refused'") < W.indexOf('return notFound(env, request, url);', W.indexOf("ev: 'gate-refused'")),
+    JSON.stringify(answers));
 }
 
 console.log(`\n${pass}/${pass + fail} passed`);

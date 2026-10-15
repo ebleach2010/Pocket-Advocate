@@ -1300,14 +1300,25 @@ export function demoApi(role, store) {
     // the store, with its refusals in its words. The confirm writes the case
     // the way the webhook does for an invitation: confirmed and paid at once,
     // at his time and his price, under the invitation's own id.
+    // A contractor schedules from their own leads too (2026-10-15); theirs are theirs alone.
+    if (path === '/api/staff/leads') {
+      if (!staff) return fail(404, 'Not found');
+      const by = new Map();
+      for (const [k, d] of store.docs.entries()) {
+        if (!/^(invites|leads)\/[^/]+$/.test(k) || (d.advocateId || 'demo-admin') !== me || !d.email) continue;
+        if (!by.has(d.email)) by.set(d.email, { email: d.email, name: d.name || '' });
+      }
+      return ok({ leads: [...by.values()] });
+    }
     if (path === '/api/admin/lead-invite' || path === '/api/admin/lead-invites' || path === '/api/admin/lead-invite/cancel') {
-      if (role !== 'admin') return fail(404, 'Not found');
+      if (!staff) return fail(404, 'Not found');
       await beat(300);
+      const sees = (d) => role === 'admin' || (d.advocateId || 'demo-admin') === me;
       if (path === '/api/admin/lead-invites') {
         const now = Date.now();
         const invites = [...store.docs.entries()]
-          .filter(([k, d]) => /^invites\/[^/]+$/.test(k) && d.state === 'sent')
-          .map(([k, d]) => ({ id: k.split('/')[1], email: d.email, name: d.name || '', start: new Date(d.start).toISOString(), priceCents: Number(d.priceCents) || 0, past: new Date(d.start).getTime() <= now }))
+          .filter(([k, d]) => /^invites\/[^/]+$/.test(k) && d.state === 'sent' && sees(d))
+          .map(([k, d]) => ({ id: k.split('/')[1], mine: (d.advocateId || 'demo-admin') === me, email: d.email, name: d.name || '', start: new Date(d.start).toISOString(), priceCents: Number(d.priceCents) || 0, past: new Date(d.start).getTime() <= now }))
           .sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
         return ok({ invites });
       }
@@ -1315,6 +1326,7 @@ export function demoApi(role, store) {
         const key = `invites/${String(body.id || '')}`;
         const d = store.docs.get(key);
         if (!d) return ok({ ok: true, gone: true });
+        if (!sees(d)) return fail(404, 'Not found');
         if (d.state === 'confirmed') return fail(409, 'They already confirmed it. The case is open.');
         store.docs.set(key, { ...d, state: 'canceled', canceledAt: new Date() });
         store.persist?.();
@@ -1330,7 +1342,7 @@ export function demoApi(role, store) {
       if (priceCents > 0 && priceCents < 50) return fail(400, 'Stripe cannot charge less than $0.50. Use 0 for no charge.');
       const id = `demo-invite-${Date.now().toString(36)}`;
       const name = String(body?.name || '').replace(/\s+/g, ' ').trim().slice(0, 120);
-      store.docs.set(`invites/${id}`, { email, name: name || null, start, priceCents, state: 'sent', createdAt: new Date(), by: 'demo-admin', caseId: null });
+      store.docs.set(`invites/${id}`, { email, name: name || null, start, priceCents, state: 'sent', createdAt: new Date(), by: me, caseId: null, advocateId: me });
       store.persist?.();
       // No mail leaves the demo; the link is what the email would carry.
       return ok({ ok: true, id, email, name, start, priceCents, emailed: true, link: `/book.html?invite=${id}&demo=client` });
@@ -2540,6 +2552,213 @@ export function demoApi(role, store) {
       };
     };
     const SPECIALTIES = ['Neurology', 'Autoimmune / Rheumatology', 'Cardiology', 'Oncology', 'Rare Disease', 'Complex / Undiagnosed Cases'];
+    // ---- employer mode, the temporary chat and payroll (2026-10-15) -------
+    // The demo's own answers in the Worker's shapes (worker/employer.js and
+    // worker/payroll.js): his alone where the Worker's are his alone, and an
+    // advocate's thread is their own whatever the address says.
+    const docsUnder = (prefix) => [...store.docs.entries()].filter(([k]) => k.startsWith(prefix) && !k.slice(prefix.length).includes('/')).map(([k, v]) => ({ id: k.slice(prefix.length), data: v }));
+    const advOf = (c) => (typeof c?.advocateId === 'string' && c.advocateId) || 'demo-admin';
+    const paidOf = (c) => {
+      const base = Number(c?.paidOverrideCents) || (c?.charge?.state ? (c.charge.state === 'captured' ? Number(c.charge.capturedCents) || 0 : 0) : Number(c?.stripe?.amountTotal) || Number(c?.caseRateCents) || 0);
+      let paid = base; let tips = 0;
+      for (const p of (Array.isArray(c?.extraPayments) ? c.extraPayments : [])) {
+        if (p?.duplicate) continue;
+        if (p?.kind === 'tip') tips += Number(p.amountCents) || 0; else paid += Number(p?.amountCents) || 0;
+      }
+      return { base, paid, tips };
+    };
+    const kindOf = (c) => (c?.showcase && !c?.sample ? 'Showcase' : c?.self ? 'Own case' : c?.family ? 'Family' : c?.fullAccess ? 'Full-Service' : 'Advocacy Case');
+    const pctOf = (a, id) => (a?.owner || id === 'demo-admin' ? 100 : Number.isFinite(Number(a?.commissionPct)) ? Number(a.commissionPct) : 60);
+    if (path === '/api/admin/team') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      if ((init.method || 'GET') === 'POST') {
+        if (body.action === 'sample-create') {
+          if (store.docs.has('advocates/demo-sample')) return ok({ ok: true, existing: true });
+          const now = Date.now();
+          const at = (d) => new Date(now + d * 86_400_000).toISOString();
+          store.docs.set('advocates/demo-sample', { uid: 'demo-sample', name: 'Maya Torres', email: 'maya.torres@example.com', sample: true, active: true, owner: false, commissionPct: 60, onboardedAt: at(0), credentials: 'RN, BSN. Board Certified Patient Advocate', primarySpecialty: 'Neurology', specialties: ['Neurology', 'Rare Disease'], headshotPath: null });
+          const mk = (id, name, extra) => store.docs.set(`cases/${id}`, { sample: true, showcase: true, sampleOf: 'demo-sample', advocateId: 'demo-sample', clientName: name, clientEmail: `${id}@example.com`, createdAt: at(-20), ...extra });
+          mk('demo-sample-dana', 'Dana Whitfield', { status: 'confirmed', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-6) }, appointment: { start: at(4), method: 'video' } });
+          mk('demo-sample-luis', 'Luis Ortega', { status: 'delivered', fullAccess: true, charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-18) }, extraPayments: [{ kind: 'fullaccess', amountCents: 230000, at: at(-12) }] });
+          mk('demo-sample-grace', 'Grace Kim', { status: 'awaiting_report', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-9) }, extraPayments: [{ kind: 'tip', amountCents: 5000, at: at(-2) }] });
+          store.docs.set('payouts/demo-sample', { method: 'zelle', hint: 'Zelle to ma…om (sample)', details: { name: 'Maya Torres', handle: 'maya.torres@example.com' } });
+          store.persist?.();
+          return ok({ ok: true });
+        }
+        if (body.action === 'sample-remove') {
+          for (const k of [...store.docs.keys()]) if (/^(advocates|payouts|staffChats)\/demo-sample$/.test(k) || /^cases\/demo-sample-/.test(k)) store.docs.delete(k);
+          store.persist?.();
+          return ok({ ok: true });
+        }
+        return fail(400, 'Bad request');
+      }
+      const people = new Map();
+      for (const { id, data: a } of docsUnder('advocates/')) {
+        if (a.active !== true && !a.owner) continue;
+        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: false, commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
+      }
+      for (const { id, data: c } of docsUnder('cases/')) {
+        const p = people.get(advOf(c));
+        if (!p) continue;
+        if (c.status === 'closed') { p.closed += 1; continue; }
+        const k = kindOf(c);
+        p.open += 1; p.kinds[k] = (p.kinds[k] || 0) + 1;
+        p.clients.push({ id, name: c.clientName || 'Client', kind: k, status: c.status || '' });
+        if (c.self || c.family || (c.showcase && !c.sample)) continue;
+        const { paid, tips } = paidOf(c);
+        p.paidCents += paid; p.tipsCents += tips; p.proposedCents += Math.round(paid * p.commissionPct / 100) + tips;
+      }
+      const team = [...people.values()].sort((a, b) => (b.owner - a.owner) || (a.sample - b.sample) || a.name.localeCompare(b.name))
+        .map((p) => {
+          const chat = store.docs.get(`staffChats/${p.uid}`);
+          const pay = store.docs.get(`payouts/${p.uid}`);
+          return { ...p, unread: Number(chat?.adminUnread) || 0, chatOpen: !!chat?.messages?.length, payout: pay ? { method: pay.method, hint: pay.hint } : null };
+        });
+      return ok({ team, sample: team.some((p) => p.sample) });
+    }
+    if (path === '/api/staff/chat') {
+      if (!staff) return fail(404, 'Not found');
+      const side = role === 'admin' ? 'admin' : 'advocate';
+      const who = side === 'admin' ? String(q.get('uid') || body.uid || '') : me;
+      const adv = store.docs.get(`advocates/${who}`);
+      if (!who || !adv || (side === 'admin' && adv.owner)) return fail(404, 'Not found');
+      const key = `staffChats/${who}`;
+      const d = store.docs.get(key) || {};
+      const view = (x) => ({ open: !!(x.messages || []).length, messages: (x.messages || []).slice(), unread: side === 'admin' ? Number(x.adminUnread) || 0 : Number(x.advocateUnread) || 0 });
+      if ((init.method || 'GET') === 'GET') return ok(view(d));
+      if (body.action === 'close') {
+        if (side !== 'admin') return fail(404, 'Not found');
+        store.docs.delete(key); store.persist?.();
+        return ok({ ok: true, open: false });
+      }
+      if (body.action === 'read') {
+        if (store.docs.has(key)) store.docs.set(key, { ...d, [side === 'admin' ? 'adminUnread' : 'advocateUnread']: 0 });
+        store.persist?.();
+        return ok({ ok: true });
+      }
+      if (body.action === 'send') {
+        const text = String(body.text || '').trim().slice(0, 1000);
+        if (!text) return fail(400, 'Write something first.');
+        const next = {
+          messages: [...(d.messages || []), { id: `m${Date.now().toString(36)}`, from: side, text, at: new Date().toISOString() }].slice(-200),
+          adminUnread: side === 'advocate' ? (Number(d.adminUnread) || 0) + 1 : 0,
+          advocateUnread: side === 'admin' ? (Number(d.advocateUnread) || 0) + 1 : 0,
+        };
+        store.docs.set(key, next); store.persist?.();
+        return ok({ ok: true, ...view(next) });
+      }
+      return fail(400, 'Bad request');
+    }
+    if (path === '/api/staff/payout') {
+      if (!staff) return fail(404, 'Not found');
+      const METHODS = { ach: 'Direct deposit (ACH)', check: 'Paper check', zelle: 'Zelle', paypal: 'PayPal', venmo: 'Venmo', other: 'Other' };
+      if ((init.method || 'GET') === 'GET') {
+        const p = store.docs.get(`payouts/${me}`);
+        return ok({ method: p?.method || '', label: METHODS[p?.method] || '', hint: p?.hint || '', methods: METHODS });
+      }
+      const m = String(body.method || '');
+      const fl = body.fields || {};
+      if (!METHODS[m]) return fail(400, 'Choose how you want to be paid.');
+      let hint = '';
+      if (m === 'ach') {
+        const acct = String(fl.account || '').replace(/\D/g, '');
+        if (!fl.name || String(fl.routing || '').replace(/\D/g, '').length !== 9 || acct.length < 4) return fail(400, 'The name on the account, a 9 digit routing number and the account number, please.');
+        hint = `${fl.type === 'savings' ? 'Savings' : 'Checking'} ending ${acct.slice(-4)}`;
+      } else if (m === 'check') {
+        if (!fl.name || String(fl.address || '').length < 8) return fail(400, 'The name for the check and the address to mail it to, please.');
+        hint = `Mailed to ${String(fl.address).split(/[,\n]/)[0]}`;
+      } else if (m === 'other') {
+        if (String(fl.text || '').length < 3) return fail(400, 'Say how you want to be paid.');
+        hint = 'Other, as written';
+      } else {
+        const h = String(fl.handle || '');
+        if (h.length < 3) return fail(400, `The ${METHODS[m]} email, phone or handle, please.`);
+        hint = `${METHODS[m]} to ${h.slice(0, 2)}…${h.slice(-2)}`;
+      }
+      store.docs.set(`payouts/${me}`, { method: m, hint, details: fl });
+      store.persist?.();
+      return ok({ ok: true, method: m, label: METHODS[m], hint });
+    }
+    if (path === '/api/admin/payroll') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const METHODS = { ach: 'Direct deposit (ACH)', check: 'Paper check', zelle: 'Zelle', paypal: 'PayPal', venmo: 'Venmo', other: 'Other' };
+      const payoutFor = (uid) => { const p = store.docs.get(`payouts/${uid}`); return p ? { method: p.method, label: METHODS[p.method] || '', hint: p.hint, details: p.details } : null; };
+      const totalsOf = (rows) => {
+        const s = (k) => rows.filter((r) => !r.sample).reduce((t, r) => t + r[k], 0);
+        return { cases: s('cases'), salesCents: s('salesCents'), commissionCents: s('commissionCents'), tipsCents: s('tipsCents'), deductionsCents: s('deductionsCents'), adjustmentsCents: s('adjustmentsCents'), totalCents: s('totalCents') };
+      };
+      const shown = (run) => ({ ...run, rows: (run.rows || []).map((r) => ({ ...r, payout: payoutFor(r.uid) })) });
+      const runs = () => docsUnder('payrollRuns/');
+      if ((init.method || 'GET') === 'GET') {
+        const id = q.get('id');
+        if (id) { const r = store.docs.get(`payrollRuns/${id}`); return r ? ok({ run: shown({ id, ...r }) }) : fail(404, 'Not found'); }
+        return ok({ runs: runs().map(({ id, data: r }) => ({ id, status: r.status, start: r.start, end: r.end, preset: r.preset, createdAt: r.createdAt, confirmedAt: r.confirmedAt || null, totals: r.totals, people: (r.rows || []).filter((x) => !x.sample).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+      }
+      if (body.action === 'generate') {
+        const s = new Date(`${body.start}T00:00:00-07:00`).getTime();
+        const e = new Date(`${body.end}T00:00:00-07:00`).getTime() + 86_400_000;
+        if (!Number.isFinite(s) || !Number.isFinite(e) || e <= s) return fail(400, 'Choose a start and an end day, the end after the start.');
+        const inR = (v) => { const t = new Date(v).getTime(); return Number.isFinite(t) && t >= s && t < e; };
+        const rows = new Map();
+        for (const { id, data: a } of docsUnder('advocates/')) {
+          if (a.active !== true && !a.owner) continue;
+          rows.set(id, { uid: id, name: a.name || 'Advocate', owner: !!a.owner, sample: !!a.sample, commissionPct: pctOf(a, id), cases: 0, salesCents: 0, commissionCents: 0, tipsCents: 0, deductionsCents: 0, adjustmentsCents: 0, totalCents: 0, lines: [], adjustments: [] });
+        }
+        const seen = new Map();
+        for (const { id, data: c } of docsUnder('cases/')) {
+          if (c.self || c.family || (c.showcase && !c.sample)) continue;
+          const row = rows.get(advOf(c)) || rows.get('demo-admin');
+          if (!row) continue;
+          const add = (kind, label, cents, at) => {
+            const pay = kind === 'tip' ? cents : Math.round(cents * row.commissionPct / 100);
+            if (kind === 'tip') row.tipsCents += cents; else { row.salesCents += cents; row.commissionCents += pay; if (!seen.has(row.uid)) seen.set(row.uid, new Set()); seen.get(row.uid).add(id); }
+            row.lines.push({ caseId: id, client: c.clientName || 'Client', kind, label, cents, payCents: pay, at: new Date(at).toISOString() });
+          };
+          const { base } = paidOf(c);
+          const bookedAt = c.charge?.capturedAt || c.createdAt;
+          if (base > 0 && inR(bookedAt)) add('booking', 'Advocacy Case', base, bookedAt);
+          for (const p of (c.extraPayments || [])) if (!p?.duplicate && Number(p?.amountCents) && inR(p.at)) add(p.kind || 'extra', p.kind === 'tip' ? 'Tip' : p.kind === 'fullaccess' ? 'Full-Service month' : p.kind === 'followup' ? 'Follow-up call' : 'Payment', Number(p.amountCents), p.at);
+        }
+        for (const [uid, set] of seen) rows.get(uid).cases = set.size;
+        const list = [...rows.values()].map((r) => ({ ...r, totalCents: r.commissionCents + r.tipsCents - r.deductionsCents })).filter((r) => body.includeAll !== false || r.lines.length)
+          .sort((a, b) => (b.owner - a.owner) || (a.sample - b.sample) || a.name.localeCompare(b.name));
+        const id = `pr-${body.start}-${body.end}-${Date.now().toString(36)}`;
+        const run = { status: 'draft', start: body.start, end: body.end, preset: body.preset || 'custom', createdAt: new Date().toISOString(), rows: list, adjustments: [], totals: totalsOf(list), notes: ['In the demo, refunds, chargebacks and chat renewals come from nowhere; the real report asks Stripe for them.'] };
+        store.docs.set(`payrollRuns/${id}`, run); store.persist?.();
+        return ok({ run: shown({ id, ...run }) });
+      }
+      const id = String(body.id || '');
+      const run = store.docs.get(`payrollRuns/${id}`);
+      if (!run) return fail(404, 'Not found');
+      if (body.action === 'delete') {
+        if (run.status !== 'draft') return fail(409, 'A confirmed payroll stays in the history.');
+        store.docs.delete(`payrollRuns/${id}`); store.persist?.();
+        return ok({ ok: true });
+      }
+      if (run.status !== 'draft') return fail(409, 'This payroll is confirmed and can no longer change.');
+      const recompute = (adjustments) => {
+        const rows = run.rows.map((r) => { const mine = adjustments.filter((a) => a.uid === r.uid); const adj = mine.reduce((t, a) => t + a.cents, 0); return { ...r, adjustments: mine, adjustmentsCents: adj, totalCents: r.commissionCents + r.tipsCents - r.deductionsCents + adj }; });
+        return { rows, totals: totalsOf(rows) };
+      };
+      if (body.action === 'adjust' || body.action === 'unadjust') {
+        let adjustments = run.adjustments || [];
+        if (body.action === 'adjust') {
+          const cents = Math.round(Number(body.cents));
+          if (!Number.isFinite(cents) || !cents) return fail(400, 'An amount, please. A minus sign takes it off.');
+          adjustments = [...adjustments, { id: Date.now().toString(36), uid: String(body.uid), type: body.type || 'Pay adjustment', cents, note: String(body.note || '').slice(0, 200), at: new Date().toISOString() }];
+        } else adjustments = adjustments.filter((a) => a.id !== body.adjId);
+        const next = { ...run, adjustments, ...recompute(adjustments) };
+        store.docs.set(`payrollRuns/${id}`, next); store.persist?.();
+        return ok({ run: shown({ id, ...next }) });
+      }
+      if (body.action === 'confirm') {
+        const rows = run.rows.filter((r) => !r.sample);
+        const next = { ...run, status: 'confirmed', confirmedAt: new Date().toISOString(), rows, totals: totalsOf(rows) };
+        store.docs.set(`payrollRuns/${id}`, next); store.persist?.();
+        return ok({ run: shown({ id, ...next }) });
+      }
+      return fail(400, 'Bad request');
+    }
     if (path === '/api/admin/advocates') {
       if (role !== 'admin') return fail(404, 'Not found');
       const action = body.action || 'list';

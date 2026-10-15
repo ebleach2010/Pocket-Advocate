@@ -167,7 +167,16 @@ const user = await requireAdmin();
 // the clock, the log and the milestones. Not his private reading, its pages
 // or his margin floor: those routes are his alone, and the Worker refuses
 // them to anyone else whatever a page asks.
-const advocate = STAFF.role === 'advocate';
+//
+// QUIET VIEW (Eric, 2026-10-15: "tap in to each client and see everything
+// they see without them knowing I'm there. This is strictly for quality
+// control and safety."). ?as=<uid> opens this case as that advocate sees it:
+// their pages, their side of the chat. For his eyes and read-only: nothing
+// typed, tapped or uploaded here leaves the page, so neither the advocate
+// nor the client can tell he was in it.
+const asUid = STAFF.role === 'admin' ? (new URLSearchParams(location.search).get('as') || '').replace(/[^\w-]/g, '').slice(0, 64) : '';
+const advocate = STAFF.role === 'advocate' || !!asUid;
+if (user && asUid) quietView(asUid);
 const ADVOCATE_PAGES = new Set(['overview', 'chat', 'files', 'notes', 'agenda', 'saved', 'log', 'milestones']);
 // askIfStillWorking is called from inside load(), not here: prepending its
 // card moments before render() replaced #case's innerHTML made the prompt
@@ -760,8 +769,10 @@ function render(el) {
     // to a client's shelf (null hides the long press): that shelf is the
     // client's, across every advocate they ever have.
     saveUid: advocate ? null : c.self ? user.uid : c.clientUid,
-    disabled: c.status === 'closed',
-    notice: 'Chat ended when this case closed.',
+    disabled: c.status === 'closed' || !!asUid,
+    notice: asUid ? 'Seeing what they see. Nothing you type here is sent.' : 'Chat ended when this case closed.',
+    // In a quiet view, their messages are on the right, the way they see them.
+    viewAs: asUid || '',
     // Always there, on every case, saying nothing about anyone. The point is
     // that it is one tap from the conversation rather than four taps away on
     // the last page, because the moment he wants it is not a moment for
@@ -855,7 +866,7 @@ function render(el) {
   });
 
   chatSend = (text) => chat.send(text);
-  startWorkClock(c);
+  if (!asUid) startWorkClock(c);
   // Whether THEIR side of this chat is open yet, so silence before a far-out
   // call reads as the gate doing its job rather than a client ignoring him.
   {
@@ -2520,7 +2531,7 @@ function paintOverview(pane) {
          tier is on, which is exactly when this line has something to say. -->
     ${saidHtml('openfull')}
     <p class="eyebrow mgmt-when">Before the call</p>
-    ${c.fullAccess ? '' : `
+    ${c.fullAccess || advocate ? '' : `
     <!-- OPENING THE TIER BY HAND. Until now the only thing that could set
          fullAccess was a Stripe webhook, so a client who agreed on a call and
          paid another way could not be given what he had bought: the
@@ -6972,4 +6983,66 @@ function paintCallDoc(host) {
   }
 
   if (callDocCaseFiles === null) listCaseFilesIntoPicker();
+}
+
+/**
+ * A quiet view's rules, for the whole page: a strip that says whose view this
+ * is and the way back; no request that writes leaves the page; and the
+ * controls that change things answer with one line instead of acting. Tabs,
+ * folds, search and links still work, so he can read everything.
+ */
+function quietView(uid) {
+  document.body.classList.add('quiet');
+  const realFetch = window.fetch.bind(window);
+  const say = (text) => {
+    let t = document.querySelector('.quiet-toast');
+    if (!t) {
+      t = document.createElement('p');
+      t.className = 'quiet-toast';
+      t.setAttribute('role', 'status');
+      document.body.appendChild(t);
+    }
+    t.textContent = text;
+    clearTimeout(t._h);
+    t._h = setTimeout(() => t.remove(), 2600);
+  };
+  const LINE = 'Seeing what they see: nothing here can be changed.';
+  window.fetch = (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input?.url || '';
+    const method = String(init.method || (typeof input === 'object' && input?.method) || 'GET').toUpperCase();
+    if (method !== 'GET' && /^(\/|https?:\/\/[^/]+\/)api\//.test(url)) {
+      say(LINE);
+      return Promise.resolve(new Response(JSON.stringify({ error: LINE }), { status: 409, headers: { 'content-type': 'application/json' } }));
+    }
+    return realFetch(input, init);
+  };
+  const SAFE = '.folder-groups button, .folder-tabs a, .folder-tabs button, .ftab, .fgrp, summary, a[href], .chat-search-btn, .chat-search, .chat-search *, .chat-result, .chat-bottom, [data-expand], .quiet-bar *, [data-quiet-ok]';
+  const ACTS = 'button, [role="button"], input, select, textarea, [contenteditable="true"], label.attach-btn, label.dropzone, [data-clock]';
+  const stop = (e) => {
+    const el = e.target.closest?.(ACTS);
+    if (!el || el.closest(SAFE)) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    if (e.type === 'click') say(LINE);
+  };
+  for (const type of ['click', 'submit', 'beforeinput', 'paste', 'drop', 'keydown']) {
+    document.addEventListener(type, (e) => {
+      if (type === 'keydown' && !(e.target.closest?.('input, textarea, [contenteditable="true"]'))) return;
+      if (type === 'keydown' && e.target.closest?.('.chat-search')) return;
+      if (type === 'submit') { e.preventDefault(); e.stopImmediatePropagation(); say(LINE); return; }
+      stop(e);
+    }, true);
+  }
+  const bar = document.createElement('div');
+  bar.className = 'quiet-bar';
+  bar.setAttribute('role', 'status');
+  bar.innerHTML = `<span>Seeing what <strong data-quiet-name>this advocate</strong> sees on this case. They cannot tell you are here.</span> <a class="btn quiet" href="/admin.html?as=${encodeURIComponent(uid)}">Back to their shelf</a>`;
+  const place = () => { const m = document.querySelector('main'); if (m && !m.querySelector('.quiet-bar')) m.prepend(bar); };
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', place); else place();
+  user.getIdToken().then((token) => realFetch('/api/admin/advocates', {
+    method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{"action":"list"}',
+  })).then((r) => r.json()).then((out) => {
+    const a = (out.advocates || []).find((x) => x.uid === uid);
+    if (a) bar.querySelector('[data-quiet-name]').textContent = a.name || a.email;
+  }).catch(() => {});
 }

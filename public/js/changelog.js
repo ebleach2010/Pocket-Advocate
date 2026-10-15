@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.45';
+export const VERSION = '7.46';
 
 /**
  * Newest first.
@@ -51,6 +51,24 @@ export const VERSION = '7.45';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // EMPLOYER MODE AND PAYROLL (Eric, 2026-10-15: "I (and only I) need a
+    // button to enter employer mode ... I also need to be able to run payroll
+    // through this page ... I want it to be EXACTLY how mangomint runs
+    // payroll." And: "The + sign under all cases should only be there to
+    // schedule a case from any lead they themselves acquire."). Admin only.
+    version: '7.46',
+    quiet: true,
+    client: [],
+    admin: [
+      'Employer mode, beside Clients: everyone on your team with their clients by kind, what they stand to earn from the clients they have now, and how they want to be paid. See what they see shows their shelf and cases exactly as they do, and they cannot tell. Message puts a white chat box at the top of their screen; closing it deletes every message.',
+      'Payroll in employer mode, the Mangomint way: last week, last two weeks, last month or any dates, then Run report. Tap a total to correct it or + to add a bonus or adjustment, download the spreadsheet, delete a draft freely, and Confirm puts it in Pay history by month. You are on it too.',
+      'Clients is a two column grid.',
+      'Contractors: their + only schedules a case from a lead of their own, they set how they get paid on My account, and they can message you from the chat icon at the bottom right. Only you can record money paid outside the app.',
+      'A sample contractor you can add and remove in employer mode, to see how it all looks.',
+      'A page that is not there is now a dark page with Home and Sign in, never a blank white one, and a refused sign-in is noted so it can be traced.',
+    ],
+  },
   {
     // WARM, GUIDED, TAN (Eric, 2026-10-15: "Revert to the old file look in
     // 'all cases' for admin." And: "I'd like the client side to look warm and

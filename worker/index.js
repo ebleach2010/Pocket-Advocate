@@ -37,9 +37,9 @@
 //   POST   /api/admin/case-charge    approve a held case at the amount he sets (zero included) or decline it and release the hold (admin)
 //   POST   /api/chat/reply         his answer to a question the read put in his own chat (admin)
 //   POST   /api/admin/family-case  a free case for a family member; the email typed is their login (admin)
-//   POST   /api/admin/lead-invite  schedule a case from a lead: a time and a price, one email with a link (admin)
-//   POST   /api/admin/lead-invites the invitations still waiting on the person (admin)
-//   POST   /api/admin/lead-invite/cancel  withdraw one (admin)
+//   POST   /api/admin/lead-invite  schedule a case from a lead: a time and a price, one email with a link (staff: their own leads)
+//   POST   /api/admin/lead-invites the invitations still waiting on the person (staff: his are everyone's, theirs their own)
+//   POST   /api/admin/lead-invite/cancel  withdraw one (staff: their own; he may withdraw any)
 //   POST   /api/invite             the invitation's time and price, for the address it went to
 //   POST   /api/invite/confirm     confirm it: Stripe checkout at his price, or the case at once when free
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
@@ -77,6 +77,8 @@ import { handleFund, drainFundNotices } from './fund.js';
 // The advocates themselves (2026-10-15): his Advocates tab, their own account
 // page, the password door and their headshots.
 import { handleAdvocates, isStaffLogin, advocateLogin } from './advocates.js';
+import { handleEmployer } from './employer.js';
+import { handlePayroll } from './payroll.js';
 // The security rules, published by the Worker when what it carries changes.
 import { releaseRules, RULES_STATUS } from './rules-release.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
@@ -873,6 +875,19 @@ async function adminCookieUid(request, env) {
   return timingSafeEqual(hex, want) ? uid : null;
 }
 
+/**
+ * Why a cookie of ours was refused, in one word, for the flight recorder:
+ * 'none', 'shape', 'expired' or 'signature'. Never the cookie itself.
+ */
+async function adminCookieWhy(request, env) {
+  const m = (request.headers.get('cookie') || '').match(new RegExp(`(?:^|;\\s*)${ADMIN_COOKIE}=([^;]+)`));
+  if (!m) return 'none';
+  const parts = m[1].split('.');
+  if (parts.length !== 3 || !/^[\w-]{1,64}$/.test(parts[0]) || !/^\d+$/.test(parts[1])) return 'shape';
+  if (Number(parts[1]) < Date.now()) return 'expired';
+  return (await adminCookieUid(request, env).catch(() => null)) ? 'ok' : 'signature';
+}
+
 async function adminCookieHeader(env, uid) {
   const value = await signAdminCookie(env, uid);
   return `${ADMIN_COOKIE}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${ADMIN_COOKIE_DAYS * 86_400}`;
@@ -976,6 +991,14 @@ export default {
         return await handlePersonalFile(request, env, url);
       if (url.pathname.startsWith('/api/fund/') || url.pathname.startsWith('/api/admin/fund/'))
         return await handleFund(request, env, url, ctx);
+      // Employer mode, the temporary chat, payroll (2026-10-15): before the
+      // accounts module, which answers the rest of /api/staff/.
+      if (url.pathname === '/api/admin/team' || url.pathname === '/api/staff/chat')
+        return await handleEmployer(request, env, url, { requireAdmin, requireStaff, json, readRates });
+      if (url.pathname === '/api/admin/payroll' || url.pathname === '/api/staff/payout')
+        return await handlePayroll(request, env, url, { requireAdmin, requireStaff, json });
+      if (url.pathname === '/api/staff/leads' && request.method === 'GET')
+        return await handleStaffLeads(request, env);
       if (url.pathname === '/api/admin/advocates' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
         return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json });
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
@@ -1196,7 +1219,7 @@ export default {
           return json({ ok: !why, bytes: want, ms, ...(why ? { error: why, said: personalWhy(new Error(why), want) } : { wrote: made.size }) });
         }
         if (url.searchParams.get('do') === 'unshowcase') {
-          const rows = await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 5).catch(() => []);
+          const rows = (await queryDocs(env, 'cases', [['showcase', 'EQUAL', true]], 10).catch(() => [])).filter((r) => !r.data?.sample);
           const wiped = [];
           for (const r of rows) wiped.push({ id: r.id, ...(await wipeCase(env, r.id, { adminUid: env.ADMIN_UID || '' })) });
           return json({ ok: true, wiped });
@@ -1443,6 +1466,19 @@ export default {
       const isPage = /^\/admin[\w-]*(\.html)?\/?$/.test(assetPath);
       const uid = await adminCookieUid(request, env).catch(() => null);
       if (!uid) {
+        // THE BLANK WHITE PAGE (Eric, 2026-10-15: "The website currently
+        // loads a blank white page", opening the site). A working page
+        // refused to someone who carried one of our cookies, or who was just
+        // sent here by the sign-in page, is him or an advocate locked out, not
+        // a stranger: the flight recorder notes why, in one word, so the
+        // next time it happens there is evidence instead of a guess.
+        if (isPage) {
+          const from = (() => { try { return new URL(request.headers.get('referer') || '').pathname; } catch { return ''; } })();
+          const why = await adminCookieWhy(request, env).catch(() => 'unknown');
+          if (why !== 'none' || /^\/signin(\.html)?$/.test(from)) {
+            ctx.waitUntil(diagLog(env, { ev: 'gate-refused', page: assetPath.slice(0, 32), why, from: from.slice(0, 32) }).catch(() => {}));
+          }
+        }
         // Pages too, not only modules. The old branch bounced a signed-out
         // request for an admin PAGE to /signin.html?to=<the admin path> while
         // every other missing path got the 404 - one curl told a stranger the
@@ -2272,7 +2308,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-warm-tour';
+const BUILD_TAG = 'v2026-10-15-employer-mode';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2280,7 +2316,7 @@ const BUILD_TAG = 'v2026-10-15-warm-tour';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.45';
+const VERSION = '7.46';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -10542,7 +10578,7 @@ function inviteWhen(start) {
 }
 
 /** The one email a lead gets. Pure, so the suite reads the words it sends. */
-function inviteEmail({ name, start, priceCents, link }) {
+function inviteEmail({ name, start, priceCents, link, from = 'Eric' }) {
   const first = String(name || '').trim().split(/\s+/)[0] || '';
   const price = priceCents > 0 ? `${inviteDollars(priceCents)}, paid when you confirm.` : 'There is no charge.';
   return {
@@ -10552,7 +10588,7 @@ function inviteEmail({ name, start, priceCents, link }) {
       <p>${price}</p>
       <p><a href="${link}">Confirm your time</a></p>
       <p>Sign in with this email address. A code comes to this inbox; there is no password.</p>
-      <p>Eric</p>`,
+      <p>${escHtml(from)}</p>`,
   };
 }
 
@@ -10563,10 +10599,35 @@ function maskEmail(email) {
   return `${user.slice(0, 1)}***@${host}`;
 }
 
-// ---- POST /api/admin/lead-invite   Body: { email, name, start, priceCents }   admin only
+// ---- GET /api/staff/leads   staff: the people a contractor brought in themselves (2026-10-15).
+// Anyone they have invited before, and any lead that came in under their
+// name. His own list is /api/admin/leads; an advocate never reads that.
+async function handleStaffLeads(request, env) {
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
+  const [invites, leads] = await Promise.all([
+    listDocs(env, 'invites', { pageSize: 300, all: true }).catch(() => []),
+    listDocs(env, 'leads', { pageSize: 300, all: true }).catch(() => []),
+  ]);
+  const by = new Map();
+  for (const r of [...invites, ...leads]) {
+    if (advocateIdOf(r.data, env) !== staff.uid) continue;
+    const email = String(r.data.email || '').trim().toLowerCase();
+    if (!email || by.has(email)) continue;
+    by.set(email, { email, name: String(r.data.name || '') });
+  }
+  return json({ leads: [...by.values()] });
+}
+
+// ---- POST /api/admin/lead-invite   Body: { email, name, start, priceCents }   staff
+// A CONTRACTOR'S OWN LEADS (Eric, 2026-10-15: "The + sign under all cases
+// should only be there to schedule a case from any lead they themselves
+// acquire."). Him or an active advocate; the invitation, and the case it
+// becomes, is whoever sent it, and the email is signed with their name.
 async function handleLeadInvite(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
+  const admin = staff;
   const body = await request.json().catch(() => ({}));
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email) || email.length > 200)
@@ -10591,33 +10652,37 @@ async function handleLeadInvite(request, env) {
     advocateId: admin.uid,
   }, { mustNotExist: true });
   const link = `${env.PUBLIC_BASE_URL}/book.html?invite=${id}`;
-  const mail = inviteEmail({ name, start, priceCents, link });
+  const sender = staff.isAdmin ? null : await getDoc(env, `advocates/${staff.uid}`).catch(() => null);
+  const mail = inviteEmail({ name, start, priceCents, link, from: sender?.data?.name || 'Eric' });
   const emailed = await sendEmail(env, { to: email, subject: mail.subject, html: mail.html }).catch(() => false);
   return json({ ok: true, id, email, name, start, priceCents, emailed: !!emailed, link });
 }
 
-// ---- POST /api/admin/lead-invites   admin only: every invitation still waiting on them, soonest first
+// ---- POST /api/admin/lead-invites   staff: every invitation still waiting on them, soonest first.
+// His list holds everyone's; an advocate's holds their own.
 async function handleLeadInvites(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const rows = await listDocs(env, 'invites', { pageSize: 300, all: true }).catch(() => []);
   const now = Date.now();
-  const invites = rows.filter((r) => r.data.state === 'sent').map((r) => ({
+  const invites = rows.filter((r) => r.data.state === 'sent' && staffSees(staff, r.data, env)).map((r) => ({
+    mine: advocateIdOf(r.data, env) === staff.uid,
     id: r.id, email: r.data.email, name: r.data.name || '', start: new Date(r.data.start).toISOString(),
     priceCents: Number(r.data.priceCents) || 0, past: new Date(r.data.start).getTime() <= now,
   })).sort((a, b) => Date.parse(a.start) - Date.parse(b.start));
   return json({ invites });
 }
 
-// ---- POST /api/admin/lead-invite/cancel   Body: { id }   admin only
+// ---- POST /api/admin/lead-invite/cancel   Body: { id }   staff, their own (he may withdraw any)
 async function handleLeadInviteCancel(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
+  const staff = await requireStaff(request, env);
+  if (!staff) return json({ error: 'Not found' }, 404);
   const body = await request.json().catch(() => ({}));
   const id = typeof body?.id === 'string' ? body.id : '';
   if (!INVITE_ID_RE.test(id)) return json({ error: 'Bad invitation' }, 400);
   const doc = await getDoc(env, `invites/${id}`);
   if (!doc) return json({ ok: true, gone: true });
+  if (!staffSees(staff, doc.data, env)) return json({ error: 'Not found' }, 404);
   if (doc.data.state === 'confirmed') return json({ error: 'They already confirmed it. The case is open.', caseId: doc.data.caseId }, 409);
   if (doc.data.state !== 'sent') return json({ ok: true, canceled: true });
   const done = await patchDoc(env, `invites/${id}`, { state: 'canceled', canceledAt: new Date() },
@@ -10777,6 +10842,10 @@ async function handleCaseUpdate(request, env) {
     }, { mask: ['clientPhone', 'clientAddress'] });
     return json({ ok: true, phone: phone || null, address: address || null });
   } else if (action === 'set-paid') {
+    // HIS ALONE (2026-10-15). Payroll pays a contractor a share of this
+    // figure, so a contractor typing it on their own case would be typing
+    // their own pay. Refused the way a case that is not theirs is.
+    if (!staff.isAdmin) return json({ error: 'No such case' }, 404);
     // WHAT THEY ACTUALLY PAID, recorded by hand (Eric, 2026-08-26). A case
     // from before caseRateCents existed has no price on it, and the app used
     // to infer today's price for it: a client who paid $175 read as $1,200,
@@ -10831,6 +10900,9 @@ async function handleCaseUpdate(request, env) {
     // with, so the two controls read the same way from the outside.
     return json({ ok: true, correctedFrom: priorCents, by });
   } else if (action === 'open-full') {
+    // His alone (2026-10-15), for the same reason as set-paid: it records
+    // money paid outside the app, and payroll pays a share of it.
+    if (!staff.isAdmin) return json({ error: 'No such case' }, 404);
     // HANDS-OFF, TURNED ON BY HAND (Eric, 2026-08-26: "where to start the
     // clock and send forms as if he paid for the enhancement through the
     // app").

@@ -203,6 +203,7 @@ export function advocateView(id, a = {}) {
     email: a.email || '',
     active: a.active === true,
     owner: a.owner === true,
+    sample: a.sample === true,
     credentials: a.credentials || '',
     bio: a.bio || '',
     primarySpecialty: a.primarySpecialty || '',
