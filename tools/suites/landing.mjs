@@ -96,7 +96,8 @@ check('A3 the five "you might need an advocate if" lines, in order',
 //   FAIL  A4 the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case's own page still says what happens after the call
 check('A4 the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case\'s own page still says what happens after the call',
   !/class="land-sec ruled how"/.test(IDX) && !/href="#how"/.test(IDX)
-  && f('public/js/service-about.js').includes('After the call you get a written report within 7 days.'));
+  // RE-PINNED 2026-10-15 (v7.40): Eric, "Make the advocacy case two weeks to deliver and update that timeframe anywhere else it's noted".
+  && f('public/js/service-about.js').includes('After the call you get a written report within 14 days.'));
 // The pre-v7.38 form, kept as a record of what the steps said: never evaluated.
 false && check('A4 (retired 2026-10-15) the four steps, his sentences from about.html and services.html, the free call gone',
   (() => {
@@ -122,7 +123,8 @@ check('A6 the price section: his line, the reframe, his three card sentences, th
     const s = sectionAt('class="land-sec options cost"');
     return s.includes('Three ways to work with me, each a flat price you see before you pay.')
       && s.includes('Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.')
-      && s.includes('One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 7 days.')
+      // RE-PINNED 2026-10-15 (v7.40): Eric, "Make the advocacy case two weeks to deliver and update that timeframe anywhere else it's noted". His sentence, with the new timeframe.
+      && s.includes('One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 14 days.')
       && s.includes('Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.')
       && s.includes('A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.');
   })());
@@ -148,12 +150,15 @@ console.log('\n--- B. the shape ---');
   // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works and Straight answers went; seven slots.
   // NEGATIVE CONTROL (run 2026-10-15, v7.38): the closing's class renamed `ruled closer` made this read
   //   FAIL  B1 the seven slots, in the order the sweep settled on
-  const order = ['land-sec hero', 'land-sec options cost', 'ruled needs', 'ruled who', 'ruled proof', 'id="numbers"', 'ruled closing'];
+  // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow". The numbers left main for the pull-up sheet; six slots.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.40): the closing's class renamed `ruled closer` made this read
+  //   FAIL  B1 the six slots, in the order the sweep settled on
+  const order = ['land-sec hero', 'land-sec options cost', 'ruled needs', 'ruled who', 'ruled proof', 'ruled closing'];
   const idx = order.map((k) => main.indexOf(k));
   // NEGATIVE CONTROL (run 2026-09-02): moving the price section above the
   // proof made this read
   //   FAIL  B1 the nine slots, in the order the sweep settled on
-  check('B1 the seven slots, in the order the sweep settled on',
+  check('B1 the six slots, in the order the sweep settled on',
     idx.every((v, i) => v >= 0 && (i === 0 || v > idx[i - 1])), idx.join());
 }
 {
@@ -270,10 +275,10 @@ check('B8 "This is a web app" moved to the footer, with its explainer',
 check('B9 the page is black on every device and says so to theme.js; a stored High contrast still wins',
   /<html lang="en" data-default-scheme="calm">/.test(IDX)
   && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(IDX)
-  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b7">/.test(IDX) // RE-PINNED 2026-10-15 (v7.38): the chat page's what-to-expect note moved the sheet to b7. // RE-PINNED 2026-10-15 (v7.37): the package pages' rules moved the sheet to b6. // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
+  && /<link rel="stylesheet" href="\/css\/landing\.css\?v=b8">/.test(IDX) // RE-PINNED 2026-10-15 (v7.40): the pull-up tab moved the sheet to b8. // RE-PINNED 2026-10-15 (v7.38): the chat page's what-to-expect note moved the sheet to b7. // RE-PINNED 2026-10-15 (v7.37): the package pages' rules moved the sheet to b6. // RE-PINNED 2026-10-14 (v7.36): the ring, the one-screen home, the menu's screens and the question box moved the sheet to b5. // RE-PINNED 2026-10-12 (v7.34): Eric, "Create a small 'join the waitlist' that's in a shining text bubble at the top right of the screen." The bubble's rules moved the sheet to b4. // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything." The new type moved the sheet to b3. // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". The banner's rules moved the sheet to b2.
   // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." The three package pages wear the landing's look too ("Keep the shiny blue/purple aesthetic throughout"); no other page does.
   && readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && !['index.html', 'priority-chat.html', 'advocacy-case.html', 'full-service.html'].includes(n)).every((n) => !/landing\.css/.test(f(`public/${n}`)))
-  && ['priority-chat', 'advocacy-case', 'full-service'].every((n) => /<link rel="stylesheet" href="\/css\/landing\.css\?v=b7">/.test(f(`public/${n}.html`)))
+  && ['priority-chat', 'advocacy-case', 'full-service'].every((n) => /<link rel="stylesheet" href="\/css\/landing\.css\?v=b8">/.test(f(`public/${n}.html`)))
   && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \{[\s\S]*?--bg: #0A0A0C;/.test(f('public/css/landing.css'))
   // RE-PINNED 2026-10-15 (v7.38): Eric, "everywhere should have this same aesthetic". theme.js no longer reads a page's
   // default: every page's default is the black look, and High contrast is the one other choice.

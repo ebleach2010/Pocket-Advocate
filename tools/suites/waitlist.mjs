@@ -322,7 +322,7 @@ console.log('\n--- D. the wiring ---');
     && /@keyframes wl-shine/.test(block)
     && (block.match(/animation:/g) || []).length === 3
     && /@media \(prefers-reduced-motion: no-preference\) \{\n(  body\.landing [^\n]*animation:[^\n]*\n){3}\}/.test(block)
-    && /landing\.css\?v=b7/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.38): b7. // RE-PINNED 2026-10-15 (v7.37): b6
+    && /landing\.css\?v=b8/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): b7. // RE-PINNED 2026-10-15 (v7.37): b6
 }
 {
   const a = f('public/js/admin.js');

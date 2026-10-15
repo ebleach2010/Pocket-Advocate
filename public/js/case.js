@@ -40,7 +40,7 @@ const STEPS = [
   ['confirmed', 'Confirmed. Upload labs and imaging before the call'],
   ['call', 'The discussion'],
   ['awaiting_report', 'Recording lands in your file'],
-  ['delivered', 'Report, within 7 days of the call'],
+  ['delivered', 'Report, within 14 days of the call'],
   ['closed', 'Closed. The file is yours forever'],
 ];
 const STATUS_RANK = { paid: 1, forms: 1, confirmed: 2, awaiting_report: 4, delivered: 6, closed: 7 };

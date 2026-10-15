@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.39';
+export const VERSION = '7.40';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.39';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // TWO WEEKS, AND THE NUMBERS PULLED UP (Eric, 2026-10-15: "Make the
+    // advocacy case two weeks to deliver and update that timeframe anywhere
+    // else it's noted" and "put my stats at the bottom of the landing page in
+    // brief"). Admin only.
+    version: '7.40',
+    quiet: true,
+    client: [],
+    admin: [
+      'An Advocacy Case report is now due within 14 days of the call, everywhere it is named: the home, the case page, the booking page under the agreement, the client\'s case and email, and your report clock. Cases already running keep the 7 days they were promised.',
+      'Your stats sit at the bottom of the home as a tab with a glowing arrow that eases up and down. Pull it up, or tap it, to see every figure.',
+    ],
+  },
   {
     // HIS PRICES, FROM HIS SETTINGS (Eric, 2026-10-15: "Change the price of
     // the mid tier to $2000. In the settings tab for admin let me adjust price

@@ -820,7 +820,7 @@ export function demoApi(role, store) {
         return ok({ ok: true, phone: phone || null, address: address || null });
       } else if (body.action === 'recording-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
-        const next = { ...c, reportDueAt: new Date(now.getTime() + 7 * 86400000) };
+        const next = { ...c, reportDueAt: new Date(now.getTime() + 14 * 86400000) };
         // Delivered stays delivered: a second recording on a finished case
         // restarts the clock without undoing the delivery, same as the Worker.
         if (c.status !== 'delivered') next.status = 'awaiting_report';

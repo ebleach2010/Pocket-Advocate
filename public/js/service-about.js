@@ -22,10 +22,10 @@ export const SERVICE_ABOUT = {
   case: {
     title: 'The Advocacy Case',
     price: '{case}, once',
-    tldr: 'One flat {case}. You talk, I dig in, and within a week of our call you hold a written plan your own doctors can act on. No hourly meter, no guessing what you get.',
+    tldr: 'One flat {case}. You talk, I dig in, and within two weeks of our call you hold a written plan your own doctors can act on. No hourly meter, no guessing what you get.',
     paragraphs: [
       'An Advocacy Case is me taking your whole medical story, the records, the labs, the half-answers, the years of going in circles, and turning it into something you can act on. It starts with a private call, phone or video, usually about an hour. Before it, you upload whatever you have. I read all of it properly before we ever speak.',
-      'After the call you get a written report within 7 days. It organizes your history, names the open questions, and lays out the next steps worth discussing with your care team: the referral worth chasing, the result worth a second look, the question worth asking by name. The call is recorded and saved in your private file so nothing said gets lost. Both are yours to keep, forever.',
+      'After the call you get a written report within 14 days. It organizes your history, names the open questions, and lays out the next steps worth discussing with your care team: the referral worth chasing, the result worth a second look, the question worth asking by name. The call is recorded and saved in your private file so nothing said gets lost. Both are yours to keep, forever.',
       'Your case page keeps everything in one drawer: the report, the recording, your documents, our whole conversation. Your price is frozen the moment you book, so later price changes never touch you. If I ever have to pause, every deadline of mine stops with the pause and the time is put back. And when the case closes, nothing is taken away: the file stays yours, readable and downloadable, for good.',
       'What I do not sell is an outcome. I cannot promise a diagnosis, an overturned denial, or a doctor’s decision, and anyone who promises those is selling you something. You are paying for the work: I read properly, I tell you the truth about what I see, I meet the deadlines that are mine, and I say so plainly when something is not going your way.',
     ],
@@ -33,7 +33,7 @@ export const SERVICE_ABOUT = {
       'A private call, phone or video, about an hour, recorded and saved for you',
       '5-6 hours of research and reporting behind every case',
       'I read every record you share before we speak: labs, imaging, notes, photos',
-      'A written report within 7 days of the call, next steps first',
+      'A written report within 14 days of the call, next steps first',
       'A private case page with chat, uploads, and everything in one place',
       'A shared list for our call that is open from day one',
       'Chat with me directly: it opens the week before our call, or right away for a one-time $50',

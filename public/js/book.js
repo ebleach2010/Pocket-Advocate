@@ -652,7 +652,7 @@ function renderPayment() {
       <p class="price-line">
         <span class="eyebrow">Advocacy Case</span>
         <span class="price" data-case-price>$${money(caseCents)}</span>
-        <span class="included" data-included>This includes our call and your written report within 7 days.</span>
+        <span class="included" data-included>This includes our call and your written report within 14 days.</span>
       </p>
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>

@@ -75,7 +75,7 @@ export const CHAT = [
   [-14, 8, 0, 'joe', 'Call is at 10 today, right? Video.'],
   [-14, 8, 5, 'eric', 'Yes. Have the ER paper and the MRI report open. We will walk the whole timeline.'],
   [-14, 11, 20, 'joe', 'That was the first time anyone let me tell the whole story. Thank you.'],
-  [-14, 11, 45, 'eric', 'That is the job. Report in seven days. In the meantime the eye clinic is the priority. Did you call?'],
+  [-14, 11, 45, 'eric', 'That is the job. Report in two weeks. In the meantime the eye clinic is the priority. Did you call?'],
   [-13, 9, 30, 'joe', 'Called. The eye clinic says the dye test needs prior authorization from Basin Health and the earliest slot is in three weeks.'],
   [-13, 9, 50, 'eric', 'Three weeks is not acceptable with this picture. I will call the clinic myself and ask them to submit the authorization as urgent. Do I have your permission to speak to them on your behalf? Say yes here and I will log it.'],
   [-13, 9, 52, 'joe', 'Yes. Full permission.'],

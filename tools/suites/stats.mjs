@@ -70,7 +70,10 @@ function konst(name) {
   return m[0];
 }
 const LIFTED = [
-  konst('STATS_DOC'), konst('STATS_PROMISE_MS'), konst('STATS_FLOOR'), konst('STATS_REFRESH_MS'),
+  // RE-PINNED 2026-10-15 (v7.40): the one 7-day constant became the promise each case was given (Eric, "Make the
+  // advocacy case two weeks to deliver"): 7 days for a call before the change, REPORT_DAYS after.
+  konst('STATS_DOC'), konst('REPORT_DAYS'), konst('REPORT_DAYS_FROM_AT'), konst('REPORT_DAYS_BEFORE'), sfn('statsPromiseMs'),
+  konst('STATS_FLOOR'), konst('STATS_REFRESH_MS'),
   sfn('holdPeriodsOf'), konst('insideHold'), konst('overlapsHold'), sfn('heldWithin'),
   sfn('publicStatsFrom'), sfn('publicStatsView'), sfn('json'),
   fn('computePublicStats'), fn('handleStats'), fn('handleStatsRecompute'), fn('handleHold'),
@@ -101,7 +104,7 @@ deps.tryGet = async (env, p) => { try { return await deps.getDoc(env, p); } catc
 const build = new Function(...Object.keys(deps),
   `${LIFTED}
    return { holdPeriodsOf, heldWithin, publicStatsFrom, publicStatsView, computePublicStats,
-            handleStats, handleStatsRecompute, handleHold, STATS_DOC, STATS_FLOOR, STATS_PROMISE_MS };`);
+            handleStats, handleStatsRecompute, handleHold, STATS_DOC, STATS_FLOOR, statsPromiseMs, REPORT_DAYS_FROM_AT };`);
 const W = build(...Object.values(deps));
 const env = {};
 const reset = () => { docs = new Map(); reads = []; writes = []; pushes = []; adminOk = true; };
@@ -179,6 +182,20 @@ check('A5 reports: on time, on time because the hold stopped the clock, late; th
   const over = { ...cases[2], hold: { totalMs: 400 * 86_400_000 } };
   const d2 = W.publicStatsFrom({ cases: [over], threads: [], now: NOW });
   check('A7 and never past the span itself', d2.reportsOnTime === 1 && W.heldWithin(0, 10, [[-5, 50]]) === 10);
+}
+{
+  // Eric, 2026-10-15: "Make the advocacy case two weeks to deliver". A case is judged by the promise it was given:
+  // a report ten days after a call before the change was late against its 7; ten days after a call since is on time.
+  const mk = (start) => ({ id: start, createdAt: start, appointment: { start }, reportDeliveredAt: new Date(new Date(start).getTime() + 10 * 86_400_000).toISOString(), work: { seconds: 0 } });
+  const before = W.publicStatsFrom({ cases: [mk('2026-10-01T16:00:00Z')], threads: [], now: T('2026-12-01T00:00:00Z') });
+  const after = W.publicStatsFrom({ cases: [mk('2026-10-20T16:00:00Z')], threads: [], now: T('2026-12-01T00:00:00Z') });
+  const late = W.publicStatsFrom({ cases: [{ ...mk('2026-10-20T16:00:00Z'), reportDeliveredAt: '2026-11-05T16:00:00Z' }], threads: [], now: T('2026-12-01T00:00:00Z') });
+  // NEGATIVE CONTROL (run 2026-10-15): statsPromiseMs made to answer 14 days for every case made this read
+  //   FAIL  A5b each report is judged by the promise its case was given: 7 days for a call before the change to two weeks, 14 after
+  check('A5b each report is judged by the promise its case was given: 7 days for a call before the change to two weeks, 14 after',
+    before.reportsOnTime === 0 && before.reportsTotal === 1 && after.reportsOnTime === 1 && late.reportsOnTime === 0
+    && W.statsPromiseMs(T('2026-10-14T23:59:00Z')) === 7 * 86_400_000 && W.statsPromiseMs(T('2026-10-15T00:00:00Z')) === 14 * 86_400_000,
+    JSON.stringify([before.reportsOnTime, after.reportsOnTime, late.reportsOnTime]));
 }
 check('A8 hours logged is the rounded total of every case clock',
   D.hoursLogged === 36, String(D.hoursLogged));
@@ -323,16 +340,24 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
   // RE-PINNED 2026-10-04 (v7.25): PR 1 became the hub, and the old landing moved to admin-pr1-landing.html, so it reads that
   // RE-PINNED 2026-10-06 (v7.30): Eric, "Revert back to PR 1. Remove PR 420. Patient advocacy only." The landing is public at index.html again.
   const idx = f('public/index.html');
-  const strip = idx.slice(idx.indexOf('id="numbers"'), idx.indexOf('The whole ledger') + 40);
+  // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow ... When they grab it and swipe up it shows all of my stats." The strip nobody could reach became the pull-up sheet.
+  const strip = idx.slice(idx.indexOf('<div class="stats-sheet"'), idx.indexOf('How these are measured</a>') + 40);
   const fresh = [page, js, strip];
   check('D1 the page carries the four tiles, the ledger, the floor line and loads stats.js',
     ['replyMedian', 'withinHour', 'reports', 'hours', 'messages', 'milestones', 'logged', 'cases', 'stamp']
       .every((k) => page.includes(`data-stat="${k}"`))
     && /data-ledger/.test(page) && /data-stat-floor/.test(page) && /src="\/js\/stats\.js"/.test(page));
-  check('D2 the landing strip is hidden until there are figures, and every tile opens the ledger',
-    /id="numbers" data-numbers-strip hidden/.test(strip)
-    && (strip.match(/<a class="tile" href="\/stats\.html">/g) || []).length === 4
-    && /data-numbers-strip/.test(code('public/js/stats.js')) && /import\('\/js\/stats\.js'\)/.test(idx));
+  // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow ... When they grab it and swipe up it shows all of my stats."
+  // NEGATIVE CONTROL (run 2026-10-15, v7.40): the tab's `hidden` taken off in index.html made this read
+  //   FAIL  D2 the home's numbers sit in a pull-up sheet: the tab waits for real figures, the sheet waits to be opened, and it carries all four tiles, the ledger and the way to how they are measured
+  check('D2 the home\'s numbers sit in a pull-up sheet: the tab waits for real figures, the sheet waits to be opened, and it carries all four tiles, the ledger and the way to how they are measured',
+    /<button type="button" class="stats-tab" data-stats-tab aria-controls="stats-sheet" aria-expanded="false" hidden>/.test(idx)
+    && /<div class="stats-sheet" id="stats-sheet" data-stats-sheet role="dialog" aria-modal="true" aria-labelledby="stats-sheet-h" hidden>/.test(idx)
+    && ['replyMedian', 'withinHour', 'reports', 'hours', 'messages', 'milestones', 'logged', 'cases', 'stamp'].every((k) => strip.includes(`data-stat="${k}"`))
+    && /data-stat-floor hidden/.test(strip) && /<ul class="ledger" data-ledger>/.test(strip)
+    && /<a class="pill" href="\/stats\.html">How these are measured<\/a>/.test(strip)
+    && !/id="numbers"|data-numbers-strip/.test(idx + code('public/js/stats.js'))
+    && /import\('\/js\/stats\.js'\)/.test(idx) && /<script type="module" src="\/js\/stats-tab\.js\?v=1"><\/script>/.test(idx));
   check('D3 the footer on both pages lists By the numbers',
     /<a href="\/stats\.html">By the numbers<\/a>/.test(idx) && /<a href="\/stats\.html">By the numbers<\/a>/.test(page));
   // NEGATIVE CONTROL (run 2026-09-02): "paused cases are left out" typed into stats.html made this read
@@ -344,7 +369,11 @@ const QUIET = [/paus/i, /\bhold\b/i, /crash/i, /health of/i, /neurolog/i, /unava
   check('D6 the page copy is the approved mock\'s, word for word',
     page.includes('How I actually work, measured.')
     && page.includes('Not promises. Reply times, hours, and reports delivered on time, measured across every case and updated daily.')
-    && page.includes('Reply time is the gap between a client\'s message and my answer, across every message on every case. Reports count as on time when they land inside the 7 days promised at booking.')
+    // RE-PINNED 2026-10-15 (v7.40): Eric, "Make the advocacy case two weeks to deliver". The promise is no longer one
+    // number for every case, so the line names the time promised at booking.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.40): "the time promised at booking" put back to "the 7 days promised at booking" made this read
+    //   FAIL  D6 the page copy is the approved mock's, word for word
+    && page.includes('Reply time is the gap between a client\'s message and my answer, across every message on every case. Reports count as on time when they land inside the time promised at booking.')
     && page.includes('Nothing here is per client. Every figure is a total or a median across all cases, so no one can be picked out of it.'));
   // NEGATIVE CONTROL (run 2026-09-02): an `import { db } from './firebase.js'` added to stats.js made this read
   //   FAIL  D7 stats.js reads one public route and never a case document

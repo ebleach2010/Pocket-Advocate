@@ -58,8 +58,9 @@ console.log('\n--- A. the slots and the doors, 390px ---');
   // RE-PINNED 2026-10-11 (v7.33): Eric, "change the font to something semibold. You tend to use the same font for everything."
   ok('his headline, in Sora, on black', shape.h1 === 'Go into your next appointment with a plan.' && /^Sora/.test(shape.serif) && shape.scheme === 'calm' && shape.bg === 'rgb(10, 10, 12)', `${shape.scheme} / ${shape.bg} / ${shape.serif}`);
   // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works and Straight answers went.
-  ok('the six headings after the hero, in order, the options first',
-    shape.h2s.join('|') === "What it costs|You might need an advocate if|Who you're hiring|What clients say|By the numbers|Ready when you are.", shape.h2s.join('|'));
+  // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow". The numbers left the screens for the pull-up sheet, outside main.
+  ok('the five headings after the hero, in order, the options first',
+    shape.h2s.join('|') === "What it costs|You might need an advocate if|Who you're hiring|What clients say|Ready when you are.", shape.h2s.join('|'));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the cards is a door.
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
@@ -107,13 +108,14 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     cards: document.querySelectorAll('#reviews-track .review').length,
     themes: document.querySelectorAll('#themes-list li').length,
     write: document.getElementById('g-write').getAttribute('href'),
-    stats: !document.querySelector('#numbers').hidden,
-    figs: [...document.querySelectorAll('#numbers [data-stat]')].map((e) => e.textContent),
+    // RE-PINNED 2026-10-15 (v7.40): the strip is the pull-up tab and its sheet now.
+    stats: !document.querySelector('[data-stats-tab]').hidden,
+    figs: [...document.querySelectorAll('#stats-sheet .tile [data-stat]')].map((e) => e.textContent),
   }));
   ok('the header says 5.0 and counts the list; the cards are that list twice (the loop), minus the wordless one',
     proof.avg === '5.0' && proof.count >= 5 && proof.count === proof.count2 && proof.cards === 2 * (proof.count - 1), JSON.stringify(proof));
   ok('three theme lines, the write link on Google', proof.themes === 3 && /g\.page/.test(proof.write));
-  ok('the stats strip is on with real figures', proof.stats && proof.figs.join('|') === '3 min|84%|4 of 4|61 hrs', proof.figs.join('|'));
+  ok('the numbers tab is on, and its sheet carries the real figures', proof.stats && proof.figs.join('|') === '3 min|84%|4 of 4|61 hrs', proof.figs.join('|'));
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The strip lives on its own screen now; open it first.
   await page.evaluate(() => { location.hash = 'proof'; });
   await page.waitForTimeout(500);

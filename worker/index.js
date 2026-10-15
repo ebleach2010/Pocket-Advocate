@@ -130,6 +130,14 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 // the mid tier to $2000", then "*2100". From then on he sets every price
 // himself from the settings cog (handleSetRates); this is the seed.
 const CASE_PRICE_CENTS = 210000;
+// The written report lands within this many days of the call. Two weeks on
+// Eric's word, 2026-10-15: "Make the advocacy case two weeks to deliver and
+// update that timeframe anywhere else it's noted." It was 7. A case whose call
+// came before the change keeps the 7 it was promised (the stats judge it by
+// that), and a clock already running is never rewritten.
+const REPORT_DAYS = 14;
+const REPORT_DAYS_FROM_AT = Date.parse('2026-10-15T00:00:00Z');
+const REPORT_DAYS_BEFORE = 7;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
 // ~1.5 hours with prep, so $325 is $217/hr. $325 on Eric's word,
@@ -2129,7 +2137,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-his-prices';
+const BUILD_TAG = 'v2026-10-15-two-weeks';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2137,7 +2145,7 @@ const BUILD_TAG = 'v2026-10-15-his-prices';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.39';
+const VERSION = '7.40';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9358,13 +9366,13 @@ async function handleAdminLeads(request, env) {
  *
  * The strongest competitors win on quantified proof, and none of them show
  * numbers measured by the practice itself. These are: reply times, hours,
- * reports against the 7-day promise, milestones, all totals or medians across
+ * reports against the promise each case was given, milestones, all totals or medians across
  * every case ever. Nothing per case, no names, no dates that identify a case.
  *
  * THE PAUSE RULE, SAID HERE AND NOWHERE A CLIENT READS: a paused case
  * contributes nothing while it is paused. A reply gap that overlaps a hold
- * window is dropped, a message inside one is not counted, and the 7-day
- * clock on a report stops for the length of any hold inside it. The page
+ * window is dropped, a message inside one is not counted, and the report
+ * clock stops for the length of any hold inside it. The page
  * says "measured across every case, updated daily" and nothing about why a
  * window might be missing. Eric's word: "not to be explicitly mentioned".
  *
@@ -9373,7 +9381,10 @@ async function handleAdminLeads(request, env) {
  * over fixtures.
  */
 const STATS_DOC = 'stats/public';
-const STATS_PROMISE_MS = 7 * 86_400_000;
+/** The report promise a case was given: 7 days for a call before the change to two weeks, REPORT_DAYS after. */
+function statsPromiseMs(startMs) {
+  return (startMs < REPORT_DAYS_FROM_AT ? REPORT_DAYS_BEFORE : REPORT_DAYS) * 86_400_000;
+}
 const STATS_FLOOR = 3;
 const STATS_REFRESH_MS = 23 * 3600_000;
 
@@ -9445,7 +9456,7 @@ function publicStatsFrom({ cases, threads, now = Date.now() }) {
       // credited in full, capped at the span itself.
       const held = periods.length ? heldWithin(start, done, periods)
         : Math.min(Math.max(0, Number(c.hold?.totalMs) || 0), done - start);
-      if (done - start - held <= STATS_PROMISE_MS) reportsOnTime++;
+      if (done - start - held <= statsPromiseMs(start)) reportsOnTime++;
     }
     for (const m of c.milestones || []) {
       milestones.total++;
@@ -10422,28 +10433,29 @@ async function handleCaseUpdate(request, env) {
       { mask: ['formsOnFileAt'] });
   } else if (action === 'recording-uploaded') {
     // The call happened: start the report clock. Admin-side the deadline is a
-    // strict 7 calendar days; the client is told "7 business days, some take
-    // slightly longer" (Eric's leeway, 2026-07-13).
+    // strict REPORT_DAYS calendar days; the client is told the same number,
+    // with "some take slightly longer" (Eric's leeway, 2026-07-13). Two weeks
+    // since 2026-10-15; it was 7.
     if (doc.data.status === 'closed') return json({ error: 'Case is closed.' }, 409);
     // His own case: the recording is filed, and no clock starts and nobody
-    // is written to. There is no 7-day promise to himself.
+    // is written to. There is no report promise to himself.
     if (doc.data.self) return json({ ok: true, self: true });
     const alreadyStarted = !!doc.data.reportDueAt;
-    const fields = { reportDueAt: new Date(now.getTime() + 7 * 86_400_000) };
+    const fields = { reportDueAt: new Date(now.getTime() + REPORT_DAYS * 86_400_000) };
     if (doc.data.status !== 'delivered') fields.status = 'awaiting_report';
     await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
     if (!alreadyStarted) {
       await sendEmail(env, {
         to: doc.data.clientEmail,
-        subject: 'Great meeting — your report is on the way',
+        subject: 'Great meeting. Your report is on the way',
         html: `<p>It was great talking with you today. Your discussion is done,
           and the recording will be in your case file for you to revisit anytime.</p>
           <p>I'm now putting together your written report. Expect it within
-          <strong>7 business days</strong> — some reports take slightly longer
+          <strong>${REPORT_DAYS} days</strong>. Some reports take slightly longer
           depending on complexity, and yours will be worth the care.</p>
           <p>When the report lands, you'll have 48 hours to look it over and ask
-          any questions in your case chat before the case wraps up. Your file —
-          report, recording, everything — stays yours forever either way.</p>
+          any questions in your case chat before the case wraps up. Your file
+          (report, recording, everything) stays yours forever either way.</p>
           <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
       });
     }

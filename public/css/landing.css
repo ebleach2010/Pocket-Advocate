@@ -753,3 +753,131 @@ body.landing .pkg-callout {
 }
 body.landing .pkg-callout p { margin: 0; color: var(--soft); line-height: 1.55; }
 body.landing .pkg-callout .pkg-callout-h { color: var(--ink); font-family: 'Sora', 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif; font-size: 1.08rem; font-weight: 600; }
+
+/* ---- BY THE NUMBERS, PULLED UP (Eric, 2026-10-15) ----------------------
+   A tab at the foot of the home, left of the question bubble, with the
+   brief on it and an arrow in the waitlist bubble's own gradient, glow and
+   sheen that eases up and down once every 1.5 seconds. Pulled up (or
+   tapped) it opens a sheet with every figure. The motion is only for people
+   who have not asked for less of it. */
+body.landing .stats-tab {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left));
+  right: calc(max(16px, env(safe-area-inset-right)) + 66px);
+  bottom: 0;
+  z-index: 4;
+  display: grid;
+  justify-items: center;
+  gap: .2rem;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: .55rem .9rem calc(.65rem + env(safe-area-inset-bottom));
+  border: 1px solid var(--edge-lit);
+  border-bottom: 0;
+  border-radius: 20px 20px 0 0;
+  background: rgba(19, 19, 23, .94);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, .45);
+  color: var(--ink);
+  font: inherit;
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+body.landing .stats-tab[hidden] { display: none; }
+body.landing .stats-tab:focus-visible { outline: 3px solid #FFFFFF; outline-offset: 2px; }
+body.landing .stats-arrow {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
+  color: #02161A;
+  box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 26px rgba(61, 220, 245, .32);
+}
+body.landing .stats-arrow svg { width: 18px; height: 18px; transform: rotate(-90deg); stroke-width: 2.4; }
+body.landing .stats-arrow::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 38%, rgba(255, 255, 255, .8) 50%, transparent 62%) no-repeat;
+  background-size: 260% 100%;
+  background-position: 130% 0;
+  pointer-events: none;
+}
+body.landing .stats-brief {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--dim);
+  font-size: .8rem;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+body.landing .stats-label {
+  margin-top: .15rem;
+  color: var(--ink);
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+/* Room under the page for the tab, so it never sits on top of a button. */
+body.landing:has(.stats-tab:not([hidden])) main { padding-bottom: 96px; }
+@media (prefers-reduced-motion: no-preference) {
+  body.landing .stats-arrow { animation: stats-bob 1.5s ease-in-out infinite, wl-glow 3s ease-in-out infinite; }
+  body.landing .stats-arrow::before { animation: wl-shine 3.6s ease-in-out infinite; }
+}
+@keyframes stats-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+/* Out of the way while a menu screen is open over the home. */
+body.landing:has(main > .land-sec.ruled:target, .site-foot:target) .stats-tab { display: none; }
+
+body.landing .stats-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(0, 0, 0, .55);
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+body.landing .stats-sheet[hidden] { display: none; }
+body.landing .stats-sheet.open { opacity: 1; }
+body.landing .stats-card {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 640px;
+  max-height: 88svh;
+  margin: 0 auto;
+  overflow-y: auto;
+  padding: .6rem 1.1rem calc(1.2rem + env(safe-area-inset-bottom));
+  border: 1px solid var(--edge-lit);
+  border-bottom: 0;
+  border-radius: 22px 22px 0 0;
+  background: #131317;
+  color: var(--ink);
+  transform: translateY(100%);
+  transition: transform .34s cubic-bezier(.2, .8, .2, 1);
+}
+body.landing .stats-sheet.open .stats-card { transform: translateY(0); }
+body.landing .stats-sheet.dragging .stats-card { transition: none; }
+body.landing .stats-grab { touch-action: none; cursor: grab; }
+body.landing .stats-grip {
+  display: block;
+  width: 44px;
+  height: 5px;
+  margin: 0 auto .7rem;
+  border-radius: 3px;
+  background: linear-gradient(110deg, #3DDCF5 0%, #B9A6FF 100%);
+}
+body.landing .stats-head { display: flex; align-items: center; justify-content: space-between; gap: .8rem; }
+body.landing .stats-head h2 { margin: 0; }
+body.landing .stats-card .numbers { margin: .9rem 0 .6rem; }
+body.landing .stats-card .ledger { margin: .4rem 0 .8rem; }

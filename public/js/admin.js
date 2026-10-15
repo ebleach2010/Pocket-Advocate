@@ -1,5 +1,5 @@
 // Admin case list: every case, status badges, and the "report due in N days"
-// countdown that keeps the 7-day SLA from silently slipping (SPEC §F).
+// countdown that keeps the report promise (14 days since 2026-10-15) from silently slipping (SPEC §F).
 
 import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';

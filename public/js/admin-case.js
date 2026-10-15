@@ -2684,7 +2684,7 @@ function paintOverview(pane) {
       <summary>✓ Call done, report sent</summary>
       <div class="mgmt-body">
         <div class="actions" style="margin-top:.3rem;">
-          <button class="btn secondary" data-action="recording-uploaded">Call done: start the 7-day report clock</button>
+          <button class="btn secondary" data-action="recording-uploaded">Call done: start the 14-day report clock</button>
           <button class="btn secondary" data-action="report-uploaded">Report delivered</button>
           ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
         </div>
@@ -3177,7 +3177,7 @@ function paintFiles(pane) {
     // only while it is chosen.
     const rec = cat.value === REC_PICK;
     fileEl.accept = rec ? REC_ACCEPT : DOC_ACCEPT;
-    if (rec) { note.textContent = 'Starts the 7-day report clock.'; return; }
+    if (rec) { note.textContent = 'Starts the 14-day report clock.'; return; }
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
     note.textContent = c.action === 'report-uploaded'
       ? 'Marks the case delivered and starts their 48 hours to ask about it.'
@@ -3277,7 +3277,7 @@ async function milestone(action, btn) {
       say('miles', 'That went through, but the case has not moved. Try once more.', { tone: 'warn' });
     } else {
       say('miles', action === 'recording-uploaded'
-        ? 'Marked. Their page now shows the report as due, and the seven days are running.'
+        ? 'Marked. Their page now shows the report as due, and the 14 days are running.'
         : action === 'report-uploaded'
           ? 'Marked. Their page now says the report is delivered.'
           : 'Done.');
@@ -4147,7 +4147,7 @@ function contactBits(phone, address) {
 
 /**
  * Everything that matters, one section: appointment, session type, money,
- * the report clock (strict 7 calendar days, loud as it tightens), follow-up
+ * the report clock (strict 14 calendar days since 2026-10-15, loud as it tightens), follow-up
  * state, and any payment the client still owes.
  */
 function infoBar(c, mtFmt, start, due) {
@@ -4226,7 +4226,7 @@ function infoBar(c, mtFmt, start, due) {
   else if (holdNote)
     row('PAID', holdNote, 'var(--orange)');
 
-  // The report clock — strict 7 calendar days on this side of the counter.
+  // The report clock: strict 14 calendar days on this side of the counter (7 before 2026-10-15).
   if (c.status === 'delivered' || c.status === 'closed')
     row('REPORT', c.status === 'closed' ? 'delivered · case closed' : 'DELIVERED', 'var(--cyan)');
   else if (due !== null)

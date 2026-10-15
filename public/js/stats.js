@@ -6,11 +6,11 @@
 //
 // The shipped text is the "not measured yet" state. A fetch that fails, or
 // a server that has not measured anything yet, leaves it in place; the
-// landing page's strip stays hidden until there are real figures behind it.
+// home's pull-up tab (stats-tab.js) stays hidden until there are real figures.
 
 const money = (n) => Number(n).toLocaleString('en-US');
 
-function replyText(min) {
+export function replyText(min) {
   if (min === null || min === undefined) return null;
   if (min < 1) return 'under a minute';
   if (min < 60) return `${min} min`;
@@ -98,8 +98,6 @@ export async function paintStats(root = document) {
   if (s.computedAt) {
     set(root, 'stamp', `Measured across every case${s.since ? ` since ${s.since}` : ''}. Updated daily; last updated ${agoText(s.computedAt)}.`);
   }
-  // The landing strip shows only when there is something real behind it.
-  for (const el of root.querySelectorAll('[data-numbers-strip]')) el.hidden = !(measured && !s.floor);
 }
 
 paintStats().catch(() => {});

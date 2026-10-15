@@ -266,6 +266,30 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### Two weeks, and the numbers pulled up (2026-10-15, v7.40)
+
+Eric: "Make the advocacy case two weeks to deliver and update that timeframe
+anywhere else it's noted, including the agreement when they sign up." The
+Worker's report clock is one constant, REPORT_DAYS = 14, and every sentence
+about the report names 14 days, the booking page's line under the agreement
+included (the agreement text itself never stated a timeframe). The stats
+judge each report by the promise its case was given: 7 days for a call before
+the change, 14 after. And: "put my stats at the bottom of the landing page in
+brief; it will be a tab with an arrow that glows like the waitlist button and
+softly eases up and down ... every 1.5 seconds. When they grab it and swipe up
+it shows all of my stats." The strip behind the menu became a pull-up tab
+(stats-tab.js) and a sheet with every figure.
+
+New suites `twoweeks.mjs` (3 checks: the clock and the email read off the
+Worker; every timeframe sentence; nothing anywhere still says 7) and
+`numbers-tab.mjs` (6 checks: the brief and the pull's settle rule imported and
+run; the motion and glow read against the waitlist bubble's own rules). New
+check `stats.mjs` A5b runs the per-case promise. Re-pinned with dated notes and
+fresh controls: `stats.mjs` D2 and D6 (and its harness lifts the new rule),
+`landing.mjs` A4, A6, B1 and the stylesheet stamp, `packages.mjs` C1,
+`waitlist.mjs` D7, release R1, and `drive-stats.mjs` section A, which now
+grabs and pulls the tab.
+
 ### His prices, from his settings (2026-10-15, v7.39)
 
 Eric: "Change the price of the mid tier to $2000. In the settings tab for
