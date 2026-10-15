@@ -11,10 +11,23 @@ const money = (cents) => (cents / 100).toLocaleString('en-US',
 
 let inflight = null;
 
+/**
+ * On a demo host the shim answers /api/rates from the demo's own saved prices,
+ * so a price changed in the demo's settings reads back on every page the way
+ * the real one does. The same wait as waitlist.js; production never imports.
+ */
+async function demoReady() {
+  try {
+    if (/(^|\.)thepocketadvocates\.com$/i.test(location.hostname)) return;
+    const q = new URLSearchParams(location.search).get('demo');
+    if ((q && q !== '0') || sessionStorage.getItem('pa-demo')) await import('./firebase.js');
+  } catch { /* not the demo, or storage blocked: ask the real route */ }
+}
+
 /** { caseCents, addonCents } from the Worker, or null if it cannot be reached. */
 export function rates() {
   if (!inflight) {
-    inflight = fetch('/api/rates')
+    inflight = demoReady().then(() => fetch('/api/rates'))
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => (d && Number(d.caseCents) > 0 ? d : null))
       .catch(() => null);

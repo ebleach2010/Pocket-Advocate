@@ -16,7 +16,7 @@
 import { fileURLToPath as __f } from 'node:url';
 import { dirname as __d, join as __j } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { SERVICE_ABOUT } from '../../public/js/service-about.js';
+import { SERVICE_ABOUT, priced } from '../../public/js/service-about.js';
 
 const __REPO = __j(__d(__f(import.meta.url)), '..', '..');
 const f = (p) => readFileSync(__j(__REPO, p), 'utf8');
@@ -35,12 +35,13 @@ const PAGES = [
 ];
 const PKG = f('public/js/package-page.js');
 const lift = (name) => (PKG.match(new RegExp(`export function ${name}\\([\\s\\S]*?\\n\\}`)) || [''])[0].replace('export ', '');
-const { statusHtml, bodyHtml, PAGE_COPY } = new Function(`
+// The copy's prices are live spots since 2026-10-15 (v7.39); bodyHtml calls service-about's priced(), handed in here.
+const { statusHtml, bodyHtml, PAGE_COPY } = new Function('priced', `
   ${(PKG.match(/export const PAGE_COPY = [^;]+;/) || [''])[0].replace('export ', '')}
   const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   ${lift('statusHtml')}
   ${lift('bodyHtml')}
-  return { statusHtml, bodyHtml, PAGE_COPY };`)();
+  return { statusHtml, bodyHtml, PAGE_COPY };`)(priced);
 
 console.log('\n--- A. the doors ---');
 {
@@ -85,9 +86,14 @@ for (const p of PAGES) {
 {
   // Each page paints its own About entry, and that entry's words alone.
   const painted = PAGES.map((p) => bodyHtml(SERVICE_ABOUT[PAGE_COPY[p.pkg]]));
-  const own = PAGES.every((p, i) => painted[i].includes(SERVICE_ABOUT[PAGE_COPY[p.pkg]].tldr.replace(/'/g, '&#39;').slice(0, 40)));
+  // RE-PINNED 2026-10-15 (v7.39): Eric, "let me adjust price for each effective immediately". A TL;DR's price is a
+  // live spot now, so each page's TL;DR is compared the way the page paints it, through priced().
+  // NEGATIVE CONTROL (run 2026-10-15, v7.39): priced() taken off package-page's TL;DR line made this read
+  //   FAIL  B2 each page paints its own package's TL;DR, details and points, and never another's
+  const tl = (k) => priced(SERVICE_ABOUT[k].tldr.replace(/'/g, '&#39;')).slice(0, 60);
+  const own = PAGES.every((p, i) => painted[i].includes(tl(PAGE_COPY[p.pkg])));
   const notOthers = PAGES.every((p, i) => PAGES.filter((o) => o !== p)
-    .every((o) => !painted[i].includes(SERVICE_ABOUT[PAGE_COPY[o.pkg]].tldr.replace(/'/g, '&#39;').slice(0, 40))));
+    .every((o) => !painted[i].includes(tl(PAGE_COPY[o.pkg]))));
   // NEGATIVE CONTROL (run 2026-10-15): PAGE_COPY's chat pointed at 'case' made this read
   //   FAIL  B2 each page paints its own package's TL;DR, details and points, and never another's
   check('B2 each page paints its own package\'s TL;DR, details and points, and never another\'s',

@@ -266,6 +266,28 @@ pins which calls retry and which never do. Both proven able to fail with their c
 three harness shims that lift a throwing site (charge, and the policy and
 handover harnesses in selfcase) gained `readFailedError`.
 
+### His prices, from his settings (2026-10-15, v7.39)
+
+Eric: "Change the price of the mid tier to $2000. In the settings tab for
+admin let me adjust price for each effective immediately." Then "*2100". The
+case seed is 210000 under a new pricing stamp, so the deploy moves it. The
+setter that sat folded at the foot of the Clients page is a Prices section in
+the settings cog (chat, case, Full-Service, follow-up, and the hourly warning
+line), read from the server before it can be edited and painted from the
+server's answer after a save. Its rails were widened (the old max was the
+Full-Service price), and the climb after a booking never pulls a price he set
+above its ceiling back down. Prices typed into the About copy became live
+spots, so nothing on a page goes stale when he saves. On a demo host rates.js
+waits for the shim, so a demo save reads back on every page.
+
+New suite `prices.mjs` (10 checks: the setter, the climb and the settings
+parser lifted and run; no typed price where a live one belongs) and new drive
+`drive-prices.mjs` (the cog end to end at 390 and 320px). Re-pinned with dated
+notes and fresh controls: `pricing.mjs` P1 and P2d, `packages.mjs` B2 (and its
+harness hands in `priced`), `landing.mjs` D8, `defects.mjs` (the Clients page
+reads one extra, not two), `tighten.mjs` W3, and release R1. Every new check
+proven able to fail with its control recorded.
+
 ### His letter, a clear cancel, chat search, one look, tightened (2026-10-15, v7.38)
 
 Five asks in one release. The chat page is Eric's letter word for word, with

@@ -275,9 +275,13 @@ console.log('\n--- W. Eric\'s side ---');
 
   // NEGATIVE CONTROL (run 2026-10-15): doorsBlock moved back ahead of the shelf made this read
   //   FAIL  W3 the rarely used doors sit under the shelf, just above the rate
-  check('W3 the rarely used doors sit under the shelf, just above the rate',
+  // RE-PINNED 2026-10-15 (v7.39): the rate panel moved into the settings cog, so the doors sit just above the
+  // quiet tools (the voice study and the revenue).
+  // NEGATIVE CONTROL (run 2026-10-15, v7.39): doorsBlock moved back ahead of the shelf made this read
+  //   FAIL  W3 the rarely used doors sit under the shelf, just above the quiet tools
+  check('W3 the rarely used doors sit under the shelf, just above the quiet tools',
     /const doorsBlock = `<div class="open-doors">/.test(ADMIN)
-    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*doorsBlock \+\s*`<div class="cmd-quiet">` \+ rateBlock/.test(ADMIN)
+    && /section\('FORMER CLIENTS: CLOSED'[\s\S]*?\)\)\) \+\s*doorsBlock \+\s*`<div class="cmd-quiet">` \+ voiceBlock/.test(ADMIN)
     && !/listEl\.innerHTML = attBlock \+ todayBlock \+ selfBlock \+\s*doorsBlock/.test(ADMIN));
 
   // Recording comes after his own types: he asked for his types in his order with the picker opening on

@@ -239,7 +239,7 @@ function renderDone(slot, who) {
     <hr class="divide">
     <p class="muted measure">Already sure you want to go ahead? You do not have to wait for the call.</p>
     <div class="actions">
-      <a class="btn cta" href="/book.html">Book a case, <span data-rate="case">$1,200</span></a>
+      <a class="btn cta" href="/book.html">Book a case, <span data-rate="case">$2,100</span></a>
       <a class="btn quiet" href="/">Back to the front page</a>
     </div>`;
   import('./rates.js').catch(() => {});

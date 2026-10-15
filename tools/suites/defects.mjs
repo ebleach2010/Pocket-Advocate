@@ -933,9 +933,12 @@ ck('clock: all switches share one painter set, so no two can disagree',
     && slow === within.TOO_SLOW && JSON.stringify(slowCovers) === '{}' && refused === 'permission-denied' && fast === 'cases'
     && /const snapshot = await within\(15_000, \(\) => getDocs\(collection\(db, 'cases'\)\)\);\n\s+if \(snapshot === TOO_SLOW\) throw new Error\('the database did not answer'\);/.test(APP)
     && /return within\(10_000, async \(\) => \{\n\s+const token = await user\.getIdToken\(\);\n\s+const res = await fetch\('\/api\/advisor\/covers'/.test(APP)
-    && (APP.match(/await within\(10_000, async \(\) => \{/g) || []).length === 2
+    // RE-PINNED 2026-10-15 (v7.39): the rate panel and its read moved into the settings cog (Eric, "let me adjust
+    // price for each effective immediately"), so the voice study is the one extra left on this page.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.39): the rate read put back as a second within(10_000) made this read FAIL
+    && (APP.match(/await within\(10_000, async \(\) => \{/g) || []).length === 1
     && ["window.__paStage = 'signin';", "window.__paStage = 'cases';", "window.__paStage = 'covers';", "window.__paStage = 'extras';"].every((x) => APP.includes(x))
-    && (APP.match(/\n\s+painted\(\);\n/g) || []).length === 3 && /\+ rateBlock \+ voiceBlock \+ summary \+ `<\/div>`;\n  painted\(\);/.test(APP)
+    && (APP.match(/\n\s+painted\(\);\n/g) || []).length === 3 && /`<div class="cmd-quiet">` \+ voiceBlock \+ summary \+ `<\/div>`;\n  painted\(\);/.test(APP) && !/rateBlock/.test(APP)
     && /sessionStorage\.removeItem\('pa-list-retry'\)/.test(APP)
     && profile === orTooSlow.TOO_SLOW
     // RE-PINNED 2026-09-24 (v7.16): the profile and admin checks share one read, which gives up after ten.

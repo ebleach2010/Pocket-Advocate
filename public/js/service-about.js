@@ -9,11 +9,20 @@
 // This file is downloaded by every client, so it holds the copy and nothing
 // else. Notes about the copy live in the repo's own instructions file.
 
+// A price in the copy is a token: {case}, {sub}, {full} or {addon}. priced()
+// turns it into the spot rates.js fills with the live price, so a price Eric
+// changes in his settings reads right here the moment he saves. The seed in
+// each spot is the deploy-time price, shown until the live one lands.
+export const PRICE_SEEDS = { case: '$2,100', sub: '$50', full: '$4,400', addon: '$325' };
+export function priced(html) {
+  return String(html).replace(/\{(case|sub|full|addon)\}/g, (_, k) => `<span data-rate="${k}">${PRICE_SEEDS[k]}</span>`);
+}
+
 export const SERVICE_ABOUT = {
   case: {
     title: 'The Advocacy Case',
-    price: '$1,200, once',
-    tldr: 'One flat $1,200. You talk, I dig in, and within a week of our call you hold a written plan your own doctors can act on. No hourly meter, no guessing what you get.',
+    price: '{case}, once',
+    tldr: 'One flat {case}. You talk, I dig in, and within a week of our call you hold a written plan your own doctors can act on. No hourly meter, no guessing what you get.',
     paragraphs: [
       'An Advocacy Case is me taking your whole medical story, the records, the labs, the half-answers, the years of going in circles, and turning it into something you can act on. It starts with a private call, phone or video, usually about an hour. Before it, you upload whatever you have. I read all of it properly before we ever speak.',
       'After the call you get a written report within 7 days. It organizes your history, names the open questions, and lays out the next steps worth discussing with your care team: the referral worth chasing, the result worth a second look, the question worth asking by name. The call is recorded and saved in your private file so nothing said gets lost. Both are yours to keep, forever.',
@@ -37,7 +46,7 @@ export const SERVICE_ABOUT = {
 
   chat: {
     title: '24/7 Priority Chat',
-    price: '$50/mo',
+    price: '{sub}/mo',
     tldr: 'A private line to me from your phone. Questions, updates, photos, records, and answers from a person who already knows your story. Cancel anytime; your history stays yours.',
     paragraphs: [
       'The chat line is for everything that happens between appointments: the letter you do not understand, the new symptom you are not sure matters, the scheduling call you are dreading. Send it when it happens. I read it personally and answer with your history in mind, not from a script.',
@@ -55,7 +64,7 @@ export const SERVICE_ABOUT = {
 
   handsOff: {
     title: 'Full-Service Case Management',
-    price: '$4,400 a month, every month the same. The case fee is separate: it pays for the review.',
+    price: '{full} a month, every month the same. The case fee is separate: it pays for the review.',
     tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
       'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Full-Service Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
@@ -86,7 +95,7 @@ export const SERVICE_ABOUT = {
 
   extension: {
     title: 'Another month',
-    price: '$4,400 a month, the same as the first',
+    price: '{full} a month, the same as the first',
     tldr: 'Another month of everything: the check-ins, the calls on your behalf, the lot. Take as many as your case needs, one at a time. Nothing else changes.',
     paragraphs: [
       'Some cases outlast a month or two through nobody\u2019s fault: a records office takes its full thirty days, a referral sits in a queue, an insurer uses every day it is allowed. Continuing keeps me inside the case while those clocks run.',
@@ -104,7 +113,7 @@ export const SERVICE_ABOUT = {
 
   followup: {
     title: 'Follow-Up Session',
-    price: '$325, at the price you were quoted when you booked',
+    price: '{addon}, at the price you were quoted when you booked',
     tldr: 'A second full session on the same case, once your report has landed. Same file, no starting over.',
     paragraphs: [
       'The report usually raises things worth talking through: what changed, what a result actually means, which next step to take first. A follow-up is a full session for exactly that, on the same case, with everything we already built still in front of us.',
@@ -156,15 +165,15 @@ export function openServiceAbout(id) {
       <div class="row" style="align-items:flex-start;">
         <div>
           <h3 style="margin:0;">${esc(a.title)}</h3>
-          <p class="dim small" style="margin:.15rem 0 0;">${esc(a.price)}</p>
+          <p class="dim small" style="margin:.15rem 0 0;">${priced(esc(a.price))}</p>
         </div>
         <button class="btn quiet" data-x style="flex:none; margin-left:auto;">Close</button>
       </div>
       <div class="about-body" style="overflow-y:auto; margin-top:.7rem;">
-        <p class="about-tldr"><strong>TL;DR:</strong> ${esc(a.tldr)}</p>
-        ${a.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('')}
+        <p class="about-tldr"><strong>TL;DR:</strong> ${priced(esc(a.tldr))}</p>
+        ${a.paragraphs.map((p) => `<p>${priced(esc(p))}</p>`).join('')}
         <h4 style="margin:1rem 0 .3rem;">Point by point</h4>
-        <ul class="about-list">${a.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
+        <ul class="about-list">${a.bullets.map((b) => `<li>${priced(esc(b))}</li>`).join('')}</ul>
         ${a.cta ? `<p style="margin:1rem 0 .2rem;"><a class="btn glow" href="${esc(a.cta.href)}">${esc(a.cta.label)}</a></p>` : ''}
       </div>
     </div>`;
@@ -184,6 +193,7 @@ export function openServiceAbout(id) {
   overlay.querySelector('[data-x]').addEventListener('click', close);
   document.body.appendChild(overlay);
   overlay.querySelector('[data-x]').focus();
+  import('./rates.js').then((m) => m.paintRates(overlay)).catch(() => {});
 }
 
 /** Wire every [data-about] trigger under `root` to its sheet. */

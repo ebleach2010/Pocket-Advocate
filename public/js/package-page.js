@@ -7,7 +7,7 @@
 // sheet carried) and its door: the way in while it is offered, "Not
 // currently offering" and the waitlist while it is not. Nothing here reads
 // any other package's copy.
-import { SERVICE_ABOUT } from './service-about.js';
+import { SERVICE_ABOUT, priced } from './service-about.js';
 import { packageOpen } from './sales.js';
 
 /** The About entry each page shows. Full service's copy is filed as handsOff. */
@@ -33,15 +33,15 @@ export function bodyHtml(a) {
   return `
     <section class="pkg-sec pkg-tldr">
       <h2>TL;DR</h2>
-      <p>${esc(a.tldr)}</p>
+      <p>${priced(esc(a.tldr))}</p>
     </section>
     <section class="pkg-sec">
       <h2>What it is</h2>
-      ${a.paragraphs.map((p) => `<p>${esc(p)}</p>`).join('')}
+      ${a.paragraphs.map((p) => `<p>${priced(esc(p))}</p>`).join('')}
     </section>
     <section class="pkg-sec">
       <h2>Point by point</h2>
-      <ul class="pkg-points">${a.bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul>
+      <ul class="pkg-points">${a.bullets.map((b) => `<li>${priced(esc(b))}</li>`).join('')}</ul>
     </section>`;
 }
 
@@ -53,6 +53,8 @@ function paint() {
   if (status) status.innerHTML = statusHtml(pkg, packageOpen(pkg));
   const body = document.querySelector('[data-pkg-body]');
   if (body) body.innerHTML = bodyHtml(a);
+  // The copy's prices are live spots; fill them from the same answer as the rest.
+  if (body) import('./rates.js').then((m) => m.paintRates(body)).catch(() => {});
 }
 
 if (typeof document !== 'undefined') paint();

@@ -369,7 +369,11 @@ console.log('\n--- D. the audit fixes ---');
   && (f('public/about.html').match(/If you are having a medical emergency, call 911\./g) || []).length === 1);
 check('D8 services.html\'s footer meets the advocate, and the TL;DR sheet lost its dash',
     /<a href="\/advocate\.html">Meet your advocate<\/a>/.test(f('public/services.html'))
-    && /<strong>TL;DR:<\/strong> \$\{esc\(a\.tldr\)\}/.test(f('public/js/service-about.js')));
+    // RE-PINNED 2026-10-15 (v7.39): Eric, "let me adjust price for each effective immediately". The TL;DR's price is
+    // a live spot now, so the line runs through priced(); the colon that replaced the dash is unchanged.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.39): the colon after TL;DR put back to a dash made this read
+    //   FAIL  D8 services.html's footer meets the advocate, and the TL;DR sheet lost its dash
+    && /<strong>TL;DR:<\/strong> \$\{priced\(esc\(a\.tldr\)\)\}/.test(f('public/js/service-about.js')));
 }
 
 // ---------------------------------------------------------------------------

@@ -138,6 +138,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // each package has its own page and shows only its own details.
   // NEGATIVE CONTROL (run 2026-10-15, v7.37): the worker's BUILD_TAG left at the chat-open-one-screen tag made this read
   //   FAIL  R1 both versions read 7.37 with the new tag, the 7.37 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.39): both versions read 7.39 with the his-prices tag, and the 7.39 entry says the case
+  // is $2,100 and his prices are in Settings, live at once.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.39): changelog.js's VERSION left at '7.38' made this read
+  //   FAIL  R1 both versions read 7.39 with the new tag, the 7.39 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry739 = (CL.match(/\{\n\s+\/\/ HIS PRICES, FROM HIS SETTINGS \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.38): both versions read 7.38 with the one-look tag, and the 7.38 entry says the chat
   // page is his letter, a client can cancel from the menu, every chat has a search, and the look is everywhere.
   // NEGATIVE CONTROL (run 2026-10-15, v7.38): the worker's VERSION left at '7.37' made this read
@@ -146,9 +151,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.38 with the new tag, the 7.38 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.38';/.test(CL) && /const VERSION = '7\.38';/.test(W) && /const BUILD_TAG = 'v2026-10-15-one-look';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.38'
+  check('R1 both versions read 7.39 with the new tag, the 7.39 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.39';/.test(CL) && /const VERSION = '7\.39';/.test(W) && /const BUILD_TAG = 'v2026-10-15-his-prices';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.39'
+    && /version: '7\.39',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry739)
+    && /An Advocacy Case is \$2,100/.test(entry739) && /in Settings now, under Prices/.test(entry739) && /live at once/.test(entry739)
+    && !DASH.test(entry739) && !HARD.some((re) => re.test(entry739))
     && /version: '7\.38',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry738)
     && /your letter, word for word/.test(entry738) && /cancel 24\/7 Priority Chat from the menu/.test(entry738)
     && /has a search/.test(entry738) && /same black look/.test(entry738)

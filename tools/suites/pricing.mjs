@@ -56,8 +56,11 @@ console.log(`# case ${CASE} addon ${ADDON} sub ${SUB} full ${FULL} floor ${FLOOR
 // FULL moved to 350000 on Eric's word, 2026-08-29 ("Make it 3500").
 // THE EXPECTATION MOVED, 2026-09-02 (Eric, cap-and-raise): ADDON $275 to
 // $325, FULL $3,500 to $4,400 with 20 included hours. Case and chat held.
+// RE-PINNED 2026-10-15 (v7.39): Eric, "Change the price of the mid tier to $2000", then "*2100". The case to $2,100; the rest held.
+// NEGATIVE CONTROL (run 2026-10-15, v7.39): the case seed left at 120000 made this read
+//   FAIL  P1 the new list prices are what was agreed
 check('P1 the new list prices are what was agreed',
-  CASE === 120000 && ADDON === 32500 && SUB === 5000 && FULL === 440000,
+  CASE === 210000 && ADDON === 32500 && SUB === 5000 && FULL === 440000,
   JSON.stringify({ CASE, ADDON, SUB, FULL }));
 check('P2 caps moved with the prices',
   CASE_CAP === 180000 && ADDON_CAP === 42500 && SUB_CAP === 10000 && FULL_CAP === 440000,
@@ -68,8 +71,12 @@ check('P2e the chat ceiling is a sane multiple of its own seed',
 // THE DIVISORS MOVED, 2026-09-02: the month is priced on its 20 INCLUDED
 // hours (FULL_INCLUDED_HOURS, read from source), the follow-up on 1.5h.
 const INCLUDED_H = num('FULL_INCLUDED_HOURS');
-check('P2d every CASE-WORK seed lands in the band middle, not on the average',
-  Math.round(CASE / 100 / 5.25) >= 210 && Math.round(CASE / 100 / 5.25) <= 245
+// RE-PINNED 2026-10-15 (v7.39): Eric, "Change the price of the mid tier to $2000", then "*2100". The case is his number now, priced on his
+// word and not on the band ($400/hr on 5.25 hours); the tier and the follow-up still sit in the band middle.
+// NEGATIVE CONTROL (run 2026-10-15, v7.39): the follow-up seed set to 60000 made this read
+//   FAIL  P2d every CASE-WORK seed he has not priced himself lands in the band middle, not on the average
+check('P2d every CASE-WORK seed he has not priced himself lands in the band middle, not on the average',
+  CASE === 210000
   && Math.round(FULL / 100 / INCLUDED_H) >= 210 && Math.round(FULL / 100 / INCLUDED_H) <= 245
   && Math.round(ADDON / 100 / 1.5) >= 210 && Math.round(ADDON / 100 / 1.5) <= 245,
   `case $${Math.round(CASE / 100 / 5.25)}/hr, tier $${Math.round(FULL / 100 / INCLUDED_H)}/hr, follow-up $${Math.round(ADDON / 100 / 1.5)}/hr`);

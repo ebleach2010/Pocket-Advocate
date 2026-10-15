@@ -177,18 +177,9 @@ async function load() {
       : 0), 0);
   const cents = byKind('stripe');
   const handCents = byKind('hand');
-  // What a case costs right now. It rises by $10 on every completed booking,
-  // silently, so this is the only place the current number is stated.
-  // Each of the two extras gets ten seconds (2026-09-24); the shelf is still a shelf without either.
-  const rate = await within(10_000, async () => {
-    const token = await user.getIdToken();
-    const res = await fetch('/api/admin/rates', {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: '{}',
-    });
-    return res.ok ? res.json() : null;
-  }, null);
+  // The rate panel that sat here moved into the settings cog on 2026-10-15
+  // (Eric: "In the settings tab for admin let me adjust price for each
+  // effective immediately"), so this page no longer reads the rates at all.
 
   // The nightly voice study. It runs on its own; this is the switch and the
   // proof it is still running.
@@ -201,55 +192,6 @@ async function load() {
     });
     return res.ok ? res.json() : null;
   }, null);
-
-  // Grouped, the same as the case page's. Without the separator the shelf's
-  // headline rate read "$1200" and "$3400", which is the one number on this
-  // screen he reads at a glance and the one where a missing digit costs the
-  // most. Display only: the rate inputs below take their value straight from
-  // the cents, so the comma never reaches a parser.
-  const dollars = (c) => (c / 100).toLocaleString('en-US', {
-    minimumFractionDigits: c % 100 ? 2 : 0,
-    maximumFractionDigits: c % 100 ? 2 : 0,
-  });
-  const rateBlock = rate ? `
-    <details class="panel" style="margin-bottom:1rem;">
-      <summary class="row" style="cursor:pointer;">
-        <strong>Today's rate</strong>
-        <span class="price" style="color:var(--magenta);">$${dollars(rate.caseCents)}</span>
-      </summary>
-      <p class="dim small" style="margin:.5rem 0 .6rem;">Follow-up
-        <strong style="color:var(--ink)">$${dollars(rate.addonCents)}</strong>,
-        Priority Chat <strong style="color:var(--ink)">$${dollars(rate.subCents || 5000)}/mo</strong>,
-        Full-Service <strong style="color:var(--ink)">$${dollars(rate.fullCents || 440000)}/mo</strong>
-        with ${rate.fullHours || 20} included hours, Telehealth <strong style="color:var(--ink)">$${dollars(rate.teleCents || 52500)}</strong> flat.
-        Case and follow-up grow 10% per booking (to $${dollars(rate.caps?.caseCents || 180000)} and $${dollars(rate.caps?.addonCents || 42500)} caps); chat
-        climbs $5 per new client of any type (to $${dollars(rate.caps?.subCents || 10000)}); Full-Service grows 5% to
-        the nearest $25 (to $${dollars(rate.caps?.fullCents || 440000)}). ${rate.bookings} booking${rate.bookings === 1 ? ' has' : 's have'}
-        counted so far. Everyone already booked keeps what they were quoted.</p>
-      <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-        <label class="dim small">Case $
-          <input type="number" id="rate-case" min="50" step="1" value="${(rate.caseCents / 100)}"
-            style="width:6rem;"></label>
-        <label class="dim small">Follow-up $
-          <input type="number" id="rate-addon" min="50" step="1" value="${(rate.addonCents / 100)}"
-            style="width:6rem;"></label>
-        <label class="dim small">Chat $/mo
-          <input type="number" id="rate-sub" min="10" max="100" step="1" value="${((rate.subCents || 5000) / 100)}"
-            style="width:5rem;"></label>
-        <label class="dim small">Full-Service $/mo
-          <input type="number" id="rate-full" min="50" step="25" value="${((rate.fullCents || 440000) / 100)}"
-            style="width:7rem;"></label>
-      </div>
-      <p class="dim small" style="margin:.7rem 0 .35rem;">Tell me when a case
-        has dropped below this much an hour, against the clock I ran on it.</p>
-      <div class="row" style="gap:.5rem; flex-wrap:wrap; align-items:center;">
-        <label class="dim small">Floor $/hr
-          <input type="number" id="rate-floor" min="10" max="1000" step="5" value="${((rate.floorCents || 7500) / 100)}"
-            style="width:5rem;"></label>
-        <button class="btn quiet" id="rate-save">Set</button>
-      </div>
-      <p class="dim small" id="rate-said" style="margin:.4rem 0 0;" hidden></p>
-    </details>` : '';
 
   const ago = (iso) => {
     if (!iso) return 'never';
@@ -451,7 +393,7 @@ async function load() {
       ...ownClosed.map((c) => rowFor(c, `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>${c.confirmedDx?.name ? ` · confirmed ${esc(c.confirmedDx.name)}` : ''}`)),
     ])
     : '');
-  // The doors are used rarely, so they sit under the shelf, above the rate.
+  // The doors are used rarely, so they sit under the shelf, above the quiet tools.
   const doorsBlock = `<div class="open-doors"><button type="button" class="btn self-open" data-open-door="self">${ownAll.length ? '+ Open another case for myself' : 'Open a case for myself'}</button>
         <button type="button" class="btn self-open" data-open-door="family">Open a family case</button>
         ${cases.some((c) => c.showcase) ? '' : '<button type="button" class="btn quiet" data-showcase-door>Build the showcase case (Joe Bloe)</button>'}
@@ -467,7 +409,7 @@ async function load() {
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
       `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
     doorsBlock +
-    `<div class="cmd-quiet">` + rateBlock + voiceBlock + summary + `</div>`;
+    `<div class="cmd-quiet">` + voiceBlock + summary + `</div>`;
   painted();
   // A door unfolds its form and folds the other; Open sends the form to its
   // route and walks into the case it made.
@@ -585,38 +527,6 @@ async function load() {
       if (r.ran) return `Read it, but wrote nothing: ${r.reason || 'no change worth making'}.`;
       return `Nothing to do: ${r.reason || 'not enough to read yet'}.`;
     }));
-  }
-
-  const saveRate = listEl.querySelector('#rate-save');
-  if (saveRate) {
-    saveRate.addEventListener('click', async () => {
-      const said = listEl.querySelector('#rate-said');
-      saveRate.disabled = true;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/admin/rates', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({
-            caseCents: Math.round(Number(listEl.querySelector('#rate-case').value) * 100),
-            addonCents: Math.round(Number(listEl.querySelector('#rate-addon').value) * 100),
-            subCents: Math.round(Number(listEl.querySelector('#rate-sub').value) * 100),
-            fullCents: Math.round(Number(listEl.querySelector('#rate-full').value) * 100),
-            floorCents: Math.round(Number(listEl.querySelector('#rate-floor').value) * 100),
-          }),
-        });
-        const d = await res.json();
-        if (!res.ok) throw new Error(d.error || `Failed (${res.status})`);
-        said.textContent = d.changed
-          ? `Set. A case is $${dollars(d.caseCents)}, a follow-up $${dollars(d.addonCents)}, chat $${dollars(d.subCents)}/mo, full access $${dollars(d.fullCents)}. Warning below $${dollars(d.floorCents)}/hr.`
-          : 'Already those numbers.';
-        said.hidden = false;
-      } catch (err) {
-        said.textContent = err.message;
-        said.hidden = false;
-      }
-      saveRate.disabled = false;
-    });
   }
 
   // Tap a folder and it opens in the hand before the case page loads; press

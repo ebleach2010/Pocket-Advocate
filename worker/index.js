@@ -126,8 +126,10 @@ export class AdvisorTurn extends WorkflowEntrypoint {
 // live-attendance work is priced against the $250/hr urgent rate instead.
 //
 // The case is ~5.25 hours (overview call, record review, written report), so
-// $1,200 is $229/hr.
-const CASE_PRICE_CENTS = 120000;
+// $1,200 was $229/hr. $2,100 on Eric's word, 2026-10-15: "Change the price of
+// the mid tier to $2000", then "*2100". From then on he sets every price
+// himself from the settings cog (handleSetRates); this is the seed.
+const CASE_PRICE_CENTS = 210000;
 // The follow-up is a second discussion on the same case, sold from the case
 // after the report lands rather than at checkout. It is NOT included.
 // ~1.5 hours with prep, so $325 is $217/hr. $325 on Eric's word,
@@ -285,8 +287,15 @@ const FULL_ROUND_CENTS = 2500;
 const FULL_CAP_CENTS = 440000;
 // Sanity rails on the manual setter, not on the ratchet. A typo that sets the
 // case rate to $5 or $50,000 should bounce rather than take a booking.
+//
+// Widened 2026-10-15, when the setter moved into his settings cog with "let me
+// adjust price for each": the old max WAS the Full-Service price, so the tier
+// could only ever be lowered. The rails stay a typo guard, nothing more.
 const RATE_MIN_CENTS = 5000;
-const RATE_MAX_CENTS = 440000;
+const RATE_MAX_CENTS = 2_000_000;
+// The chat price's own rail, apart from its climb ceiling (SUB_CAP_CENTS):
+// the climb stops at $100, a price he sets does not have to.
+const SUB_RAIL_MAX_CENTS = 100_000;
 // WHICH PRICING DECISION the numbers above belong to. Bump this whenever a
 // seed changes, and a deploy takes effect the moment it ships.
 //
@@ -307,7 +316,9 @@ const RATE_MAX_CENTS = 440000;
 // The climb is unaffected: it only ever mattered WITHIN a pricing decision,
 // and a reprice deliberately starts a new one. That is already what
 // restructureRates does, just slower and invisibly.
-const PRICING_EPOCH = '2026-09-02-cap-and-raise';
+// 2026-10-15: the case to $2,100 (Eric). Every other seed equals the live price
+// it replaces, so the new stamp moves the case alone.
+const PRICING_EPOCH = '2026-10-15-case-2100';
 const RATES_PATH = 'config/rates';
 // The line under which a case is being worked at a loss, in cents per hour.
 // Eric, 2026-08-23: "I've lost money on my current client." The app counts
@@ -364,6 +375,10 @@ async function readRates(env) {
  *  onto itself), capped and parked at the cap. The growth and rounding are
  *  arguments because full access climbs on a gentler curve than the rest. */
 function growRate(cents, cap, growth = RATE_GROWTH, round = RATE_ROUND_CENTS) {
+  // A price at or past its ceiling stays where it is. Eric can set one above
+  // the ceiling from his settings (the case went to $2,100 against a $1,800
+  // ceiling), and a booking must never pull his number back down.
+  if (cents >= cap) return cents;
   const grown = Math.round((cents * growth) / round) * round;
   return Math.min(cap, Math.max(cents + round, grown));
 }
@@ -389,7 +404,7 @@ async function raiseRates(env, attempt = 0) {
     addonCents: growRate(now.addonCents, ADDON_CAP_CENTS),
     fullCents: growRate(now.fullCents, FULL_CAP_CENTS, FULL_GROWTH, FULL_ROUND_CENTS),
     // A booking is a new client of any type, so it lifts the chat price too.
-    subCents: Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS),
+    subCents: subStep(now.subCents),
     bookings: now.bookings + 1,
     // Stamped here as well as in the migration, so the first booking after a
     // reprice settles the document without waiting on the cron. `now` is
@@ -405,6 +420,12 @@ async function raiseRates(env, attempt = 0) {
   if (won === false) return raiseRates(env, attempt + 1);
   await capPings(env, now, next);
   return next;
+}
+
+/** The chat climb: $5 a new client to its ceiling, and never down from a
+ *  price he set above it. */
+function subStep(cents) {
+  return cents >= SUB_CAP_CENTS ? cents : Math.min(SUB_CAP_CENTS, cents + SUB_STEP_CENTS);
 }
 
 /**
@@ -426,7 +447,7 @@ async function capPings(env, prev, next) {
   for (const h of hits) {
     await notifyUser(env, env.ADMIN_UID, {
       title: 'Pocket Advocate',
-      body: `Pricing: ${h}. It stays parked there until you set the next move from the rates card on your dashboard.`,
+      body: `Pricing: ${h}. It stays parked there until you set the next move under Prices in your settings.`,
       link: '/admin.html',
     }).catch(() => {});
   }
@@ -444,7 +465,7 @@ async function raiseSubRate(env, attempt = 0) {
     return null;
   }
   const now = await readRates(env);
-  const subCents = Math.min(SUB_CAP_CENTS, now.subCents + SUB_STEP_CENTS);
+  const subCents = subStep(now.subCents);
   // The epoch rides along (2026-09-02): a first-ever subscription before any
   // booking used to write a climb readRates then ignored as stale.
   const opts = now.seeded
@@ -529,7 +550,7 @@ async function handleSetRates(request, env) {
     // The chat rate rails lower: its ceiling is by design, and a monthly
     // number sits under the general floor. The hourly floor is a rate, not a
     // price, and rails on its own scale.
-    const [min, max] = k === 'subCents' ? [1000, SUB_CAP_CENTS]
+    const [min, max] = k === 'subCents' ? [1000, SUB_RAIL_MAX_CENTS]
       : k === 'floorCents' ? [1000, 100000]
         : [RATE_MIN_CENTS, RATE_MAX_CENTS];
     if (!Number.isInteger(v) || v < min || v > max)
@@ -2108,7 +2129,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-one-look';
+const BUILD_TAG = 'v2026-10-15-his-prices';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2116,7 +2137,7 @@ const BUILD_TAG = 'v2026-10-15-one-look';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.38';
+const VERSION = '7.39';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.38';
+export const VERSION = '7.39';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.38';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS PRICES, FROM HIS SETTINGS (Eric, 2026-10-15: "Change the price of
+    // the mid tier to $2000. In the settings tab for admin let me adjust price
+    // for each effective immediately." Then "*2100".) Admin only.
+    version: '7.39',
+    quiet: true,
+    client: [],
+    admin: [
+      'An Advocacy Case is $2,100 everywhere it is shown and at checkout.',
+      'Your prices are in Settings now, under Prices: the chat, a case, a Full-Service month, a follow-up, and your hourly warning line. A save is live at once on every page and at checkout. Anyone already booked or subscribed keeps what they paid.',
+      'The rate panel at the bottom of the Clients page is gone, so prices live in one place.',
+    ],
+  },
   {
     // HIS LETTER, A CLEAR CANCEL, CHAT SEARCH, ONE LOOK, TIGHTENED (Eric,
     // 2026-10-15: the chat page in his words, the same-day guarantee, a

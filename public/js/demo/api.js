@@ -142,8 +142,25 @@ export function demoApi(role, store) {
       };
       return path === '/api/stats' ? ok(stats) : ok({ ok: true, stats });
     }
-    if (path === '/api/rates') return ok({ caseCents: 120000, addonCents: 32500, subCents: 5000, fullCents: 440000, chatOpenCents: 5000, teleCents: 52500, fullHours: 20 });
-    if (path === '/api/admin/rates') return ok({ caseCents: 120000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500, bookings: 0, changed: false, teleCents: 52500, fullHours: 20, caps: { caseCents: 180000, addonCents: 42500, subCents: 10000, fullCents: 440000 } });
+    // Prices, as one stored doc (2026-10-15), so a save in his settings is
+    // read back by every page the way the real rates doc is. Same rails and
+    // the same refusal words as handleSetRates.
+    if (path === '/api/rates' || path === '/api/admin/rates') {
+      const SEEDS = { caseCents: 210000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500 };
+      const now = { ...SEEDS, ...(store.docs.get('config/rates') || {}) };
+      if (path === '/api/rates') {
+        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20 });
+      }
+      const want = { ...now };
+      for (const k of Object.keys(SEEDS)) if (body && body[k] !== undefined) want[k] = Number(body[k]);
+      for (const [k, v] of Object.entries(want)) {
+        const [min, max] = k === 'subCents' ? [1000, 100000] : k === 'floorCents' ? [1000, 100000] : [5000, 2000000];
+        if (!Number.isInteger(v) || v < min || v > max) return fail(400, `${k} has to be a whole number of cents between ${min} and ${max}.`);
+      }
+      const changed = Object.keys(SEEDS).some((k) => want[k] !== now[k]);
+      if (changed) { store.docs.set('config/rates', want); store.persist?.(); }
+      return ok({ ...want, bookings: 0, changed, teleCents: 52500, fullHours: 20, caps: { caseCents: 180000, addonCents: 42500, subCents: 10000, fullCents: 440000 } });
+    }
     // The nightly study, with a plausible history so the card on the dashboard
     // shows what it shows on a real night.
     if (path === '/api/work') {

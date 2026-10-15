@@ -30,7 +30,7 @@ import { ask } from './sheet.js';
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
 // percentages below are a share of the standard Advocacy Case fee.
-const CASE_PRICE_CENTS = 120000;
+const CASE_PRICE_CENTS = 210000;
 
 /**
  * The rate a given client booked at. Recorded on the case at checkout, so a

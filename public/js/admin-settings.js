@@ -71,6 +71,33 @@ export function adminSettingsHtml() {
       <button class="btn" data-paid-save style="flex:none; min-height:44px;" disabled>Record</button>
     </div>
     <p class="dim small" data-paid-said style="margin:.45rem 0 0;"></p>` : ''}
+    <h4 style="margin:1.2rem 0 .1rem;">Prices</h4>
+    <!-- Eric, 2026-10-15: "In the settings tab for admin let me adjust price
+         for each effective immediately." The setter used to sit folded at the
+         foot of the Clients page as "Today's rate"; it lives here now, the one
+         place. Same discipline as the rows below: disabled until the server
+         has said what the prices are, and a save is read back before it is
+         claimed. -->
+    <p class="dim small" style="margin:0 0 .5rem;">Live the moment you save, on
+      every page and at checkout. Anyone already booked or subscribed keeps the
+      price they paid.</p>
+    <div class="price-rows" data-prices>
+      <label class="dim small">24/7 Priority Chat, $ a month
+        <input type="text" inputmode="decimal" data-price="subCents" disabled></label>
+      <label class="dim small">Advocacy Case, $
+        <input type="text" inputmode="decimal" data-price="caseCents" disabled></label>
+      <label class="dim small">Full-Service Case Management, $ a month
+        <input type="text" inputmode="decimal" data-price="fullCents" disabled></label>
+      <label class="dim small">Follow-up session, $
+        <input type="text" inputmode="decimal" data-price="addonCents" disabled></label>
+      <label class="dim small">Warn me when a case earns under, $ an hour
+        <input type="text" inputmode="decimal" data-price="floorCents" disabled></label>
+    </div>
+    <p class="dim small" style="margin:.5rem 0 .5rem;">Still on from August:
+      chat rises $5 with each new client until $100, and the follow-up 10% a
+      booking until $425. A price you set above that stays put.</p>
+    <button class="btn glow" data-prices-save disabled style="min-height:44px;">Save prices</button>
+    <p class="dim small" data-prices-said style="margin:.45rem 0 0;">Reading your prices…</p>
     <div class="toggle-row" style="margin-top:1rem;">
       <span><strong>Open to my dashboard</strong><br><span class="dim small">This device skips the home page and lands on Admin. Turn off to test the client view.</span></span>
       <button class="switch ${localStorage.getItem('pa-open-admin') !== '0' ? 'on' : ''}" data-open-admin
@@ -110,6 +137,7 @@ export function adminSettingsHtml() {
  * that, and only then let him touch it.
  */
 export function wireAdminSettings(overlay, user) {
+  wirePrices(overlay, user);
   wirePaid(overlay, user);
   wireCapacity(overlay, user);
   overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
@@ -292,4 +320,84 @@ async function wireCapacity(overlay, user) {
       }
     });
   }
+}
+
+/** Dollars as he types them ("2,100", "$2100.00") to whole cents, or NaN. */
+export function toCents(text) {
+  const t = String(text ?? '').replace(/[$,\s]/g, '');
+  if (!/^\d+(\.\d{1,2})?$/.test(t)) return NaN;
+  return Math.round(Number(t) * 100);
+}
+
+/**
+ * Prices, from the settings cog. Read from POST /api/admin/rates with an empty
+ * body (the same route the Clients page used), painted, and only then
+ * editable. A save sends every box, and what the server answers is what is
+ * painted back: a 200 is not the claim, the stored numbers are.
+ */
+async function wirePrices(overlay, user) {
+  const box = overlay.querySelector('[data-prices]');
+  const btn = overlay.querySelector('[data-prices-save]');
+  const said = overlay.querySelector('[data-prices-said]');
+  if (!box || !btn) return;
+  const inputs = [...box.querySelectorAll('[data-price]')];
+  const plain = (cents) => (cents / 100).toFixed(2).replace(/\.00$/, '');
+  const shown = (cents) => `$${(cents / 100).toLocaleString('en-US', {
+    minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: cents % 100 ? 2 : 0 })}`;
+  const call = async (body) => {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/rates', {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+    return out;
+  };
+  let confirmed = null;              // the last prices the SERVER agreed to
+  const paint = (r) => {
+    confirmed = r;
+    for (const el of inputs) { el.value = plain(Number(r[el.dataset.price]) || 0); el.disabled = false; }
+    btn.disabled = false;
+  };
+  const tell = (text, bad) => { said.textContent = text; said.style.color = bad ? 'var(--danger)' : ''; };
+
+  try {
+    paint(await call());
+    tell('');
+  } catch {
+    tell('Could not read your prices, so they are not safe to change yet.', true);
+    return;
+  }
+
+  btn.addEventListener('click', async () => {
+    const want = {};
+    for (const el of inputs) {
+      const cents = toCents(el.value);
+      if (!(cents > 0)) {
+        tell(`That did not look like an amount: "${el.value}". Nothing changed.`, true);
+        paint(confirmed);
+        return;
+      }
+      want[el.dataset.price] = cents;
+    }
+    for (const el of inputs) el.disabled = true;
+    btn.disabled = true;
+    tell('Saving…');
+    try {
+      const r = await call(want);
+      paint(r);
+      tell(r.changed
+        ? `Saved and live: chat ${shown(r.subCents)} a month, a case ${shown(r.caseCents)}, Full-Service ${shown(r.fullCents)} a month, a follow-up ${shown(r.addonCents)}.`
+        : 'Already those prices. Nothing changed.');
+    } catch (err) {
+      paint(confirmed);
+      // The Worker names the field in cents; he is told which price, in dollars.
+      const NAMES = { subCents: 'The chat price', caseCents: 'The case price', fullCents: 'The Full-Service price', addonCents: 'The follow-up price', floorCents: 'The warning line' };
+      const m = /^(\w+) has to be a whole number of cents between (\d+) and (\d+)\.$/.exec(err.message);
+      tell(m ? `Not saved: ${NAMES[m[1]] || 'That price'} has to be between ${shown(Number(m[2]))} and ${shown(Number(m[3]))}. Nothing changed.`
+        : `Not saved: ${err.message}. Nothing changed.`, true);
+    }
+  });
 }
