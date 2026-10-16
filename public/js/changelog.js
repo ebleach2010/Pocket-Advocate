@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.52';
+export const VERSION = '7.53';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '7.52';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WHAT THEY BOUGHT (Eric, 2026-10-15: "be sure that the admin case
+    // actually matches what they purchased"; Full-Service is the first
+    // consult and no report, and an upgrade "replaces" one). Admin only.
+    version: '7.53',
+    quiet: true,
+    client: [],
+    admin: [
+      'Clients is grouped by what they bought: Advocacy Cases, Full-Service, booked calls and closed. Booked and closed cards say which.',
+      'Full-Service owes the first consult, never a report. Its case shows Consult, never a report due, and Report is not an upload type on it.',
+      'Opening Full-Service before the report lands replaces the report. The Full-Service agreement says so now.',
+      'Once a call has passed and nothing marks it done, it waits for you at the top of the case and on Clients.',
+      'A Priority Chat client waiting on a reply shows on Clients: reply today.',
+      'On an Advocacy Case the meeting link comes first, and the forms wait at the bottom.',
+    ],
+  },
   {
     // WHAT WAS WRONG TODAY (Eric, 2026-10-15: "It's confusing as fuck to a
     // new contractor." The first of five cleanup pushes). Admin only.

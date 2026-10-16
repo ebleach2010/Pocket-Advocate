@@ -9,6 +9,9 @@
 //   B. (v7.52) as him: the alerts card leaves the + on the screen, and a push's
 //      ?page=chat opens Chat
 //   C. no page threw
+//   D. (v7.53) each case matches what was bought: his shelf by purchase, a
+//      Full-Service case with its consult and no report, an Advocacy Case
+//      leading with its meeting link, and their Full-Service page
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -149,6 +152,65 @@ const landed = await eric.evaluate(() => ({
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): the ?page= reader made blind (`const asked = '';`) made this read
 //   FAIL  a push's ?page=chat opens the case on Chat, and the address forgets it
 ok('a push\'s ?page=chat opens the case on Chat, and the address forgets it', landed.chat && !/page=/.test(landed.url), JSON.stringify(landed));
+
+console.log('\n--- D. each case matches what was bought (v7.53) ---');
+await eric.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2500);
+const shelf2 = await eric.evaluate(() => {
+  const heads = [...document.querySelectorAll('#list h2')].map((h) => h.textContent.trim());
+  const fullHead = [...document.querySelectorAll('#list h2')].find((h) => h.textContent.trim() === 'FULL-SERVICE');
+  const fullNames = fullHead ? [...fullHead.nextElementSibling.querySelectorAll('a')].map((a) => a.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean) : [];
+  const attention = [...document.querySelectorAll('.cmd-row')].map((a) => a.textContent.replace(/\s+/g, ' ').trim());
+  return { heads, fullNames: fullNames.slice(0, 3), attention };
+});
+if (SHOTS) await eric.screenshot({ path: `${SHOTS}/cleanup-3-shelf-by-purchase.png`, fullPage: true });
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): the FULL-SERVICE section taken off the shelf (fullOpen read as []) made this read
+//   FAIL  his shelf has a Full-Service shelf of its own, the Advocacy Cases under REPORT PHASE, and nothing calls a Full-Service case's report overdue
+ok('his shelf has a Full-Service shelf of its own, the Advocacy Cases under REPORT PHASE, and nothing calls a Full-Service case\'s report overdue',
+  shelf2.heads.includes('FULL-SERVICE') && !shelf2.heads.includes('CURRENT CLIENTS: REPORT PHASE')
+  && shelf2.fullNames.some((t) => /FULL-SERVICE/.test(t)) && !shelf2.attention.some((t) => /Report overdue/.test(t) && /FULL/.test(t))
+  && !shelf2.fullNames.some((t) => /OVERDUE|REPORT DUE/.test(t)), JSON.stringify(shelf2));
+
+await eric.goto(`${P}/admin-case.html?id=demo-case-full&demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2500);
+await group(eric, 'Case', 'overview');
+const full = await eric.evaluate(() => ({
+  pill: document.querySelector('[data-status]')?.textContent.trim(),
+  chips: [...document.querySelectorAll('.loop-chip')].map((x) => x.textContent.trim()),
+  next: document.querySelector('.case-next')?.textContent.replace(/\s+/g, ' ').trim() || '',
+  consult: /CONSULT/.test(document.body.innerText) && !/\bREPORT\s+(due|OVERDUE)/.test(document.body.innerText),
+  report: !!document.querySelector('#up-cat option[value="report"]'),
+}));
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): the CONSULT row's branch taken out made this read
+//   FAIL  a Full-Service case says FULL-SERVICE and shows its consult, with no report due, overdue or to file
+ok('a Full-Service case says FULL-SERVICE and shows its consult, with no report due, overdue or to file',
+  full.pill === 'FULL-SERVICE' && !full.chips.some((t) => /Report/.test(t)) && !/Report due/.test(full.next) && full.consult && !full.report, JSON.stringify(full));
+
+await eric.goto(`${P}/admin-case.html?id=demo-case&demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2500);
+await group(eric, 'Case', 'overview');
+const levers = await eric.evaluate(() => {
+  const before = [...document.querySelectorAll('.mgmt-when')].find((e) => e.textContent.trim() === 'Before the call');
+  const ending = [...document.querySelectorAll('.mgmt-when')].find((e) => e.textContent.trim() === 'Ending it');
+  return { first: before?.nextElementSibling?.dataset?.k || '', beforeEnd: ending?.previousElementSibling?.dataset?.k || '' };
+});
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): the Advocacy Case reorder taken out (`if (!c.fullAccess)` made `if (false)`) made this read
+//   FAIL  an Advocacy Case leads with its meeting link, and its forms wait at the bottom
+ok('an Advocacy Case leads with its meeting link, and its forms wait at the bottom', levers.first === 'link' && levers.beforeEnd === 'auth', JSON.stringify(levers));
+
+const client = await side('client');
+await client.goto(`${P}/case.html?id=demo-case-full&demo=1`, { waitUntil: 'networkidle' });
+await settle(client, 2500);
+const theirs = await client.evaluate(() => ({
+  pill: document.querySelector('[data-status-pill]')?.textContent.trim(),
+  eyebrow: document.querySelector('[data-status-pill]')?.parentElement?.textContent.replace(/\s+/g, ' ').trim(),
+  onItsWay: /report is on its way/i.test(document.body.innerText),
+}));
+if (SHOTS) await client.screenshot({ path: `${SHOTS}/cleanup-4-client-full.png` });
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): case.js's statusWord back to STATUS_LABEL alone made this read
+//   FAIL  their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way
+ok('their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way',
+  theirs.pill === 'FULL-SERVICE' && /Full-Service Case Management/.test(theirs.eyebrow || '') && !theirs.onItsWay, JSON.stringify(theirs));
 
 console.log('\n--- C. errors ---');
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): a `null.x` put first in wireAddMenu's + click made this read

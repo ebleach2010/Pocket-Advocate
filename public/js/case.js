@@ -48,6 +48,16 @@ const STEPS = [
   ['closed', 'Closed. The file is yours forever'],
 ];
 const STATUS_RANK = { paid: 1, forms: 1, confirmed: 2, awaiting_report: 4, delivered: 6, closed: 7 };
+// FULL-SERVICE OWES NO REPORT (Eric, 2026-10-15: the first consult is "the
+// only thing that needs delivering", and an upgrade "replaces" the report).
+// Its steps end in the work, and its pill says what it is, not REPORT DUE.
+const FULL_STEPS = STEPS.map(([k, label]) => (k === 'awaiting_report'
+  ? [k, 'The consult is done']
+  : k === 'delivered' ? [k, 'Full-Service: the work, a month at a time'] : [k, label]));
+/** The steps this case runs on. A report already delivered before the upgrade keeps its own line. */
+const stepsOf = (c) => (c?.fullAccess && !c.reportDeliveredAt ? FULL_STEPS : STEPS);
+/** The pill's word for where the case stands. */
+const statusWord = (c) => (c.fullAccess && c.status !== 'closed' ? 'FULL-SERVICE' : STATUS_LABEL[c.status] || c.status);
 const STATUS_LABEL = {
   paid: 'OPEN', forms: 'FINISH FORMS', confirmed: 'CONFIRMED',
   awaiting_report: 'REPORT DUE', delivered: 'REPORT READY', closed: 'CLOSED',
@@ -179,9 +189,10 @@ const CHEER = {
   closed: 'Your case is complete. The file is yours forever.',
 };
 function cheerCard(c, rank, closed) {
-  const line = CHEER[c.status];
+  const line = c.fullAccess && !closed && c.status !== 'confirmed' && !c.reportDeliveredAt
+    ? 'Full-Service is under way. I am working your case.' : CHEER[c.status];
   if (!line || c.hold?.pausedAt) return '';
-  const total = STEPS.length;
+  const total = stepsOf(c).length;
   const done = Math.max(1, Math.min(total, closed ? total : c.status === 'delivered' ? rank : rank - 1));
   const pct = Math.round((done / total) * 100);
   return `
@@ -370,7 +381,7 @@ function refreshSections() {
   const pill = container.querySelector('[data-status-pill]');
   if (pill) {
     pill.className = `status-pill ${c.status === 'closed' ? 'closed' : ''}`;
-    pill.textContent = chargeLabel(c) || STATUS_LABEL[c.status] || c.status;
+    pill.textContent = chargeLabel(c) || statusWord(c);
   }
   const progress = folder?.el('progress');
   const docs = folder?.el('docs');
@@ -727,7 +738,8 @@ function renderProgress(el, c) {
     : '';
   const underLine = [confirmed ? `${confirmed}.` : '', requestedIntro, methodLine]
     .filter(Boolean).join(' ');
-  const stepNow = STEPS[Math.min(Math.max(rank, 1), STEPS.length) - 1][1];
+  const steps = stepsOf(c);
+  const stepNow = steps[Math.min(Math.max(rank, 1), steps.length) - 1][1];
 
   // THE WHOLE FIRST SCREEN IS ONE CARD.
   //
@@ -742,8 +754,8 @@ function renderProgress(el, c) {
     ${chargeNotice(c)}
     <section class="card card-lit stack-tight" data-appt>
       <p class="eyebrow">
-        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${chargeLabel(c) || STATUS_LABEL[c.status] || c.status}</span>
-        Advocacy Case
+        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${chargeLabel(c) || statusWord(c)}</span>
+        ${c.fullAccess ? 'Full-Service Case Management' : 'Advocacy Case'}
       </p>
       ${start ? `
         <h2 class="appt-when">${mtFmt.format(start)} MST<br>
@@ -767,7 +779,7 @@ function renderProgress(el, c) {
       <summary>Where your case is: ${esc(stepNow)}</summary>
       <div class="faq-a">
         <ul class="timeline">
-          ${STEPS.map(([, label], i) => `
+          ${steps.map(([, label], i) => `
             <li class="${i + 1 < rank ? 'done' : i + 1 === rank ? (closed ? 'done' : 'now') : ''}">
               <span class="t-dot"></span>${label}</li>`).join('')}
         </ul>
@@ -1442,7 +1454,7 @@ function printExport(c, want) {
     <h1>Advocacy Case</h1>
     <p class="meta">Pocket Advocate · exported ${new Date().toLocaleDateString()}</p>
     ${sec('summary', 'Case summary', `<ul>
-      <li>Status: ${esc(STATUS_LABEL[c.status] || c.status)}</li>
+      <li>Status: ${esc(statusWord(c))}</li>
       ${c.appointment?.start ? `<li>Discussion: ${esc(mtFmt.format(toDate(c.appointment.start)))} MST</li>` : ''}
       ${c.reportDeliveredAt ? `<li>Report delivered: ${esc(toDate(c.reportDeliveredAt).toLocaleDateString())}</li>` : ''}
       ${c.addOnFollowUp ? '<li>Follow-up session: purchased</li>' : ''}

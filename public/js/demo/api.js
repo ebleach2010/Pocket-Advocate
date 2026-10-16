@@ -831,6 +831,15 @@ export function demoApi(role, store) {
         return ok({ ok: true, phone: phone || null, address: address || null });
       } else if (body.action === 'recording-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
+        // Full-Service owes no report (2026-10-15): the consult is stamped done.
+        if (c.fullAccess) {
+          if (!c.consultDoneAt) {
+            store.docs.set(key, { ...c, consultDoneAt: now, ...(c.status === 'confirmed' ? { status: 'awaiting_report' } : {}) });
+            store.persist?.();
+            store.fire?.(key);
+          }
+          return ok({ ok: true, consult: true });
+        }
         // The clock starts once (2026-10-15), as the Worker's does: a later
         // recording is filed and moves nothing.
         if (!c.reportDueAt) {
@@ -854,6 +863,7 @@ export function demoApi(role, store) {
         return ok({ ok: true, category: body.category, notified: true });
       } else if (body.action === 'report-uploaded') {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
+        if (c.fullAccess) return fail(409, 'Full-Service has no written report. File it as another type.');
         if (!c.self && !c.reportDueAt) return fail(409, 'Mark the call done first. The report comes after the call.');
         store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now });
       } else if (body.action === 'set-paid') {
@@ -901,6 +911,8 @@ export function demoApi(role, store) {
         }
         store.docs.set(key, {
           ...c,
+          // Full-Service replaces a report not yet delivered, as the Worker's reportReplaced does.
+          ...(c.reportDueAt && c.status !== 'delivered' && c.status !== 'closed' ? { reportDueAt: null } : {}),
           fullAccess: true,
           fullAccessAt: startAt,
           fullAccessOpenedAt: now,

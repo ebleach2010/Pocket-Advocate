@@ -3,7 +3,7 @@
 
 import './admin-ledger.js';
 import { db, collection, getDocs, query, where } from './firebase.js';
-import { requireAdmin, hydrateNav, STAFF, staffCasesQuery } from './auth.js';
+import { requireAdmin, hydrateNav, STAFF, staffCasesQuery, staffSubsQuery } from './auth.js';
 import { initPushPrompt } from './push.js';
 import {
   folderCardHtml, wireFolderOpen, wireFolderClocks, wireDxLongPress, openDxSheet,
@@ -150,6 +150,16 @@ async function load() {
     painted();
     return;
   }
+  // PRIORITY CHAT ON THIS PAGE (2026-10-15). Its one promise is a same-day
+  // reply, and nothing here said a subscriber was waiting for one. A read
+  // that fails leaves the shelf as it was.
+  const subs = [];
+  try {
+    const got = await within(8_000, () => getDocs(asUid
+      ? query(collection(db, 'subscriptions'), where('advocateId', '==', asUid))
+      : staffSubsQuery(user)));
+    if (got !== TOO_SLOW) got.forEach((d) => subs.push({ id: d.id, ...d.data() }));
+  } catch { /* the shelf stands without them */ }
   paintAddForms(cases);
   if (!cases.length) {
     listEl.innerHTML = '<p class="dim">No clients yet. They appear here the moment a payment lands.</p>';
@@ -163,6 +173,7 @@ async function load() {
   const dateFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric', year: 'numeric',
   });
+  const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, weekday: 'short' });
   const now = Date.now();
 
   // Three shelves (Eric, 2026-07-15): current clients (call happened, report
@@ -177,9 +188,14 @@ async function load() {
   // not "backed by a confirmed payment".
   const billed = shelved.filter((c) => !c.family && !(c.invite && !(Number(c.invite.priceCents) > 0)));
   const former = shelved.filter((c) => c.status === 'closed');
-  const future = shelved.filter((c) =>
+  // BY WHAT THEY BOUGHT (Eric, 2026-10-15: "be sure that the admin case
+  // actually matches what they purchased"). Full-Service owes the first
+  // consult and the work, never a report, so it has a shelf of its own
+  // instead of sitting under REPORT PHASE.
+  const fullOpen = shelved.filter((c) => c.fullAccess && c.status !== 'closed');
+  const future = shelved.filter((c) => !fullOpen.includes(c) &&
     c.status !== 'closed' && c.appointment?.start && toDate(c.appointment.start).getTime() > now);
-  const current = shelved.filter((c) => !former.includes(c) && !future.includes(c));
+  const current = shelved.filter((c) => !former.includes(c) && !future.includes(c) && !fullOpen.includes(c));
   current.sort((a, b) => toDate(a.reportDueAt || 0) - toDate(b.reportDueAt || 0));
   future.sort((a, b) => toDate(a.appointment?.start) - toDate(b.appointment?.start));
   former.sort((a, b) => toDate(b.closedAt || 0) - toDate(a.closedAt || 0));
@@ -370,18 +386,28 @@ async function load() {
   // state this file already computed for the folder cards: nothing here is
   // fetched or invented, so the two views can never disagree.
   const loops = [];
-  for (const c of [...current, ...future]) {
+  for (const c of [...current, ...fullOpen, ...future]) {
     const name = c.clientName || c.clientEmail || c.clientUid;
     const href = caseHref(c.id);
     if (c.needsReschedule) loops.push({ href, name, label: 'Needs rescheduling', tone: 'hot' });
     if (checkInDue(c)) loops.push({ href, name, label: 'Check-in due', tone: 'hot' });
     if (c.pendingTelehealth?.state === 'requested')
       loops.push({ href, name, label: 'Telehealth to confirm', tone: 'hot' });
-    if (c.status === 'awaiting_report' && c.reportDueAt) {
+    // The call has happened and nothing says so (2026-10-15): the report
+    // clock, or a Full-Service consult, waits on this one tap.
+    const callAt = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;
+    const callMissing = !c.self && !c.showcase && callAt && callAt + 3600_000 < Date.now()
+      && (c.fullAccess ? !c.consultDoneAt && c.status === 'confirmed' : !c.reportDueAt && ['confirmed', 'awaiting_report'].includes(c.status));
+    if (callMissing) loops.push({ href, name, label: `Call was ${dayFmt.format(new Date(callAt))}: mark it done`, tone: 'warm' });
+    if (!c.fullAccess && c.status === 'awaiting_report' && c.reportDueAt) {
       const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
       if (days < 0) loops.push({ href, name, label: `Report overdue ${-days}d`, tone: 'hot' });
       else if (days <= 3) loops.push({ href, name, label: `Report due in ${days}d`, tone: 'warm' });
     }
+  }
+  for (const sub of subs) {
+    if (sub.status !== 'active' || sub.lastMessage?.role !== 'client') continue;
+    loops.push({ href: `/admin-chats.html?sub=${encodeURIComponent(sub.id)}`, name: sub.email || 'A subscriber', label: 'Priority Chat: reply today', tone: 'hot' });
   }
   // One row per case, its reasons joined, in the hottest tone it has. The same
   // name twice in a list this short read as two different people.
@@ -431,14 +457,18 @@ async function load() {
     ])
     : '');
   listEl.innerHTML = attBlock + todayBlock + selfBlock +
-    section('CURRENT CLIENTS: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
-      `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
+    section('ADVOCACY CASES: REPORT PHASE', 'var(--cyan)', current.map((c) => rowFor(c,
+      `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}${c.status === 'delivered'
+        ? `delivered <strong style="color:var(--manila-strong)">${c.reportDeliveredAt ? dateFmt.format(toDate(c.reportDeliveredAt)) : 'no date'}</strong>`
+        : c.reportDueAt ? `report due <strong style="color:var(--manila-strong)">${dateFmt.format(toDate(c.reportDueAt))}</strong>` : 'report clock not started'}
        ${followUpFlag(c)}`))) +
+    section('FULL-SERVICE', 'var(--gold)', fullOpen.map((c) => rowFor(c,
+      `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}month ${Number(c.fullAccessMonths) || 1}${fullNextLine(c, dateFmt)}`))) +
     section('BOOKED: UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
-      `${chargeTag(c)}<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
+      `${chargeTag(c)}${buyTag(c)}<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
        ${followUpFlag(c)}`))) +
     section('FORMER CLIENTS: CLOSED', 'var(--dim)', former.map((c) => rowFor(c,
-      `closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
+      `${buyTag(c)}closed <strong style="color:var(--manila-strong)">${c.closedAt ? dateFmt.format(toDate(c.closedAt)) : 'no date'}</strong>`))) +
     `<div class="cmd-quiet">` + voiceBlock + summary + `</div>`;
   painted();
   const voiceSay = listEl.querySelector('#voice-said');
@@ -708,6 +738,9 @@ function wireShelfDelete(listEl) {
 
 function badge(c) {
   if (c.self) return 'MY OWN CASE';
+  // What they bought, until it closes (2026-10-15): a Full-Service case is
+  // never REPORT DUE or OVERDUE, because it owes no report.
+  if (c.fullAccess && c.status !== 'closed') return 'FULL-SERVICE';
   if (c.status === 'awaiting_report' && c.reportDueAt) {
     const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
     return days >= 0 ? `REPORT DUE ${days}d` : `OVERDUE ${-days}d`;
@@ -769,8 +802,25 @@ function checkInDue(c) {
   return now - last >= 14 * 86_400_000;
 }
 
+/** What they bought, where the shelf's title does not already say it (2026-10-15). */
+function buyTag(c) {
+  if (c.self) return '';
+  return `<strong style="color:var(--dim)">${c.fullAccess ? 'FULL-SERVICE' : 'ADVOCACY CASE'}</strong> · `;
+}
+
+/** What comes next on a Full-Service case, for its shelf line (2026-10-15). */
+function fullNextLine(c, fmt) {
+  // A check-in due already wears its own CHECK-IN DUE flag on the card.
+  if (checkInDue(c)) return '';
+  const ahead = (Array.isArray(c.checkIns) ? c.checkIns : []).map((x) => toDate(x.start).getTime())
+    .filter((t) => t > Date.now()).sort((a, b) => a - b)[0];
+  if (ahead) return ` · next check-in <strong style="color:var(--manila-strong)">${fmt.format(new Date(ahead))}</strong>`;
+  return c.consultDoneAt ? ' · consult done' : ' · consult not yet marked done';
+}
+
 function dueSoon(c) {
-  if (c.self || c.status !== 'awaiting_report' || !c.reportDueAt) return false;
+  // Full-Service owes no report (2026-10-15), so no report is ever due on it.
+  if (c.self || c.fullAccess || c.status !== 'awaiting_report' || !c.reportDueAt) return false;
   return toDate(c.reportDueAt) - Date.now() < 3 * 86_400_000;
 }
 function toDate(v) {

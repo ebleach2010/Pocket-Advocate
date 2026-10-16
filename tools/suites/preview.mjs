@@ -118,6 +118,19 @@ console.log('\n--- A. the case they walk ---');
     lastNine.every((day) => (perDay.get(day) || 0) >= 2), JSON.stringify(Object.fromEntries(perDay)));
 }
 
+// 2026-10-16: the day is the MST day at any hour. Just after midnight UTC the helper took tomorrow's UTC date, so the
+// preview's newest messages and files sat in the future and the visitor's own reply sorted above them.
+{
+  const late = new Date('2026-10-16T00:41:00Z'); // 5:41 PM MST on the 15th
+  const noon = new Date('2026-10-15T19:00:00Z'); // noon MST on the 15th
+  const got = [joe.at(late, 0, 8).toISOString(), joe.at(noon, 0, 8).toISOString(), joe.at(late, -1, 20).toISOString()];
+  // NEGATIVE CONTROL (run 2026-10-16, v7.53): at()'s `- 7 * 3600_000` taken out made this read
+  //   FAIL  A3b a time "today" in the preview is today on the MST clock, at any hour of the UTC day
+  check('A3b a time "today" in the preview is today on the MST clock, at any hour of the UTC day',
+    got[0] === '2026-10-15T15:00:00.000Z' && got[1] === '2026-10-15T15:00:00.000Z' && got[2] === '2026-10-15T03:00:00.000Z',
+    JSON.stringify(got));
+}
+
 console.log('\n--- B. everything works, and nothing leaves ---');
 {
   const shop = await Promise.all(['/api/checkout', '/api/extend', '/api/upgrade', '/api/followup', '/api/chat-unlock', '/api/subscribe', '/api/portal']

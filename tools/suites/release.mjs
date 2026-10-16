@@ -166,6 +166,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // photo is, that Employer mode is green, and that he sets a contractor's photo and bio from their card.
   // NEGATIVE CONTROL (run 2026-10-15, v7.50): the worker's BUILD_TAG left at the payroll-paid tag made this read
   //   FAIL  R1 both versions read 7.50 with the new tag, the 7.50 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-15 (v7.53): both versions read 7.53 with the what-they-bought tag, and the 7.53 entry says Clients
+  // groups by purchase, Full-Service owes the consult and no report, and an upgrade replaces the report.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): the worker's VERSION left at '7.52' made this read
+  //   FAIL  R1 both versions read 7.53 with the new tag, the 7.53 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry753 = (CL.match(/\{\n\s+\/\/ WHAT THEY BOUGHT \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.52): both versions read 7.52 with the wrong-today tag, and the 7.52 entry says statuses and
   // forms carry the contractor's name, a report waits for the call, and the Advisor sign-up keeps its caveat.
   // NEGATIVE CONTROL (run 2026-10-15, v7.52): changelog.js's VERSION left at '7.51' made this read
@@ -216,9 +221,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.52 with the new tag, the 7.52 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.52';/.test(CL) && /const VERSION = '7\.52';/.test(W) && /const BUILD_TAG = 'v2026-10-15-wrong-today';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.52'
+  check('R1 both versions read 7.53 with the new tag, the 7.53 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.53';/.test(CL) && /const VERSION = '7\.53';/.test(W) && /const BUILD_TAG = 'v2026-10-15-what-they-bought';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.53'
+    && /version: '7\.53',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry753)
+    && /grouped by what they bought/.test(entry753) && /owes the first consult, never a report/.test(entry753)
+    && /replaces the report/.test(entry753) && /Priority Chat client waiting on a reply/.test(entry753)
+    && !DASH.test(entry753) && !HARD.some((re) => re.test(entry753))
     && /version: '7\.52',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry752)
     && /"Ana is reading", not yours/.test(entry752) && /name that contractor as the advocate/.test(entry752)
     && /cannot be marked delivered before the call/.test(entry752) && /only an aid, not a diagnostic tool/.test(entry752)

@@ -690,7 +690,8 @@ function render(el) {
       const t = toDate(x.start);
       if (t.getTime() > nowMs) nextOf.push({ t, what: 'Check-in' });
     }
-  if (c.status === 'awaiting_report' && c.reportDueAt)
+  // Full-Service owes no report (Eric, 2026-10-15), so it never says one is due.
+  if (!c.fullAccess && c.status === 'awaiting_report' && c.reportDueAt)
     nextOf.push({ t: toDate(c.reportDueAt), what: 'Report due' });
   nextOf.sort((a, b) => a.t - b.t);
   const nextFmt = new Intl.DateTimeFormat('en-US', {
@@ -705,7 +706,7 @@ function render(el) {
   const loops = [];
   if (c.needsReschedule) loops.push(['hot', 'Needs rescheduling']);
   if (c.pendingTelehealth?.state === 'requested') loops.push(['hot', 'Telehealth to confirm']);
-  if (c.status === 'awaiting_report' && c.reportDueAt) {
+  if (!c.fullAccess && c.status === 'awaiting_report' && c.reportDueAt) {
     const days = Math.ceil((toDate(c.reportDueAt).getTime() - nowMs) / 86_400_000);
     if (days < 0) loops.push(['hot', `Report overdue ${-days}d`]);
   }
@@ -719,7 +720,7 @@ function render(el) {
   head.innerHTML = `
     <div class="case-who">
       <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
-      <span class="status-pill${c.self ? ' self' : ''}" data-status>${c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
+      <span class="status-pill${c.self ? ' self' : ''}" data-status>${c.self ? 'MY OWN CASE' : c.fullAccess && c.status !== 'closed' ? 'FULL-SERVICE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
     </div>
     ${loopRow}
     ${nextLine}
@@ -2384,7 +2385,18 @@ function paintOverview(pane) {
   // Anything a client is waiting on him for. It goes ABOVE every standing
   // lever, because it is the only part of this page with someone else's clock
   // attached to it, and it used to sit fourth in a stack of identical rows.
+  // THE CALL HAS HAPPENED AND NOTHING SAYS SO (2026-10-15): the report clock,
+  // or a Full-Service consult, waits on one tap, so the tap comes to the top.
+  const callAt = start ? start.getTime() : 0;
+  const callUnmarked = !c.showcase && callAt && callAt + 3600_000 < Date.now()
+    && (c.fullAccess ? !c.consultDoneAt && c.status === 'confirmed' : !c.reportDueAt && ['confirmed', 'awaiting_report'].includes(c.status));
   const waiting = `
+    ${callUnmarked ? `
+    <div class="panel" data-call-done style="border-color:var(--cyan);">
+      <h3 style="margin:0 0 .3rem;">The call was ${esc(mtFmt.format(start))} MST</h3>
+      <p class="dim small" style="margin:0 0 .7rem;">${c.fullAccess ? 'Mark the consult done.' : 'Mark it done to start the 14-day report clock.'}</p>
+      <button class="btn" data-action="recording-uploaded">${c.fullAccess ? 'Consult done' : 'Mark the call done'}</button>
+    </div>` : ''}
     ${chargeUndecided(c.charge) ? chargeCard(c) : ''}
     ${c.appointment?.requested ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
@@ -2665,7 +2677,15 @@ function paintOverview(pane) {
     <p class="eyebrow mgmt-when">After the call</p>
 
     <details class="mgmt" data-k="miles">
-      <summary>✓ Call done, report sent</summary>
+      ${c.fullAccess ? `<summary>✓ Consult done</summary>
+      <div class="mgmt-body">
+        <div class="actions" style="margin-top:.3rem;">
+          <button class="btn secondary" data-action="recording-uploaded">Consult done</button>
+          ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
+        </div>
+        ${saidHtml('miles')}
+        <p class="dim small" style="margin-top:.6rem;">Full-Service has no written report. Uploading the recording marks the consult done for you.</p>
+      </div>` : `<summary>✓ Call done, report sent</summary>
       <div class="mgmt-body">
         <div class="actions" style="margin-top:.3rem;">
           <button class="btn secondary" data-action="recording-uploaded">Call done: start the 14-day report clock</button>
@@ -2674,7 +2694,7 @@ function paintOverview(pane) {
         </div>
         ${saidHtml('miles')}
         <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
-      </div>
+      </div>`}
     </details>
 
     ${advocate ? '' : `<details class="mgmt" data-k="review">
@@ -2737,6 +2757,16 @@ function paintOverview(pane) {
   pane.querySelector('#save-link').addEventListener('click', saveLink);
   wireScheduler(pane);
   wireOpenFull(pane, c);
+  // THE ADVOCACY CASE'S ORDER (2026-10-15). Its first job before the call is
+  // the meeting link, so that comes first; the forms are Full-Service legwork
+  // and go last, before Ending it, still there for an upgrade.
+  if (!c.fullAccess) {
+    const when = (word) => [...pane.querySelectorAll('.mgmt-when')].find((e) => e.textContent.trim() === word);
+    const link = pane.querySelector('details[data-k="link"]');
+    const forms = pane.querySelector('details[data-k="auth"]');
+    if (link) when('Before the call')?.after(link);
+    if (forms) when('Ending it')?.before(forms);
+  }
   pane.querySelectorAll('[data-action]').forEach((b) =>
     b.addEventListener('click', () => {
       if (b.dataset.action === 'report-uploaded' && !confirm(REPORT_SENT_ASK)) return;
@@ -3180,12 +3210,15 @@ function paintFiles(pane) {
     if (!cat.value) { note.textContent = 'Choose what it is first.'; return; }
     const rec = cat.value === REC_PICK;
     fileEl.accept = rec ? REC_ACCEPT : DOC_ACCEPT;
-    if (rec) { note.textContent = 'Starts the 14-day report clock.'; return; }
+    if (rec) { note.textContent = data.fullAccess ? 'Marks the consult done.' : 'Starts the 14-day report clock.'; return; }
     const c = categoryOf(cat.value) || UPLOAD_CATEGORIES[0];
     note.textContent = c.action === 'report-uploaded'
       ? 'Marks the case delivered and starts their 48 hours to ask about it.'
       : `Files it on their case as a ${c.label.toLowerCase()} and tells them by name. Nothing about the case moves.`;
   };
+  // Full-Service has no written report (Eric, 2026-10-15), so Report is not a
+  // thing to file on it; the Worker refuses one too.
+  if (data.fullAccess) cat.querySelector('option[value="report"]')?.remove();
   cat.addEventListener('change', sayWhat);
   sayWhat();
   if (data.self) {
@@ -4242,7 +4275,11 @@ function infoBar(c, mtFmt, start, due) {
     row('PAID', holdNote, 'var(--orange)');
 
   // The report clock: strict 14 calendar days on this side of the counter (7 before 2026-10-15).
-  if (c.status === 'delivered' || c.status === 'closed')
+  // FULL-SERVICE OWES THE FIRST CONSULT, NOT A REPORT (Eric, 2026-10-15), so
+  // its row is the consult, unless a report was delivered before it began.
+  if (c.fullAccess && c.status !== 'delivered' && !c.reportDeliveredAt)
+    row('CONSULT', c.consultDoneAt ? 'done' : '<span class="dim">mark it done after the call</span>', 'var(--cyan)');
+  else if (c.status === 'delivered' || c.status === 'closed')
     row('REPORT', c.status === 'closed' ? 'delivered · case closed' : 'DELIVERED', 'var(--cyan)');
   else if (due !== null)
     row('REPORT', due >= 0 ? `due in ${due} day${due === 1 ? '' : 's'}` : `OVERDUE ${-due}d`,

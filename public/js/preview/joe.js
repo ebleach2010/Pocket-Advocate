@@ -31,7 +31,10 @@ export const JOE = {
 /** Day offsets from build time, so the case reads as three weeks old whenever it is built. */
 const DAY = 86_400_000;
 export function at(now, days, hour = 9, minute = 0) {
-  const t = new Date(now.getTime() + days * DAY);
+  // The day is the MST day (2026-10-16). Taking the UTC date first put
+  // "today" a day ahead between midnight and 7am UTC, so the preview's newest
+  // messages and files sat in the future and a reply sorted above them.
+  const t = new Date(now.getTime() - 7 * 3600_000 + days * DAY);
   // The app prints every time on the fixed MST clock (UTC minus seven, no
   // daylight saving), so a 9 here reads as 9:00 AM on the page.
   t.setUTCHours(hour + 7, minute, 0, 0);

@@ -391,7 +391,10 @@ export function seed({ set, file }) {
       disclaimer: days(38), privacy: days(38), recording: days(38),
       fullAccess: days(38),
     },
-    reportDueAt: days(13),
+    // Full-Service owes no report (Eric, 2026-10-15): its first call is the
+    // consult, stamped done, and no report clock runs.
+    reportDueAt: null,
+    consultDoneAt: days(20),
     files: [],
     stripe: { sessionId: 'cs_demo_full', paymentIntentId: 'pi_demo_full', amountTotal: 350000 },
     // 24.5 lifetime hours against the case fee plus two uncredited months

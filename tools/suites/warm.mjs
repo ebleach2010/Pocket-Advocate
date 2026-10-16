@@ -146,7 +146,11 @@ console.log('\n--- B. his face, and the days ---');
 console.log('\n--- C. progress, celebrated ---');
 {
   const CASE = f('public/js/case.js');
-  const src = [(CASE.match(/const STEPS = \[[\s\S]*?\n\];/) || [''])[0], (CASE.match(/const CHEER = \{[\s\S]*?\n\};/) || [''])[0],
+  // RE-PINNED 2026-10-15 (v7.53): cheerCard counts the steps this case runs on (stepsOf: Full-Service owes no report),
+  // so the harness carries FULL_STEPS and stepsOf beside STEPS.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): the paused case's `|| c.hold?.pausedAt` taken out still made C1 read FAIL.
+  const src = [(CASE.match(/const STEPS = \[[\s\S]*?\n\];/) || [''])[0], (CASE.match(/const FULL_STEPS = [\s\S]*?\]\)\);/) || [''])[0],
+    (CASE.match(/const stepsOf = [^\n]*;/) || [''])[0], (CASE.match(/const CHEER = \{[\s\S]*?\n\};/) || [''])[0],
     (CASE.match(/function cheerCard\(c, rank, closed\) \{[\s\S]*?\n\}/) || [''])[0]].join('\n');
   const esc = (s) => String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   const cheer = new Function('esc', `${src}\nreturn cheerCard;`)(esc);

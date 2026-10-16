@@ -627,6 +627,9 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
     ${(SRC.match(/\nfunction todayByCase\([\s\S]*?\n\}/) || [''])[0]}
     ${(SRC.match(/\nasync function bankDaySeconds\([\s\S]*?\n\}/) || [''])[0]}
     ${(SRC.match(/\nfunction splitClockAtFlip\([\s\S]*?\n\}/) || [''])[0]}
+    ${/* RE-PINNED 2026-10-15 (v7.53): opening Full-Service drops a report still owed (reportReplaced), so the harness carries it.
+       NEGATIVE CONTROL (run 2026-10-15, v7.53): open-full's fullAccessRateCents written as the tier alone still made T6 read FAIL. */ ''}
+    ${(SRC.match(/\nfunction reportReplaced\([\s\S]*?\n\}/) || [''])[0]}
     ${fn}
     return handleCaseUpdate;
   `;

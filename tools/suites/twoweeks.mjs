@@ -51,7 +51,10 @@ console.log('\n--- B. the words ---');
     ['public/js/case.js', "['delivered', 'Report, within 14 days of the call'],"],
     ['public/js/help.js', '<li><strong>Your written report</strong>, within 14 days of the call.</li>'],
     ['public/js/admin-case.js', 'Call done: start the 14-day report clock'],
-    ['public/js/admin-case.js', "note.textContent = 'Starts the 14-day report clock.';"],
+    // RE-PINNED 2026-10-15 (v7.53): a Full-Service recording marks the consult instead (it owes no report); the
+    // Advocacy Case's sentence is unchanged.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.53): that sentence put back to "Starts the 7-day report clock." made B1 read FAIL.
+    ['public/js/admin-case.js', "note.textContent = data.fullAccess ? 'Marks the consult done.' : 'Starts the 14-day report clock.';"],
     ['public/js/admin-case.js', "and the 14 days are running.'"],
     ['public/stats.html', '<span>reports delivered within the time promised</span>'],
     ['public/js/demo/api.js', 'reportDueAt: new Date(now.getTime() + 14 * 86400000)'],

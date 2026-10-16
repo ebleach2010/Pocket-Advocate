@@ -2390,7 +2390,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-wrong-today';
+const BUILD_TAG = 'v2026-10-15-what-they-bought';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2398,7 +2398,7 @@ const BUILD_TAG = 'v2026-10-15-wrong-today';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.52';
+const VERSION = '7.53';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3077,6 +3077,19 @@ async function holdSweep(env) {
         `/admin-case.html?id=${r.id}`);
     }
   }
+}
+
+/**
+ * FULL-SERVICE REPLACES THE REPORT (Eric, 2026-10-15). Asked which package
+ * needs only the first consult and no next-steps document: "Full-Service".
+ * Asked whether a client who upgrades before their report lands still gets
+ * it: "No, Full-Service replaces it." So switching Full-Service on drops a
+ * report clock that has not been answered yet; a report already delivered
+ * stays delivered. Returns the patch and its mask, empty when nothing is owed.
+ */
+function reportReplaced(c) {
+  const owed = !!c?.reportDueAt && c.status !== 'delivered' && c.status !== 'closed';
+  return owed ? { patch: { reportDueAt: null }, mask: ['reportDueAt'] } : { patch: {}, mask: [] };
 }
 
 function fullAccessWindowEnd(c) {
@@ -7325,7 +7338,11 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
   // The clock resets at the flip (Eric, 2026-08-29): the review hours stay
   // behind work.tierMark and the Full-Service clock starts from here.
   const split = splitClockAtFlip(c.data.work, now);
+  // FULL-SERVICE REPLACES THE REPORT (Eric, 2026-10-15: "No, Full-Service
+  // replaces it"). A report not yet delivered is owed no longer.
+  const dropReport = reportReplaced(c.data);
   const okBuy = await patchDoc(env, `cases/${caseId}`, {
+    ...dropReport.patch,
     fullAccess: true,
     fullAccessAt: now,
     // What this case has paid in total: the case fee plus this first month.
@@ -7344,7 +7361,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
     forms,
     work: split.work,
   }, {
-    mask: ['fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'fullAccessMonths',
+    mask: [...dropReport.mask, 'fullAccess', 'fullAccessAt', 'fullAccessRateCents', 'fullAccessMonths',
       'pendingFullAccess', 'fullAccessRequest', 'extraPayments', 'forms', 'work'],
     ifUpdateTime: c.updateTime,
   }).catch(() => false);
@@ -11031,7 +11048,10 @@ async function handleCaseUpdate(request, env) {
     // Same clock reset as the paid door: review hours behind the mark, the
     // Full-Service clock from here (Eric, 2026-08-29).
     const split = splitClockAtFlip(c.work, now);
+    // Full-Service replaces a report not yet delivered (Eric, 2026-10-15).
+    const dropReport = reportReplaced(c);
     await patchDoc(env, `cases/${caseId}`, {
+      ...dropReport.patch,
       fullAccess: true,
       fullAccessAt: startAt,
       fullAccessOpenedAt: now,
@@ -11043,7 +11063,7 @@ async function handleCaseUpdate(request, env) {
       extraPayments: payments,
       work: split.work,
     }, {
-      mask: ['fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessRateCents',
+      mask: [...dropReport.mask, 'fullAccess', 'fullAccessAt', 'fullAccessOpenedAt', 'fullAccessRateCents',
         'fullAccessMonths', 'fullAccessByHand', 'pendingFullAccess', 'fullAccessRequest',
         'extraPayments', 'work'],
     });
@@ -11096,6 +11116,17 @@ async function handleCaseUpdate(request, env) {
     // His own case: the recording is filed, and no clock starts and nobody
     // is written to. There is no report promise to himself.
     if (doc.data.self) return json({ ok: true, self: true });
+    // FULL-SERVICE OWES NO REPORT (Eric, 2026-10-15: the first consult is
+    // "the only thing that needs delivering"). Its call is stamped done, the
+    // case moves on, and no report clock starts and no report email goes.
+    if (doc.data.fullAccess) {
+      if (!doc.data.consultDoneAt) {
+        const fields = { consultDoneAt: now };
+        if (doc.data.status === 'confirmed') fields.status = 'awaiting_report';
+        await patchDoc(env, `cases/${caseId}`, fields, { mask: Object.keys(fields) });
+      }
+      return json({ ok: true, consult: true });
+    }
     // THE CLOCK STARTS ONCE (2026-10-15). It used to be set again by every
     // recording, so a check-in recorded a week later pushed the report out
     // another two weeks and hid one already overdue. The first call starts it;
@@ -11168,6 +11199,9 @@ async function handleCaseUpdate(request, env) {
     // case marked it delivered, emailed the client and started the 48 hours
     // that close their chat, five days before the call. The report follows
     // the call, so the call is marked first (a recording, or Call done).
+    // Full-Service has no written report (Eric, 2026-10-15); a document filed
+    // as one would mark the case delivered and close the chat in 48 hours.
+    if (doc.data.fullAccess) return json({ error: 'Full-Service has no written report. File it as another type.' }, 409);
     if (!doc.data.reportDueAt) return json({ error: 'Mark the call done first. The report comes after the call.' }, 409);
     await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {
       mask: ['status', 'reportDeliveredAt'],

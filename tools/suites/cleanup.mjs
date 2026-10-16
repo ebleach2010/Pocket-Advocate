@@ -12,6 +12,10 @@
 //      recording, the Advisor line on a contractor's Uploads, the Advisor
 //      opt-in's caveat, push links that opened the wrong place, and an inbox
 //      one unreadable time could stop.
+//   B. (v7.53) each case matches what was bought: Full-Service owes the first
+//      consult and the work, never a report, and an upgrade replaces one not
+//      yet delivered; the shelf groups by purchase; Priority Chat's same-day
+//      promise is a reminder.
 //
 // Run: node cleanup.mjs
 import { readFileSync } from 'node:fs';
@@ -110,7 +114,10 @@ console.log('\n--- A. what was wrong today (v7.52) ---');
     /if \(!doc\.data\.reportDueAt\) return json\(\{ error: 'Mark the call done first\. The report comes after the call\.' \}, 409\);/.test(rep)
     && rep.indexOf('if (doc.data.self)') < rep.indexOf('if (!doc.data.reportDueAt)')
     && /const alreadyStarted = !!doc\.data\.reportDueAt;\n\s+if \(!alreadyStarted\) \{\n\s+const fields = \{ reportDueAt:/.test(rec)
-    && (rec.match(/patchDoc\(/g) || []).length === 1
+    // RE-PINNED 2026-10-15 (v7.53): Full-Service's consult stamp is a write of its own ahead of the clock; the report
+    // clock's part still writes once.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.53): the report-uploaded refusal taken out still made A3 read FAIL.
+    && (rec.slice(rec.indexOf('const alreadyStarted')).match(/patchDoc\(/g) || []).length === 1
     && /<option value="" selected>Choose what this is<\/option>/.test(CASE) && /fileEl\.disabled = !cat\.value;/.test(CASE)
     && /const REPORT_SENT_ASK = 'This tells your client the report is delivered and closes their chat in 48 hours\. Continue\?';/.test(CASE)
     && /if \(b\.dataset\.action === 'report-uploaded' && !confirm\(REPORT_SENT_ASK\)\) return;/.test(CASE)
@@ -151,6 +158,103 @@ console.log('\n--- A. what was wrong today (v7.52) ---');
     && /const HIS_ALONE = \[[^\]]*'\/admin-calendar\.html'\];/.test(f('public/js/admin-staffnav.js'))
     && /if \(items\.length === 1\) \{ items\[0\]\.click\(\); return; \}/.test(ADMIN)
     && /const under = h1\?\.closest\('\.clients-head'\) \|\| h1;\n\s+if \(under\) under\.after\(panel\); else mount\.prepend\(panel\);/.test(f('public/js/push.js')));
+}
+
+console.log('\n--- B. each case matches what was bought (v7.53) ---');
+{
+  // B1: Full-Service replaces a report not yet delivered, run, and both doors that switch it on use it.
+  let replaced = () => null;
+  try { replaced = new Function(`${lift(W, 'function reportReplaced(c) {')}\nreturn reportReplaced;`)(); } catch { /* read below */ }
+  const due = new Date();
+  const runs = {
+    owed: replaced({ status: 'awaiting_report', reportDueAt: due }),
+    delivered: replaced({ status: 'delivered', reportDueAt: due }),
+    closed: replaced({ status: 'closed', reportDueAt: due }),
+    none: replaced({ status: 'confirmed' }),
+  };
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): reportReplaced's `c.status !== 'delivered' &&` taken out made this read
+  //   FAIL  B1 Full-Service drops a report still owed, keeps one delivered, and both doors that switch it on say so
+  check('B1 Full-Service drops a report still owed, keeps one delivered, and both doors that switch it on say so',
+    JSON.stringify(runs.owed) === '{"patch":{"reportDueAt":null},"mask":["reportDueAt"]}'
+    && JSON.stringify(runs.delivered) === '{"patch":{},"mask":[]}' && JSON.stringify(runs.closed) === '{"patch":{},"mask":[]}'
+    && JSON.stringify(runs.none) === '{"patch":{},"mask":[]}'
+    && /const dropReport = reportReplaced\(c\.data\);\n\s+const okBuy = await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+\.\.\.dropReport\.patch,/.test(W)
+    && /mask: \[\.\.\.dropReport\.mask, 'fullAccess', 'fullAccessAt', 'fullAccessRateCents'/.test(W)
+    && /const dropReport = reportReplaced\(c\);\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+\.\.\.dropReport\.patch,/.test(W)
+    && /mask: \[\.\.\.dropReport\.mask, 'fullAccess', 'fullAccessAt', 'fullAccessOpenedAt'/.test(W),
+    JSON.stringify(runs));
+
+  // B2: the consult, not a report.
+  const rec = W.slice(W.indexOf("} else if (action === 'recording-uploaded') {"), W.indexOf("} else if (action === 'summary-uploaded') {"));
+  const fullPart = rec.slice(rec.indexOf('if (doc.data.fullAccess) {'), rec.indexOf('const alreadyStarted'));
+  const rep = W.slice(W.indexOf("} else if (action === 'report-uploaded') {"), W.indexOf("} else if (action === 'confirm-request') {"));
+  const DEMO = f('public/js/demo/api.js');
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): report-uploaded's Full-Service refusal taken out made this read
+  //   FAIL  B2 a Full-Service call stamps the consult done with no report clock and no report email, and a report is refused on it
+  check('B2 a Full-Service call stamps the consult done with no report clock and no report email, and a report is refused on it',
+    fullPart.length > 0 && /const fields = \{ consultDoneAt: now \};/.test(fullPart) && !/reportDueAt|sendEmail/.test(fullPart)
+    && /return json\(\{ ok: true, consult: true \}\);/.test(fullPart)
+    && rec.indexOf('if (doc.data.fullAccess) {') < rec.indexOf('const alreadyStarted')
+    && /if \(doc\.data\.fullAccess\) return json\(\{ error: 'Full-Service has no written report\. File it as another type\.' \}, 409\);/.test(rep)
+    && /if \(c\.fullAccess\) return fail\(409, 'Full-Service has no written report\. File it as another type\.'\);/.test(DEMO)
+    && /consultDoneAt: now, \.\.\.\(c\.status === 'confirmed'/.test(DEMO));
+
+  // B3: the shelf by what was bought, run where it can be.
+  const ADMIN = f('public/js/admin.js');
+  let shelfFns = {};
+  try {
+    shelfFns = new Function(`${lift(ADMIN, 'function toDate(v) {')}\n${lift(ADMIN, 'function badge(c) {')}\n${lift(ADMIN, 'function dueSoon(c) {')}\n${lift(ADMIN, 'function buyTag(c) {')}\nreturn { badge, dueSoon, buyTag };`)();
+  } catch { /* read below */ }
+  const overdue = new Date(Date.now() - 5 * 86_400_000);
+  const fullCase = { fullAccess: true, status: 'awaiting_report', reportDueAt: overdue };
+  const advCase = { status: 'awaiting_report', reportDueAt: overdue };
+  const got = shelfFns.badge ? {
+    fullBadge: shelfFns.badge(fullCase), advBadge: shelfFns.badge(advCase),
+    fullSoon: shelfFns.dueSoon(fullCase), advSoon: shelfFns.dueSoon(advCase),
+    tags: [shelfFns.buyTag(fullCase), shelfFns.buyTag(advCase), shelfFns.buyTag({ self: true })],
+  } : {};
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): badge()'s Full-Service line taken out made this read
+  //   FAIL  B3 the shelf groups by what was bought: Full-Service has its own shelf and is never REPORT DUE or OVERDUE, and the call and a Priority Chat client waiting are reminders
+  check('B3 the shelf groups by what was bought: Full-Service has its own shelf and is never REPORT DUE or OVERDUE, and the call and a Priority Chat client waiting are reminders',
+    got.fullBadge === 'FULL-SERVICE' && got.advBadge === 'OVERDUE 5d' && got.fullSoon === false && got.advSoon === true
+    && /FULL-SERVICE<\/strong> · $/.test(got.tags?.[0] || '') && /ADVOCACY CASE<\/strong> · $/.test(got.tags?.[1] || '') && got.tags?.[2] === ''
+    && /const fullOpen = shelved\.filter\(\(c\) => c\.fullAccess && c\.status !== 'closed'\);/.test(ADMIN)
+    && /section\('ADVOCACY CASES: REPORT PHASE', 'var\(--cyan\)', current\.map/.test(ADMIN) && /section\('FULL-SERVICE', 'var\(--gold\)', fullOpen\.map/.test(ADMIN)
+    && /if \(callMissing\) loops\.push\(\{ href, name, label: `Call was \$\{dayFmt\.format\(new Date\(callAt\)\)\}: mark it done`, tone: 'warm' \}\);/.test(ADMIN)
+    && /if \(!c\.fullAccess && c\.status === 'awaiting_report' && c\.reportDueAt\) \{/.test(ADMIN)
+    && /if \(sub\.status !== 'active' \|\| sub\.lastMessage\?\.role !== 'client'\) continue;/.test(ADMIN)
+    && /label: 'Priority Chat: reply today', tone: 'hot'/.test(ADMIN)
+    && /badge: c\.self \? 'MY OWN CASE' : c\.fullAccess \? 'FULL-SERVICE' : 'ADVOCACY CASE',/.test(f('public/js/admin-chats.js')),
+    JSON.stringify(got));
+
+  // B4: the case page says what this case owes.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): the CONSULT row's branch taken out (back to the REPORT row on every case) made this read
+  //   FAIL  B4 a Full-Service case page shows the consult, never a report due, and files no report; an Advocacy Case leads with the meeting link
+  check('B4 a Full-Service case page shows the consult, never a report due, and files no report; an Advocacy Case leads with the meeting link',
+    /if \(c\.fullAccess && c\.status !== 'delivered' && !c\.reportDeliveredAt\)\n\s+row\('CONSULT',/.test(CASE)
+    && /if \(!c\.fullAccess && c\.status === 'awaiting_report' && c\.reportDueAt\)\n\s+nextOf\.push/.test(CASE)
+    && /c\.fullAccess && c\.status !== 'closed' \? 'FULL-SERVICE' :/.test(CASE)
+    && /if \(data\.fullAccess\) cat\.querySelector\('option\[value="report"\]'\)\?\.remove\(\);/.test(CASE)
+    && /<button class="btn secondary" data-action="recording-uploaded">Consult done<\/button>/.test(CASE)
+    && /if \(link\) when\('Before the call'\)\?\.after\(link\);/.test(CASE) && /if \(forms\) when\('Ending it'\)\?\.before\(forms\);/.test(CASE)
+    && /const callUnmarked = !c\.showcase && callAt && callAt \+ 3600_000 < Date\.now\(\)/.test(CASE));
+
+  // B5: what the client reads, and the agreement.
+  const CLIENT = f('public/js/case.js');
+  const TERMS = f('public/js/tier-terms.js');
+  const ABOUT = f('public/js/service-about.js');
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): the agreement's old sentence ("the report still arrives as promised") put back made this read
+  //   FAIL  B5 a Full-Service client reads Full-Service, not REPORT DUE, and the agreement says the work replaces the report
+  check('B5 a Full-Service client reads Full-Service, not REPORT DUE, and the agreement says the work replaces the report',
+    /const statusWord = \(c\) => \(c\.fullAccess && c\.status !== 'closed' \? 'FULL-SERVICE' : STATUS_LABEL\[c\.status\] \|\| c\.status\);/.test(CLIENT)
+    && /\$\{c\.fullAccess \? 'Full-Service Case Management' : 'Advocacy Case'\}/.test(CLIENT)
+    && /const stepsOf = \(c\) => \(c\?\.fullAccess && !c\.reportDeliveredAt \? FULL_STEPS : STEPS\);/.test(CLIENT)
+    && !/STATUS_LABEL\[c\.status\] \|\| c\.status\}/.test(CLIENT)
+    && /<strong>There is no written report with Full-Service: the work itself replaces it\.<\/strong>/.test(TERMS)
+    && /Full-Service takes over from that day and replaces the report:/.test(TERMS)
+    && !/report still arrives as promised/.test(TERMS) && !/the written report\. Then/.test(TERMS)
+    && /'It starts from our initial consult and my record review\. No written report: the work replaces it',/.test(ABOUT)
+    && !DASH.test(TERMS) && !DASH.test(ABOUT));
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -373,8 +373,11 @@ console.log('\n--- 5. the work switch on the card ---');
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(3500);
 
+// RE-PINNED 2026-10-15 (v7.53): Clients groups by what was bought, so the Full-Service case this section drives (its
+// Hands-Off clock, review hours behind the mark) is no longer the first folder; it is asked for by id.
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): the folder switch's click handler taken out still made "one flip" read FAIL.
 const folderId = await page.evaluate(() => {
-  const card = document.querySelector('.folder');
+  const card = document.querySelector('.folder[data-id="demo-case-full"]') || document.querySelector('.folder');
   card?.scrollIntoView({ block: 'center', behavior: 'instant' });
   return card?.dataset.id || null;
 });
@@ -509,8 +512,10 @@ if (dxAt) {
 console.log('\n--- 5b. a long hold on the folder is just a slow tap now ---');
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(3000);
+// RE-PINNED 2026-10-15 (v7.53): the Full-Service case by id here too; it is no longer the first folder on Clients.
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): the case header's day figure taken out still made the chart header check read FAIL.
 const tapBox = await page.evaluate(() => {
-  const card = document.querySelector('.folder');
+  const card = document.querySelector('.folder[data-id="demo-case-full"]') || document.querySelector('.folder');
   card?.scrollIntoView({ block: 'center', behavior: 'instant' });
   return card?.dataset.id || null;
 });

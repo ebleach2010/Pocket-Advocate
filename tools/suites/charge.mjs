@@ -391,7 +391,10 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
   //   FAIL  CH7 the pages: the client's pill reads AWAITING APPROVAL while the hold waits, the card under it says the Worker's exact words, a declined case says nothing was charged under the reason, the booking page says the card is held before the button and the return page after, his card carries the tappable amount and posts the decision with it to the route, the shelf tags a case waiting on him, the amount is 44px tall, the seven admin pages load the bumped stylesheet, and what a case paid is what was captured: nothing held, nothing comped, the month on top on the tier, the old receipt on an old case
   check('CH7 the pages: the client\'s pill reads AWAITING APPROVAL while the hold waits, the card under it says the Worker\'s exact words, a declined case says nothing was charged under the reason, the booking page says the card is held before the button and the return page after, his card carries the tappable amount and posts the decision with it to the route, the shelf tags a case waiting on him, the amount is 44px tall, the seven admin pages load the bumped stylesheet, and what a case paid is what was captured: nothing held, nothing comped, the month on top on the tier, the old receipt on an old case',
     /return CHARGE_WAITING\.includes\(c\?\.charge\?\.state\) \? 'AWAITING APPROVAL' : '';/.test(CASE)
-    && (CASE.match(/chargeLabel\(c\) \|\| STATUS_LABEL\[c\.status\] \|\| c\.status/g) || []).length === 2
+    // RE-PINNED 2026-10-15 (v7.53): the pill's fallback is statusWord(c), which says FULL-SERVICE on a Full-Service case
+    // (it owes no report) and STATUS_LABEL otherwise; the held charge's label still comes first, in both places.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.53): one pill's `chargeLabel(c) ||` taken out made CH7 read FAIL.
+    && (CASE.match(/chargeLabel\(c\) \|\| statusWord\(c\)/g) || []).length === 2
     && /\$\{closedNotice\(c\)\}\n\s+\$\{chargeNotice\(c\)\}/.test(CASE)
     && heldLine === mod.CHARGE_COPY.held
     && /data-charge-released>Nothing was charged\. The hold on your card is released\.<\/p>/.test(CASE)
@@ -407,7 +410,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     && /fetch\('\/api\/admin\/case-charge', \{/.test(wire) && /body: JSON\.stringify\(\{ caseId, decision, amountCents, reason \}\),/.test(wire)
     && /if \(ch\.state === 'held' && amountCents > cap\) \{ say\(/.test(wire)
     && /const chargeEl = pane\.querySelector\('\[data-charge-card\]'\);\n\s+if \(chargeEl\) wireChargeCard\(chargeEl, c\);/.test(ADMC)
-    && (ADMIN.match(/\$\{chargeTag\(c\)\}/g) || []).length === 2 && /APPROVE OR DECLINE · \$\{what\}/.test(ADMIN)
+    // RE-PINNED 2026-10-15 (v7.53): the shelf grew a FULL-SERVICE section, which tags a held charge like the other two.
+    // NEGATIVE CONTROL (run 2026-10-15, v7.53): the FULL-SERVICE section's chargeTag taken out made CH7 read FAIL.
+    && (ADMIN.match(/\$\{chargeTag\(c\)\}/g) || []).length === 3 && /APPROVE OR DECLINE · \$\{what\}/.test(ADMIN)
     && /stripeTook\(c\)/.test(ADMIN)
     && /^\.charge-amt \{[\s\S]*?min-height: 44px;/m.test(ACSS)
     // Re-pinned 2026-09-22 (v4.7): the trade page is gone and the sheet

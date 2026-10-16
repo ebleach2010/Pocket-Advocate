@@ -1708,3 +1708,32 @@ recorded. Re-pinned with controls: authority S27 to S34's harness
 (caseAdvocateName), filing's row harness (advocate), selfcase S17's two
 guards, tighten W4 (the picker's first option), uploads U16 (renamed: after
 the call, refused before), drive-summary (the picker opens on its question), release R1.
+
+### What they bought (2026-10-15, v7.53)
+
+Eric: "be sure that the admin case actually matches what they purchased";
+asked which package needs only the first consult, "Full-Service"; asked
+whether an upgrade before the report still gets it, "No, Full-Service
+replaces it." The Worker's `reportReplaced` drops a report still owed when
+Full-Service switches on (both doors), a Full-Service recording stamps
+`consultDoneAt` with no report clock and no report email, and a report upload
+on Full-Service is refused. Clients groups by purchase (ADVOCACY CASES:
+REPORT PHASE, FULL-SERVICE, BOOKED, CLOSED; booked and closed cards say
+which), Full-Service is never REPORT DUE or OVERDUE, a call nobody marked done
+and a Priority Chat client waiting on a reply are reminders. The case page
+shows CONSULT on Full-Service, hides Report as an upload type, offers "Consult
+done", and on an Advocacy Case leads with the meeting link and puts the forms
+last. The client's Full-Service page says Full-Service Case Management, its
+steps end in the work, and the agreement and package bullet say the work
+replaces the report. The demo's Full-Service case carries no report clock.
+
+New: cleanup.mjs B1 to B5 and drive-cleanup section D (4), controls recorded.
+Re-pinned with controls: cleanup A3, charge CH7 (statusWord, three shelf
+tags), pricing's open-full harness (reportReplaced), selfcase S17, S18, S45,
+twoweeks B1, warm C1's harness, drive-employer's grid (a copy beside a lone folder), drive-hours (the Full-Service case by id), release R1.
+
+Also in v7.53: the preview's and the showcase's date helper (`at` in
+public/js/preview/joe.js) takes the MST day first. Taking the UTC date put
+"today" a day ahead between midnight and 7am UTC, so the preview's newest
+messages and files sat in the future (preview A3 and drive-preview's chat
+check failed at that hour, on the base too). New preview A3b, control recorded.

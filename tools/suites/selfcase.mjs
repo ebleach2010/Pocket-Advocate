@@ -361,9 +361,12 @@ const guards = [
   // RE-PINNED 2026-10-15 (v7.52): the clock starts once and a report waits for the call; both comments sit between
   // the self return and what it guards, which still comes first.
   // NEGATIVE CONTROL (run 2026-10-15, v7.52): the recording clock's self return taken out made S17 read FAIL -- the recording clock.
-  ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
+  // RE-PINNED 2026-10-15 (v7.53): Full-Service's consult branch sits between them now; the self return still comes
+  // before anything that could write or email.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): the recording clock's self return taken out made S17 read FAIL -- the recording clock.
+  ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+if \(doc\.data\.fullAccess\) \{[\s\S]{0,1500}?\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
   ['the document push', /if \(doc\.data\.clientUid && !doc\.data\.self\) \{/],
-  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{ status: 'delivered'/],
+  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,8}\s+if \(doc\.data\.fullAccess\) return json\([^\n]*\n\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{ status: 'delivered'/],
   ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.work\?\.includedDoneAt\) return;/],
   ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self \|\| row\.data\.showcase\) continue;/],
   ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],
@@ -412,7 +415,9 @@ check('S18 the shelf: his case on its own purple shelf, out of the three and out
   && /<button type="button" role="menuitem" data-open-door="self">My own case<\/button>/.test(f('public/admin.html'))
   && /which === 'family' \? '\/api\/admin\/family-case' : '\/api\/admin\/self-case'/.test(ADMIN)
   && /if \(c\.self\) return 'MY OWN CASE';/.test(ADMIN)
-  && /if \(c\.self \|\| c\.status !== 'awaiting_report'/.test(ADMIN)
+  // RE-PINNED 2026-10-15 (v7.53): dueSoon skips Full-Service too (it owes no report); his own case first, as before.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): dueSoon's `c.self ||` taken out made S18 read FAIL.
+  && /if \(c\.self \|\| c\.fullAccess \|\| c\.status !== 'awaiting_report'/.test(ADMIN)
   && /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.hold\?\.pausedAt\) return false;/.test(ADMIN)
   && /self: !!c\.self,/.test(ADMIN)
   && /\$\{self \? ' self' : ''\}/.test(DRAWER));
@@ -944,7 +949,9 @@ check('S45 a question row is named as one wherever a row is labelled (the CSV, t
   && /d\.quote \? `Re: \$\{d\.quote\}\\n\$\{d\.text \|\| ''\}` : \(d\.text \|\| ''\),/.test(CHAT)
   && /role: msg\.data\.role === 'admin' \? 'admin' : msg\.data\.role === 'question' \? 'question' : 'client',/.test(WORKER)
   && /r\.role === 'question' \? 'Asked of you' : r\.role === 'admin' \? 'Eric' : 'You'/.test(SAVED)
-  && /who: c\.self \? `\$\{c\.clientName \|\| 'My own case'\} \(mine\)` : \(c\.clientEmail \|\| c\.clientUid\),/.test(CHATS)
+  // RE-PINNED 2026-10-15 (v7.53): a client's row leads with their name now, then the email, then the uid.
+  // NEGATIVE CONTROL (run 2026-10-15, v7.53): the chats row's self branch taken out made S45 read FAIL.
+  && /who: c\.self \? `\$\{c\.clientName \|\| 'My own case'\} \(mine\)` : \(c\.clientName \|\| c\.clientEmail \|\| c\.clientUid\),/.test(CHATS)
   // RE-PINNED 2026-10-15 (v7.44): Eric, "Each advocate gets their own isolated workspace." An advocate saves nothing to a client's
   // shelf and does not list it (it follows the client across advocates); his own case's shelf is still his.
   // NEGATIVE CONTROL (run 2026-10-15, v7.44): the case page's saveUid put back to `c.self ? user.uid : c.clientUid` made this read

@@ -77,7 +77,7 @@ export const SERVICE_ABOUT = {
     ],
     bullets: [
       'Asking costs nothing and takes no card. I answer every request myself',
-      'Everything in an Advocacy Case included: the call, the record review, the written report',
+      'It starts from our initial consult and my record review. No written report: the work replaces it',
       'I do the legwork: your clinics, your records, your insurer, handled by me on your authority',
       '20 included hours of comprehensive advocacy every 30-day service period',
       'Priority access maintained throughout the month',

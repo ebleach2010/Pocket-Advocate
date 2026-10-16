@@ -59,8 +59,9 @@ async function loadInbox() {
         kind: 'case',
         href: `/admin-case.html?id=${d.id}`,
         // His own case has no client behind it (audit, 2026-09-03): name it as his.
-        who: c.self ? `${c.clientName || 'My own case'} (mine)` : (c.clientEmail || c.clientUid),
-        badge: `CASE · ${(c.status || '?').replace('_', ' ').toUpperCase()}`,
+        who: c.self ? `${c.clientName || 'My own case'} (mine)` : (c.clientName || c.clientEmail || c.clientUid),
+        // What they bought (2026-10-15), so one name on two threads reads as two purchases, not two people.
+        badge: c.self ? 'MY OWN CASE' : c.fullAccess ? 'FULL-SERVICE' : 'ADVOCACY CASE',
         lm: c.lastMessage || null,
       });
     });
@@ -70,7 +71,7 @@ async function loadInbox() {
         kind: 'sub',
         href: `/admin-chats.html?sub=${d.id}`,
         who: s.email || d.id,
-        badge: `SUBSCRIBER · ${(s.status || '?').toUpperCase()}`,
+        badge: `PRIORITY CHAT · ${(s.status || '?').toUpperCase()}`,
         lm: s.lastMessage || null,
       });
     });

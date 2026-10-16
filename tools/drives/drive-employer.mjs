@@ -69,12 +69,24 @@ const shine = await adm.evaluate(() => { const b = document.querySelector('[data
 // NEGATIVE CONTROL (run 2026-10-15, v7.50): the green button's rule taken off (`.btn.employer-btn {` made `.btn.employer-btn-x {`) made this read
 //   FAIL  Employer mode is green, with a shine that sweeps across it
 ok('Employer mode is green, with a shine that sweeps across it', !!shine && /47, 208, 138/.test(shine.bg) && /255, 255, 255/.test(shine.bg) && shine.anim === 'employer-shine', JSON.stringify(shine));
+// RE-PINNED 2026-10-15 (v7.53): Clients groups by what was bought, so the demo's two open cases sit on two shelves of
+// one folder each. Where no shelf holds two, a copy of the first folder goes beside it for the measurement and comes
+// straight back out: the layout under test is the drawer's, whatever is in it.
+// NEGATIVE CONTROL (run 2026-10-15, v7.53): the drawer's grid-template-columns taken out of admin.css still made this read FAIL.
 const grid = await adm.evaluate(() => {
-  const d = [...document.querySelectorAll('.drawer')].find((x) => x.querySelectorAll('.folder').length >= 2);
-  if (!d) return null;
+  let d = [...document.querySelectorAll('.drawer')].find((x) => x.querySelectorAll('.folder').length >= 2);
+  let copy = null;
+  if (!d) {
+    d = document.querySelector('.drawer');
+    const one = d?.querySelector('.folder');
+    if (one) { copy = (one.closest('.drawer > *') || one).cloneNode(true); d.appendChild(copy); }
+  }
+  if (!d || d.querySelectorAll('.folder').length < 2) { copy?.remove(); return null; }
   const [a, c] = [...d.querySelectorAll('.folder')].map((f) => f.getBoundingClientRect());
   const name = d.querySelector('.folder-name').getBoundingClientRect(); const clock = d.querySelector('.folder-clock')?.getBoundingClientRect();
-  return { cols: getComputedStyle(d).gridTemplateColumns.split(' ').length, side: Math.abs(a.top - c.top) < 2 && c.left > a.right, clockClear: !clock || clock.top >= name.bottom };
+  const out = { cols: getComputedStyle(d).gridTemplateColumns.split(' ').length, side: Math.abs(a.top - c.top) < 2 && c.left > a.right, clockClear: !clock || clock.top >= name.bottom };
+  copy?.remove();
+  return out;
 });
 if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-1-shelf.png`, fullPage: false });
 // NEGATIVE CONTROL (run 2026-10-15): the drawer's grid-template-columns taken out of admin.css made this read
