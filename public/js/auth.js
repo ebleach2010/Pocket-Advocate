@@ -277,7 +277,10 @@ export async function hydrateNav() {
         // No "Admin" link: every admin page already carries "Clients", which
         // goes to the same place. Two names for one door in a seven-item menu
         // is one item of pure noise.
-        `<a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
+        // Off the working pages, though, nothing did (2026-10-16): the home
+        // page is reachable now, and Clients is the way back from it.
+        (/^\/admin/.test(path) ? '' : '<a href="/admin.html" data-nav-work>Clients</a> ')
+        + `<a href="#" data-signout title="${user.email || ''}">Sign out</a>`;
     } else {
       el.innerHTML =
         // "My cases" waits until there is a case to show; a chat-only

@@ -1877,3 +1877,21 @@ staffsettings E4 (the v7.56 demo gate, caught here); drive-cleanup's button
 contrast check (a bright edge in the look's own accent); drive-invite's open
 card rim (now the warm peach to pink); release R1.
 
+### Never stuck signing in, the home page reachable (2026-10-16, v7.58)
+
+Eric, with a screenshot of the sign-in page on "Signing you in…": "There are
+glitches where you get stuck on a loading screen. I'm not sure it's even
+possible to hit the landing page." The sign-in page's resume of a trusted
+device had no time limit, and his phone is sent from the home page to sign in,
+so the logo on that page went home and came straight back. Now the resume
+says so at ten seconds, with Try again, Sign in another way and the home page,
+and gives up on the server at twenty; only a 401 untrusts the device, so a
+slow network no longer costs him his PIN-free sign-in. A page Safari restores
+by Back mid sign-in starts again. The home page sends a staff device on only
+when it was opened fresh (no referrer from this site), and a staff menu off
+the working pages carries Clients, the way back.
+
+New: drive-nostuck (16 checks, about a minute; seven recorded controls);
+landing E4, E5, each with a recorded control. Re-pinned with a control:
+release R1.
+

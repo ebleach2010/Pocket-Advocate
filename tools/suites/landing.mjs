@@ -408,6 +408,24 @@ check('E3 the landing still wears the maintenance notice and the demo never redi
   /src="\/js\/maintenance\.js"/.test(IDX) && /var dev = localStorage\.getItem\('pa-admin-device'\);\n\s+if \(\(dev === '1' \|\| dev === 'advocate'\) &&/.test(IDX)
   && /sessionStorage\.getItem\('pa-demo'\)\)\) return;/.test(IDX) && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(IDX));
 
+// v7.58 (Eric, 2026-10-16: "I'm not sure it's even possible to hit the landing page"). His phone was
+// sent from the home page to sign in every time, the logo included, so the home page could not be
+// reached. Coming from a page of this site, it stays the home page; opened fresh, it still goes on.
+// NEGATIVE CONTROL (run 2026-10-16, v7.58): the guard's `return` made `{ }` made this read
+//   FAIL  E4 the home page sends his phone on only when it was opened fresh, never from a page of the site
+{
+  const guard = IDX.indexOf('if (from === location.origin) return;');
+  const go = IDX.indexOf("location.replace('/signin.html?to=%2Fadmin.html');");
+  check('E4 the home page sends his phone on only when it was opened fresh, never from a page of the site',
+    guard > 0 && go > guard && /from = document\.referrer \? new URL\(document\.referrer\)\.origin : ''/.test(IDX));
+}
+// v7.58: the sign-in page, put back by Safari's Back exactly as it was left on "Signing you in…",
+// starts again instead of sitting there with nothing running.
+// NEGATIVE CONTROL (run 2026-10-16, v7.58): the pageshow listener's `location.reload()` taken out made this read
+//   FAIL  E5 the sign-in page restored mid sign-in by Back starts again
+check('E5 the sign-in page restored mid sign-in by Back starts again',
+  /addEventListener\('pageshow', function \(e\) \{\s+var r = document\.getElementById\('resuming'\);\s+if \(e\.persisted && r && !r\.hidden\) location\.reload\(\);/.test(f('public/signin.html')));
+
 const fails = results.filter((r) => !r.pass).length;
 console.log(`\n${results.length - fails}/${results.length} passed`);
 if (fails) process.exit(1);

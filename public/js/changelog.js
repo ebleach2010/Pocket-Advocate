@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.57';
+export const VERSION = '7.58';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.57';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // NEVER STUCK SIGNING IN (Eric, 2026-10-16: "There are glitches where
+    // you get stuck on a loading screen. I'm not sure it's even possible to
+    // hit the landing page"). Admin only.
+    version: '7.58',
+    quiet: true,
+    client: [],
+    admin: [
+      'Signing in never just sits there. After ten seconds it offers Try again, another way in, and the home page.',
+      'The logo takes you to the home page now. Opening the app still takes you straight to your clients, and Clients in the menu brings you back.',
+    ],
+  },
   {
     // WARM EVERYWHERE (Eric, 2026-10-16: "Warm gradient we have going on
     // should be default everywhere, with the blue/purple being in settings").

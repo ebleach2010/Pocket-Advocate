@@ -55,6 +55,13 @@
     // Never while the demo is running.
     var q = new URLSearchParams(location.search).get('demo');
     if (q !== '0' && (q || sessionStorage.getItem('pa-demo'))) return;
+    // Never when they came here from a page of this site (Eric, 2026-10-16:
+    // "I'm not sure it's even possible to hit the landing page"). The logo,
+    // or Back on the sign-in page, came here and was sent straight back.
+    // Opening the app, or typing the address, comes from no page of ours.
+    var from = '';
+    try { from = document.referrer ? new URL(document.referrer).origin : ''; } catch (e) { /* not a URL */ }
+    if (from === location.origin) return;
     // A contractor's device too (2026-10-16): theirs says 'advocate', and the
     // installed app opens here, where they had only Sign out.
     var dev = localStorage.getItem('pa-admin-device');

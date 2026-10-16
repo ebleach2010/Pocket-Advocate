@@ -178,6 +178,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // the look everywhere and Blue and purple is in Settings.
   // NEGATIVE CONTROL (run 2026-10-16, v7.57): changelog.js's VERSION left at '7.56' made this read
   //   FAIL  R1 both versions read 7.57 with the new tag, the 7.57 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-16 (v7.58): both versions read 7.58 with the never-stuck tag, and the 7.58 entry says signing in
+  // never just sits there and the logo takes him to the home page.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.58): the worker's BUILD_TAG left at the warm-default tag made this read
+  //   FAIL  R1 both versions read 7.58 with the new tag, the 7.58 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry758 = (CL.match(/\{\n\s+\/\/ NEVER STUCK SIGNING IN \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry757 = (CL.match(/\{\n\s+\/\/ WARM EVERYWHERE \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry756 = (CL.match(/\{\n\s+\/\/ FOUR AUDITS \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry755 = (CL.match(/\{\n\s+\/\/ ONE TEAM PAGE, ONE CALENDAR \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
@@ -241,9 +246,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.57 with the new tag, the 7.57 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.57';/.test(CL) && /const VERSION = '7\.57';/.test(W) && /const BUILD_TAG = 'v2026-10-16-warm-default';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.57'
+  check('R1 both versions read 7.58 with the new tag, the 7.58 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.58';/.test(CL) && /const VERSION = '7\.58';/.test(W) && /const BUILD_TAG = 'v2026-10-16-never-stuck';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.58'
+    && /version: '7\.58',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry758)
+    && /Signing in never just sits there\./.test(entry758) && /The logo takes you to the home page now\./.test(entry758)
+    && !DASH.test(entry758) && !HARD.some((re) => re.test(entry758))
     && /version: '7\.57',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry757)
     && /Warm is the look on every page now/.test(entry757) && /Blue and purple is in Settings/.test(entry757)
     && !DASH.test(entry757) && !HARD.some((re) => re.test(entry757))

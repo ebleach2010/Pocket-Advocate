@@ -54,6 +54,17 @@
   <h1>Sign in</h1>
   <div class="card" id="resuming" hidden>
     <p class="muted" style="margin:0;">Signing you in…</p>
+    <!-- NEVER STUCK HERE (Eric, 2026-10-16, a screenshot of this card: "There
+         are glitches where you get stuck on a loading screen"). Shown when the
+         sign-in has not finished in ten seconds; it keeps trying underneath. -->
+    <div id="resume-slow" hidden>
+      <p class="muted small" style="margin:.7rem 0 0;">This is taking longer than it should. A phone that just woke can take up to a minute.</p>
+      <p style="margin:.9rem 0 0; display:flex; flex-wrap:wrap; gap:.6rem;">
+        <button type="button" class="btn glow" id="resume-retry">Try again</button>
+        <button type="button" class="btn quiet" id="resume-other">Sign in another way</button>
+      </p>
+      <p class="muted small" style="margin:.7rem 0 0;"><a href="/" id="resume-home">Go to the home page</a></p>
+    </div>
   </div>
   <p class="muted" id="email-intro">Enter your email and I'll send you a 6-digit sign-in code. No password to remember.</p>
 
@@ -102,6 +113,14 @@
       document.getElementById('email-form').hidden = true;
     }
   } catch (e) { /* storage blocked: the email box is already correct */ }
+
+  // Back to this page from the one it sent you to, Safari can show it exactly
+  // as it was left, on "Signing you in…", with nothing running behind it.
+  // A page restored that way while it was signing in starts again.
+  window.addEventListener('pageshow', function (e) {
+    var r = document.getElementById('resuming');
+    if (e.persisted && r && !r.hidden) location.reload();
+  });
 
   // Extras that exist only where a demo can: a versioned preview build or a
   // dev server. On the live site this import answers 404 and nothing loads.
@@ -179,18 +198,47 @@
     document.getElementById('email-intro').hidden = true;
     document.getElementById('pin-form').hidden = true;
     resuming.hidden = false;
+    // NEVER STUCK ON "SIGNING YOU IN" (Eric, 2026-10-16). Nothing here had a
+    // time limit: a phone just woken can hold the server's answer, or the
+    // sign-in library's, for a minute or more, and the card sat there with no
+    // way on. At ten seconds it says so and offers Try again, another way in,
+    // and the home page, while it keeps trying; at twenty the server's answer
+    // is given up on. `step` names where it waits, for the flight recorder.
+    let step = 'device';
+    const slow = setTimeout(() => {
+      if (resuming.hidden) return;
+      document.getElementById('resume-slow').hidden = false;
+      fetch('/api/admin/stall', {
+        method: 'POST', keepalive: true, credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ page: 'signin', kind: 'slow', stage: step, ms: 10000, online: navigator.onLine !== false, visible: document.visibilityState || '' }),
+      }).catch(() => { /* the report is never the thing that breaks */ });
+    }, 10_000);
+    document.getElementById('resume-retry').addEventListener('click', () => location.reload());
+    document.getElementById('resume-other').addEventListener('click', () => {
+      resuming.hidden = true;
+      showFirstCard();
+    });
+    const cut = new AbortController();
+    const cutAt = setTimeout(() => cut.abort(), 20_000);
     try {
       const res = await fetch('/api/auth/device-signin', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email: known, deviceToken }),
+        body: JSON.stringify({ email: known, deviceToken }), signal: cut.signal,
       });
-      if (!res.ok) throw new Error('needs a code');
+      clearTimeout(cutAt);
+      if (!res.ok) throw Object.assign(new Error('needs a code'), { refused: res.status === 401 });
       const { token } = await res.json();
+      step = 'google';
       await signInWithCustomToken(auth, token);
+      step = 'leaving';
       location.href = returnTo;
-    } catch {
-      // Expired or revoked — fall back to whichever door this device uses.
-      localStorage.removeItem(DEVICE_KEY);
+    } catch (err) {
+      clearTimeout(slow);
+      // Expired or revoked: this device is untrusted, and falls back to
+      // whichever door it uses. A slow or failed network, or the server
+      // having a bad minute, is not the device's fault: it stays trusted, so
+      // the next visit signs in on its own again.
+      if (err?.refused) localStorage.removeItem(DEVICE_KEY);
       resuming.hidden = true;
       showFirstCard();
     }
