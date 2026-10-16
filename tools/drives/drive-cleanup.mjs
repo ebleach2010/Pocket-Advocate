@@ -19,6 +19,8 @@
 //      forwarding, and no menu naming Availability or Advocates
 //   G. (v7.55) the sample contractor's pay in any week, and a team member's
 //      cases one tap from their name
+//   H. (v7.56) four audits: his pages send a contractor home, and their chat
+//      has none of his message makers
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -356,6 +358,24 @@ const dollars = (v) => Number(String(v).replace(/[^\d.-]/g, '')) || 0;
 ok('the run never reads all zeros: under the Total a second total counts the sample contractor, in her gold, her row plus the Total; the draft\'s card says it too',
   /^With Maya Torres SAMPLE$/.test(pay.withLabel) && /^\$[1-9]/.test(pay.withSales) && dollars(pay.withTotal) === dollars(pay.total) + dollars(pay.sumTotal)
   && /242, 193, 78/.test(pay.withGold) && pay.draft === `${pay.withTotal} with the sample`, JSON.stringify(pay));
+
+console.log('\n--- H. four audits (v7.56) ---');
+// Eric, 2026-10-16: "Send out four agents to look for any errors in the UI, onboarding process, and functionality of
+// new contractors once onboarded, and encryption/data security to be fixed".
+const ana2 = await side('advocate');
+await ana2.goto(`${P}/admin-leads.html?demo=advocate`, { waitUntil: 'networkidle' });
+await settle(ana2, 2000);
+const leadsUrl = ana2.url();
+await ana2.goto(`${P}/admin-case.html?id=demo-case-ana&demo=advocate`, { waitUntil: 'networkidle' });
+await settle(ana2, 2500);
+await group(ana2, 'Case', 'chat');
+const makers = await ana2.evaluate(() => [...document.querySelectorAll('#chat .attach-btn[data-extra]')].map((b) => b.textContent.trim()));
+// NEGATIVE CONTROL (run 2026-10-16, v7.56): admin-leads.js's contractor redirect taken out made this read
+//   FAIL  a contractor who opens his Leads by address is taken to their shelf, and their chat offers neither of his message makers
+// NEGATIVE CONTROL (run 2026-10-16, v7.56): the composer filter put back to `!advocate || b.icon !== '✍️'` made this read
+//   FAIL  a contractor who opens his Leads by address is taken to their shelf, and their chat offers neither of his message makers
+ok('a contractor who opens his Leads by address is taken to their shelf, and their chat offers neither of his message makers',
+  /\/admin(\.html)?(\?|$)/.test(leadsUrl) && !makers.some((t) => /⚕|✍/.test(t)), JSON.stringify({ leadsUrl, makers }));
 
 console.log('\n--- C. errors ---');
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): a `null.x` put first in wireAddMenu's + click made this read

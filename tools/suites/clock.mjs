@@ -838,7 +838,9 @@ reset();
   check('C65 the client reads the line in place of "working on it", in the hours card, the progress line, and the chat header',
     (CASE.match(/\$\{doingText\(w\)\}/g) || []).length === 2
     && /const doingText = \(w\) => \(w\?\.doing \? `\$\{esc\(String\(w\.doing\)\)\} right now` : 'working on it right now'\);/.test(CASE)
-    && /Eric is \$\{esc\(String\(c\.work\.doing\)\)\} right now\./.test(CASE));
+    // RE-PINNED 2026-10-16 (v7.56): the line names the case's own advocate (advFirstHtml), Eric on his cases.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.56): the chat header line deleted from case.js still made C65 read FAIL.
+    && /\$\{advFirstHtml\(c\)\} is \$\{esc\(String\(c\.work\.doing\)\)\} right now\./.test(CASE));
   check('C66 his side offers the presets under the clock, posts each through /api/work, and the demo mirrors start, change and stop',
     /const DOING_PRESETS = \[/.test(ADMIN) && /'on the phone with a clinic department'/.test(ADMIN)
     && /postWork\(\{ doing: b\.dataset\.doing \}\)/.test(ADMIN) && /clockPaints\.add\(paintDoing\)/.test(ADMIN)

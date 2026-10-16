@@ -831,7 +831,8 @@ function aboutHtml(a) {
 /** What they bought, where the shelf's title does not already say it (2026-10-15). */
 function buyTag(c) {
   if (c.self) return '';
-  return `<strong style="color:var(--dim)">${c.fullAccess ? 'FULL-SERVICE' : 'ADVOCACY CASE'}</strong> · `;
+  // The folder's own ink (2026-10-16): the page's grey read about 2:1 on tan.
+  return `<strong style="color:var(--manila-ink);opacity:.78">${c.fullAccess ? 'FULL-SERVICE' : 'ADVOCACY CASE'}</strong> · `;
 }
 
 /** What comes next on a Full-Service case, for its shelf line (2026-10-15). */

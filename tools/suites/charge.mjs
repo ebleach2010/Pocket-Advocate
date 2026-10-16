@@ -250,7 +250,9 @@ const day = 86_400_000;
     // RE-PINNED 2026-10-15 (v7.47): the raise asks whose case it is (raiseRatesFor); the gate before it is unchanged.
     // NEGATIVE CONTROL (run 2026-10-15, v7.47): the gate put back to `if (created && !held) await raiseRatesFor` made this read FAIL.
     && /if \(created && !held && !\(inviteId && !invitePaid\)\) await raiseRatesFor\(env, \{ advocateId \}\)/.test(W)
-    && /if \(created && held\) \{\n\s+await pingAdmins\(env,\n\s+`\$\{firstName\(m\.name\) \|\| 'A client'\} booked a case\. Their card is held, not charged: approve or decline it\.`/.test(W)
+    // RE-PINNED 2026-10-16 (v7.56): the case's own advocate is pinged to decide (pingCase), his own cases still him.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.56): the held-booking ping put back to `await pingAdmins(env,` made CH3 read FAIL.
+    && /if \(created && held\) \{\n\s+await pingCase\(env, \{ advocateId \},\n\s+`\$\{firstName\(m\.name\) \|\| 'A client'\} booked a case\. Their card is held, not charged: approve or decline it\.`/.test(W)
     && /subject: held \? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',/.test(W)
     && /\$\{held \? escHtml\(CHARGE_COPY\.held\) : inviteId && !invitePaid \? 'Your time is confirmed\. Your case file is live\.' : 'Payment confirmed/.test(W)
     && /url\.pathname === '\/api\/admin\/case-charge' && request\.method === 'POST'/.test(W)
@@ -274,6 +276,8 @@ const day = 86_400_000;
       readFailedError: (m) => new Error(m),
       patchDoc: async (env, path, fields) => { log.push(['patch', path, fields]); return true; },
       pingAdmins: async (env, body) => { log.push(['ping', body]); },
+      // The case's own advocate hears of a lapse (2026-10-16); the harness logs it the same way.
+      pingCase: async (env, c, body) => { log.push(['ping', body]); },
       notifyUser: async (env, uid, n) => { log.push(['notify', uid, n.body]); },
       readIntent: async () => intent,
       raiseRates: async () => { log.push(['raise']); },
@@ -288,7 +292,7 @@ const day = 86_400_000;
     };
     return { log, fakes };
   };
-  const names = ['queryDocs', 'tryQuery', 'READ_FAILED', 'readFailedError', 'patchDoc', 'pingAdmins', 'notifyUser', 'readIntent', 'raiseRates', 'raiseRatesFor', 'firstName', 'CHARGE_COPY', 'HOLD_DAYS', 'HOLD_REMIND_AFTER_DAYS'];
+  const names = ['queryDocs', 'tryQuery', 'READ_FAILED', 'readFailedError', 'patchDoc', 'pingAdmins', 'pingCase', 'notifyUser', 'readIntent', 'raiseRates', 'raiseRatesFor', 'firstName', 'CHARGE_COPY', 'HOLD_DAYS', 'HOLD_REMIND_AFTER_DAYS'];
   const runCanceled = async (row) => {
     const { log, fakes } = mkFakes(row ? [row] : [], null);
     await new Function(...names, `return ${canceled}`)(...names.map((n) => fakes[n]))({}, { id: 'pi_1' });

@@ -379,7 +379,7 @@ function showRun(run) {
         <tbody>
           ${rows.map((r) => `
           <tr data-row="${esc(r.uid)}">
-            <td><button type="button" class="pr-who" data-expand="${esc(r.uid)}" aria-expanded="false">${esc(r.name)}${r.sample ? ' <span class="pr-chip draft">SAMPLE</span>' : ''}</button><br><span class="dim small">${r.owner ? 'All yours' : `${r.commissionPct}% share`}</span></td>
+            <td><button type="button" class="pr-who" data-expand="${esc(r.uid)}" aria-expanded="false">${esc(r.name)}${r.sample ? ' <span class="pr-chip draft">SAMPLE</span>' : ''}${r.off ? ' <span class="pr-chip">TURNED OFF</span>' : ''}</button><br><span class="dim small">${r.owner ? 'All yours' : `${r.commissionPct}% share`}</span></td>
             <td data-label="Cases">${r.cases}</td>
             <td data-label="Client sales">${money(r.salesCents)}</td>
             <td data-label="Deductions">${r.deductionsCents ? signed(-r.deductionsCents) : money(0)}</td>
@@ -507,7 +507,14 @@ function reveal(r) {
 
 /** The spreadsheet: the summary, every line behind it, and every adjustment. Account numbers never go in it. */
 function download(run) {
-  const cell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  // A name or a note that starts like a formula is written as text
+  // (security review, 2026-10-16): a client's name such as =HYPERLINK(...)
+  // would otherwise run in his spreadsheet. Amounts stay numbers.
+  const cell = (v) => {
+    let s = String(v ?? '').replace(/\r?\n/g, ' ');
+    if (!/^-?\d+(\.\d+)?$/.test(s) && /^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+    return /[",\n]/.test(s) || s.startsWith("'") ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const d = (c) => ((Number(c) || 0) / 100).toFixed(2);
   const out = [];
   out.push(['Payroll', `${run.start} to ${run.end}`, run.status === 'draft' ? 'Draft' : 'Paid']);

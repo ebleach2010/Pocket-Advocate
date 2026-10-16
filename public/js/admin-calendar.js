@@ -21,7 +21,9 @@ let caseInfo = {}; // caseId -> { name, status }
 let leadNames = {};
 let shown = new Date(); // any date inside the displayed month (MST frame)
 
-if (user) init();
+// His alone (2026-10-16): a contractor who lands here by address goes back to their shelf.
+if (user && STAFF.role !== 'admin') location.replace('/admin.html');
+else if (user) init();
 // Opening slots, taking new cases and in or out (2026-10-16): Availability's
 // tools, as folds under the month.
 if (user && STAFF.role === 'admin') mountAvailability(user);

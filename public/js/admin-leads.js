@@ -7,7 +7,7 @@
 // rows. On screen, who and how to reach them come first (the tighten audit,
 // 2026-10-15: on a phone the dates filled the first screen); the CSV keeps
 // its date-first order for a spreadsheet.
-import { requireAdmin, hydrateNav } from './auth.js';
+import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 
 export const COLUMNS = [
   ['firstContact', 'First contact'],
@@ -71,6 +71,8 @@ async function main() {
   hydrateNav();
   const user = await requireAdmin();
   if (!user) return;
+  // His alone (2026-10-16): a contractor who lands here by address goes back to their shelf.
+  if (STAFF.role !== 'admin') { location.replace('/admin.html'); return; }
   const box = document.getElementById('leads');
   const btn = document.getElementById('leads-csv');
   const count = document.getElementById('leads-count');

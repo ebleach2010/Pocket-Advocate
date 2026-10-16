@@ -41,9 +41,30 @@ export function staffFrom(env, user, profile, advocate) {
   const role = profile?.data?.role;
   if (role === 'admin' && env?.ADMIN_UID && user.uid === env.ADMIN_UID)
     return { uid: user.uid, email: user.email || null, isAdmin: true, advocateId: user.uid };
-  if (role === ADVOCATE_ROLE && advocate?.data?.active === true)
-    return { uid: user.uid, email: user.email || null, isAdmin: false, advocateId: user.uid };
+  if (role === ADVOCATE_ROLE && advocate?.data?.active === true && !sessionStale(advocate.data, user))
+    return { uid: user.uid, email: user.email || null, isAdmin: false, advocateId: user.uid, setup: setupPending(advocate.data) };
   return null;
+}
+
+/**
+ * SETUP FIRST (security and onboarding review, 2026-10-16). An advocate who
+ * has not chosen their own password, or has not finished their profile, can
+ * open their account page and nothing else: requireStaff refuses every other
+ * route until this is false, and the rules refuse their reads too. A reset of
+ * their password by him puts them back here.
+ */
+export function setupPending(a) {
+  return !!a && a.owner !== true && (a.mustChange === true || !a.onboardedAt);
+}
+
+/**
+ * Whether this sign-in began before he last reset their password or turned
+ * them off, or before they changed it themselves (2026-10-16). sessionsFrom is
+ * in seconds; user.authTime is the session's own start (firebase-auth.js).
+ */
+export function sessionStale(a, user) {
+  const from = Number(a?.sessionsFrom) || 0;
+  return from > 0 && !(Number(user?.authTime) >= from);
 }
 
 /** Whether this staff member may see and work this case (or subscription). */
@@ -60,13 +81,14 @@ export function staffSees(staff, data, env) {
  * on their own threads only, and only while active. getDoc is passed in so the
  * suites can run it.
  */
-export async function worksThread(env, uid, profile, data, getDoc) {
+export async function worksThread(env, uid, profile, data, getDoc, user = null) {
   const role = profile?.data?.role;
   if (role === 'admin') return true;
   if (role !== ADVOCATE_ROLE || !uid || !data) return false;
   if (advocateIdOf(data, env) !== uid) return false;
   const adv = await getDoc(env, `advocates/${uid}`).catch(() => null);
-  return adv?.data?.active === true;
+  // Set up, and signed in since the last reset or turn-off (2026-10-16).
+  return adv?.data?.active === true && !setupPending(adv.data) && (!user || !sessionStale(adv.data, user));
 }
 
 // ---- ACCOUNTS (Eric, 2026-10-15: "Admin creates advocate accounts from the
@@ -173,11 +195,19 @@ export function cleanProfile(body = {}) {
       if (!s || seen.has(k)) return false;
       seen.add(k);
       return true;
-    }).slice(0, MAX_EXTRA_SPECIALTIES);
+    // The primary plus up to six others (2026-10-16): the page sends the
+    // primary first in this list and promises six besides it.
+    }).slice(0, MAX_EXTRA_SPECIALTIES + 1);
   }
   if ('advisorOptIn' in body) out.advisorOptIn = body.advisorOptIn === true;
+  // Their time zone (2026-10-16): set to his at creation and, until now, never
+  // asked. Only a zone on the list is kept.
+  if ('tz' in body && STAFF_ZONES.includes(body.tz)) out.tz = body.tz;
   return out;
 }
+
+/** The time zones an advocate can choose, US first (2026-10-16). */
+export const STAFF_ZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Boise', 'America/Phoenix', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu'];
 
 /** What onboarding still needs before an advocate can be listed, by name. */
 export function onboardingMissing(a = {}) {
@@ -213,6 +243,7 @@ export function advocateView(id, a = {}) {
     advisorOptIn: a.advisorOptIn === true || a.advisor?.optedIn === true,
     advisorEnabled: a.advisor?.enabled === true,
     acceptingNew: a.acceptingNew !== false,
+    tz: a.tz || 'America/Boise',
     onboardedAt: a.onboardedAt || null,
     createdAt: a.createdAt || null,
     missing: onboardingMissing(a),

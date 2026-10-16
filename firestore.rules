@@ -23,10 +23,17 @@ service cloud.firestore {
     // users below) whose advocates/{uid} record is active. They reach a case
     // or a chat line only when its advocateId is their own uid; the Worker
     // checks the same thing on every route.
+    // And (2026-10-16) set up, with a password of their own, and signed in
+    // since he last reset it or turned them off: auth_time is when the
+    // session began and survives every refresh, so a session from before a
+    // reset or a turn-off reads nothing.
     function isAdvocate() {
       return signedIn()
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'advocate'
-        && get(/databases/$(database)/documents/advocates/$(request.auth.uid)).data.active == true;
+        && get(/databases/$(database)/documents/advocates/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/advocates/$(request.auth.uid)).data.get('mustChange', false) != true
+        && get(/databases/$(database)/documents/advocates/$(request.auth.uid)).data.get('onboardedAt', null) != null
+        && request.auth.token.auth_time >= get(/databases/$(database)/documents/advocates/$(request.auth.uid)).data.get('sessionsFrom', 0);
     }
 
     function isAdvocateOf(data) {
@@ -50,7 +57,13 @@ service cloud.firestore {
             || request.resource.data.keys().hasAny(['attachment']))
         && (staffSide
             ? request.resource.data.role == 'admin'
-            : request.resource.data.role == 'client');
+            : request.resource.data.role == 'client')
+        // A file is one this app stored (2026-10-16): a link to anywhere
+        // else, named like a lab result, is refused.
+        && (!request.resource.data.keys().hasAny(['attachment'])
+            || (request.resource.data.attachment is map
+                && request.resource.data.attachment.url is string
+                && request.resource.data.attachment.url.matches('^https://firebasestorage[.]googleapis[.]com/.*')));
     }
 
     function onlyLastMessageChanged() {
@@ -137,8 +150,11 @@ service cloud.firestore {
     }
 
     match /availability/{slotId} {
-      // World-readable so the picker works pre-payment; Worker-writable only.
-      allow read: if true;
+      // Open slots are world-readable so the picker works pre-payment;
+      // Worker-writable only. A booked or held slot carries the case, the
+      // client's uid and the lead (security review, 2026-10-16), so only he
+      // reads those; every public page asks for state == 'open' already.
+      allow read: if resource.data.state == 'open' || isAdmin();
       allow write: if false;
     }
 

@@ -169,12 +169,20 @@ export async function stripeLines(env, start, end, cases, subs) {
   }
 }
 
+// NOT CHARGED FOR WHAT THEY CANNOT USE (contractor review, 2026-10-16).
+// The Advisor answers only his own account so far, and a contractor's case
+// page has no Advisor at all, yet anyone he switched it on for lost $79 a
+// month here. The fee comes back when the Advisor opens on their own cases.
+export const ADVISOR_FOR_ADVOCATES = false;
+
 /** The fee for each month of the period that starts inside it, for anyone with the Advisor switched on. */
 export function advisorLines(advocates, start, end) {
   const lines = [];
+  if (!ADVISOR_FOR_ADVOCATES) return lines;
   for (const a of advocates) {
     const d = a.data || {};
-    if (d.owner === true || d.advisor?.enabled !== true) continue;
+    // Nor once they are turned off (2026-10-16).
+    if (d.owner === true || d.active !== true || d.advisor?.enabled !== true) continue;
     const t = new Date(start);
     let first = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 1, 7));
     if (first.getTime() < start) first = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 1, 7));
@@ -194,10 +202,13 @@ export function buildRows({ advocates, lines, adjustments = [], payouts = new Ma
   const rows = new Map();
   for (const a of advocates) {
     const d = a.data || {};
-    if (d.active !== true && d.owner !== true) continue;
+    // Someone turned off keeps a row for what they earned before (onboarding
+    // review, 2026-10-16): their sales used to fall onto his row at 100%.
+    // With nothing in the period they are left off, as before.
+    const off = d.active !== true && d.owner !== true;
     const pct = d.owner === true || a.id === adminUid ? 100 : (Number.isFinite(Number(d.commissionPct)) ? Number(d.commissionPct) : DEFAULT_COMMISSION_PCT);
     rows.set(a.id, {
-      uid: a.id, name: d.name || d.email || 'Advocate', owner: d.owner === true || a.id === adminUid, sample: d.sample === true,
+      uid: a.id, name: d.name || d.email || 'Advocate', owner: d.owner === true || a.id === adminUid, sample: d.sample === true, off,
       commissionPct: pct, cases: 0, salesCents: 0, commissionCents: 0, tipsCents: 0, deductionsCents: 0, adjustmentsCents: 0, totalCents: 0,
       payout: payouts.get(a.id) || null, lines: [], adjustments: [],
     });
@@ -231,7 +242,7 @@ export function buildRows({ advocates, lines, adjustments = [], payouts = new Ma
     row.lines.sort((a, b) => ms(a.at) - ms(b.at));
   }
   return [...rows.values()]
-    .filter((r) => includeAll || r.lines.length || r.adjustments.length)
+    .filter((r) => (includeAll && !r.off) || r.lines.length || r.adjustments.length)
     .sort((a, b) => (b.owner - a.owner) || (a.sample - b.sample) || a.name.localeCompare(b.name));
 }
 
@@ -317,7 +328,8 @@ export async function payoutMap(env) {
 }
 
 async function staffPayout(request, env, h) {
-  const staff = await h.requireStaff(request, env);
+  // Their way to be paid is part of setting up (2026-10-16).
+  const staff = await h.requireStaff(request, env, { setup: true });
   if (!staff) return h.json({ error: 'Not found' }, 404);
   const path = `payouts/${staff.uid}`;
   if (request.method === 'GET') {

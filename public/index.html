@@ -50,7 +50,10 @@
     // Never while the demo is running.
     var q = new URLSearchParams(location.search).get('demo');
     if (q !== '0' && (q || sessionStorage.getItem('pa-demo'))) return;
-    if (localStorage.getItem('pa-admin-device') === '1' &&
+    // A contractor's device too (2026-10-16): theirs says 'advocate', and the
+    // installed app opens here, where they had only Sign out.
+    var dev = localStorage.getItem('pa-admin-device');
+    if ((dev === '1' || dev === 'advocate') &&
         localStorage.getItem('pa-open-admin') !== '0') {
       // Via sign-in, which resumes a trusted device without a keystroke and
       // forwards. Going direct would 404 on a device whose cookie aged out.

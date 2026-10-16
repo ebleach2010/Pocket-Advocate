@@ -158,7 +158,9 @@ console.log('\n--- B. chat search ---');
   //   FAIL  B3 every chat, his and the client's, gets the search and the down arrow, kept current after every repaint
   check('B3 every chat, his and the client\'s, gets the search and the down arrow, kept current after every repaint',
     /import \{ mountChatSearch \} from '\.\/chat-search\.js';/.test(CHAT)
-    && /const search = mountChatSearch\(\{ container, log, otherName: myRole === 'admin' \? 'Client' : 'Eric' \}\);/.test(CHAT)
+    // RE-PINNED 2026-10-16 (v7.56): the client's side names their own advocate (otherName), Eric when it is his.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.56): the search's `(otherName || 'Eric')` made `'Eric'` made B3 read FAIL.
+    && /const search = mountChatSearch\(\{ container, log, otherName: myRole === 'admin' \? 'Client' : \(otherName \|\| 'Eric'\) \}\);/.test(CHAT)
     && /paintSaved\(\);\s*search\.refresh\(\);\s*\};/.test(CHAT));
   // NEGATIVE CONTROL (run 2026-10-15): the tap-off listener's `!tools.contains(e.target)` test taken out made this read
   //   FAIL  B4 a tap anywhere off the search cancels it and takes the highlights back out; Escape does too

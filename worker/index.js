@@ -1095,7 +1095,7 @@ export default {
       if (url.pathname === '/api/staff/settings')
         return await handleStaffSettings(request, env, { requireStaff, json, readRates, officeStatus });
       if (url.pathname === '/api/admin/advocates' || url.pathname === '/api/admin/advocates/headshot' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
-        return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json });
+        return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json, mintCustomToken, issueDeviceToken });
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
         return await handleSelfCase(request, env);
       if (url.pathname === '/api/admin/self-case/next' && request.method === 'POST')
@@ -1214,6 +1214,21 @@ export default {
       if (url.pathname === '/api/diag' && request.method === 'GET') {
         if (url.searchParams.get('k') !== 'b6e6f406dc540d5459188b00716ab631')
           return json({ error: 'Not found' }, 404);
+        // THE DOORS THAT CHANGE THINGS ARE HIS ALONE (security review,
+        // 2026-10-16). The key above sits in a public repository, so it
+        // proves nothing on its own: every `do` but the read-only rules line
+        // (build, wipe, probe, load test) also needs his own signed-in
+        // session, and anyone else gets the same 404.
+        const diagDo = url.searchParams.get('do') || '';
+        if (diagDo && diagDo !== 'rules' && !(await requireAdmin(request, env)))
+          return json({ error: 'Not found' }, 404);
+        // The plain read costs about sixty database reads, so it is kept for a
+        // minute: asked in a loop, it answers from the cache.
+        const diagKey = new Request('https://diag-cache.internal/plain');
+        if (!diagDo) {
+          const hit = await caches.default.match(diagKey).catch(() => null);
+          if (hit) return hit;
+        }
         // Whether the rules this build carries are the ones live (2026-10-15).
         // Read-only: hashes, times and an error line; never the rules.
         if (url.searchParams.get('do') === 'rules') {
@@ -1371,13 +1386,16 @@ export default {
             draftError: d.draftError ? String(d.draftError).slice(0, 140) : null,
           });
         }
-        return json({
+        const diagRes = json({
           now: new Date(), cron: cron?.data || null,
           queue: queueRows.map((r) => ({ kind: r.data.kind, draft: !!r.data.draft, tries: r.data.tries || 0, ageS: age(r.data.at) })),
           states,
           knowledgeCount: knowledgeRows.length,
           runs: adv?.data.runs || [],
         });
+        diagRes.headers.set('cache-control', 'max-age=60');
+        await caches.default.put(diagKey, diagRes.clone()).catch(() => {});
+        return diagRes;
       }
       if (url.pathname === '/api/admin/rates' && request.method === 'POST')
         return await handleSetRates(request, env);
@@ -2405,7 +2423,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-16-one-team';
+const BUILD_TAG = 'v2026-10-16-four-audits';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2413,7 +2431,7 @@ const BUILD_TAG = 'v2026-10-16-one-team';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.55';
+const VERSION = '7.56';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2713,7 +2731,7 @@ async function pausedForClient(request, env, url) {
   if (!user) return false;
   const profile = await getDoc(env, `users/${user.uid}`).catch(() => null);
   // The case's own advocate is never held either (2026-10-15); anyone else is.
-  return !(await worksThread(env, user.uid, profile, c.data, getDoc));
+  return !(await worksThread(env, user.uid, profile, c.data, getDoc, user));
 }
 
 // THERE IS NO APPEAL COUNT ANY MORE. The scope note used to promise two
@@ -2780,7 +2798,7 @@ async function handleHold(request, env) {
       await notifyUser(env, doc.data.clientUid, {
         title: 'Pocket Advocate',
         body: note
-          ? `Eric has paused your case: ${note}`.slice(0, 200)
+          ? `${await caseAdvocateFirst(env, doc.data)} has paused your case: ${note}`.slice(0, 200)
           : 'Your case is paused for a short while. Open the app for what that means.',
         link: `/case.html?id=${caseId}`,
       }).catch(() => {});
@@ -3068,7 +3086,7 @@ async function holdSweep(env) {
       const pi = await readIntent(env, ch.paymentIntentId).catch(() => null);
       if (pi?.status === 'canceled') {
         await patchDoc(env, `cases/${r.id}`, { charge: { ...ch, state: 'lapsed', lapsedAt: new Date() } }, { mask: ['charge'] }).catch(() => {});
-        await pingAdmins(env,
+        await pingCase(env, r.data,
           `The hold on ${firstName(r.data.clientName)}'s card lapsed before you decided. Approving now sends them a payment link.`,
           `/admin-case.html?id=${r.id}`);
         if (r.data.clientUid) {
@@ -3087,7 +3105,7 @@ async function holdSweep(env) {
     }
     if (ageDays >= HOLD_REMIND_AFTER_DAYS && !ch.remindedAt) {
       await patchDoc(env, `cases/${r.id}`, { charge: { ...ch, remindedAt: new Date() } }, { mask: ['charge'] }).catch(() => {});
-      await pingAdmins(env,
+      await pingCase(env, r.data,
         `The hold on ${firstName(r.data.clientName)}'s card lapses in about two days. Approve or decline the case.`,
         `/admin-case.html?id=${r.id}`);
     }
@@ -3912,7 +3930,7 @@ async function onIntentCanceled(env, pi) {
   await patchDoc(env, `cases/${c.id}`, {
     charge: { ...c.data.charge, state: 'lapsed', lapsedAt: new Date() },
   }, { mask: ['charge'], ifUpdateTime: c.updateTime }).catch(() => {});
-  await pingAdmins(env,
+  await pingCase(env, c.data,
     `The hold on ${firstName(c.data.clientName)}'s card lapsed before you decided. Approving now sends them a payment link.`,
     `/admin-case.html?id=${c.id}`);
   if (c.data.clientUid) {
@@ -4058,7 +4076,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
     }
     await patchDoc(env, `invites/${inviteId}`, { state: 'confirmed', confirmedAt: now, caseId },
       { mask: ['state', 'confirmedAt', 'caseId'] }).catch(() => {});
-    await pingAdmins(env, `${firstName(m.name)} confirmed the case you scheduled.`, `/admin-case.html?id=${caseId}`);
+    await pingCase(env, { advocateId }, `${firstName(m.name)} confirmed the case you scheduled.`, `/admin-case.html?id=${caseId}`);
   }
 
   // mustNotExist returns falsy when the document already existed, which is how
@@ -4068,7 +4086,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   // A case he scheduled at no charge is not a sale, so it moves nothing.
   if (created && !held && !(inviteId && !invitePaid)) await raiseRatesFor(env, { advocateId }).catch((err) => console.warn('rate raise:', err.message || err));
   if (created && held) {
-    await pingAdmins(env,
+    await pingCase(env, { advocateId },
       `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
       `/admin-case.html?id=${caseId}`);
   }
@@ -4089,7 +4107,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
           <p><a href="${env.PUBLIC_BASE_URL}/admin-case.html?id=${caseId}">Review the request</a></p>`,
       });
     }
-    for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5)) {
+    for (const a of await caseRecipients(env, { advocateId })) {
       await notifyUser(env, a.id, {
         title: 'Booking request',
         body: `${firstName(m.name) || 'A client'} requested ${mt} MST.`,
@@ -4205,6 +4223,15 @@ function advocateName(profile) {
   return raw ? firstName(raw) : 'Your advocate';
 }
 
+/** The first name a client knows their advocate by (2026-10-16): the contractor's on their cases, his on his own. */
+async function caseAdvocateFirst(env, c) {
+  const id = advocateIdOf(c, env);
+  if (!id || id === env.ADMIN_UID) return 'Eric';
+  const a = await getDoc(env, `advocates/${id}`).catch(() => null);
+  const raw = String(a?.data?.name || '').trim();
+  return raw ? firstName(raw) : 'Your advocate';
+}
+
 async function handleNotify(request, env, ctx) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in required' }, 401);
@@ -4227,7 +4254,7 @@ async function handleNotify(request, env, ctx) {
     const doc = await getDoc(env, `cases/${id}`);
     if (!doc) return json({ error: 'Not found' }, 404);
     thread = doc.data;
-    isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
+    isAdmin = await worksThread(env, user.uid, profile, thread, getDoc, user);
     // His own case: nobody to tell, and nothing to stamp. The message is his
     // own note to himself; the 💬 badge and the admin pings stay dark. The
     // read still hears it (2026-09-03): his entries ARE the case material,
@@ -4248,7 +4275,7 @@ async function handleNotify(request, env, ctx) {
     const sub = await getDoc(env, `subscriptions/${id}`);
     if (!sub) return json({ error: 'Not found' }, 404);
     thread = sub.data;
-    isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
+    isAdmin = await worksThread(env, user.uid, profile, thread, getDoc, user);
     clientUid = id;
     threadClientName = sub.data.name || sub.data.clientName || '';
     adminLink = `/admin-chats.html?sub=${id}`;
@@ -4410,7 +4437,7 @@ async function threadContext(env, user, kind, id) {
   // The advocate side of the thread: the admin on every one, an advocate on
   // their own only (2026-10-15). The name stays isAdmin because every caller
   // already branches on it to mean exactly that side.
-  const isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
+  const isAdmin = await worksThread(env, user.uid, profile, thread, getDoc, user);
   // Membership, not merely authentication: being signed in is not permission
   // to touch a stranger's thread. Not theirs is the same 404 as a thread that
   // is not there (2026-10-15): "One advocate cannot access another advocate's
@@ -4445,7 +4472,7 @@ async function chatContext(env, user, kind, id, msgId) {
   // The advocate side of the thread: the admin on every one, an advocate on
   // their own only (2026-10-15). The name stays isAdmin because every caller
   // already branches on it to mean exactly that side.
-  const isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);
+  const isAdmin = await worksThread(env, user.uid, profile, thread, getDoc, user);
   // Membership, not merely authentication: being signed in is not permission
   // to touch a stranger's thread. Not theirs is the same 404 as a thread that
   // is not there (2026-10-15): "One advocate cannot access another advocate's
@@ -4607,7 +4634,7 @@ async function handleUploaded(request, env) {
   if (!doc) return json({ error: 'Not found' }, 404);
   const clientUid = kind === 'case' ? doc.data.clientUid : id;
   const profile = await getDoc(env, `users/${user.uid}`);
-  const isAdmin = await worksThread(env, user.uid, profile, doc.data, getDoc);
+  const isAdmin = await worksThread(env, user.uid, profile, doc.data, getDoc, user);
   if (!isAdmin && user.uid !== clientUid) return json({ error: 'Not found' }, 404);
 
   // No read is booked here any more (2026-09-13): a file that lands is
@@ -4885,7 +4912,7 @@ async function handleAuthority(request, env, url) {
           + 'If something in it needs to change, tell me in your case chat and we will settle it together.',
       }, 409);
     await patchDoc(env, `${coll}/${itemId}`, { revokedAt: new Date() }, { mask: ['revokedAt'] });
-    const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+    const admins = await caseRecipients(env, c.data);
     for (const a of admins) {
       await notifyUser(env, a.id, {
         title: 'Pocket Advocate',
@@ -5012,7 +5039,7 @@ async function handleAuthority(request, env, url) {
     await patchDoc(env, `cases/${id}`, { authorityAt: new Date() }, { mask: ['authorityAt'] })
       .catch(() => {});
   }
-  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  const admins = await caseRecipients(env, c.data);
   const signedWhat = kind === 'records' ? 'a records authorisation'
     : kind === 'representative' ? 'the insurance representative form'
       : 'the scope of work agreement';
@@ -6004,7 +6031,7 @@ async function markIncludedHours(env, caseId, c, bankedSeconds, tierMark) {
   if (c.clientUid) {
     await notifyUser(env, c.clientUid, {
       title: 'Pocket Advocate',
-      body: `Eric has delivered the ${hours} hours included in your month. Work continues.`,
+      body: `${await caseAdvocateFirst(env, c)} has delivered the ${hours} hours included in your month. Work continues.`,
       link: `/case.html?id=${caseId}`,
     }).catch(() => {});
   }
@@ -7396,7 +7423,7 @@ async function confirmFullAccessPurchase(env, session, attempt = 0) {
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
     }).catch(() => {});
   }
-  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  const admins = await caseRecipients(env, c.data);
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
@@ -7510,7 +7537,7 @@ async function confirmFollowUpPurchase(env, session) {
       <p>It's yours to use within 30 days from today.</p>
       <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
   }).catch(() => { /* the purchase still stands if the mail fails */ });
-  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  const admins = await caseRecipients(env, c.data);
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
@@ -7666,7 +7693,7 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
     }).catch(() => { /* the purchase still stands if the mail fails */ });
   }
-  for (const a of await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => [])) {
+  for (const a of await caseRecipients(env, c.data)) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
       body: `${firstName(c.data.clientName) || 'A client'} added 30 days to their window.`,
@@ -7743,7 +7770,7 @@ async function handleTelehealthRequest(request, env) {
     await patchDoc(env, `cases/${caseId}`, {
       pendingTelehealth: { ...req, state: 'requested', paidCents: 0, sessionId: null },
     }, { mask: ['pendingTelehealth'] });
-    await pingAdmins(env, `${firstName(c.data.clientName)} asked me to join a telehealth appointment. Confirm or decline it.`,
+    await pingCase(env, c.data, `${firstName(c.data.clientName)} asked me to join a telehealth appointment. Confirm or decline it.`,
       `/admin-case.html?id=${caseId}`);
     return json({ ok: true, requested: true });
   }
@@ -7822,7 +7849,7 @@ async function confirmTelehealthPurchase(env, session, { held = null } = {}) {
     extraPayments: payments,
   }, { mask: ['pendingTelehealth', 'extraPayments'], ifUpdateTime: c.updateTime });
   if (ok === false) return confirmTelehealthPurchase(env, session, { held });
-  await pingAdmins(env, held
+  await pingCase(env, c.data, held
     ? `${firstName(c.data.clientName)} asked for telehealth appointment advocacy. Their card is held for $${chargeDollars(total)}, not charged. Confirm or decline it.`
     : `${firstName(c.data.clientName)} paid for telehealth appointment advocacy. Confirm or decline it.`,
   `/admin-case.html?id=${caseId}`);
@@ -7946,6 +7973,25 @@ async function pingAdmins(env, body, link) {
   }
 }
 
+/**
+ * WHO HEARS ABOUT A CASE (contractor review, 2026-10-16). A client signing a
+ * form, confirming an invitation, buying a follow-up, asking for telehealth
+ * or leaving a tip on a contractor's case used to reach only him, and the
+ * contractor who has to act on it heard nothing. The case's own advocate
+ * hears now; his own cases still reach him. Refunds stay his alone
+ * (pingAdmins), because only he can give one.
+ */
+async function caseRecipients(env, c) {
+  const adv = advocateIdOf(c, env);
+  if (adv && env.ADMIN_UID && adv !== env.ADMIN_UID) return [{ id: adv }];
+  return queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+}
+async function pingCase(env, c, body, link) {
+  for (const a of await caseRecipients(env, c)) {
+    await notifyUser(env, a.id, { title: 'Pocket Advocate', body, link }).catch(() => {});
+  }
+}
+
 /** How long a case chat stays open after the report lands. */
 const REVIEW_WINDOW_MS = 48 * 3600_000;
 
@@ -8023,7 +8069,7 @@ async function confirmChatUnlock(env, session) {
       link: `/case.html?id=${caseId}`,
     }).catch(() => {});
   }
-  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  const admins = await caseRecipients(env, c?.data || {});
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
@@ -8101,7 +8147,7 @@ async function confirmTip(env, session) {
   }
   if (!wrote) { console.warn('confirmTip: ledger append kept losing the lock', caseId); return; }
   const c = { data: (await getDoc(env, `cases/${caseId}`))?.data || {} };
-  const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+  const admins = await caseRecipients(env, c.data);
   for (const a of admins) {
     await notifyUser(env, a.id, {
       title: 'Pocket Advocate',
@@ -9180,7 +9226,13 @@ async function lookupUidByEmail(env, email) {
   });
   if (!res.ok) return null;
   const d = await res.json();
-  return d.users?.[0]?.localId || null;
+  // Only an address its owner proved (security review, 2026-10-16). Anyone
+  // can create an unverified account under someone else's address with the
+  // public web key; taken at face value, that account would receive the real
+  // person's next sign-in, their cases and their files. Such an account is
+  // passed over, and the person signs in to the uid their address derives.
+  const u = d.users?.[0];
+  return u && u.emailVerified === true && !u.disabled ? u.localId || null : null;
 }
 
 async function deriveUid(email) {
@@ -9220,13 +9272,17 @@ async function requireAdmin(request, env) {
  * Anyone else gets null, which every caller turns into the same 404 a path
  * that is not there gets.
  */
-async function requireStaff(request, env) {
+async function requireStaff(request, env, opts = {}) {
   const user = await requireUser(request, env);
   if (!user) return null;
   const profile = await getDoc(env, `users/${user.uid}`);
   const advocate = profile?.data?.role === ADVOCATE_ROLE
     ? await getDoc(env, `advocates/${user.uid}`).catch(() => null) : null;
-  return staffFrom(env, user, profile, advocate);
+  const staff = staffFrom(env, user, profile, advocate);
+  // Setup first (2026-10-16): only the routes their account page uses
+  // (their record, photo, payout, the chat with him) pass { setup: true }.
+  if (staff?.setup && opts.setup !== true) return null;
+  return staff;
 }
 
 function slotIdFor(start) {
@@ -11575,6 +11631,12 @@ async function handleAdminSchedule(request, env) {
   // Free-call slots are not case inventory, from this side either.
   if (slot.data.kind === FIT_KIND)
     return json({ error: 'That time is a free-call slot. Open a case time instead.' }, 409);
+  // ONE ADVOCATE'S CALENDAR IS NOT ANOTHER'S (security review, 2026-10-16).
+  // Slot ids are times, so a contractor booking their client at an hour he
+  // had open used to take his slot. A slot that is someone else's is refused,
+  // whoever asks.
+  if (advocateIdOf(slot.data, env) !== advocateIdOf(c, env))
+    return json({ error: 'That time is on another advocate\'s calendar. Pick another time.' }, 409);
 
   const holdExpired =
     slot.data.state === 'held' &&
@@ -11855,7 +11917,7 @@ async function runAppealWarnings(env) {
       if (Number(meta.warnedAt) && Number(meta.warnedAt) <= rung) continue;
       await patchDoc(env, `cases/${row.id}/advisor/state`,
         { appealMeta: { ...meta, warnedAt: rung } }, { mask: ['appealMeta'] }).catch(() => {});
-      const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
+      const admins = await caseRecipients(env, row.data);
       for (const a of admins) {
         await notifyUser(env, a.id, {
           title: 'Pocket Advocate',

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.55';
+export const VERSION = '7.56';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '7.55';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // FOUR AUDITS (Eric, 2026-10-16: "Send out four agents to look for any
+    // errors in the UI, onboarding process, and functionality of new
+    // contractors once onboarded, and encryption/data security to be fixed").
+    // Admin only.
+    version: '7.56',
+    quiet: true,
+    client: [],
+    admin: [
+      'A new contractor sets up first: their own password, their photo, bio, specialty and how they get paid. Until then no case opens for them.',
+      'Resetting a contractor\'s password or turning them off signs them out everywhere, at once.',
+      'A contractor\'s clients see the contractor\'s name and photo, and the contractor gets the alerts for their own cases. Someone turned off keeps the pay they earned.',
+      'Your name on Team is Eric Bleach again.',
+      'Security: the old diagnostic link can no longer change anything, clients can only add files, never replace them, and a chat opens only files this app stored.',
+    ],
+  },
   {
     // ONE TEAM PAGE, ONE CALENDAR (Eric, 2026-10-15: "remove redundancy").
     // Admin only.

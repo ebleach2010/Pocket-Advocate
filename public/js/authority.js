@@ -80,6 +80,14 @@ export const SENSITIVE_CATEGORIES = [
  * ticked by the client; a legacy document with no scopes stored carries the
  * full set, which is what those clients signed up to in substance.
  */
+/**
+ * Eric's forms say "him"; a contractor's say "them" (UI review, 2026-10-16:
+ * a records release read "Ana Rivera... communicate with him"). His own
+ * forms keep his words exactly.
+ */
+const isHis = (o) => !o.advocateName || o.advocateName === 'Eric Bleach';
+const pron = (o, his, theirs) => (isHis(o) ? his : theirs);
+
 export const COMMUNICATION_SCOPES = [
   {
     id: 'discuss',
@@ -187,7 +195,7 @@ Patient: ${field(o, o.clientName, '(name)')}
 Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
 
 I authorise the provider named below to release my health information to the
-person named below, and to communicate with him as a person I have involved
+person named below, and to communicate with ${pron(o, 'him', 'them')} as a person I have involved
 in my care.
 
 RELEASING PROVIDER
@@ -202,7 +210,7 @@ I have involved the person named above in my care. I authorise each item
 marked below, and only those:
 ${scopes.length
     ? scopes.map((s) => `  ${scopeMark} ${s.label}
-      ${s.note}`).join('\n')
+      ${isHis(o) ? s.note : s.note.replace('answer his questions', 'answer their questions')}`).join('\n')
     : '  I have not authorised any of the items above.'}
 
 WHAT MAY BE RELEASED
@@ -349,7 +357,7 @@ get all of it.
 
 CONTACT
 ${contactMark} My advocate may contact me about my case by phone, as a phone
-call or a text message, and I can return his calls the same way.
+call or a text message, and I can return ${pron(o, 'his', 'their')} calls the same way.
 Anything that is not urgent goes through my case chat instead, so the
 whole case stays in one place.
 

@@ -590,7 +590,9 @@ export function seed({ set, file }) {
 
   // ---- many advocates (2026-10-15) -------------------------------------------
   // He is advocate number one; Ana Rivera is an advocate he added yesterday,
-  // still setting up, with one case of her own. The advocate demo
+  // set up (2026-10-16: an advocate still setting up can open no case, so a
+  // contractor with a case of her own has finished), with one case of her
+  // own. drive-advocates puts her back to brand new to walk setup. The advocate demo
   // (?demo=advocate) signs in as her and sees her case alone; his demo sees
   // hers on his shelf beside his own. Invented, like everything here.
   set(`advocates/${ADMIN}`, {
@@ -604,10 +606,9 @@ export function seed({ set, file }) {
     uid: ADVOCATE, name: 'Ana Rivera', email: 'ana@advocate.demo', active: true, owner: false,
     commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '',
     headshotPath: null, acceptingNew: true, advisor: { optedIn: false, enabled: false },
-    createdAt: days(1), onboardedAt: null,
-    // The demo's stand-in for her password record: she still has the one
-    // she was given, so the drive walks choosing her own.
-    demoMustChange: true,
+    createdAt: days(1), onboardedAt: days(1),
+    // The demo's stand-in for her password record: she chose her own.
+    demoMustChange: false,
   });
   set(`users/${ADVOCATE}`, { email: 'ana@advocate.demo', name: 'Ana Rivera', role: 'advocate' });
   set(`users/${ADV_CLIENT}`, { email: 'priya@example.demo', name: 'Priya Shah', role: 'client' });

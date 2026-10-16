@@ -25,7 +25,7 @@ import { sendEmail } from './email.js';
 import { notifyUser } from './push.js';
 import {
   ADVOCATE_ROLE, DEFAULT_COMMISSION_PCT, SPECIALTIES, hashPassword, verifyPassword, passwordProblem,
-  newAdvocateUid, cleanProfile, onboardingMissing, advocateView,
+  newAdvocateUid, cleanProfile, onboardingMissing, advocateView, STAFF_ZONES,
 } from './staff.js';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -66,6 +66,17 @@ export async function advocateLogin(env, email, password) {
   const adv = await getDoc(env, `advocates/${sec.data.uid}`).catch(() => null);
   if (adv?.data?.active !== true) return null;
   return { uid: sec.data.uid, email: cleanEmail(adv.data.email || email), mustChange: sec.data.mustChange === true };
+}
+
+const nowSec = () => Math.floor(Date.now() / 1000);
+
+/** Whether a client already signs in with this address: a profile carrying it, or the account it derives (index.js deriveUid). */
+async function isClientAddress(env, email) {
+  const byField = await queryDocs(env, 'users', [['email', 'EQUAL', email]], 3).catch(() => []);
+  if (byField.some((r) => (r.data?.role || 'client') === 'client')) return true;
+  const derived = `e${(await sha256hex(`uid:${email}`)).slice(0, 31)}`;
+  const prof = await getDoc(env, `users/${derived}`).catch(() => null);
+  return !!prof && (prof.data?.role || 'client') === 'client';
 }
 
 /** Every trusted device an advocate holds, gone: the next visit asks for the password. */
@@ -110,6 +121,10 @@ async function adminAdvocates(request, env, h) {
       return h.json({ error: 'That is your own address.' }, 409);
     const problem = passwordProblem(body.password);
     if (problem) return h.json({ error: problem }, 400);
+    // A CLIENT'S ADDRESS STAYS A CLIENT'S (onboarding review, 2026-10-16).
+    // Made an advocate's, the address would sign in with a password from then
+    // on and the client's own account, cases and chat would be out of reach.
+    if (await isClientAddress(env, email)) return h.json({ error: 'That address already belongs to a client here. Use another email for their advocate account.' }, 409);
     const uid = newAdvocateUid();
     const now = new Date();
     // The address is claimed first, and only once: a second account for the
@@ -125,8 +140,10 @@ async function adminAdvocates(request, env, h) {
       acceptingNew: true, tz: 'America/Boise',
       advisor: { optedIn: false, enabled: false },
       createdAt: now, createdBy: admin.uid, onboardedAt: null,
+      // Their own password first (setupPending in staff.js); the hash is on staffSecrets.
+      mustChange: true,
     }, { mustNotExist: true });
-    await patchDoc(env, `users/${uid}`, { role: ADVOCATE_ROLE, email, name }, { mustNotExist: true });
+    await patchDoc(env, `users/${uid}`, { role: ADVOCATE_ROLE, email, name, setupPending: true }, { mustNotExist: true });
     const mail = welcomeEmail(env, name);
     const emailed = await sendEmail(env, { to: email, subject: mail.subject, html: mail.html }).catch(() => false);
     return h.json({ ok: true, uid, emailed: !!emailed });
@@ -143,8 +160,10 @@ async function adminAdvocates(request, env, h) {
   if (action === 'deactivate' || action === 'activate') {
     if (a.owner) return h.json({ error: 'You are the owner; your account stays on.' }, 409);
     const on = action === 'activate';
-    await patchDoc(env, `advocates/${uid}`, { active: on, [on ? 'activatedAt' : 'deactivatedAt']: new Date() },
-      { mask: ['active', on ? 'activatedAt' : 'deactivatedAt'] });
+    // Off ends every session they hold (2026-10-16): one begun before this
+    // moment is refused by every route and rule, now and after a turn back on.
+    await patchDoc(env, `advocates/${uid}`, { active: on, [on ? 'activatedAt' : 'deactivatedAt']: new Date(), ...(on ? {} : { sessionsFrom: nowSec() }) },
+      { mask: ['active', on ? 'activatedAt' : 'deactivatedAt', ...(on ? [] : ['sessionsFrom'])] });
     // Off means out now: every trusted device goes, and every route checks
     // `active` on its next request whatever a browser still holds.
     const forgot = on ? 0 : await forgetDevices(env, uid);
@@ -158,6 +177,10 @@ async function adminAdvocates(request, env, h) {
     await patchDoc(env, await loginPath(a.email), {
       uid, ...(await hashPassword(body.password)), mustChange: true, setAt: new Date(), setBy: 'admin',
     });
+    // Signed out everywhere, as the sheet tells him (2026-10-16), and back to
+    // choosing their own password before any work opens.
+    await patchDoc(env, `advocates/${uid}`, { mustChange: true, sessionsFrom: nowSec() }, { mask: ['mustChange', 'sessionsFrom'] });
+    await patchDoc(env, `users/${uid}`, { setupPending: true }, { mask: ['setupPending'] }).catch(() => {});
     await forgetDevices(env, uid);
     // Nothing echoes the password back, here or anywhere.
     return h.json({ ok: true });
@@ -197,7 +220,7 @@ async function adminAdvocates(request, env, h) {
 // ---- their own account page -------------------------------------------------------
 
 async function staffMe(request, env, h) {
-  const staff = await h.requireStaff(request, env);
+  const staff = await h.requireStaff(request, env, { setup: true });
   if (!staff) return h.json({ error: 'Not found' }, 404);
   const path = `advocates/${staff.uid}`;
   const doc = await getDoc(env, path);
@@ -206,9 +229,11 @@ async function staffMe(request, env, h) {
   const login = staff.isAdmin ? null : await getDoc(env, await loginPath(a.email)).catch(() => null);
 
   if (request.method === 'GET') {
+    const payout = staff.isAdmin ? null : await getDoc(env, `payouts/${staff.uid}`).catch(() => null);
     return h.json({
       advocate: advocateView(staff.uid, a), role: staff.isAdmin ? 'admin' : ADVOCATE_ROLE,
-      mustChange: login?.data?.mustChange === true, specialties: SPECIALTIES,
+      mustChange: login?.data?.mustChange === true, specialties: SPECIALTIES, zones: STAFF_ZONES,
+      payoutSet: !!payout?.data?.method,
     });
   }
   if (request.method !== 'POST') return h.json({ error: 'Not found' }, 404);
@@ -243,15 +268,25 @@ async function staffMe(request, env, h) {
     await patchDoc(env, await loginPath(a.email), {
       uid: staff.uid, ...(await hashPassword(body.next)), mustChange: false, setAt: new Date(), setBy: 'advocate',
     });
-    return h.json({ ok: true });
+    // A new password ends every other session and trusted device (2026-10-16);
+    // this one gets a fresh session and device token back, so they stay in.
+    await patchDoc(env, path, { mustChange: false, sessionsFrom: nowSec() }, { mask: ['mustChange', 'sessionsFrom'] });
+    await patchDoc(env, `users/${staff.uid}`, { setupPending: !a.onboardedAt }, { mask: ['setupPending'] }).catch(() => {});
+    await forgetDevices(env, staff.uid);
+    const token = h.mintCustomToken ? await h.mintCustomToken(env, staff.uid).catch(() => null) : null;
+    const deviceToken = h.issueDeviceToken ? await h.issueDeviceToken(env, staff.uid, a.email).catch(() => null) : null;
+    return h.json({ ok: true, token, deviceToken });
   }
 
   if (body.action === 'onboarded') {
     const missing = onboardingMissing(a);
+    // How they get paid is part of setting up (2026-10-16): payroll needs it.
+    if (!staff.isAdmin && !(await getDoc(env, `payouts/${staff.uid}`).catch(() => null))?.data?.method) missing.push('how you get paid');
     if (missing.length) return h.json({ error: `Still needed: ${missing.join(', ')}.`, missing }, 409);
     if (login?.data?.mustChange === true) return h.json({ error: 'Choose your own password first.' }, 409);
     if (!a.onboardedAt) {
       await patchDoc(env, path, { onboardedAt: new Date() }, { mask: ['onboardedAt'] });
+      await patchDoc(env, `users/${staff.uid}`, { setupPending: false }, { mask: ['setupPending'] }).catch(() => {});
       if (!staff.isAdmin && env.ADMIN_UID)
         await notifyUser(env, env.ADMIN_UID, {
           title: 'Pocket Advocate', body: `${a.name || 'An advocate'} finished setting up their profile.`, link: '/admin-employer.html',
@@ -272,7 +307,7 @@ function looksLike(type, u8) {
 }
 
 async function staffHeadshot(request, env, h) {
-  const staff = await h.requireStaff(request, env);
+  const staff = await h.requireStaff(request, env, { setup: true });
   if (!staff) return h.json({ error: 'Not found' }, 404);
   if (request.method !== 'POST') return h.json({ error: 'Not found' }, 404);
   return saveHeadshot(request, env, h, staff.uid);

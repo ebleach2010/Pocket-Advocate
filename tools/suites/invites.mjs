@@ -105,6 +105,9 @@ function world({ admin = { uid: 'eric' }, user = { uid: 'u-lead' }, profiles = {
     ratesForCase: async () => ({ caseCents: 210000, addonCents: 32500, fullCents: 440000 }),
     raiseRatesFor: async () => { log.push(['raise']); },
     pingAdmins: async (env, body) => { log.push(['ping', body]); },
+    // The case's own advocate hears of a confirmation (2026-10-16): logged with whose case it is.
+    pingCase: async (env, c, body) => { log.push(['ping', body, c?.advocateId || '']); },
+    caseRecipients: async () => [{ id: 'eric' }],
     notifyUser: async (env, uid, n) => { log.push(['notify', uid, n.body]); },
     CHARGE_COPY: CHARGE.CHARGE_COPY,
     // The hold's own constants, so a hold slipped into the invitation's checkout is read and caught, not a crash.

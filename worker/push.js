@@ -13,6 +13,17 @@ import { sendWebPush } from './webpush.js';
 export async function notifyUser(env, uid, { title, body, link, max = 10 }) {
   try {
     const profile = await getDoc(env, `users/${uid}`);
+    // A TURNED-OFF ADVOCATE IS TOLD NOTHING MORE (security review,
+    // 2026-10-16). Their clients' messages and uploads kept reaching their
+    // phone after he turned them off, and nobody else heard. Such a push goes
+    // to him instead, saying whose client it is.
+    if (profile?.data?.role === 'advocate' && env.ADMIN_UID && uid !== env.ADMIN_UID) {
+      const adv = await getDoc(env, `advocates/${uid}`).catch(() => null);
+      if (adv?.data?.active !== true) {
+        const who = String(adv?.data?.name || 'a turned-off advocate').split(' ')[0];
+        return notifyUser(env, env.ADMIN_UID, { title, body: `For ${who} (turned off): ${body || ''}`.slice(0, 200), link, max });
+      }
+    }
     const subs = Array.isArray(profile?.data.pushSubs) ? profile.data.pushSubs : [];
     if (!subs.length) return;
     const message = { title, body, link };

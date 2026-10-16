@@ -116,8 +116,30 @@ if (SHOTS) await adv.screenshot({ path: `${SHOTS}/advocates-2-chat.png` });
 ok('their reply lands in the client\'s chat on their own side', !!last && /echo report/.test(last.text) && /\bme\b/.test(last.cls), JSON.stringify(last));
 
 console.log('\n--- C. their setup ---');
+// RE-PINNED 2026-10-16 (v7.56): an advocate still setting up can open no case (setup first, server and rules), so the
+// demo's Ana is seeded set up. Here she is put back to brand new (her own password not chosen, no profile finished, no
+// way to be paid) by editing the demo's saved store, the way a fresh account starts.
+await adv.evaluate(() => {
+  for (const key of ['pa-demo-store', 'pa-demo-store-advocate']) {
+    const raw = JSON.parse(localStorage.getItem(key) || 'null');
+    if (!raw?.docs) continue;
+    raw.docs = raw.docs.filter(([k]) => k !== 'payouts/demo-advocate').map(([k, v]) => [k,
+      k === 'advocates/demo-advocate' ? { ...v, onboardedAt: null, demoMustChange: true }
+        : k === 'users/demo-advocate' ? { ...v, setupPending: true } : v]);
+    localStorage.setItem(key, JSON.stringify(raw));
+  }
+});
+// Eric, 2026-10-16 (four audits): setup first. Her shelf sends her to it, and her case is refused until it is done.
+await adv.goto(`${P}/admin.html?demo=advocate`, { waitUntil: 'networkidle' });
+await adv.waitForTimeout(2000);
+const sentToSetup = adv.url();
+const caseRefused = await adv.evaluate(async () => (await fetch('/api/staff/settings')).status);
 await adv.goto(`${P}/admin-account.html?setup=1&demo=advocate`, { waitUntil: 'networkidle' });
 await adv.waitForTimeout(2000);
+// NEGATIVE CONTROL (run 2026-10-16, v7.56): auth.js's setup redirect (`if (known === 'advocate' && STAFF.setup &&`) made `if (false &&` made this read
+//   FAIL  an advocate still setting up is sent to their account page, and their work is refused until setup is done
+ok('an advocate still setting up is sent to their account page, and their work is refused until setup is done',
+  /admin-account(\.html)?\?setup=1/.test(sentToSetup) && caseRefused === 404, JSON.stringify({ sentToSetup, caseRefused }));
 const pwFirst = await adv.evaluate(() => !!document.querySelector('#pw-form')?.checkVisibility());
 await adv.fill('#pw-form input[name="current"]', 'given-password-1');
 await adv.fill('#pw-form input[name="next"]', 'my-own-password-22');
@@ -135,12 +157,21 @@ await adv.check('#profile-form input[value="Rare Disease"]');
 await adv.fill('#profile-form textarea[name="bio"]', 'I help people with heart conditions get answers and keep their care moving.');
 await adv.click('#profile-form button[type="submit"]');
 await adv.waitForTimeout(1500);
+// How they get paid is a setup step now (2026-10-16).
+await adv.selectOption('#payout-form select[name="method"]', 'zelle');
+await adv.fill('#payout-form [name="f-name"]', 'Ana Rivera');
+await adv.fill('#payout-form [name="f-handle"]', 'ana@advocate.demo');
+await adv.click('#payout-form button[type="submit"]');
+await adv.waitForTimeout(1200);
 const steps = await adv.evaluate(() => [...document.querySelectorAll('.steps li')].map((l) => ({ done: !!l.className, text: l.textContent.trim() })));
 if (SHOTS) await adv.screenshot({ path: `${SHOTS}/advocates-3-setup.png`, fullPage: true });
 // NEGATIVE CONTROL (run 2026-10-15): the photo upload's success branch skipping its redraw made this read
 //   FAIL  setup asks for their own password first, then takes a photo and a profile, and every step reads done
+// RE-PINNED 2026-10-16 (v7.56): the steps include how they get paid, which the drive now fills.
+// NEGATIVE CONTROL (run 2026-10-16, v7.56): steps()'s `['how you get paid', !!me.payoutSet]` made `['how you get paid', false]` made this read
+//   FAIL  setup asks for their own password first, then takes a photo and a profile, and every step reads done
 ok('setup asks for their own password first, then takes a photo and a profile, and every step reads done',
-  pwFirst && pwGone && photo && steps.length >= 3 && steps.every((s) => s.done), JSON.stringify({ pwFirst, pwGone, photo, steps }));
+  pwFirst && pwGone && photo && steps.length >= 6 && steps.every((s) => s.done) && steps.some((s) => /get paid/.test(s.text)), JSON.stringify({ pwFirst, pwGone, photo, steps }));
 const advSideways = await sideways(adv);
 await adv.click('[data-finish]');
 await adv.waitForTimeout(2500);

@@ -189,6 +189,9 @@ if (user && caseId) { loadFloor(); load(); }
 let data = null;
 // The case's own advocate as the forms name them (2026-10-15); empty is his name.
 let caseAdvocateName = '';
+// Settled once the name lookup has answered (2026-10-16): a form printed or
+// sent before then named Eric on a contractor's case.
+let caseAdvocateNameReady = Promise.resolve();
 // Case id the folder shell (and its one chat + advisor mount) was built for.
 // Refresh paths must never rebuild the chat's or the advisor's DOM.
 let renderedFor = null;
@@ -850,7 +853,9 @@ function render(el) {
           button.textContent = was;
         }
       },
-    }].filter((b) => !advocate || b.icon !== '✍️'),
+    // A contractor gets neither maker (2026-10-16): the duty of care draft
+    // is his own story in his own voice ("It kept me alive when I was sick").
+    }].filter((b) => !advocate || (b.icon !== '✍️' && b.icon !== '⚕️')),
   });
 
   // Setting it: the chat module owns the write, because it knows which
@@ -924,7 +929,7 @@ function render(el) {
   }
   // A contractor's case names them on the forms it sends; his name stays his.
   if (data.advocateId) {
-    fetch(`/api/advocates/name?uid=${encodeURIComponent(data.advocateId)}`)
+    caseAdvocateNameReady = fetch(`/api/advocates/name?uid=${encodeURIComponent(data.advocateId)}`)
       .then((r) => (r.ok ? r.json() : null)).then((d) => { caseAdvocateName = d?.name || ''; }).catch(() => {});
   }
 }
@@ -3180,7 +3185,7 @@ function paintFiles(pane) {
            must NOT advance the case: report-uploaded marks the report
            delivered, which ends the case chat 48 hours later. -->
       <label class="small" style="margin-top:.7rem; display:block;">What are you uploading?
-        <select id="up-cat" style="margin-left:.35rem;">
+        <select id="up-cat">
           <option value="" selected>Choose what this is</option>
           ${UPLOAD_CATEGORIES.map((x) => `<option value="${x.id}">${esc(x.label)}</option>`).join('')}
           <option value="${REC_PICK}">Recording</option>
@@ -5044,9 +5049,10 @@ function authorityDocHtml(item) {
     </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre>${signatureInk(item)}</body></html>`;
 }
 
-function printAuthorityDoc(item) {
+async function printAuthorityDoc(item) {
   const win = window.open('', '_blank');
   if (!win) { alert('Allow pop-ups to print this.'); return; }
+  await caseAdvocateNameReady;
   win.document.write(authorityDocHtml(item));
   win.document.close();
   setTimeout(() => win.print(), 350);
@@ -5152,6 +5158,7 @@ async function sendBlankForms(kinds, btn) {
   if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
   let broke = '';
   try {
+    await caseAdvocateNameReady;
     for (const form of picked) {
       const name = `${form.label} ${mountainDay()}.html`;
       // The same sanitiser the hand-upload path uses, so one rule governs

@@ -959,6 +959,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
       };
       const authorityDocHtml = (o) =>
         '<!doctype html><title>' + o.kind + '</title><pre>BLANK FORM ' + o.kind + '</pre>';
+      // The send waits for the case advocate's name first (2026-10-16); settled at once here.
+      const caseAdvocateNameReady = Promise.resolve();
       ${TZ}
       ${FORMS};
       ${DAY}
@@ -1211,6 +1213,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
           querySelectorAll: () => [],
         };
         const authorityDocHtml = (o) => '<pre>BLANK FORM ' + o.kind + '</pre>';
+        const caseAdvocateNameReady = Promise.resolve();
         ${TZ}
         ${FORMS};
         ${DAY}
@@ -1287,6 +1290,7 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
         querySelectorAll: () => [],
       };
       const authorityDocHtml = (o) => '<pre>BLANK FORM ' + o.kind + '</pre>';
+      const caseAdvocateNameReady = Promise.resolve();
       ${TZ}
       ${FORMS};
       ${DAY}

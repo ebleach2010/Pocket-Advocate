@@ -23,6 +23,7 @@
 //   F. every place a case, invitation, slot or chat line is made says whose
 //
 // Run: node advocates.mjs
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath as f2, pathToFileURL } from 'node:url';
 import { dirname as d, join as j } from 'node:path';
@@ -62,7 +63,8 @@ console.log('\n--- A. who is staff, and who sees what ---');
 {
   const { advocateIdOf, staffFrom, staffSees, worksThread, ADVOCATE_ROLE } = STAFF;
   const prof = (role) => ({ data: { role } });
-  const adv = (active) => ({ data: { active } });
+  // A working advocate is set up (2026-10-16: setup first, staff.js setupPending).
+  const adv = (active) => ({ data: { active, onboardedAt: 'x' } });
   // NEGATIVE CONTROL (run 2026-10-15): advocateIdOf answering '' for a missing field made this read
   //   FAIL  A1 a case with no advocate is Eric's, never nobody's
   check('A1 a case with no advocate is Eric\'s, never nobody\'s',
@@ -204,7 +206,8 @@ const HELPERS = ['async function threadContext(env, user, kind, id) {'].map((dcl
           charge: { state: 'held', authorizedCents: 210000, capturedCents: 0, paymentIntentId: 'pi_1' },
           fullAccessRequest: { state: 'pending' }, pendingTelehealth: { state: 'requested' }, hold: {} }],
         ['users/adv-a', { role: 'advocate', name: 'Ana Advocate' }], ['users/adv-b', { role: 'advocate' }], [`users/${ERIC}`, { role: 'admin' }],
-        ['advocates/adv-a', { active: true }], ['advocates/adv-b', { active: true }],
+        // A working advocate is set up (2026-10-16: setup first, staff.js setupPending).
+        ['advocates/adv-a', { active: true, onboardedAt: 'x' }], ['advocates/adv-b', { active: true, onboardedAt: 'x' }],
       ]);
       const { fn, calls } = runLifted([...HELPERS, src], name, { staff, store });
       let res; let threw = '';
@@ -292,7 +295,8 @@ console.log('\n--- C. chat, files and pings ---');
     ['subscriptions/c3', { advocateId: 'adv-a', name: 'Sub Client' }],
     ['users/adv-a', { role: 'advocate' }], ['users/adv-b', { role: 'advocate' }], ['users/adv-off', { role: 'advocate' }],
     [`users/${ERIC}`, { role: 'admin' }], ['users/c1', { role: 'client', name: 'Dana Reyes' }], ['users/c2', { role: 'client' }], ['users/c3', { role: 'client' }],
-    ['advocates/adv-a', { active: true }], ['advocates/adv-b', { active: true }], ['advocates/adv-off', { active: false }],
+    // A working advocate is set up (2026-10-16: setup first, staff.js setupPending).
+    ['advocates/adv-a', { active: true, onboardedAt: 'x' }], ['advocates/adv-b', { active: true, onboardedAt: 'x' }], ['advocates/adv-off', { active: false, onboardedAt: 'x' }],
   ]);
   const ctxOf = async (uid, kind, id) => {
     const { fn } = runLifted([tc], 'threadContext', { staff: null, store: store(), extra: { firstName: (v) => String(v || '').split(' ')[0] } });
@@ -363,12 +367,17 @@ console.log('\n--- D. the router ---');
   //   FAIL  D1 the routes that take an advocate are exactly the ones checked above, so a new one cannot slip in unchecked
   check('D1 the routes that take an advocate are exactly the ones checked above, so a new one cannot slip in unchecked',
     JSON.stringify(takers) === JSON.stringify(listed), `worker: ${takers.join(',')}`);
-  const reqStaff = lift(W, 'async function requireStaff(request, env) {');
+  // RE-PINNED 2026-10-16 (v7.56): requireStaff takes { setup } and refuses an advocate still setting up unless the
+  // route allows it (their account page's routes); the decision is still staffFrom's.
+  const reqStaff = lift(W, 'async function requireStaff(request, env, opts = {}) {');
   // NEGATIVE CONTROL (run 2026-10-15): requireStaff handing staffFrom a made-up active record made this read
+  //   FAIL  D2 requireStaff reads the role and the advocate record on the server, and decides with the shared rule
+  // NEGATIVE CONTROL (run 2026-10-16, v7.56): requireStaff's `if (staff?.setup && opts.setup !== true) return null;` taken out made this read
   //   FAIL  D2 requireStaff reads the role and the advocate record on the server, and decides with the shared rule
   check('D2 requireStaff reads the role and the advocate record on the server, and decides with the shared rule',
     /const profile = await getDoc\(env, `users\/\$\{user\.uid\}`\);/.test(reqStaff) && /advocates\/\$\{user\.uid\}/.test(reqStaff)
-    && /return staffFrom\(env, user, profile, advocate\);/.test(reqStaff));
+    && /const staff = staffFrom\(env, user, profile, advocate\);/.test(reqStaff)
+    && /if \(staff\?\.setup && opts\.setup !== true\) return null;\n\s+return staff;/.test(reqStaff));
   // Everything about the platform as a whole stays his alone.
   // RE-PINNED 2026-10-15 (v7.46): handleLeadInvite is staff now (a contractor's own leads, section I); his leads list stays his.
   // NEGATIVE CONTROL (run 2026-10-15, v7.46): handleAdminLeads asking requireStaff made D1 and D3 read FAIL.
@@ -587,7 +596,11 @@ console.log('\n--- G. accounts ---');
   const h = (w) => ({
     json: (o, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'content-type': 'application/json' } }),
     requireAdmin: async (req) => { const uid = req.headers.get('x-uid'); const p = w.docs.get(`users/${uid}`); return uid === ERIC && p?.role === 'admin' ? { uid, email: 'eric@x.test' } : null; },
-    requireStaff: async (req) => { const uid = req.headers.get('x-uid'); if (!uid) return null; const p = w.docs.get(`users/${uid}`); return STAFF.staffFrom(env, { uid }, p ? { data: p } : null, w.docs.has(`advocates/${uid}`) ? { data: w.docs.get(`advocates/${uid}`) } : null); },
+    // As the Worker's (2026-10-16): a session that began now, and setup first unless the route allows it.
+    requireStaff: async (req, e2, opts = {}) => { const uid = req.headers.get('x-uid'); if (!uid) return null; const p = w.docs.get(`users/${uid}`); const s = STAFF.staffFrom(env, { uid, authTime: Math.floor(Date.now() / 1000) + 5 }, p ? { data: p } : null, w.docs.has(`advocates/${uid}`) ? { data: w.docs.get(`advocates/${uid}`) } : null); return s?.setup && opts.setup !== true ? null : s; },
+    // The router hands these in (2026-10-16), so a new password gives this device a fresh session.
+    mintCustomToken: async (e2, uid) => `token-for-${uid}`,
+    issueDeviceToken: async (e2, uid) => `device-for-${uid}`,
   });
   const call = async (w, uid, path, { method = 'POST', json, bytes, type } = {}) => {
     const headers = new Headers();
@@ -674,6 +687,7 @@ console.log('\n--- G. accounts ---');
   const changed = await call(w, uid, '/api/staff/me', { json: { action: 'password', current: PW, next: 'brand-new-pass-9' } });
   const oldNow = await w.api.advocateLogin(env, 'ana@example.com', PW);
   const newNow = await w.api.advocateLogin(env, 'ana@example.com', 'brand-new-pass-9');
+  const afterChange = { adv: { ...w.docs.get(`advocates/${uid}`) }, user: { ...w.docs.get(`users/${uid}`) } };
   // Their own password now, but no photo yet: still not finished.
   const noPhoto = await call(w, uid, '/api/staff/me', { json: { action: 'onboarded' } });
   // NEGATIVE CONTROL (run 2026-10-15): the password change skipping its verifyPassword of the current one made this read
@@ -695,24 +709,37 @@ console.log('\n--- G. accounts ---');
     up.status === 200 && liar.status === 415 && svg.status === 415 && shotPath?.startsWith(`advocates/${uid}/headshot-`)
     && pub.status === 200 && pub.res.headers.get('content-type') === 'image/jpeg' && pub.res.headers.get('x-content-type-options') === 'nosniff',
     JSON.stringify([up.status, liar.status, svg.status, pub.status, shotPath]));
+  // How they get paid is part of setup (2026-10-16): refused without it, then set the way their page sets it.
+  const noPay = await call(w, uid, '/api/staff/me', { json: { action: 'onboarded' } });
+  w.docs.set(`payouts/${uid}`, { method: 'zelle', hint: 'Zelle to an…om', sealed: 'x' });
   const finished = await call(w, uid, '/api/staff/me', { json: { action: 'onboarded' } });
   // NEGATIVE CONTROL (run 2026-10-15): the onboarded action's missing-fields refusal taken out made this read
   //   (first run MISSED: the password guard refused the same call; noPhoto added so each guard is met alone, then re-run)
   //   FAIL  G10 setup finishes only when the profile is whole and their own password is set, once, and tells him
+  // RE-PINNED 2026-10-16 (v7.56): a way to be paid is needed too, so the photo-less call names two things missing,
+  // the call with the photo but no way to be paid names one, and it finishes once both are in.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.56): staffMe's `missing.push('how you get paid')` taken out made this read
+  //   FAIL  G10 setup finishes only when the profile is whole and their own password is set, once, and tells him
   check('G10 setup finishes only when the profile is whole and their own password is set, once, and tells him',
-    notReady.status === 409 && noPhoto.status === 409 && noPhoto.out?.missing?.length === 1 && finished.status === 200 && !!w.docs.get(`advocates/${uid}`).onboardedAt
+    notReady.status === 409 && noPhoto.status === 409 && JSON.stringify(noPhoto.out?.missing) === JSON.stringify(['headshot', 'how you get paid'])
+    && noPay.status === 409 && JSON.stringify(noPay.out?.missing) === JSON.stringify(['how you get paid']) && finished.status === 200 && !!w.docs.get(`advocates/${uid}`).onboardedAt
     && w.pushes.length === 1 && w.pushes[0].uid === ERIC && !DASH.test(w.pushes[0].body), JSON.stringify([notReady.status, noPhoto.status, noPhoto.out, finished.status, w.pushes]));
   // His support tools.
   w.docs.set('trustedDevices/d1', { uid, email: 'ana@example.com' });
   w.docs.set('trustedDevices/d2', { uid: 'c1', email: 'c1@x.test' });
+  // Their own change set the mark; set back, so the reset is seen setting it on its own (G18).
+  w.docs.set(`advocates/${uid}`, { ...w.docs.get(`advocates/${uid}`), sessionsFrom: 1 });
   const reset = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'reset-password', uid, password: 'support-reset-77' } });
   const afterReset = await w.api.advocateLogin(env, 'ana@example.com', 'support-reset-77');
+  const resetFrom = Number(w.docs.get(`advocates/${uid}`).sessionsFrom) || 0;
   // NEGATIVE CONTROL (run 2026-10-15): the reset's `await forgetDevices(env, uid);` taken out made this read
   //   FAIL  G11 his reset sets a password they must change, signs out every device of theirs and no one else's, and echoes nothing back
   check('G11 his reset sets a password they must change, signs out every device of theirs and no one else\'s, and echoes nothing back',
     reset.status === 200 && afterReset?.mustChange === true && !w.docs.has('trustedDevices/d1') && w.docs.has('trustedDevices/d2')
     && !JSON.stringify(reset.out).includes('support-reset-77'));
   w.docs.set('trustedDevices/d3', { uid, email: 'ana@example.com' });
+  // Each of his two actions is seen ending sessions on its own: the reset's mark is set back before the turn-off.
+  w.docs.set(`advocates/${uid}`, { ...w.docs.get(`advocates/${uid}`), sessionsFrom: 1 });
   const off = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'deactivate', uid } });
   const offLogin = await w.api.advocateLogin(env, 'ana@example.com', 'support-reset-77');
   const offStaff = STAFF.staffFrom(env, { uid }, { data: w.docs.get(`users/${uid}`) }, { data: w.docs.get(`advocates/${uid}`) });
@@ -722,6 +749,40 @@ console.log('\n--- G. accounts ---');
   //   FAIL  G12 turning an advocate off locks them out at once: no door, no staff, no devices, no public photo; his own account cannot be turned off
   check('G12 turning an advocate off locks them out at once: no door, no staff, no devices, no public photo; his own account cannot be turned off',
     off.status === 200 && offLogin === null && offStaff === null && !w.docs.has('trustedDevices/d3') && offPhoto.status === 404 && ownerOff.status === 409);
+
+  // ---- the four audits (2026-10-16): sessions end, setup comes first, a client's address stays theirs ----
+  const advNow = w.docs.get(`advocates/${uid}`);
+  const before = Number(advNow.sessionsFrom) - 30;
+  const back = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'activate', uid } });
+  const oldSession = STAFF.staffFrom(env, { uid, authTime: before }, { data: w.docs.get(`users/${uid}`) }, { data: w.docs.get(`advocates/${uid}`) });
+  const newSession = STAFF.staffFrom(env, { uid, authTime: Math.floor(Date.now() / 1000) + 5 }, { data: w.docs.get(`users/${uid}`) }, { data: w.docs.get(`advocates/${uid}`) });
+  // NEGATIVE CONTROL (run 2026-10-16): deactivate's `...(on ? {} : { sessionsFrom: nowSec() })` made `...({})` made this read
+  //   FAIL  G18 his reset and his turning off end every session begun before them, even after he turns them back on; a session begun since works, set up first after a reset
+  // NEGATIVE CONTROL (run 2026-10-16): the reset's patch without `sessionsFrom: nowSec()` made this read
+  //   FAIL  G18 his reset and his turning off end every session begun before them, even after he turns them back on; a session begun since works, set up first after a reset
+  check('G18 his reset and his turning off end every session begun before them, even after he turns them back on; a session begun since works, set up first after a reset',
+    back.status === 200 && resetFrom > 1000 && Number(advNow.sessionsFrom) > 1000 && oldSession === null && newSession?.uid === uid && newSession.setup === true
+    && advNow.mustChange === true && w.docs.get(`users/${uid}`)?.setupPending === true,
+    JSON.stringify({ sessionsFrom: advNow.sessionsFrom, oldSession, newSession, mustChange: advNow.mustChange }));
+  // NEGATIVE CONTROL (run 2026-10-16): the password change's `forgetDevices(env, staff.uid)` and fresh token taken out made this read
+  //   FAIL  G19 their own new password ends every other session and device, hands this one a fresh session and device token, and clears the password step
+  check('G19 their own new password ends every other session and device, hands this one a fresh session and device token, and clears the password step',
+    changed.out?.token === `token-for-${uid}` && changed.out?.deviceToken === `device-for-${uid}`
+    && afterChange.adv.mustChange === false && Number(afterChange.adv.sessionsFrom) > 0 && afterChange.user.setupPending === true
+    && !JSON.stringify(changed.out).includes('brand-new-pass-9'),
+    JSON.stringify({ out: changed.out, adv: { mustChange: afterChange.adv.mustChange, sessionsFrom: afterChange.adv.sessionsFrom }, user: afterChange.user }));
+  w.docs.set('users/c9', { role: 'client', email: 'client.nine@x.test' });
+  const takeClient = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'Not Them', email: 'Client.Nine@x.test', password: 'a-fine-password-1' } });
+  const derived = `e${createHash('sha256').update('uid:derived@x.test').digest('hex').slice(0, 31)}`;
+  w.docs.set(`users/${derived}`, { role: 'client' });
+  const takeDerived = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'Not Them Either', email: 'derived@x.test', password: 'a-fine-password-1' } });
+  const fresh = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'create', name: 'New Person', email: 'new.person@x.test', password: 'a-fine-password-1' } });
+  // NEGATIVE CONTROL (run 2026-10-16): create's `if (await isClientAddress(env, email))` made `if (false)` made this read
+  //   FAIL  G20 a client's address is never made an advocate's, whether their profile carries it or it derives their account; a new address is, set up first
+  check('G20 a client\'s address is never made an advocate\'s, whether their profile carries it or it derives their account; a new address is, set up first',
+    takeClient.status === 409 && /belongs to a client/.test(takeClient.out?.error || '') && takeDerived.status === 409
+    && fresh.status === 200 && w.docs.get(`advocates/${fresh.out.uid}`)?.mustChange === true && w.docs.get(`users/${fresh.out.uid}`)?.setupPending === true,
+    JSON.stringify([takeClient.status, takeDerived.status, fresh.status]));
   const pct = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid, commissionPct: 55 } });
   const badPct = await call(w, ERIC, '/api/admin/advocates', { json: { action: 'update', uid, commissionPct: 55.5 } });
   // NEGATIVE CONTROL (run 2026-10-15): the share's `Number.isInteger` loosened to `Number.isFinite` made this read
@@ -808,8 +869,11 @@ console.log('\n--- H. doors ---');
   //   FAIL  H4 the routes reach the accounts module, with his gate and the staff gate handed in
   // RE-PINNED 2026-10-15 (v7.50): his upload of a contractor's photo (/api/admin/advocates/headshot) reaches it too.
   // NEGATIVE CONTROL (run 2026-10-15, v7.50): the router handing `requireAdmin: requireStaff` again made H4 read FAIL.
+  // RE-PINNED 2026-10-16 (v7.56): the module also gets mintCustomToken and issueDeviceToken, so a new password hands
+  // the current device a fresh session while every other one ends.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.56): the router handing `requireAdmin: requireStaff` once more made H4 read FAIL.
   check('H4 the routes reach the accounts module, with his gate and the staff gate handed in',
-    /if \(url\.pathname === '\/api\/admin\/advocates' \|\| url\.pathname === '\/api\/admin\/advocates\/headshot' \|\| url\.pathname\.startsWith\('\/api\/staff\/'\) \|\| url\.pathname\.startsWith\('\/api\/advocates\/'\)\)\n\s*return await handleAdvocates\(request, env, url, \{ requireAdmin, requireStaff, json \}\);/.test(W));
+    /if \(url\.pathname === '\/api\/admin\/advocates' \|\| url\.pathname === '\/api\/admin\/advocates\/headshot' \|\| url\.pathname\.startsWith\('\/api\/staff\/'\) \|\| url\.pathname\.startsWith\('\/api\/advocates\/'\)\)\n\s*return await handleAdvocates\(request, env, url, \{ requireAdmin, requireStaff, json, mintCustomToken, issueDeviceToken \}\);/.test(W));
 }
 
 const failed = results.filter((r) => !r.pass).length;

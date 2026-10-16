@@ -157,13 +157,17 @@ export async function isAdmin(user) {
  * not be read, the same three answers isAdmin gives.
  */
 // `name` is the profile's own name (2026-10-15), so an advocate's pages can say theirs.
-export const STAFF = { role: null, uid: null, name: '' };
+// `setup` (2026-10-16): an advocate who has not finished setting up, or must
+// choose a new password after a reset. The Worker refuses their work until
+// then; this only takes them to the page where they can do it.
+export const STAFF = { role: null, uid: null, name: '', setup: false };
 export async function staffRole(user) {
   try {
     const snapshot = await readProfile(user);
     if (snapshot === TOO_SLOW) return null;
     const role = snapshot.exists() ? snapshot.data().role : '';
     if (snapshot.exists()) STAFF.name = String(snapshot.data().name || '');
+    if (snapshot.exists()) STAFF.setup = role === 'advocate' && snapshot.data().setupPending === true;
     return role === 'admin' || role === 'advocate' ? role : false;
   } catch {
     return null;
@@ -237,6 +241,10 @@ export async function requireAdmin() {
   localStorage.setItem('pa-admin-device', known === 'advocate' ? 'advocate' : '1');
   STAFF.role = known;
   STAFF.uid = user.uid;
+  if (known === 'advocate' && STAFF.setup && !/^\/admin-account/.test(location.pathname)) {
+    location.replace('/admin-account.html?setup=1');
+    return null;
+  }
   try { document.documentElement.dataset.staff = known; } catch { /* no document */ }
   // The tabs each half of the working app shows: loaded only here, on a
   // working page, so no client page ever fetches it.

@@ -4,7 +4,7 @@
 // there's more than one thread.
 import { db, collection, getDocs, doc, getDoc, query, where } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
-import { mountChat, watchPresence, advocatePhoto } from './chat.js';
+import { mountChat, watchPresence, advocatePhoto, advocateFirstName, advocateFirstNow } from './chat.js';
 import { officeCueHtml, officeFor } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
@@ -89,6 +89,7 @@ async function load() {
 
   function open() {
     const t = threads.find((x) => x.key === current);
+    advocateFirstName(t.advocateId).then((n) => { if (n !== 'Eric' && t.namedAs !== n) { t.namedAs = n; open(); } });
     officeFor(t.advocateId || '');
     mountChat({
       container: chatEl,
@@ -96,8 +97,9 @@ async function load() {
       user,
       myRole: 'client',
       saveUid: user.uid,
-      otherAvatar: advocatePhoto(''),
-      otherName: 'Eric',
+      // Their own advocate's face and name (2026-10-16), his on his lines.
+      otherAvatar: advocatePhoto(t.advocateId || ''),
+      otherName: advocateFirstNow(t.advocateId),
       dayLines: true,
       disabled: t.closed || t.paused,
       notice: t.closed

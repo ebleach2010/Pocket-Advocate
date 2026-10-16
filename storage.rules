@@ -24,10 +24,14 @@ service firebase.storage {
     // their own cases, and of no one else's. The same three facts
     // firestore.rules checks: role advocate, an active record, their uid on
     // the case.
+    // And (2026-10-16) set up, and signed in since the last reset or turn-off.
     function isAdvocate() {
       return request.auth != null
         && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'advocate'
-        && firestore.get(/databases/(default)/documents/advocates/$(request.auth.uid)).data.active == true;
+        && firestore.get(/databases/(default)/documents/advocates/$(request.auth.uid)).data.active == true
+        && firestore.get(/databases/(default)/documents/advocates/$(request.auth.uid)).data.get('mustChange', false) != true
+        && firestore.get(/databases/(default)/documents/advocates/$(request.auth.uid)).data.get('onboardedAt', null) != null
+        && request.auth.token.auth_time >= firestore.get(/databases/(default)/documents/advocates/$(request.auth.uid)).data.get('sessionsFrom', 0);
     }
 
     function isCaseAdvocate(caseId) {
@@ -54,15 +58,28 @@ service firebase.storage {
       allow write: if isAdmin() || isCaseAdvocate(caseId);
     }
 
+    // A client adds a file; they never overwrite one, delete one, or label
+    // it (security review, 2026-10-16). Labels (paCategory, paName,
+    // paStarred) are how a file shows as filed, say as the report, so only
+    // the advocate side sets them, through the rule above or the Worker.
+    function noLabels() {
+      return request.resource.metadata == null
+        || !request.resource.metadata.keys().hasAny(['paCategory', 'paName', 'paStarred']);
+    }
+
     match /cases/{caseId}/uploads/{fileName} {
-      allow write: if isCaseClient(caseId) &&
+      allow create: if isCaseClient(caseId) &&
         caseData(caseId).status != 'closed' &&
-        request.resource.size < 25 * 1024 * 1024;
+        request.resource.size < 25 * 1024 * 1024 && noLabels();
     }
 
     // Files shared inside a case chat (either side, while the case is open).
+    // The client's side adds, as above; the advocate side may also replace.
     match /cases/{caseId}/chat-files/{fileName} {
-      allow write: if (isCaseClient(caseId) || isAdmin() || isCaseAdvocate(caseId)) &&
+      allow create: if isCaseClient(caseId) &&
+        caseData(caseId).status != 'closed' &&
+        request.resource.size < 25 * 1024 * 1024 && noLabels();
+      allow write: if (isAdmin() || isCaseAdvocate(caseId)) &&
         caseData(caseId).status != 'closed' &&
         request.resource.size < 25 * 1024 * 1024;
     }

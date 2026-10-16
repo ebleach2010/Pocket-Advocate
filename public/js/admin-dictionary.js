@@ -3,11 +3,13 @@
 // learned list is the advisor's picture of his vocabulary — visible here to
 // both of them, editable only by him.
 
-import { requireAdmin, hydrateNav } from './auth.js';
+import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 
 hydrateNav();
 const user = await requireAdmin();
-if (user) load();
+// His alone (2026-10-16): a contractor who lands here by address goes back to their shelf.
+if (user && STAFF.role !== 'admin') location.replace('/admin.html');
+else if (user) load();
 
 async function load() {
   const el = document.getElementById('dict');

@@ -262,7 +262,10 @@ console.log('\n--- E. the pages ---');
     /function renderAddons\(el, c\) \{\n\s+readCaseRates\(c\.advocateId\);/.test(CASE) && /officeFor\(c\.advocateId\);\n\s+el\.innerHTML = `\n\s+<h2 class="case-sec-h">Chat<\/h2>/.test(CASE)
     && /fetch\(`\/api\/rates\$\{who \? `\?advocate=\$\{encodeURIComponent\(who\)\}` : ''\}`\)/.test(CASE) && /if \(who !== ratesWho\) return;/.test(CASE)
     && !/^const ratesReady = fetch\('\/api\/rates'\)/m.test(CASE)
-    && /advocateId: c\.advocateId \|\| '',/.test(CHATP) && /const t = threads\.find\(\(x\) => x\.key === current\);\n\s+officeFor\(t\.advocateId \|\| ''\);/.test(CHATP)
+    // RE-PINNED 2026-10-16 (v7.56): the open thread also asks its advocate's first name (for the header and the
+    // search) before it reads their door sign; the door sign still follows the thread.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.56): open()'s `officeFor(t.advocateId || '')` made `officeFor('')` made E2 read FAIL.
+    && /advocateId: c\.advocateId \|\| '',/.test(CHATP) && /const t = threads\.find\(\(x\) => x\.key === current\);\n\s+advocateFirstName\(t\.advocateId\)[^\n]*\n\s+officeFor\(t\.advocateId \|\| ''\);/.test(CHATP)
     && /ratesPath: advocate \? `\/api\/rates\?advocate=\$\{encodeURIComponent\(user\.uid\)\}` : '\/api\/rates',/.test(ADM) && /fetch\(ratesPath\)/.test(INV));
   // NEGATIVE CONTROL (run 2026-10-15): settings.js giving the contractor rows to everyone who is not him made this read
   //   FAIL  E3 the cog gives a contractor their own rows and only them: he keeps his, a client gets neither

@@ -1123,7 +1123,10 @@ ck('clock: all switches share one painter set, so no two can disagree',
     gate && W.indexOf(gate) < routes.map((r) => W.indexOf(`url.pathname === '${r}'`)).reduce((a, b) => Math.min(a, b))
     && /return json\(\{ error: 'This case is paused\.', paused: true \}, 409\);/.test(gate)
     && routes.every((r) => setSrc.includes(`'${r}'`))
-    && /if \(!c \|\| !onHold\(c\.data\) \|\| c\.data\.status === 'closed'\) return false;/.test(helper) && /return !\(await worksThread\(env, user\.uid, profile, c\.data, getDoc\)\);/.test(helper)
+    // RE-PINNED 2026-10-16 (v7.56): worksThread is also handed the session, so one begun before a reset or a turn-off
+    // is not the case's side (staff.js sessionStale).
+    // NEGATIVE CONTROL (run 2026-10-16, v7.56): the helper's last line back to `return profile?.data?.role !== 'admin';` made this read FAIL.
+    && /if \(!c \|\| !onHold\(c\.data\) \|\| c\.data\.status === 'closed'\) return false;/.test(helper) && /return !\(await worksThread\(env, user\.uid, profile, c\.data, getDoc, user\)\);/.test(helper)
     && /if \(url\.pathname === '\/api\/notify' && body\?\.kind !== 'case'\) return false;/.test(helper)
     && /disabled: closed \|\| paused \|\| chatLocked,/.test(CASE) && /: paused \? 'This case is paused\.'/.test(CASE)
     && /const chatLocked = !closed && !paused && /.test(CASE) && /\$\{closed \|\| paused \? '' : `<form data-agenda-form/.test(CASE)

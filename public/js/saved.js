@@ -35,9 +35,14 @@ const when = (v) => {
  * bookmarking a message and flipping to this page shows it without a reload.
  * Returns { refresh() }.
  */
-export function mountSaved({ container, kind, id, user, myRole }) {
+export function mountSaved({ container, kind, id, user, myRole, otherName = 'Eric' }) {
   if (!container) return { refresh() {} };
   container.classList.add('sv-root');
+  // Who wrote a saved line, from the reader's side (2026-10-16): a contractor
+  // reading their own message saw "Eric", and so did their client.
+  const whoSaid = (role) => (myRole === 'admin'
+    ? (role === 'admin' ? 'You' : 'Your client')
+    : (role === 'admin' ? esc(otherName) : 'You'));
   container.innerHTML = '<p class="dim small">Loading…</p>';
 
   const api = async (opts) => {
@@ -81,13 +86,13 @@ export function mountSaved({ container, kind, id, user, myRole }) {
     container.innerHTML = `
       <div class="panel">
         <h3>Saved messages</h3>
-        <p class="dim small">Yours only. ${myRole === 'admin' ? 'The client' : 'Eric'} is not told what you save.</p>
+        <p class="dim small">Yours only. ${myRole === 'admin' ? 'The client' : esc(otherName)} is not told what you save.</p>
       </div>
       <ul class="sv-list">
         ${rows.map((r) => `
           <li class="sv-item" data-msg="${esc(r.msgId)}">
             <div class="sv-head">
-              <span class="sv-who">${r.role === 'question' ? 'Asked of you' : r.role === 'admin' ? 'Eric' : 'You'}${myRole === 'admin' && r.role === 'client' ? 'r client' : ''}</span>
+              <span class="sv-who">${r.role === 'question' ? 'Asked of you' : whoSaid(r.role)}</span>
               <span class="sv-when">${esc(when(r.sentAt))}</span>
               <button type="button" class="sv-drop" data-drop title="Remove from saved"
                 aria-label="Remove from saved">✕</button>

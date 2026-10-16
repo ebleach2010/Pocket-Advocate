@@ -403,7 +403,9 @@ check('E2 not one term from the blindness list, in the page or the new styleshee
 // NEGATIVE CONTROL (run 2026-10-06, v7.30): the redirect's target put back to `%2Fadmin-fund.html` made this read
 //   FAIL  E3 the landing still wears the maintenance notice and the demo never redirects an admin device
 check('E3 the landing still wears the maintenance notice and the demo never redirects an admin device',
-  /src="\/js\/maintenance\.js"/.test(IDX) && /localStorage\.getItem\('pa-admin-device'\) === '1'/.test(IDX)
+  // RE-PINNED 2026-10-16 (v7.56): a contractor's device ('advocate') is sent to its workspace too.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.56): the redirect's `(dev === '1' || dev === 'advocate')` made `(dev === '1')` made E3 read FAIL.
+  /src="\/js\/maintenance\.js"/.test(IDX) && /var dev = localStorage\.getItem\('pa-admin-device'\);\n\s+if \(\(dev === '1' \|\| dev === 'advocate'\) &&/.test(IDX)
   && /sessionStorage\.getItem\('pa-demo'\)\)\) return;/.test(IDX) && /location\.replace\('\/signin\.html\?to=%2Fadmin\.html'\);/.test(IDX));
 
 const fails = results.filter((r) => !r.pass).length;

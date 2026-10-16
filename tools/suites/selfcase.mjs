@@ -917,8 +917,11 @@ check('S42 a stranger with the id of his own case is refused by the notify route
   // before the self branch; and the refusal is the 404 a stranger gets.
   // NEGATIVE CONTROL (run 2026-10-15): the case branch's worksThread line taken out, so the self branch runs before it, made this read
   //   FAIL  S42 a stranger with the id of his own case is refused by the notify route, and nobody, not even he, wakes a read from it
-  && notifySrc.indexOf('isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);') > 0
-  && notifySrc.indexOf('isAdmin = await worksThread(env, user.uid, profile, thread, getDoc);') < notifySrc.indexOf('if (doc.data.self) {'));
+  // RE-PINNED 2026-10-16 (v7.56): worksThread is handed the session too (a session from before a reset or a
+  // turn-off is not the advocate side); the order is the same.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.56): the case branch's worksThread line taken out again made S42 read FAIL.
+  && notifySrc.indexOf('isAdmin = await worksThread(env, user.uid, profile, thread, getDoc, user);') > 0
+  && notifySrc.indexOf('isAdmin = await worksThread(env, user.uid, profile, thread, getDoc, user);') < notifySrc.indexOf('if (doc.data.self) {'));
 
 const RP6 = runReply({ body: { id: 'c1?x' } });
 const rp6 = await RP6.post();
@@ -948,7 +951,11 @@ check('S45 a question row is named as one wherever a row is labelled (the CSV, t
   /d\.role === 'admin' \? 'Advocate' : d\.role === 'question' \? 'Question' : 'Client',/.test(CHAT)
   && /d\.quote \? `Re: \$\{d\.quote\}\\n\$\{d\.text \|\| ''\}` : \(d\.text \|\| ''\),/.test(CHAT)
   && /role: msg\.data\.role === 'admin' \? 'admin' : msg\.data\.role === 'question' \? 'question' : 'client',/.test(WORKER)
-  && /r\.role === 'question' \? 'Asked of you' : r\.role === 'admin' \? 'Eric' : 'You'/.test(SAVED)
+  // RE-PINNED 2026-10-16 (v7.56): the saved shelf names a row from the reader's side (whoSaid): staff read their own
+  // lines as You and the client's as Your client; a client reads their advocate's name. A question is still one.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.56): the saved row's `'Asked of you'` made `'Q'` made S45 read FAIL.
+  && /r\.role === 'question' \? 'Asked of you' : whoSaid\(r\.role\)/.test(SAVED)
+  && /\? \(role === 'admin' \? 'You' : 'Your client'\)\n\s+: \(role === 'admin' \? esc\(otherName\) : 'You'\)\);/.test(SAVED)
   // RE-PINNED 2026-10-15 (v7.53): a client's row leads with their name now, then the email, then the uid.
   // NEGATIVE CONTROL (run 2026-10-15, v7.53): the chats row's self branch taken out made S45 read FAIL.
   && /who: c\.self \? `\$\{c\.clientName \|\| 'My own case'\} \(mine\)` : \(c\.clientName \|\| c\.clientEmail \|\| c\.clientUid\),/.test(CHATS)

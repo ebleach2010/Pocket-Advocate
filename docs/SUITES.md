@@ -1815,3 +1815,46 @@ her (summary() carries sampleCents; the demo mirrors it). Paid still drops
 her row. New: drive-cleanup's "never reads all zeros" (two controls).
 Re-pinned with a control: drive-employer's phone check (one totals card, or
 two when the sample is on the run).
+
+### Four audits (2026-10-16, v7.56)
+
+Eric: "Send out four agents to look for any errors in the UI, onboarding
+process, and functionality of new contractors once onboarded, and
+encryption/data security to be fixed". And: "Why is my name gg gg here".
+
+Security: every diag `do` but the rules line needs his session (the key is
+in a public repository) and the plain read is cached a minute; an unverified
+Firebase account under someone's address is never matched (lookupUidByEmail
+asks emailVerified); a session that began before a reset or a turn-off is
+refused by requireStaff, worksThread and the rules (authTime from the token,
+sessionsFrom on the record); a contractor's own password change ends other
+sessions and devices and hands this one a fresh token; a booking never takes
+another advocate's slot; a turned-off advocate's pushes go to him; the
+payroll sheet writes a formula-like name as text; a chat opens only files
+this app stored (render and rules); clients add files and never replace or
+label them; only open slots are public.
+
+Onboarding: setup first (staffFrom's setup flag, requireStaff's { setup },
+the rules, and auth.js's redirect); a client's address is refused for an
+advocate account; payout and time zone are setup steps; typed text survives
+a redraw; the primary plus six others are kept; the home page sends a
+contractor's device to their workspace; the demo mirrors all of it (Ana is
+seeded set up; drive-advocates resets her to walk setup).
+
+A contractor's cases: the case's own advocate gets its pushes (caseRecipients,
+pingCase; refunds stay his); their client reads their name and photo; a
+turned-off contractor keeps a payroll row; the Advisor fee is paused while
+it cannot serve a contractor; his duty draft, his Leads, Calendar and Terms
+are his alone; forms say them for a contractor; his own name is put right
+once from "Gg Gg".
+
+New: hardening.mjs (S1 to S8, O1 to O5, F1, F2, U1 to U5, X1), advocates
+G18 to G20, employer C4 and D7, showcase X8 (earlier, v7.55), drive-cleanup
+H, drive-advocates' setup-first check; each with a recorded control.
+Re-pinned with controls: advocates D2, G10, H4; cancelsearch B3; charge
+CH3; hold's From line; clock C65; defects' paused check; employer D4;
+landing E3; prep-shelf P7; selfcase S42, S45; staffsettings E2; release R1;
+drive-advocates' setup steps. Fixtures updated: advocates' working
+advocates are set up; the hold, charge, invites and uploads harnesses carry
+the new helpers.
+

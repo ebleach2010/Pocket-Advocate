@@ -82,6 +82,29 @@ export function advocatePhoto(advocateId) {
 }
 
 /**
+ * The first name a client knows their advocate by (contractor review,
+ * 2026-10-16): a contractor's on their own cases and chat lines, "Eric" on
+ * his, and "Eric" until the answer is in. advocateFirstNow answers at once
+ * from what has already come back.
+ */
+const advFirst = new Map();
+const advFirstAsked = new Map();
+export function advocateFirstName(advocateId) {
+  const id = String(advocateId || '');
+  if (!/^[\w-]{1,64}$/.test(id)) return Promise.resolve('Eric');
+  if (!advFirstAsked.has(id)) {
+    advFirstAsked.set(id, fetch(`/api/advocates/name?uid=${encodeURIComponent(id)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { const f = String(d?.name || '').trim().split(/\s+/)[0] || 'Eric'; advFirst.set(id, f); return f; })
+      .catch(() => 'Eric'));
+  }
+  return advFirstAsked.get(id);
+}
+export function advocateFirstNow(advocateId) {
+  return advFirst.get(String(advocateId || '')) || 'Eric';
+}
+
+/**
  * viewAs: whose side the thread is read from, for his quiet view of an
  *   advocate's case; the composer is off there.
  * otherAvatar: a photo of the other side, shown beside the first message of
@@ -129,7 +152,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
   const errEl = container.querySelector('[data-err]');
   // Search and the down arrow (Eric, 2026-10-15), on his threads and the
   // client's alike. The other side's name is the one the reader expects.
-  const search = mountChatSearch({ container, log, otherName: myRole === 'admin' ? 'Client' : 'Eric' });
+  const search = mountChatSearch({ container, log, otherName: myRole === 'admin' ? 'Client' : (otherName || 'Eric') });
   // Set by send(), cleared by the repaint that draws the result: your own
   // message takes you to the bottom even if you were reading back through the
   // history, because you asked for it. Nobody else's does.
@@ -897,8 +920,25 @@ function linkify(text) {
 
 // ---- attachment rendering + long-press save ----
 
+/**
+ * Only a file this app stored is shown as one (security review, 2026-10-16):
+ * a message can carry any link, and a crafted one named "Lab results.pdf"
+ * could open anywhere, or run as script. Firebase Storage, and the demo's
+ * own stand-ins, pass; anything else shows its name as plain text.
+ */
+export function safeFileUrl(url) {
+  const u = String(url || '');
+  return /^https:\/\/(firebasestorage|storage)\.googleapis\.com\//.test(u) || /^(blob:|data:(image\/|text\/plain))/.test(u);
+}
+
 function renderAttachment(att, saveUid) {
   let el;
+  if (!safeFileUrl(att.url)) {
+    el = document.createElement('span');
+    el.className = 'file-chip';
+    el.textContent = `📄 ${att.name || 'A file'} (not available)`;
+    return el;
+  }
   if ((att.contentType || '').startsWith('image/')) {
     el = document.createElement('img');
     el.className = 'msg-img';

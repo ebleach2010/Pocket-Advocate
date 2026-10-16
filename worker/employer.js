@@ -135,7 +135,8 @@ function threadView(doc, side) {
 }
 
 async function staffChat(request, env, url, h) {
-  const staff = await h.requireStaff(request, env);
+  // A contractor still setting up can still write to him (2026-10-16).
+  const staff = await h.requireStaff(request, env, { setup: true });
   if (!staff) return h.json({ error: 'Not found' }, 404);
   const side = staff.isAdmin ? 'admin' : 'advocate';
   // His thread with an advocate is named by the advocate; an advocate's is their own.
@@ -258,6 +259,17 @@ async function teamRoute(request, env, url, h) {
       h.readRates(env).catch(() => ({})),
       listDocs(env, 'staffChats', { pageSize: 100, all: true }).catch(() => []),
     ]);
+    // HIS NAME (Eric, 2026-10-16: "Why is my name gg gg here"). His record
+    // took the name on his profile the day the team began, a test entry, and
+    // his profile still had it. Both are put right once, to the name his
+    // cases already carry; he can change it any time under Your photo and bio.
+    const mine = advocates.find((a) => a.id === env.ADMIN_UID);
+    if (mine?.data && /^\s*gg\s+gg\s*$/i.test(String(mine.data.name || ''))) {
+      mine.data.name = 'Eric Bleach';
+      await patchDoc(env, `advocates/${env.ADMIN_UID}`, { name: 'Eric Bleach' }, { mask: ['name'] }).catch(() => {});
+      const prof = await getDoc(env, `users/${env.ADMIN_UID}`).catch(() => null);
+      if (prof && /^\s*gg\s+gg\s*$/i.test(String(prof.data?.name || ''))) await patchDoc(env, `users/${env.ADMIN_UID}`, { name: 'Eric Bleach' }, { mask: ['name'] }).catch(() => {});
+    }
     // HER CLIENTS, PUT BACK (2026-10-16). His screenshot showed Maya with "No
     // clients right now": her three invented cases were gone while she stayed
     // (they could be deleted one by one from his shelf; now they go only with

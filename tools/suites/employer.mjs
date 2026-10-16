@@ -56,7 +56,7 @@ function world({ stripe = null } = {}) {
   };
   const stripeGet = async (env, path) => { stripeCalls.push(path); if (!stripe) throw new Error('no stripe'); return stripe(path); };
   const PAY = new Function(...Object.keys({ ...fs, stripeGet, caseBookingCents: 0, advocateIdOf: 0, DEFAULT_COMMISSION_PCT: 0 }),
-    `${strip(f('worker/payroll.js'))}\nreturn { periodOf, caseLines, sampleLines, stripeLines, advisorLines, buildRows, totalsOf, cleanPayout, sealPayout, openPayout, payoutMap, handlePayroll, PAYOUT_METHODS, ADVISOR_FEE_CENTS };`)(
+    `${strip(f('worker/payroll.js'))}\nreturn { ADVISOR_FOR_ADVOCATES, periodOf, caseLines, sampleLines, stripeLines, advisorLines, buildRows, totalsOf, cleanPayout, sealPayout, openPayout, payoutMap, handlePayroll, PAYOUT_METHODS, ADVISOR_FEE_CENTS };`)(
     ...Object.values({ ...fs, stripeGet, caseBookingCents: CHARGE.caseBookingCents, advocateIdOf: STAFF.advocateIdOf, DEFAULT_COMMISSION_PCT: STAFF.DEFAULT_COMMISSION_PCT }));
   const notifyUser = async (env, uid, m) => { pushes.push({ uid, ...m }); };
   const EMP = new Function(...Object.keys({ ...fs, notifyUser, caseBookingCents: 0, advocateIdOf: 0, DEFAULT_COMMISSION_PCT: 0, cleanPayout: 0, sealPayout: 0 }),
@@ -226,6 +226,26 @@ console.log('\n--- C. the sample contractor ---');
     && asAna.status === 404,
     JSON.stringify({ open: maya?.open, casesBack, againClosed: again.team.find((p) => p.uid === 'sample-contractor')?.closed }));
 }
+{
+  // Eric, 2026-10-16: "Why is my name gg gg here" (his record took a test name from his profile).
+  const w = world();
+  seedPeople(w);
+  w.docs.set(`advocates/${ERIC}`, { ...w.docs.get(`advocates/${ERIC}`), name: 'Gg Gg' });
+  w.docs.set(`users/${ERIC}`, { role: 'admin', name: 'Gg Gg', email: 'e@x.test' });
+  const fixed = (await call(w, 'emp', ERIC, '/api/admin/team')).out;
+  const w2 = world();
+  seedPeople(w2);
+  w2.docs.set(`advocates/${ERIC}`, { ...w2.docs.get(`advocates/${ERIC}`), name: 'Eric B' });
+  w2.docs.set(`users/${ERIC}`, { role: 'admin', name: 'Gg Gg' });
+  const kept = (await call(w2, 'emp', ERIC, '/api/admin/team')).out;
+  // NEGATIVE CONTROL (run 2026-10-16): teamRoute's name fix (`/^\s*gg\s+gg\s*$/i.test(String(mine.data.name || ''))`) made `false` made this read
+  //   FAIL  C4 his test name "Gg Gg" becomes Eric Bleach on his card, his record and his profile, once; a name he chose is never touched
+  check('C4 his test name "Gg Gg" becomes Eric Bleach on his card, his record and his profile, once; a name he chose is never touched',
+    fixed.team[0].uid === ERIC && fixed.team[0].name === 'Eric Bleach' && w.docs.get(`advocates/${ERIC}`).name === 'Eric Bleach'
+    && w.docs.get(`users/${ERIC}`).name === 'Eric Bleach' && w.docs.get(`users/${ERIC}`).email === 'e@x.test'
+    && kept.team[0].name === 'Eric B' && w2.docs.get(`advocates/${ERIC}`).name === 'Eric B' && w2.docs.get(`users/${ERIC}`).name === 'Gg Gg',
+    JSON.stringify({ card: fixed.team[0]?.name, kept: kept.team[0]?.name }));
+}
 
 console.log('\n--- D. payroll ---');
 {
@@ -321,7 +341,10 @@ console.log('\n--- D. payroll ---');
     && ana.deductionsCents === Math.round(32500 * 0.6) && ana.adjustmentsCents === 2500
     && ana.totalCents === ana.commissionCents + 5000 - ana.deductionsCents + 2500 && ana.cases === 1
     && eric.commissionPct === 100 && eric.salesCents === 175000 && eric.deductionsCents === 10999 && eric.totalCents === 175000 - 10999
-    && ben.salesCents === 5000 && ben.commissionCents === 2500 && ben.deductionsCents === P.ADVISOR_FEE_CENTS
+    // RE-PINNED 2026-10-16 (v7.56): no Advisor fee while the Advisor is not open on a contractor's cases
+    // (ADVISOR_FOR_ADVOCATES false), so Ben, switched on, loses nothing for it.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.56): advisorLines' `if (!ADVISOR_FOR_ADVOCATES) return lines;` taken out made D4 read FAIL.
+    && ben.salesCents === 5000 && ben.commissionCents === 2500 && ben.deductionsCents === 0 && P.ADVISOR_FOR_ADVOCATES === false
     && rows.some((r) => r.sample) && totals.salesCents === ana.salesCents + eric.salesCents + ben.salesCents
     && rows[0].uid === ERIC && !rows.some((r) => r.uid === 'adv-off'),
     JSON.stringify(rows.map((r) => [r.uid, r.salesCents, r.commissionCents, r.tipsCents, r.deductionsCents, r.adjustmentsCents, r.totalCents])));
@@ -329,6 +352,19 @@ console.log('\n--- D. payroll ---');
 // NEGATIVE CONTROL (run 2026-10-15): buildRows keeping every row whatever includeAll says made this read
 //   FAIL  D5 "Include all staff members" off leaves out anyone with nothing in the period
   check('D5 "Include all staff members" off leaves out anyone with nothing in the period', quiet.length === 1 && quiet[0].uid === 'adv-a', quiet.map((r) => r.uid).join());
+  // Onboarding review, 2026-10-16: someone turned off before payroll runs kept no row, and their sales fell onto his at 100%.
+  const offAdv = [...advocates, { id: 'adv-gone', data: { name: 'Gone Person', active: false, commissionPct: 60, advisor: { optedIn: true, enabled: true } } }];
+  const offLines = [{ adv: 'adv-gone', caseId: 'g1', client: 'Lee', kind: 'booking', label: 'Advocacy Case', cents: 210000, at: '2026-09-05T18:00:00Z' }];
+  const offRows = P.buildRows({ advocates: offAdv, lines: offLines, adminUid: ERIC });
+  const gone = offRows.find((r) => r.uid === 'adv-gone');
+  const ericOff = offRows.find((r) => r.uid === ERIC);
+  const noLines = P.buildRows({ advocates: offAdv, lines: [], adminUid: ERIC });
+  // NEGATIVE CONTROL (run 2026-10-16): buildRows' filter put back to `includeAll || r.lines.length || r.adjustments.length` with off people skipped up front (`if (off) continue;`) made this read
+  //   FAIL  D7 someone turned off keeps a row for what they earned before, at their own share and marked off; his row takes none of it; with nothing in the period they are left off
+  check('D7 someone turned off keeps a row for what they earned before, at their own share and marked off; his row takes none of it; with nothing in the period they are left off',
+    !!gone && gone.off === true && gone.salesCents === 210000 && gone.commissionCents === 126000 && ericOff.salesCents === 0
+    && !noLines.some((r) => r.uid === 'adv-gone') && !noLines.some((r) => r.uid === 'adv-off'),
+    JSON.stringify({ gone: gone && [gone.salesCents, gone.commissionCents, gone.off], eric: ericOff?.salesCents }));
 }
 
 console.log('\n--- E. the runs ---');

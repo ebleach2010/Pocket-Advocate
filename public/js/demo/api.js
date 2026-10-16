@@ -88,8 +88,23 @@ const demoVoice = {
 export function demoApi(role, store) {
   const real = window.fetch.bind(window);
   // Staff are him or an advocate (2026-10-15); `me` is whoever is signed in.
-  const staff = role === 'admin' || role === 'advocate';
+  const staffBase = role === 'admin' || role === 'advocate';
   const me = role === 'advocate' ? 'demo-advocate' : role === 'admin' ? 'demo-admin' : 'demo-client';
+  // Setup first (2026-10-16), as worker/staff.js setupPending: an advocate who
+  // must choose a password or finish their profile reaches only these.
+  const SETUP_PATHS = new Set(['/api/staff/me', '/api/staff/headshot', '/api/staff/payout', '/api/staff/chat']);
+  const setupPending = () => {
+    if (role !== 'advocate') return false;
+    const a = store.docs.get('advocates/demo-advocate') || {};
+    return !!a.demoMustChange || !a.onboardedAt;
+  };
+  // The Worker's password rule (staff.js passwordProblem).
+  const passwordProblem = (pw) => {
+    if (typeof pw !== 'string' || pw.length < 10) return 'Use at least 10 characters.';
+    if (pw.length > 200) return 'Use at most 200 characters.';
+    if (/^\s|\s$/.test(pw)) return 'No spaces at the start or the end.';
+    return '';
+  };
   // A contractor's record, when the uid names an active one that is not his.
   const demoContractor = (uid) => {
     if (!uid || !/^[\w-]{1,64}$/.test(uid) || uid === 'demo-admin') return null;
@@ -101,6 +116,7 @@ export function demoApi(role, store) {
     const url = typeof input === 'string' ? input : input?.url || '';
     const path = url.startsWith('http') ? new URL(url).pathname : url.split('?')[0];
     if (!path.startsWith('/api/')) return real(input, init);
+    const staff = staffBase && (!setupPending() || SETUP_PATHS.has(path));
 
     const body = (() => {
       try { return init.body ? JSON.parse(init.body) : {}; } catch { return {}; }
@@ -2563,10 +2579,11 @@ export function demoApi(role, store) {
         credentials: a.credentials || '', bio: a.bio || '', primarySpecialty: a.primarySpecialty || '',
         specialties: a.specialties || [], hasHeadshot: !!a.headshotPath, commissionPct: Number(a.commissionPct ?? 60),
         advisorOptIn: a.advisor?.optedIn === true, advisorEnabled: a.advisor?.enabled === true,
-        acceptingNew: a.acceptingNew !== false, onboardedAt: a.onboardedAt || null, createdAt: a.createdAt || null, missing,
+        acceptingNew: a.acceptingNew !== false, tz: a.tz || 'America/Boise', onboardedAt: a.onboardedAt || null, createdAt: a.createdAt || null, missing,
       };
     };
     const SPECIALTIES = ['Neurology', 'Autoimmune / Rheumatology', 'Cardiology', 'Oncology', 'Rare Disease', 'Complex / Undiagnosed Cases'];
+    const ZONES = ['America/New_York', 'America/Chicago', 'America/Denver', 'America/Boise', 'America/Phoenix', 'America/Los_Angeles', 'America/Anchorage', 'Pacific/Honolulu'];
     // ---- employer mode, the temporary chat and payroll (2026-10-15) -------
     // The demo's own answers in the Worker's shapes (worker/employer.js and
     // worker/payroll.js): his alone where the Worker's are his alone, and an
@@ -2674,7 +2691,8 @@ export function demoApi(role, store) {
     }
     // A contractor's own settings (2026-10-15), mirroring worker/staffsettings.js.
     if (path === '/api/staff/settings') {
-      if (role !== 'advocate') return fail(404, 'Not found');
+      // Setup first, as the Worker's requireStaff (2026-10-16).
+      if (role !== 'advocate' || !staff) return fail(404, 'Not found');
       const key = `advocates/${me}`;
       const rec = store.docs.get(key) || {};
       const set = { office: { ...(rec.settings?.office || {}) }, rates: { ...(rec.settings?.rates || {}) }, fullCap: rec.settings?.fullCap ?? null };
@@ -2762,8 +2780,8 @@ export function demoApi(role, store) {
         const inR = (v) => { const t = new Date(v).getTime(); return Number.isFinite(t) && t >= s && t < e; };
         const rows = new Map();
         for (const { id, data: a } of docsUnder('advocates/')) {
-          if (a.active !== true && !a.owner) continue;
-          rows.set(id, { uid: id, name: a.name || 'Advocate', owner: !!a.owner, sample: !!a.sample, commissionPct: pctOf(a, id), cases: 0, salesCents: 0, commissionCents: 0, tipsCents: 0, deductionsCents: 0, adjustmentsCents: 0, totalCents: 0, lines: [], adjustments: [] });
+          // Turned off keeps a row for what they earned (2026-10-16), as the Worker does.
+          rows.set(id, { uid: id, name: a.name || 'Advocate', owner: !!a.owner, sample: !!a.sample, off: a.active !== true && !a.owner, commissionPct: pctOf(a, id), cases: 0, salesCents: 0, commissionCents: 0, tipsCents: 0, deductionsCents: 0, adjustmentsCents: 0, totalCents: 0, lines: [], adjustments: [] });
         }
         const seen = new Map();
         const cases = docsUnder('cases/');
@@ -2805,7 +2823,7 @@ export function demoApi(role, store) {
           maya.lines.sort((a, b) => a.at.localeCompare(b.at));
         }
         for (const [uid, set] of seen) rows.get(uid).cases = set.size;
-        const list = [...rows.values()].map((r) => ({ ...r, totalCents: r.commissionCents + r.tipsCents - r.deductionsCents })).filter((r) => body.includeAll !== false || r.lines.length)
+        const list = [...rows.values()].map((r) => ({ ...r, totalCents: r.commissionCents + r.tipsCents - r.deductionsCents })).filter((r) => (body.includeAll !== false && !r.off) || r.lines.length)
           .sort((a, b) => (b.owner - a.owner) || (a.sample - b.sample) || a.name.localeCompare(b.name));
         const id = `pr-${body.start}-${body.end}-${Date.now().toString(36)}`;
         const run = { status: 'draft', start: body.start, end: body.end, preset: body.preset || 'custom', createdAt: new Date().toISOString(), rows: list, adjustments: [], totals: totalsOf(list), notes: ['In the demo, refunds, chargebacks and chat renewals come from nowhere; the real report asks Stripe for them.'] };
@@ -2861,8 +2879,11 @@ export function demoApi(role, store) {
         const name = String(body.name || '').trim();
         if (!name) return fail(400, 'Their name, please.');
         if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return fail(400, 'Enter a valid email address.');
-        if (String(body.password || '').length < 10) return fail(400, 'Use at least 10 characters.');
+        if (email === 'eric@thepocketadvocates.com') return fail(409, 'That is your own address.');
+        if (passwordProblem(body.password)) return fail(400, passwordProblem(body.password));
         if ([...store.docs.entries()].some(([k, v]) => /^advocates\//.test(k) && v.email === email)) return fail(409, 'That address already has an advocate account.');
+        // A client's address stays a client's (2026-10-16), as the Worker refuses it.
+        if ([...store.docs.entries()].some(([k, v]) => /^users\/[^/]+$/.test(k) && v?.email === email && (v.role || 'client') === 'client')) return fail(409, 'That address already belongs to a client here. Use another email for their advocate account.');
         const uid = `demo-adv-${Date.now().toString(36)}`;
         store.docs.set(`advocates/${uid}`, { uid, name, email, active: true, owner: false, commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null, acceptingNew: true, advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true });
         store.docs.set(`users/${uid}`, { email, name, role: 'advocate' });
@@ -2877,8 +2898,9 @@ export function demoApi(role, store) {
         store.docs.set(`advocates/${uid}`, { ...a, active: action === 'activate' });
       } else if (action === 'reset-password') {
         if (a.owner) return fail(409, 'Your own sign-in is your PIN.');
-        if (String(body.password || '').length < 10) return fail(400, 'Use at least 10 characters.');
+        if (passwordProblem(body.password)) return fail(400, passwordProblem(body.password));
         store.docs.set(`advocates/${uid}`, { ...a, demoMustChange: true });
+        store.docs.set(`users/${uid}`, { ...(store.docs.get(`users/${uid}`) || {}), setupPending: true });
       } else if (action === 'update') {
         const next = { ...a };
         if ('commissionPct' in body) {
@@ -2904,12 +2926,13 @@ export function demoApi(role, store) {
       const key = `advocates/${me}`;
       const a = store.docs.get(key) || {};
       if ((init.method || 'GET') === 'GET') {
-        return ok({ advocate: advView(me, a), role, mustChange: !!a.demoMustChange, specialties: SPECIALTIES });
+        return ok({ advocate: advView(me, a), role, mustChange: !!a.demoMustChange, specialties: SPECIALTIES, zones: ZONES, payoutSet: !!store.docs.get(`payouts/${me}`)?.method });
       }
       if (body.action === 'profile') {
         const next = { ...a };
         for (const f of ['name', 'credentials', 'bio', 'primarySpecialty']) if (f in body) next[f] = String(body[f] || '').trim();
-        if ('specialties' in body) next.specialties = [...new Set((body.specialties || []).map((x) => String(x).trim()).filter(Boolean))].slice(0, 6);
+        if ('specialties' in body) next.specialties = [...new Set((body.specialties || []).map((x) => String(x).trim()).filter(Boolean))].slice(0, 7);
+        if ('tz' in body && ZONES.includes(body.tz)) next.tz = body.tz;
         if ('advisorOptIn' in body) next.advisor = { ...(a.advisor || {}), optedIn: body.advisorOptIn === true, ...(body.advisorOptIn ? {} : { enabled: a.owner ? a.advisor?.enabled === true : false }) };
         if ('name' in body && !next.name) return fail(400, 'Your name, please.');
         store.docs.set(key, next);
@@ -2919,16 +2942,19 @@ export function demoApi(role, store) {
       if (body.action === 'password') {
         if (role === 'admin') return fail(409, 'Your own sign-in is your PIN.');
         if (!body.current) return fail(403, 'Your current password is not right.');
-        if (String(body.next || '').length < 10) return fail(400, 'Use at least 10 characters.');
+        if (passwordProblem(body.next)) return fail(400, passwordProblem(body.next));
+        if (body.next === body.current) return fail(400, 'Choose a password that is new.');
         store.docs.set(key, { ...a, demoMustChange: false });
+        store.docs.set(`users/${me}`, { ...(store.docs.get(`users/${me}`) || {}), setupPending: !a.onboardedAt });
         store.persist?.();
         return ok({ ok: true });
       }
       if (body.action === 'onboarded') {
-        const missing = advView(me, a).missing;
+        const missing = [...advView(me, a).missing, ...(role === 'advocate' && !store.docs.get(`payouts/${me}`)?.method ? ['how you get paid'] : [])];
         if (missing.length) return fail(409, `Still needed: ${missing.join(', ')}.`);
         if (a.demoMustChange) return fail(409, 'Choose your own password first.');
         store.docs.set(key, { ...a, onboardedAt: a.onboardedAt || new Date().toISOString() });
+        store.docs.set(`users/${me}`, { ...(store.docs.get(`users/${me}`) || {}), setupPending: false });
         store.persist?.();
         return ok({ ok: true });
       }

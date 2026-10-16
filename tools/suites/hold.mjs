@@ -174,9 +174,11 @@ const runHold = ({ caseData, body }) => {
     sendEmail: async (env, m) => { mails.push(m); },
     escHtml: (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch])),
     MT_FMT: { format: () => 'Monday, September 7' },
+    // The case's advocate by first name (2026-10-16): his, on these cases of his.
+    caseAdvocateFirst: async (env, c) => (c?.advocateId ? 'Ana' : 'Eric'),
   };
   // eslint-disable-next-line no-new-func
-  const fn = new Function('deps', `const { requireAdmin, requireStaff, staffSees, json, getDoc, patchDoc, notifyUser, sendEmail, escHtml, MT_FMT } = deps;${holdSrc}\n return handleHold;`)(deps);
+  const fn = new Function('deps', `const { requireAdmin, requireStaff, staffSees, json, getDoc, patchDoc, notifyUser, sendEmail, escHtml, MT_FMT, caseAdvocateFirst } = deps;${holdSrc}\n return handleHold;`)(deps);
   return { post: () => fn({ json: async () => ({ caseId: 'c1', on: true, ...body }) }, { PUBLIC_BASE_URL: 'https://x' }), written, pushes, mails };
 };
 const client = { clientUid: 'u1', clientEmail: 'jordan@example.com', hold: {} };
@@ -218,7 +220,9 @@ ck('his own case pauses with nobody to tell', P3.pushes.length === 0 && P3.mails
   // NEGATIVE CONTROL (run 2026-09-03): the client page painting hold.reason instead of hold.note made this read
 //   FAIL  the client page shows his note at the top of the paused notice, word for word, and nothing of his own reason
 ck('the client page shows his note at the top of the paused notice, word for word, and nothing of his own reason',
-     /From Eric:<\/strong> \$\{esc\(c\.hold\.note\)\}/.test(live) && !/hold\?\.reason|hold\.reason/.test(live));
+     // RE-PINNED 2026-10-16 (v7.56): "From" names the case's own advocate (advFirstHtml), Eric on his cases.
+     // NEGATIVE CONTROL (run 2026-10-16, v7.56): the paused card's `From ${advFirstHtml(c)}:` made `From ${esc(c.hold.reason)}:` made this read FAIL.
+     /From \$\{advFirstHtml\(c\)\}:<\/strong> \$\{esc\(c\.hold\.note\)\}/.test(live) && !/hold\?\.reason|hold\.reason/.test(live));
 }
 {
   const ADMIN = f('public/js/admin-case.js');

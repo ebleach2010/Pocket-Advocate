@@ -9,7 +9,7 @@ import {
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata,
 } from './firebase.js';
 import { requireUser, hydrateNav } from './auth.js';
-import { mountChat, watchPresence, advocatePhoto } from './chat.js';
+import { mountChat, watchPresence, advocatePhoto, advocateFirstName, advocateFirstNow } from './chat.js';
 import { mountSaved } from './saved.js';
 import { initSetupGuide } from './onboarding.js';
 import { askName, safeName } from './rename.js';
@@ -280,7 +280,7 @@ function render() {
         // message, so there is nothing for him to notice.
         id: 'saved', title: 'Saved', icon: 'i-bookmark',
         render: (pane) => {
-          mountSaved({ container: pane, kind: 'case', id: c.id, user, myRole: 'client' });
+          mountSaved({ container: pane, kind: 'case', id: c.id, user, myRole: 'client', otherName: advocateFirstNow(c.advocateId) });
         },
       },
     ],
@@ -619,7 +619,7 @@ function pausedNotice(c) {
   return `
     <div class="panel" style="border-color:var(--magenta);">
       <h3 style="margin:0 0 .3rem;">Your case is paused</h3>
-      ${c.hold.note ? `<p style="margin:0 0 .5rem;"><strong>From Eric:</strong> ${esc(c.hold.note)}</p>` : ''}
+      ${c.hold.note ? `<p style="margin:0 0 .5rem;"><strong>From ${advFirstHtml(c)}:</strong> ${esc(c.hold.note)}</p>` : ''}
       <p style="margin:0 0 .5rem;">I have had to stop work for a short while.
         Every date on your case has stopped with it, so nothing is running
         down while I am away and you lose no time.${
@@ -888,14 +888,14 @@ function renderChat(el, c) {
   el.innerHTML = `
     <h2 class="case-sec-h">Chat</h2>
     <div class="chat-who" data-chat-who>
-      <img src="${esc(advocatePhoto(c.advocateId))}" alt="Eric" width="52" height="52" data-who-ava>
+      <img src="${esc(advocatePhoto(c.advocateId))}" alt="" width="52" height="52" data-who-ava>
       <div>
-        <p class="who-name">Eric, your advocate</p>
+        <p class="who-name">${advFirstHtml(c)}, your advocate</p>
         <p class="office-row" style="margin:.3rem 0 0;">${officeCueHtml()}</p>
       </div>
     </div>
     ${c.work?.startedAt && c.work?.doing
-    ? `<p class="dim small doing-line" data-doing style="margin:0 0 .4rem;">Eric is ${esc(String(c.work.doing))} right now.</p>`
+    ? `<p class="dim small doing-line" data-doing style="margin:0 0 .4rem;">${advFirstHtml(c)} is ${esc(String(c.work.doing))} right now.</p>`
     : ''}
     <p class="dim small" style="margin:.1rem 0 .5rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
     <div class="panel" data-chat></div>
@@ -933,7 +933,7 @@ function renderChat(el, c) {
     myRole: 'client',
     saveUid: user.uid,
     otherAvatar: advocatePhoto(c.advocateId),
-    otherName: 'Eric',
+    otherName: advocateFirstNow(c.advocateId),
     dayLines: true,
     disabled: closed || paused || chatLocked,
     notice: closed
@@ -1335,7 +1335,7 @@ function renderReview(el, c) {
         <a href="${GOOGLE_REVIEW_WRITE_URL}" target="_blank" rel="noopener noreferrer">write a Google review</a>.
         The box above comes only to me; Google is public.</p>
       ${delivered && c.addOnFollowUp && !c.followUp && !justBoughtFollowUp() ? `
-        <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, Eric will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
+        <p class="dim small follow-note">Your follow-up case review is still on the books. If it's still not scheduled, ${advFirstHtml(c)} will promptly discuss with you the best time to follow up with a second review.</p>` : ''}
     </div>`;
 
   let stars = 0;
@@ -1460,7 +1460,7 @@ function printExport(c, want) {
       ${c.addOnFollowUp ? '<li>Follow-up session: purchased</li>' : ''}
     </ul>`)}
     ${sec('chat', 'Chat log', msgs.length
-      ? msgs.map((m) => `<p class="m ${m.mine ? 'mine' : ''}"><span class="who">${m.mine ? 'You' : 'Eric'}${m.when ? ' · ' + esc(m.when) : ''}</span><br>${esc(m.text)}</p>`).join('')
+      ? msgs.map((m) => `<p class="m ${m.mine ? 'mine' : ''}"><span class="who">${m.mine ? 'You' : esc(advocateFirstNow(c.advocateId))}${m.when ? ' · ' + esc(m.when) : ''}</span><br>${esc(m.text)}</p>`).join('')
       : '<p>No messages.</p>')}
     ${sec('docs', 'Documents', files.length
       ? `<ul>${files.map((f) => `<li>${esc(f)}</li>`).join('')}</ul>`
@@ -3088,6 +3088,21 @@ function signatureInk(item) {
  * the case export and the prep sheet already use; there is no PDF library in
  * this stack and none is being added for this.
  */
+/**
+ * THE CLIENT'S OWN ADVOCATE BY NAME (contractor review, 2026-10-16). A
+ * contractor's client read "Eric, your advocate", "From Eric" and "Eric is
+ * reading..." on their own case. The name comes from the Worker's public
+ * lookup (chat.js advocateFirstName): "Eric" until it answers, then every
+ * place it is written here changes in place.
+ */
+function advFirstHtml(c) {
+  const id = c?.advocateId || '';
+  advocateFirstName(id).then((n) => {
+    for (const el of document.querySelectorAll(`[data-adv-first="${CSS.escape(String(id))}"]`)) if (el.textContent !== n) el.textContent = n;
+  });
+  return `<span data-adv-first="${esc(String(id))}">${esc(advocateFirstNow(id))}</span>`;
+}
+
 // The case's own advocate on the forms (2026-10-15). His cases, and any the
 // lookup cannot answer, print his name as they always have.
 const advocateNames = new Map();

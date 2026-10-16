@@ -15,6 +15,7 @@
 
 import './admin-ledger.js';
 import { requireAdmin, hydrateNav, STAFF } from './auth.js';
+import { auth, signInWithCustomToken } from './firebase.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -60,6 +61,8 @@ function steps(a) {
     ['your name and credentials', !need.has('name') && !need.has('credentials')],
     ['your specialties', !need.has('primary specialty')],
     ['a short bio', !need.has('bio')],
+    // Payroll needs it, so setup does too (2026-10-16).
+    ['how you get paid', !!me.payoutSet],
   ];
   return `<ol class="steps">${rows.map(([t, ok]) => `<li class="${ok ? 'done' : ''}">${esc(t)}</li>`).join('')}</ol>`;
 }
@@ -73,7 +76,37 @@ function specialtyOptions(list, current) {
   ].join('');
 }
 
-function render(host, admin) {
+/**
+ * What they have typed in the profile but not saved (onboarding review,
+ * 2026-10-16): a photo upload, a password or the Advisor choice redraws the
+ * page, and the typing used to vanish with it.
+ */
+function readDraft(host) {
+  const f = host.querySelector('#profile-form');
+  if (!f) return null;
+  return {
+    name: f.name.value, credentials: f.credentials.value, primary: f.primary.value, primaryOther: f.primaryOther.value,
+    extra: [...f.querySelectorAll('input[name="extra"]:checked')].map((x) => x.value), extraOther: f.extraOther.value,
+    bio: f.bio.value, tz: f.tz?.value || '',
+  };
+}
+function applyDraft(host, d) {
+  const f = host.querySelector('#profile-form');
+  if (!f || !d) return;
+  f.name.value = d.name; f.credentials.value = d.credentials; f.primary.value = d.primary; f.primaryOther.value = d.primaryOther;
+  for (const x of f.querySelectorAll('input[name="extra"]')) x.checked = d.extra.includes(x.value);
+  f.extraOther.value = d.extraOther; f.bio.value = d.bio;
+  if (f.tz && d.tz) f.tz.value = d.tz;
+  f.querySelector('[data-primary-other]').hidden = d.primary !== OTHER;
+}
+
+const ZONE_NAMES = {
+  'America/New_York': 'Eastern', 'America/Chicago': 'Central', 'America/Denver': 'Mountain', 'America/Boise': 'Mountain (Boise)',
+  'America/Phoenix': 'Arizona', 'America/Los_Angeles': 'Pacific', 'America/Anchorage': 'Alaska', 'Pacific/Honolulu': 'Hawaii',
+};
+
+function render(host, admin, { keep = true } = {}) {
+  const draft = keep ? readDraft(host) : null;
   const a = me.advocate;
   const list = me.specialties || [];
   const extras = a.specialties.filter((s) => s !== a.primarySpecialty);
@@ -81,7 +114,7 @@ function render(host, admin) {
   const primaryCustom = a.primarySpecialty && !list.includes(a.primarySpecialty) ? a.primarySpecialty : '';
   const photo = a.hasHeadshot ? `<img src="/api/advocates/headshot?uid=${encodeURIComponent(a.uid)}&t=${Date.now()}" alt="Your photo">` : '<span class="blank">No photo</span>';
   host.innerHTML = `
-    ${!admin && !a.onboardedAt ? `<section class="panel"><h3 style="margin:0;">Before your card goes live</h3>${steps(a)}<p class="dim small" style="margin:0;">Your prices and your calendar come next, once your profile is in.</p></section>` : ''}
+    ${!admin && !a.onboardedAt ? `<section class="panel"><h3 style="margin:0;">Before your card goes live</h3><div data-steps>${steps(a)}</div><p class="dim small" style="margin:0;">Your prices are under ⚙ Settings, whenever you want them.</p></section>` : ''}
     ${!admin && me.mustChange ? `
     <form class="panel" id="pw-form" autocomplete="off">
       <h3 style="margin:0;">Choose your own password</h3>
@@ -103,6 +136,7 @@ function render(host, admin) {
       <h3 style="margin:0;">Your profile</h3>
       <label>Your name, as clients will see it<input type="text" name="name" maxlength="80" value="${esc(a.name)}" required></label>
       <label>Credentials<input type="text" name="credentials" maxlength="200" value="${esc(a.credentials)}" placeholder="For example: RN, BCPA, 8 years in neurology clinics"></label>
+      ${admin ? '' : `<label>Your time zone<select name="tz">${(me.zones || []).map((z) => `<option value="${esc(z)}"${z === a.tz ? ' selected' : ''}>${esc(ZONE_NAMES[z] || z)}</option>`).join('')}</select></label>`}
       <label>Primary specialty<select name="primary">${specialtyOptions(list, a.primarySpecialty)}</select></label>
       <label data-primary-other ${primaryCustom ? '' : 'hidden'}>Your specialty, in your words<input type="text" name="primaryOther" maxlength="40" value="${esc(primaryCustom)}"></label>
       <fieldset style="border:0;padding:0;margin:0;display:grid;gap:.4rem;">
@@ -122,6 +156,7 @@ function render(host, admin) {
            tucked into the small print. -->
       <p class="small" style="margin:0;"><strong>It is only an aid, not a diagnostic tool.</strong> Advisor is AI-generated guidance. It can be wrong, and it does not replace anyone's professional medical judgment. Nothing it writes is ever sent to a client.</p>
       <p class="dim small" style="margin:0;">It costs $79 a month, taken from your earnings, which includes $60 of reading; past that, automatic updates pause and each Update you tap is billed at cost.</p>
+      <p class="dim small" style="margin:0;" data-advisor-later>It is not open on contractors' cases yet, so nothing is taken from your earnings until it is.</p>
       <label class="toggle"><input type="checkbox" name="optin"${a.advisorOptIn ? ' checked' : ''}> I want Advisor</label>
       <p class="dim small" style="margin:0;">${a.advisorEnabled ? 'It is switched on for you.' : a.advisorOptIn ? 'You have asked for it. It is switched on for you once Eric turns it on.' : 'Off. Tick the box to ask for it.'}</p>
       <div class="row-btn"><button type="submit" class="btn quiet">Save my choice</button><span class="dim small" data-said role="status"></span></div>
@@ -144,12 +179,13 @@ function render(host, admin) {
     </form>
     <section class="panel">
       <h3 style="margin:0;">Prices</h3>
-      <p class="dim small" style="margin:0;">You will set your own prices for the three services when your calendar opens. It is not needed to finish setting up.</p>
+      <p class="dim small" style="margin:0;">Your prices are under ⚙ Settings, the cog at the top, and live the moment you save. They are not needed to finish setting up.</p>
     </section>`}
     ${!admin && !a.onboardedAt ? `
     <section class="panel">
       <div class="row-btn"><button type="button" class="btn glow" data-finish>Finish setting up</button><span class="dim small" data-finish-said role="status"></span></div>
     </section>` : ''}`;
+  applyDraft(host, draft);
   wire(host, admin);
 }
 
@@ -191,6 +227,9 @@ function wirePayout(form) {
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `That did not save (${res.status}).`);
       show(out);
+      me.payoutSet = true;
+      const list = document.querySelector('[data-steps]');
+      if (list && me.advocate) list.innerHTML = steps(me.advocate);
       // The details leave the page once they are saved; only the hint stays.
       form.method.value = '';
       draw();
@@ -209,7 +248,11 @@ function wire(host, admin) {
     if (fd.get('next') !== fd.get('again')) { said(pw, 'The two new passwords are not the same.'); return; }
     said(pw, 'Saving…');
     try {
-      await api('POST', { action: 'password', current: fd.get('current'), next: fd.get('next') });
+      const out = await api('POST', { action: 'password', current: fd.get('current'), next: fd.get('next') });
+      // Every other session ended with the old password (2026-10-16); this one
+      // carries on with the fresh session and device token the Worker sent.
+      if (out.token) await signInWithCustomToken(auth, out.token);
+      if (out.deviceToken) { try { localStorage.setItem('pa-device-token', out.deviceToken); } catch { /* private mode */ } }
       me.mustChange = false;
       said(pw, 'Saved.');
       setTimeout(() => render(host, admin), 700);
@@ -259,10 +302,11 @@ function wire(host, admin) {
       const out = await api('POST', {
         action: 'profile', name: fd.get('name'), credentials: fd.get('credentials'), bio: fd.get('bio'),
         primarySpecialty: prim, specialties: [prim, ...extra].filter(Boolean),
+        ...(fd.get('tz') ? { tz: fd.get('tz') } : {}),
       });
       me.advocate = out.advocate;
       said(profile, 'Saved.');
-      setTimeout(() => render(host, admin), 700);
+      setTimeout(() => render(host, admin, { keep: false }), 700);
     } catch (err) { said(profile, err.message); }
   });
 

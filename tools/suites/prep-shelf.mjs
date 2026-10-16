@@ -57,8 +57,12 @@ ck('P6 with a deny-everything tail underneath it',
 // than passing, which is the only reason it was caught.
 const lines = RULES.split('\n');
 const clientWrites = [];
+// RE-PINNED 2026-10-16 (v7.56): a client's grant is `allow create` now (add a file, never overwrite or label one),
+// so both kinds of grant are read.
+// NEGATIVE CONTROL (run 2026-10-16, v7.56): a client `allow create: if isCaseClient(caseId);` added under a
+// `match /cases/{caseId}/prep/{fileName}` made P7 read FAIL.
 lines.forEach((ln, i) => {
-  if (!/allow write: if\b/.test(ln)) return;
+  if (!/allow (write|create): if\b/.test(ln)) return;
   // the grant may span the next couple of lines
   const grant = lines.slice(i, i + 4).join(' ');
   if (!/isCaseClient/.test(grant)) return;
