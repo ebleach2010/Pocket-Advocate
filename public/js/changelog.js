@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.54';
+export const VERSION = '7.55';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '7.54';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ONE TEAM PAGE, ONE CALENDAR (Eric, 2026-10-15: "remove redundancy").
+    // Admin only.
+    version: '7.55',
+    quiet: true,
+    client: [],
+    admin: [
+      'Advocates is part of Employer mode. Add an advocate at the top of Team, and each card has Account for their share, a new password and turning them off. Anyone turned off is listed under the team.',
+      'Availability is part of the Calendar. Taking new cases, opening slots and each day\'s open slots are folds under the month.',
+      'In or out is one switch, on Clients under Your status.',
+      'Tap anyone on Team to open their cases. The button now says Their cases.',
+      'The sample contractor has invented sales and tips in any payroll you run, so the report shows real numbers. The Total and Paid still leave her out; a second total under it counts her, and a draft\'s card says what it comes to with her.',
+      'The buttons in Employer mode stand out from the dark cards.',
+      'The sample contractor\'s three invented clients come back if they went missing, and they can no longer be deleted one by one. Removing her takes them with her.',
+    ],
+  },
   {
     // THE DOUBLES CUT (Eric, 2026-10-15: "remove redundancy", and yes to
     // "Retire Track, Merge logs, One work clock, PDF to Uploads"). Admin only.

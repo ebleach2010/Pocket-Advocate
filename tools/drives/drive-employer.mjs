@@ -105,9 +105,11 @@ const maya = after.find((t) => /Maya Torres/.test(t.name || ''));
 if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-2-team.png`, fullPage: true });
 // NEGATIVE CONTROL (run 2026-10-15): teamSummary's kinds left out of the brief (brief() returning '') made this read
 //   FAIL  his team: him first, each with their clients by kind and what they stand to earn; a sample contractor arrives with three clients, marked SAMPLE
+// RE-PINNED 2026-10-16 (v7.55): the button "See what they see" is now "Their cases" (Eric: "I should be able to tap on
+// that team member and see their cases"); drive-cleanup G drives the tap itself.
 ok('his team: him first, each with their clients by kind and what they stand to earn; a sample contractor arrives with three clients, marked SAMPLE',
   /YOU/.test(before[0]?.name || '') && before.some((t) => /Ana Rivera/.test(t.name) && /1 client: 1 Advocacy Case/.test(t.brief) && /\$\d/.test(t.money))
-  && !!maya && /SAMPLE/.test(maya.name) && /^3 clients/.test(maya.brief) && maya.acts.includes('See what they see'),
+  && !!maya && /SAMPLE/.test(maya.name) && /^3 clients/.test(maya.brief) && maya.acts.includes('Their cases'),
   JSON.stringify({ before, maya }));
 
 // Eric, 2026-10-15: "I should be able to upload a bio and profile picture for each [contractor] when they submit it to me."
@@ -255,8 +257,12 @@ const whole = await adm.evaluate(() => {
 });
 // NEGATIVE CONTROL (run 2026-10-15, v7.49): the page's phone rules (@media (max-width: 760px)) made (max-width: 10px) made this read
 //   FAIL  the whole report is on his phone's screen: a card for each person and one for the totals, every figure labelled, nothing past the edge
+// RE-PINNED 2026-10-16 (v7.55): with the sample contractor on the run a second total card counts her (Eric: "when I run
+// the report it's zero's across the board"), so the totals are one card, or two when she is there.
+// NEGATIVE CONTROL (run 2026-10-16): the phone rules' `table.pr tr[data-row], table.pr tr.pr-total { display: grid;` made `table.pr tr[data-row], table.pr tr.pr-nope { display: grid;` made this read
+//   FAIL  the whole report is on his phone's screen: a card for each person and one for the totals, every figure labelled, nothing past the edge
 ok('the whole report is on his phone\'s screen: a card for each person and one for the totals, every figure labelled, nothing past the edge',
-  whole.cards === report.rows.length + 1 && whole.grid && whole.labels.join('|') === 'Cases|Client sales|Deductions|Commission|Tips|Pay adjustments|Total|Payout method'
+  whole.cards === report.rows.length + 1 + (report.rows.some((r) => r.uid === 'demo-sample') ? 1 : 0) && whole.grid && whole.labels.join('|') === 'Cases|Client sales|Deductions|Commission|Tips|Pay adjustments|Total|Payout method'
   && !whole.past.length && !whole.scrolls, JSON.stringify(whole));
 // NEGATIVE CONTROL (run 2026-10-15): the report's Pay adjustments column taken out of showRun made this read
 //   FAIL  Run report lays it out the Mangomint way: Cases, Client sales, Deductions, Commission, Tips, Pay adjustments, Total and how each is paid, a row for each person, him included, and a total

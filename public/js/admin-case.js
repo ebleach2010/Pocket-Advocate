@@ -2736,7 +2736,7 @@ function paintOverview(pane) {
             <input type="text" data-close-reason maxlength="500" placeholder="required, shown on their case page"
               style="width:100%; margin-top:.2rem;"></label>
           <div class="actions"><button class="btn quiet" data-close-case>Close this case</button></div>`}
-        ${c.showcase || c.self ? `
+        ${(c.showcase && !c.sample) || c.self ? `
         <hr style="margin:.9rem 0; border:0; border-top:1px solid var(--line);">
         <p class="dim small" style="margin:.2rem 0 .6rem;">${c.showcase
           ? 'This is the showcase case: invented from end to end, nobody behind it. Delete it when you are done filming; it can be built again from the Clients page.'

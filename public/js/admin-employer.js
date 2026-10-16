@@ -9,6 +9,7 @@
 import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 import { ask } from './sheet.js';
 import { openStaffChat } from './admin-staffchat.js';
+import { listAccounts, openAddAdvocate, openAccount, paintOff } from './admin-accounts.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 // Whole dollars bare, anything with cents to two places ($1,234.50, never $1,234.5).
@@ -22,7 +23,15 @@ const ORDER = ['Advocacy Case', 'Full-Service', 'Priority Chat', 'Family', 'Own 
 hydrateNav();
 const user = await requireAdmin();
 if (user && STAFF.role !== 'admin') location.replace('/admin.html');
-else if (user) load();
+else if (user) {
+  document.querySelector('[data-add-adv]')?.addEventListener('click', () => openAddAdvocate(user, { say: teamSay, done: load }));
+  load();
+}
+/** The Team tab's one status line, for the account actions that close their sheet first. */
+function teamSay(text) {
+  const el = document.getElementById('adv-said');
+  if (el) el.textContent = text;
+}
 
 async function call(method, body) {
   const token = await user.getIdToken();
@@ -55,21 +64,29 @@ function card(p) {
     : p.sample ? '<span class="tm-pill sample">SAMPLE</span>'
     : !p.onboarded ? '<span class="tm-pill">SETTING UP</span>' : '';
   const share = p.owner ? 'All of it is yours' : `Their share: ${p.commissionPct}%`;
+  // Eric, 2026-10-16: "I should be able to tap on that team member and see
+  // their cases." Their name and clients are one tap to their shelf, read
+  // only, the way Their cases opens it; his own opens his.
+  const shelf = p.owner ? '/admin.html' : `/admin.html?as=${encodeURIComponent(p.uid)}`;
   return `
     <article class="panel tm-card" data-uid="${esc(p.uid)}">
-      <div class="tm-top">
-        ${photo(p)}
-        <div>
-          <p class="tm-name">${esc(p.name)}${pill}</p>
-          <p class="tm-sub">${esc(share)}${p.closed ? ` · ${p.closed} closed` : ''}</p>
-        </div>
-      </div>
-      <p class="tm-brief">${esc(brief(p))}</p>
+      <a class="tm-open" href="${shelf}" aria-label="${p.owner ? 'Your cases' : `${esc(p.name)}'s cases`}">
+        <span class="tm-top">
+          ${photo(p)}
+          <span>
+            <span class="tm-name">${esc(p.name)}${pill}</span>
+            <span class="tm-sub">${esc(share)}${p.closed ? ` · ${p.closed} closed` : ''}</span>
+          </span>
+          <span class="tm-go" aria-hidden="true">›</span>
+        </span>
+        <span class="tm-brief">${esc(brief(p))}</span>
+      </a>
       <div class="tm-money"><strong>${money(p.proposedCents)}</strong><span>${p.owner ? 'from the clients you have now' : 'theirs from the clients they have now'}${p.tipsCents ? `, ${money(p.tipsCents)} of it tips` : ''}</span></div>
       <div class="tm-acts">
-        ${p.owner ? '' : `<a class="btn quiet" href="/admin.html?as=${encodeURIComponent(p.uid)}">See what they see</a>
+        ${p.owner ? '' : `<a class="btn quiet" href="${shelf}">Their cases</a>
         <button type="button" class="btn quiet" data-msg>Message${p.unread ? `<span class="tm-badge" aria-label="${p.unread} new">${p.unread}</span>` : ''}</button>`}
         <button type="button" class="btn quiet" data-profile>${p.owner ? 'Your photo and bio' : 'Photo and bio'}</button>
+        ${p.owner || p.sample ? '' : '<button type="button" class="btn quiet" data-account>Account</button>'}
       </div>
     </article>`;
 }
@@ -80,8 +97,16 @@ async function load() {
   try { data = await call('GET'); } catch (err) { list.innerHTML = `<p class="error">${esc(err.message)}</p>`; return; }
   const team = data.team || [];
   list.innerHTML = team.length ? team.map(card).join('') : '<p class="dim">Nobody yet.</p>';
+  // The accounts behind the cards (share, Advisor, email), and anyone turned off.
+  const accounts = await listAccounts(user).catch(() => []);
+  paintOff(document.getElementById('team-off'), user, accounts, { say: teamSay, done: load });
   for (const el of list.querySelectorAll('[data-uid]')) {
     const p = team.find((x) => x.uid === el.dataset.uid);
+    el.querySelector('[data-account]')?.addEventListener('click', () => {
+      const a = accounts.find((x) => x.uid === p.uid);
+      if (a) openAccount(user, a, { say: teamSay, done: load });
+      else teamSay('That account did not load. Try again in a moment.');
+    });
     el.querySelector('[data-msg]')?.addEventListener('click', async () => {
       await openStaffChat(user, { uid: p.uid, name: p.name, onChange: () => {} });
       load();
@@ -274,7 +299,7 @@ async function loadDrafts() {
     box.innerHTML = drafts.length ? `<div class="pr-list">${drafts.map((r) => `
       <div class="panel pr-item">
         <span><span class="pr-chip draft">DRAFT</span> ${esc(longDay(r.start))} to ${esc(longDay(r.end))}</span>
-        <span><strong>${money(r.totals?.totalCents)}</strong></span>
+        <span><strong>${money(r.totals?.totalCents)}</strong>${r.sampleCents ? ` <span class="dim small" data-draft-sample>${money(r.totals?.totalCents + r.sampleCents)} with the sample</span>` : ''}</span>
         <span class="pr-acts"><button type="button" class="btn quiet" data-open="${esc(r.id)}">Open</button></span>
       </div>`).join('')}</div>` : '';
     box.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', async () => showRun((await payroll('GET', null, b.dataset.open)).run)));
@@ -329,6 +354,14 @@ function showRun(run) {
   const draft = !paid || editingPaid === run.id;
   const rows = run.rows || [];
   const t = run.totals || {};
+  // Eric, 2026-10-16: "The sample contractor should have income and tips so I can run payroll and see numbers beyond zero."
+  const samples = rows.filter((r) => r.sample);
+  // The Total leaves her out, so a run with nobody real in it read all zeros
+  // (Eric, 2026-10-16: "when I run the report it's zero's across the board").
+  // A second total under it counts her; Paid still leaves her out.
+  const withSample = Object.fromEntries(['cases', 'salesCents', 'deductionsCents', 'commissionCents', 'tipsCents', 'adjustmentsCents', 'totalCents']
+    .map((k) => [k, (Number(t[k]) || 0) + samples.reduce((sum, r) => sum + (Number(r[k]) || 0), 0)]));
+  const totalRow = (label, x, cls) => `<tr class="pr-total${cls}"><td>${label}</td><td data-label="Cases">${x.cases || 0}</td><td data-label="Client sales">${money(x.salesCents)}</td><td data-label="Deductions">${x.deductionsCents ? signed(-x.deductionsCents) : money(0)}</td><td data-label="Commission">${money(x.commissionCents)}</td><td data-label="Tips">${money(x.tipsCents)}</td><td data-label="Pay adjustments">${signed(x.adjustmentsCents || 0)}</td><td data-label="Total" class="pr-tot-cell">${signed(x.totalCents || 0)}</td><td class="pr-pay-cell"></td></tr>`;
   const payCell = (r) => (r.payout?.label ? `${esc(r.payout.label)}<br><span class="dim small">${esc(r.payout.hint || '')}</span>` : '<span class="dim">Not set yet</span>');
   box.innerHTML = `
     <div class="pr-head">
@@ -357,12 +390,13 @@ function showRun(run) {
             <td data-label="Payout method" class="pr-pay-cell" style="text-align:left;"><span>${payCell(r)}</span></td>
           </tr>
           <tr data-detail="${esc(r.uid)}" hidden><td class="pr-detail" colspan="9">${detailHtml(r, draft)}</td></tr>`).join('')}
-          <tr class="pr-total"><td>Total</td><td data-label="Cases">${t.cases || 0}</td><td data-label="Client sales">${money(t.salesCents)}</td><td data-label="Deductions">${t.deductionsCents ? signed(-t.deductionsCents) : money(0)}</td><td data-label="Commission">${money(t.commissionCents)}</td><td data-label="Tips">${money(t.tipsCents)}</td><td data-label="Pay adjustments">${signed(t.adjustmentsCents || 0)}</td><td data-label="Total" class="pr-tot-cell">${signed(t.totalCents || 0)}</td><td class="pr-pay-cell"></td></tr>
+          ${totalRow('Total', t, '')}
+          ${samples.length ? totalRow(`With ${esc(samples[0].name)} <span class="pr-chip draft">SAMPLE</span>`, withSample, ' pr-with" data-with-sample="1') : ''}
         </tbody>
       </table>
     </div>
     ${(run.notes || []).map((n) => `<p class="pr-note">${esc(n)}</p>`).join('')}
-    ${rows.some((r) => r.sample) ? '<p class="pr-note">The sample contractor is shown so you can see the layout. Marking it paid leaves her out.</p>' : ''}
+    ${samples.length ? `<p class="pr-note" data-sample-note>${esc(samples[0].name)} is a sample: her sales and tips are invented so you can see real numbers. The Total leaves her out, and so does Paid. With her, this run would be ${signed(withSample.totalCents)}, as the last row shows.</p>` : ''}
     <p class="pr-note">Tap a name for every line behind it. ${draft ? 'Tap a total to correct it, or + to add a bonus, a reimbursement or a pay adjustment. A minus takes money off.' : `Paid, in the ${esc(monthOf(run))} folder in Pay history. Edit asks you first.`}</p>`;
   box.scrollIntoView({ behavior: 'smooth', block: 'start' });
   box.querySelectorAll('[data-expand]').forEach((b) => b.addEventListener('click', () => {

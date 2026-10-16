@@ -15,6 +15,10 @@
 //   E. (v7.54) the doubles cut: four groups, Agenda under Mine, one Log with
 //      a filter, Saved under Notes, the PDF on Uploads, one clock switch, and
 //      About you in the Voice study fold
+//   F. (v7.55) one Calendar page: Availability's tools as folds, its address
+//      forwarding, and no menu naming Availability or Advocates
+//   G. (v7.55) the sample contractor's pay in any week, and a team member's
+//      cases one tap from their name
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -259,6 +263,99 @@ const about = await eric.evaluate(() => {
 //   FAIL  About you sits in the Voice study fold on Clients, all three parts
 ok('About you sits in the Voice study fold on Clients, all three parts',
   about.found && about.inFold && about.heads.join('|') === 'How you write|Where you stand|Strong suits, and things to work on', JSON.stringify(about));
+
+console.log('\n--- F. one Calendar page (v7.55) ---');
+await eric.goto(`${P}/admin-availability.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2500);
+const cal = await eric.evaluate(() => ({
+  path: location.pathname,
+  folds: [...document.querySelectorAll('.cal-fold > summary')].map((x) => x.textContent.trim()),
+  month: !!document.getElementById('cal-grid'),
+  menu: [...document.querySelectorAll('header .tabs a')].map((a) => a.textContent.trim()),
+}));
+await tryStep(() => eric.click('.cal-fold > summary:has-text("Open new slots")', { timeout: 4000 }));
+await eric.waitForTimeout(500);
+const hours = await eric.evaluate(() => document.querySelectorAll('#hours input[type="checkbox"]').length);
+if (SHOTS) await eric.screenshot({ path: `${SHOTS}/cleanup-6-one-calendar.png`, fullPage: true });
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): admin-calendar.js's mountAvailability call taken out made this read
+//   FAIL  Availability's address lands on the Calendar, its tools are folds under the month and they work, and no menu names Availability or Advocates
+ok('Availability\'s address lands on the Calendar, its tools are folds under the month and they work, and no menu names Availability or Advocates',
+  /admin-calendar/.test(cal.path) && cal.month && cal.folds.join('|') === 'Taking new cases|Open new slots|Open slots, by day'
+  && hours === 11 && !cal.menu.includes('Availability') && !cal.menu.includes('Advocates'), JSON.stringify({ cal, hours }));
+
+console.log('\n--- G. the sample contractor\'s pay, and their cases one tap away (v7.55) ---');
+// Eric, 2026-10-16: "The sample contractor should have income and tips so I can run payroll and see numbers
+// beyond zero. And I should be able to tap on that team member and see their cases, unless I'm missing it"
+await eric.goto(`${P}/admin-employer.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2000);
+await tryStep(() => eric.click('[data-sample="create"]', { timeout: 4000 }));
+await tryStep(() => eric.waitForSelector('.tm-card[data-uid="demo-sample"]', { timeout: 8000 }));
+const mayaCard = await eric.evaluate(() => {
+  const c = document.querySelector('.tm-card[data-uid="demo-sample"]');
+  return { href: c?.querySelector('a.tm-open')?.getAttribute('href') || '', acts: [...(c?.querySelectorAll('.tm-acts a, .tm-acts button') || [])].map((x) => x.textContent.trim()) };
+});
+// Eric, 2026-10-16: "I just missed it because the buttons are dark. The[y] should have some contrast."
+const pop = await eric.evaluate(() => {
+  const rgba = (v) => { const m = v.match(/[\d.]+/g) || []; return { r: +m[0], g: +m[1], b: +m[2], a: m[3] === undefined ? 1 : +m[3] }; };
+  return [...document.querySelectorAll('.tm-card .tm-acts .btn.quiet')].map((btn) => {
+    const cs = getComputedStyle(btn);
+    const edge = rgba(cs.borderTopColor); const fill = rgba(cs.backgroundColor); const ink = rgba(cs.color);
+    return { text: btn.textContent.trim(), edge: edge.a >= 0.5 && edge.g > 150 && edge.b > 150, fill: fill.a > 0.05, ink: ink.r + ink.g + ink.b > 600 };
+  });
+});
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): the page's `main .btn.quiet` rule made `main .btn.nope` made this read
+//   FAIL  every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words
+ok('every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words',
+  pop.length >= 4 && pop.every((x) => x.edge && x.fill && x.ink), JSON.stringify(pop.slice(0, 4)));
+await tryStep(() => eric.click('.tm-card[data-uid="demo-sample"] .tm-name', { timeout: 4000 }));
+await tryStep(() => eric.waitForURL(/admin\.html\?as=demo-sample/, { timeout: 8000 }));
+await settle(eric, 2500);
+const hers = await eric.evaluate(() => ({
+  url: location.pathname + location.search,
+  bar: !!document.querySelector('.quiet-bar'),
+  names: [...document.querySelectorAll('#list .folder-name')].map((e) => e.textContent.trim()).sort(),
+}));
+if (SHOTS) await eric.screenshot({ path: `${SHOTS}/cleanup-7-her-cases.png` });
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): card()'s tm-open link taken off the name (`<a class="tm-open"` made `<div class="tm-open"`) made this read
+//   FAIL  a tap on a team member's name opens their cases, read only, and the button says Their cases
+ok('a tap on a team member\'s name opens their cases, read only, and the button says Their cases',
+  /as=demo-sample/.test(hers.url) && hers.bar && hers.names.join('|') === 'Dana Whitfield|Grace Kim|Luis Ortega'
+  && mayaCard.acts.includes('Their cases') && !mayaCard.acts.includes('See what they see'), JSON.stringify({ mayaCard, hers }));
+
+await eric.goto(`${P}/admin-employer.html?demo=admin#payroll`, { waitUntil: 'networkidle' });
+await settle(eric, 1500);
+await eric.evaluate(() => document.querySelector('#pr-form input[value="week"]')?.click());
+await tryStep(() => eric.click('#pr-form button[type="submit"]', { timeout: 4000 }));
+await tryStep(() => eric.waitForSelector('table.pr tr[data-row="demo-sample"]', { timeout: 8000 }));
+const pay = await eric.evaluate(() => {
+  const row = document.querySelector('table.pr tr[data-row="demo-sample"]');
+  const cell = (r, l) => r?.querySelector(`td[data-label="${l}"]`)?.textContent.replace(/\s+/g, ' ').trim() || '';
+  return {
+    sales: cell(row, 'Client sales'), total: cell(row, 'Total'),
+    sumTotal: cell(document.querySelector('table.pr tr.pr-total'), 'Total'),
+    withLabel: document.querySelector('table.pr tr[data-with-sample] td')?.textContent.replace(/\s+/g, ' ').trim() || '',
+    withSales: cell(document.querySelector('table.pr tr[data-with-sample]'), 'Client sales'),
+    withTotal: cell(document.querySelector('table.pr tr[data-with-sample]'), 'Total'),
+    withGold: (() => { const td = document.querySelector('table.pr tr[data-with-sample] td'); return td ? getComputedStyle(td).color : ''; })(),
+    draft: document.querySelector('#pr-drafts [data-draft-sample]')?.textContent.trim() || '',
+    note: document.querySelector('[data-sample-note]')?.textContent.trim() || '',
+  };
+});
+if (SHOTS) await eric.screenshot({ path: `${SHOTS}/cleanup-8-sample-pay.png`, fullPage: true });
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): the demo's payroll never finding her (`hers` matching `r.data.sample === 'x'`) made this read
+//   FAIL  last week's payroll shows the sample contractor's sales and pay above zero, kept out of the Total, and says what the run would be with her
+ok('last week\'s payroll shows the sample contractor\'s sales and pay above zero, kept out of the Total, and says what the run would be with her',
+  /^\$[1-9]/.test(pay.sales) && /^\$[1-9]/.test(pay.total) && /is a sample/.test(pay.note) && /With her, this run would be \$/.test(pay.note),
+  JSON.stringify(pay));
+// Eric, 2026-10-16: "It says the fake team member made sales but when I run the report it's zero's across the board"
+const dollars = (v) => Number(String(v).replace(/[^\d.-]/g, '')) || 0;
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): showRun's second total (`samples.length ? totalRow(`) made `false ? totalRow(` made this read
+//   FAIL  the run never reads all zeros: under the Total a second total counts the sample contractor, in her gold, her row plus the Total; the draft's card says it too
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): the demo's payroll list without `sampleCents` (as worker/payroll.js summary() would be without it) made this read
+//   FAIL  the run never reads all zeros: under the Total a second total counts the sample contractor, in her gold, her row plus the Total; the draft's card says it too
+ok('the run never reads all zeros: under the Total a second total counts the sample contractor, in her gold, her row plus the Total; the draft\'s card says it too',
+  /^With Maya Torres SAMPLE$/.test(pay.withLabel) && /^\$[1-9]/.test(pay.withSales) && dollars(pay.withTotal) === dollars(pay.total) + dollars(pay.sumTotal)
+  && /242, 193, 78/.test(pay.withGold) && pay.draft === `${pay.withTotal} with the sample`, JSON.stringify(pay));
 
 console.log('\n--- C. errors ---');
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): a `null.x` put first in wireAddMenu's + click made this read

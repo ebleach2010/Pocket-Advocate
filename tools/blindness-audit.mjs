@@ -153,6 +153,8 @@ const ADMIN_ASSETS = [
   '/js/admin-personal.js',
   // 2026-10-04: the fund's verification queue.
   '/js/admin-fund.js',
+  // 2026-10-16: advocate accounts, from Employer mode.
+  '/js/admin-accounts.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

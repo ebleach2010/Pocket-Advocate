@@ -56,7 +56,7 @@ function world({ stripe = null } = {}) {
   };
   const stripeGet = async (env, path) => { stripeCalls.push(path); if (!stripe) throw new Error('no stripe'); return stripe(path); };
   const PAY = new Function(...Object.keys({ ...fs, stripeGet, caseBookingCents: 0, advocateIdOf: 0, DEFAULT_COMMISSION_PCT: 0 }),
-    `${strip(f('worker/payroll.js'))}\nreturn { periodOf, caseLines, stripeLines, advisorLines, buildRows, totalsOf, cleanPayout, sealPayout, openPayout, payoutMap, handlePayroll, PAYOUT_METHODS, ADVISOR_FEE_CENTS };`)(
+    `${strip(f('worker/payroll.js'))}\nreturn { periodOf, caseLines, sampleLines, stripeLines, advisorLines, buildRows, totalsOf, cleanPayout, sealPayout, openPayout, payoutMap, handlePayroll, PAYOUT_METHODS, ADVISOR_FEE_CENTS };`)(
     ...Object.values({ ...fs, stripeGet, caseBookingCents: CHARGE.caseBookingCents, advocateIdOf: STAFF.advocateIdOf, DEFAULT_COMMISSION_PCT: STAFF.DEFAULT_COMMISSION_PCT }));
   const notifyUser = async (env, uid, m) => { pushes.push({ uid, ...m }); };
   const EMP = new Function(...Object.keys({ ...fs, notifyUser, caseBookingCents: 0, advocateIdOf: 0, DEFAULT_COMMISSION_PCT: 0, cleanPayout: 0, sealPayout: 0 }),
@@ -206,6 +206,26 @@ console.log('\n--- C. the sample contractor ---');
   check('C2 one tap removes her, her clients, their chats and her pay details, and nobody else can add or remove her',
     gone.status === 200 && !left.length && denied.status === 404 && w.docs.has('advocates/adv-a'), left.join(','));
 }
+{
+  // 2026-10-16: his screenshot showed Maya with "No clients right now": her invented cases were gone while she stayed.
+  const w = world();
+  seedPeople(w);
+  await call(w, 'emp', ERIC, '/api/admin/team', { method: 'POST', json: { action: 'sample-create' } });
+  for (const k of [...w.docs.keys()]) if (/^cases\/sample-/.test(k)) w.docs.delete(k);
+  const back = (await call(w, 'emp', ERIC, '/api/admin/team')).out;
+  const maya = back.team.find((p) => p.uid === 'sample-contractor');
+  const casesBack = [...w.docs.keys()].filter((k) => /^cases\/sample-[^/]+$/.test(k));
+  w.docs.set('cases/sample-grace-kim', { ...w.docs.get('cases/sample-grace-kim'), status: 'closed', mark: 'kept' });
+  const again = (await call(w, 'emp', ERIC, '/api/admin/team')).out;
+  const asAna = await call(w, 'emp', 'adv-a', '/api/admin/team');
+  // NEGATIVE CONTROL (run 2026-10-16): teamRoute's put-back (`!cases.some((r) => r.data?.sample === true)`) made `false` made this read
+  //   FAIL  C3 a sample left with none of her clients gets all three back the next time he opens Team, written only where nothing is; one she still has is never rewritten
+  check('C3 a sample left with none of her clients gets all three back the next time he opens Team, written only where nothing is; one she still has is never rewritten',
+    maya?.open === 3 && /Advocacy Case/.test(JSON.stringify(maya.kinds)) && casesBack.length === 3
+    && w.docs.get('cases/sample-grace-kim').mark === 'kept' && again.team.find((p) => p.uid === 'sample-contractor')?.closed === 1
+    && asAna.status === 404,
+    JSON.stringify({ open: maya?.open, casesBack, againClosed: again.team.find((p) => p.uid === 'sample-contractor')?.closed }));
+}
 
 console.log('\n--- D. payroll ---');
 {
@@ -232,10 +252,38 @@ console.log('\n--- D. payroll ---');
   const kinds = lines.map((l) => `${l.caseId}:${l.kind}:${l.cents}`).sort();
   // NEGATIVE CONTROL (run 2026-10-15): caseLines counting duplicate payments made this read
   //   FAIL  D2 the period's money is every payment on the cases dated inside it: captured bookings, his corrections, each later purchase and tip; never a duplicate, a hold, his own case or the showcase
-  check('D2 the period\'s money is every payment on the cases dated inside it: captured bookings, his corrections, each later purchase and tip; never a duplicate, a hold, his own case or the showcase',
-    JSON.stringify(kinds) === JSON.stringify(['k1:booking:210000', 'k1:followup:32500', 'k1:tip:5000', 'k2:booking:175000', 'k6:booking:210000'].sort())
-    && lines.find((l) => l.caseId === 'k6').sample === true && lines.find((l) => l.caseId === 'k2').adv === ERIC,
+  // RE-PINNED 2026-10-16 (v7.55): the sample contractor's own case (k6) no longer gives a line here; her pay is
+  // made for the period by sampleLines (D6), so k6 is out and must stay out.
+  // NEGATIVE CONTROL (run 2026-10-16): caseLines skipping `c.showcase && !c.sample` again (her cases counted) made this read
+  //   FAIL  D2 the period's money is every payment on the cases dated inside it: captured bookings, his corrections, each later purchase and tip; never a duplicate, a hold, his own case, the showcase or the sample's
+  check('D2 the period\'s money is every payment on the cases dated inside it: captured bookings, his corrections, each later purchase and tip; never a duplicate, a hold, his own case, the showcase or the sample\'s',
+    JSON.stringify(kinds) === JSON.stringify(['k1:booking:210000', 'k1:followup:32500', 'k1:tip:5000', 'k2:booking:175000'].sort())
+    && !lines.some((l) => l.caseId === 'k6') && lines.find((l) => l.caseId === 'k2').adv === ERIC,
     JSON.stringify(kinds));
+
+  // Eric, 2026-10-16: "The sample contractor should have income and tips so I can run payroll and see numbers beyond zero."
+  const weeks = Array.from({ length: 53 }, (_, i) => {
+    const d0 = new Date(Date.UTC(2026, 0, 1 + i * 7)).toISOString().slice(0, 10);
+    const d6 = new Date(Date.UTC(2026, 0, 7 + i * 7)).toISOString().slice(0, 10);
+    const pp = P.periodOf(d0, d6);
+    return P.sampleLines(cases, pp.start, pp.end, ENV);
+  });
+  const sm = P.sampleLines(cases, per.start, per.end, ENV);
+  const smAgain = P.sampleLines(cases, per.start, per.end, ENV);
+  const smNone = P.sampleLines(cases.filter((r) => !r.data.sample), per.start, per.end, ENV);
+  const kindsOf = (ls, k) => ls.filter((l) => l.kind === k);
+  const mayaAdv = [{ id: 'sample-contractor', data: { name: 'Maya Torres', sample: true, active: true, commissionPct: 60 } }];
+  const smRows = P.buildRows({ advocates: mayaAdv, lines: sm, adminUid: ERIC });
+  const smTotals = P.totalsOf(smRows);
+  // NEGATIVE CONTROL (run 2026-10-16): sampleLines' weekly booking on `n % 9 === 2` instead of `n % 7 === 2` made this read
+  //   FAIL  D6 the sample contractor has sales every week and tips most weeks, whatever period is run: a new case each week, a Full-Service month each month, the same lines every time, all on her, all marked sample, and kept out of the totals
+  check('D6 the sample contractor has sales every week and tips most weeks, whatever period is run: a new case each week, a Full-Service month each month, the same lines every time, all on her, all marked sample, and kept out of the totals',
+    weeks.every((ls) => kindsOf(ls, 'booking').length === 1) && weeks.filter((ls) => kindsOf(ls, 'tip').length).length >= 36
+    && kindsOf(sm, 'booking').length >= 4 && kindsOf(sm, 'tip').length >= 2 && kindsOf(sm, 'extend').length >= 1
+    && JSON.stringify(sm) === JSON.stringify(smAgain) && !smNone.length
+    && sm.every((l) => l.sample === true && l.adv === 'sample-contractor' && Date.parse(l.at) >= per.start && Date.parse(l.at) < per.end)
+    && smRows[0].totalCents > 0 && smRows[0].tipsCents > 0 && smRows[0].cases >= 4 && smTotals.totalCents === 0,
+    JSON.stringify({ month: sm.map((l) => `${l.at.slice(5, 10)}:${l.kind}:${l.cents}`), row: [smRows[0]?.totalCents, smRows[0]?.tipsCents, smRows[0]?.cases] }));
 
   const stripe = (path) => {
     if (path.startsWith('/v1/refunds')) return { data: [{ id: 're_1', amount: 32500, payment_intent: 'pi_x', status: 'succeeded', created: 1758000000 }, { id: 're_2', amount: 10000, payment_intent: 'pi_jordan', status: 'succeeded', created: 1758000100 }, { id: 're_3', amount: 999, payment_intent: 'pi_unknown', status: 'succeeded', created: 1758000200 }], has_more: false };
@@ -349,6 +397,25 @@ console.log('\n--- E. the runs ---');
 // NEGATIVE CONTROL (run 2026-10-15): the payroll route asking requireStaff instead of requireAdmin made this read
 //   FAIL  E4 payroll is his alone: an advocate or a stranger gets the 404
   check('E4 payroll is his alone: an advocate or a stranger gets the 404', asAna.status === 404 && asNobody.status === 404);
+}
+{
+  // Eric, 2026-10-16: "The sample contractor should have income and tips so I can run payroll and see numbers beyond zero."
+  // Long after she was added, a month's run still shows her money; the total and Paid leave her out.
+  const w = world();
+  seedPeople(w);
+  await call(w, 'emp', ERIC, '/api/admin/team', { method: 'POST', json: { action: 'sample-create' } });
+  const gen = await call(w, 'pay', ERIC, '/api/admin/payroll', { method: 'POST', json: { action: 'generate', start: '2027-03-01', end: '2027-03-31', preset: 'month' } });
+  const run = gen.out?.run || {};
+  const maya = (run.rows || []).find((r) => r.sample);
+  const paidOut = await call(w, 'pay', ERIC, '/api/admin/payroll', { method: 'POST', json: { action: 'confirm', id: run.id } });
+  const kept = w.docs.get(`payrollRuns/${run.id}`) || {};
+  // NEGATIVE CONTROL (run 2026-10-16): the generate route leaving `...sampleLines(cases, period.start, period.end, env)` out made this read
+  //   FAIL  E6 a month's payroll run long after the sample was added shows her sales and tips, never in the total, and Paid leaves her out
+  check('E6 a month\'s payroll run long after the sample was added shows her sales and tips, never in the total, and Paid leaves her out',
+    gen.status === 200 && maya?.uid === 'sample-contractor' && maya.salesCents >= 4 * 210000 && maya.tipsCents > 0 && maya.totalCents > 0
+    && run.totals.totalCents === run.rows.filter((r) => !r.sample).reduce((t, r) => t + r.totalCents, 0) && run.totals.salesCents === 0
+    && paidOut.status === 200 && !(kept.rows || []).some((r) => r.sample) && kept.totals.totalCents === run.totals.totalCents,
+    JSON.stringify({ status: gen.status, maya: maya && [maya.salesCents, maya.tipsCents, maya.totalCents], totals: run.totals }));
 }
 
 console.log('\n--- F. how they want to be paid ---');

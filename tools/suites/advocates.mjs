@@ -759,7 +759,10 @@ console.log('\n--- G. accounts ---');
     && hisBio.status === 200 && nophoto.bio === 'Twelve years in neurology clinics.' && nophoto.credentials === 'RN' && noName.status === 400
     && owner.status === 302 && owner.res.headers.get('location') === '/img/eric-headshot.jpg',
     JSON.stringify([hisUpload.status, theirTry.status, hisLie.status, hisBio.status, noName.status, owner.status]));
-  check('G14 the accounts module carries no dash', !DASH.test(SRC) && !DASH.test(f('public/js/admin-advocates.js')) && !DASH.test(f('public/js/admin-account.js')));
+  // RE-PINNED 2026-10-16 (v7.55): the Advocates tab became Employer mode's accounts (one Team page); its module is
+  // admin-accounts.js, and admin-advocates.js is gone.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.55): an em dash put in admin-accounts.js's header made G14 read FAIL.
+  check('G14 the accounts module carries no dash', !DASH.test(SRC) && !DASH.test(f('public/js/admin-accounts.js')) && !DASH.test(f('public/js/admin-account.js')));
 }
 
 // ---- H. the Worker's doors for them -------------------------------------------

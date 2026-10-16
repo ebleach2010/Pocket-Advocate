@@ -60,9 +60,9 @@ export function caseLines(cases, start, end, env) {
   const lines = [];
   for (const r of cases) {
     const c = r.data || {};
-    // Nobody paid for his own case, a family case or the showcase. A sample
-    // contractor's invented clients are shown, marked, and never confirmed.
-    if (c.self || c.family || (c.showcase && !c.sample)) continue;
+    // Nobody paid for his own case, a family case or the showcase. The sample
+    // contractor's money comes from sampleLines below, made for the period.
+    if (c.self || c.family || c.showcase || c.sample) continue;
     const base = { adv: advocateIdOf(c, env), caseId: r.id, client: c.clientName || c.clientEmail || 'Client', sample: !!c.sample };
     const booking = Number(c.paidOverrideCents) || caseBookingCents(c);
     const bookedAt = c.charge?.capturedAt || c.createdAt;
@@ -73,6 +73,35 @@ export function caseLines(cases, start, end, env) {
       const kind = p.kind || 'extra';
       lines.push({ ...base, kind, label: KIND_LABEL[kind] || p.label || 'Payment', cents, at: new Date(p.at).toISOString() });
     }
+  }
+  return lines;
+}
+
+// THE SAMPLE CONTRACTOR'S PAY (Eric, 2026-10-16: "The sample contractor
+// should have income and tips so I can run payroll and see numbers beyond
+// zero."). Her three invented clients are dated from the day she was added,
+// so a later week found nothing. Her sales and tips are invented for whatever
+// period is run instead, the same lines for the same days every time: a new
+// Advocacy Case every week, a tip most weeks, a Full-Service month every four
+// weeks. Every line is marked sample: the totals and Paid leave her out.
+export const SAMPLE_CLIENTS = ['Dana Whitfield', 'Priya Shah', 'Grace Kim', 'Tom Becker', 'Ruth Alvarez', 'Sam Okafor', 'Nina Patel', 'Owen Hughes'];
+export const SAMPLE_TIPS = [5000, 7500, 10000];
+export function sampleLines(cases, start, end, env) {
+  const hers = cases.find((r) => r.data?.sample === true);
+  if (!hers) return [];
+  const adv = advocateIdOf(hers.data, env);
+  const lines = [];
+  // Whole days on his clock (UTC minus seven), counted from 1970, so a day's lines never depend on the period around it.
+  const SHIFT = 7 * 3_600_000;
+  for (let n = Math.ceil((start - SHIFT) / DAY); n * DAY + SHIFT < end; n++) {
+    const week = Math.floor(n / 7);
+    const at = new Date(n * DAY + SHIFT + 10 * 3_600_000);
+    if (!inRange(at, start, end)) continue;
+    const client = SAMPLE_CLIENTS[week % SAMPLE_CLIENTS.length];
+    const base = { adv, caseId: `sample-week-${week}`, client, sample: true, at: at.toISOString() };
+    if (n % 7 === 2) lines.push({ ...base, kind: 'booking', label: KIND_LABEL.booking, cents: 210000 });
+    if (n % 7 === 5 && week % 4 !== 3) lines.push({ ...base, kind: 'tip', label: KIND_LABEL.tip, cents: SAMPLE_TIPS[week % SAMPLE_TIPS.length] });
+    if (n % 28 === 16) lines.push({ ...base, caseId: 'sample-luis-ortega', client: 'Luis Ortega', kind: 'extend', label: KIND_LABEL.extend, cents: 440000 });
   }
   return lines;
 }
@@ -309,6 +338,8 @@ async function staffPayout(request, env, h) {
 const summary = (id, d) => ({
   id, status: d.status, start: d.start, end: d.end, preset: d.preset || 'custom', createdAt: d.createdAt, confirmedAt: d.confirmedAt || null, editedAt: d.editedAt || null,
   totals: d.totals || null, people: Array.isArray(d.rows) ? d.rows.filter((r) => !r.sample).length : 0,
+  // What the sample contractor's row comes to, so a draft's card is not a bare $0 (2026-10-16).
+  sampleCents: Array.isArray(d.rows) ? d.rows.filter((r) => r.sample).reduce((t, r) => t + (Number(r.totalCents) || 0), 0) : 0,
 });
 
 async function payrollRoute(request, env, url, h) {
@@ -340,7 +371,7 @@ async function payrollRoute(request, env, url, h) {
       listDocs(env, 'subscriptions', { pageSize: 300, all: true }).catch(() => []),
     ]);
     const fromStripe = await stripeLines(env, period.start, period.end, cases, subs);
-    const lines = [...caseLines(cases, period.start, period.end, env), ...fromStripe.lines, ...advisorLines(advocates, period.start, period.end)];
+    const lines = [...caseLines(cases, period.start, period.end, env), ...sampleLines(cases, period.start, period.end, env), ...fromStripe.lines, ...advisorLines(advocates, period.start, period.end)];
     const payouts = await payoutMap(env);
     const rows = buildRows({ advocates, lines, payouts, adminUid: env.ADMIN_UID, includeAll: body.includeAll !== false });
     const id = `pr-${body.start}-${body.end}-${crypto.randomUUID().slice(0, 6)}`;

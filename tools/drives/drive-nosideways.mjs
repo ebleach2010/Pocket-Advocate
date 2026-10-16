@@ -23,9 +23,12 @@ const CLIENT = [
   '/reviews.html', '/stats.html', '/book.html', '/subscribe.html', '/signin.html', '/return.html',
   '/case.html?demo=1', '/chat.html?demo=1', '/subscription.html?demo=1', '/fund.html?demo=1',
 ];
+// RE-PINNED 2026-10-16 (v7.55): Availability forwards to the Calendar now (its tools are folds there); Employer mode,
+// which holds the accounts the Advocates page held, is measured instead.
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): a `.cal-tools { min-width: 500px }` rule on the calendar page made this drive report it.
 const ADMIN = [
   '/admin.html?demo=admin', '/admin-case.html?id=demo-case&demo=admin', '/admin-case.html?id=demo-case-full&demo=admin',
-  '/admin-chats.html?demo=admin', '/admin-calendar.html?demo=admin', '/admin-availability.html?demo=admin',
+  '/admin-chats.html?demo=admin', '/admin-calendar.html?demo=admin', '/admin-employer.html?demo=admin',
   '/admin-dictionary.html?demo=admin', '/admin-leads.html?demo=admin', '/admin-fund.html?demo=admin', '/admin-fund.html?demo=admin#uid=demo-fund-sam',
 ];
 const b = await chromium.launch({ executablePath: process.env.PA_CHROMIUM || '/opt/pw-browsers/chromium' });

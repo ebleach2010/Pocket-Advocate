@@ -230,7 +230,9 @@ console.log('\n--- V. the words ---');
     /import \{ SALES_OPEN \} from '\.\/sales\.js';/.test(AV)
     && /: SALES_OPEN\s*\? '✅ <strong>Open for new cases\.<\/strong> Clients can book any slot below\.'\s*: '🚫 <strong>Not currently offering\.<\/strong>';/.test(AV)
     && /for \(const el of document\.querySelectorAll\('\[data-when-sales-open\]'\)\) el\.hidden = !SALES_OPEN;/.test(AV)
-    && /<span data-when-sales-open>Clients can only book slots you open here, 72\+ hours out\.<\/span>/.test(f('public/admin-availability.html')));
+    // RE-PINNED 2026-10-16 (v7.55): the line moved with the slot tools onto the Calendar page (one Calendar page).
+    // NEGATIVE CONTROL (run 2026-10-16, v7.55): the line's data-when-sales-open taken off on the calendar page made V2 read FAIL.
+    && /<span data-when-sales-open>Clients can only book slots you open here, 72\+ hours out\.<\/span>/.test(f('public/admin-calendar.html')));
 
   // Not one em or en dash on a screen a person reads. waivers.js is frozen at
   // Eric's word and is the one file left out; its dashes are listed for him.

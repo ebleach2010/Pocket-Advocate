@@ -1758,3 +1758,60 @@ New: cleanup C1 to C4, drive-cleanup section E (2), controls recorded.
 Re-pinned with controls: charge CH7 (stat138), cleanup B4, defects' group
 names (four), paid M19's slab, personal G2, tighten W4 (renamed: the PDF on
 Uploads), uploads U10b, worklog L28, L28b, M42, drive-advocates, drive-compile (renamed: the card at the top of Uploads), drive-seamless (renamed: no second switch), drive-selfcase, release R1.
+
+### One Team page, one Calendar (2026-10-16, v7.55)
+
+Eric: "remove redundancy". Advocates and Employer mode listed the same
+people; Employer mode's Team page now holds Add an advocate (top) and each
+card's Account (share, Advisor switch for one who opted in, reset password,
+turn off), with anyone turned off listed under the team to turn back on
+(public/js/admin-accounts.js, on the audit's gated list). The Advocates tab is
+gone from his menu, admin-advocates.js is deleted, and its address forwards to
+Employer mode; the finished-setup push links there. Availability's tools are
+folds under the Calendar's month (Taking new cases, Open new slots with the
+corrected "8am to 7pm", Open slots by day), mounted by admin-calendar.js
+(mountAvailability); its address forwards and no menu names it. In or out is
+one switch, under Your status on Clients.
+
+New: cleanup D1, D2 and drive-cleanup section F, controls recorded.
+Re-pinned with controls: advocates G14 (admin-accounts.js), fitcall F15, fund
+F26, tighten V2, drive-advocates section D (Employer mode), drive-fund B10,
+drive-nosideways (Employer mode in, the forwarder out), release R1.
+
+Then (same version) Eric: "The sample contractor should have income and tips
+so I can run payroll and see numbers beyond zero. And I should be able to tap
+on that team member and see their cases". worker/payroll.js sampleLines makes
+her sales and tips for whatever period is run (a case every week, a tip most
+weeks, a Full-Service month every four weeks, the same lines for the same
+days), marked sample, so the Total and Paid still leave her out; caseLines
+skips her cases' own dated payments; the demo mirrors it. The report's note
+says what the run would be with her. Each team card's name, photo and
+clients are one link to their shelf (/admin.html?as=uid, his own for him),
+and the button is Their cases.
+
+New: employer D6, E6, drive-cleanup section G (two), controls recorded.
+Re-pinned with controls: employer D2 (her cases give no line of their own),
+drive-employer's team check (Their cases).
+
+Then his screenshot of the live Team page: Maya read "No clients right now"
+and $0 (the diag showed only his two open cases: her three were gone, most
+likely deleted one by one from his shelf, where a showcase-flagged case was
+deletable), and "the buttons are dark. They should have some contrast."
+teamRoute now puts her three back when she has none (batchCreate, so only
+where nothing is), the delete route refuses a sample case, neither his shelf
+nor the case page offers Delete on one (they go only with her, from
+Employer mode), and the demo mirrors all of it. Employer mode's quiet
+buttons get a cyan edge, a tinted fill and light words.
+
+New: employer C3, showcase X8, drive-cleanup's contrast check, controls
+recorded. Re-pinned with controls: showcase X6 (the case page's delete gate
+leaves the sample out), opencases B2 (deletable leaves the sample out).
+
+Then: "It says the fake team member made sales but when I run the report
+it's zero's across the board". The Total leaves her out by design, so a run
+with nobody real in it read $0. A second total under it counts her ("With
+Maya Torres", in her gold), and a draft's card says what it comes to with
+her (summary() carries sampleCents; the demo mirrors it). Paid still drops
+her row. New: drive-cleanup's "never reads all zeros" (two controls).
+Re-pinned with a control: drive-employer's phone check (one totals card, or
+two when the sample is on the run).

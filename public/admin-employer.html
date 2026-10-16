@@ -41,18 +41,39 @@
   .tm-top { display: flex; align-items: center; gap: .8rem; }
   .tm-photo { flex: none; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid var(--edge-lit); background: var(--sur-lit); }
   .tm-init { flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #3DDCF5, #B9A6FF); color: #02161A; font: 700 1.2rem/1 'Sora', 'Manrope', system-ui, sans-serif; }
-  .tm-name { margin: 0; font: 600 1.1rem/1.25 'Sora', 'Manrope', system-ui, sans-serif; }
-  .tm-sub { margin: .1rem 0 0; color: var(--dim); font-size: .86rem; }
-  .tm-brief { margin: 0; color: var(--soft); }
+  .tm-name { display: block; margin: 0; font: 600 1.1rem/1.25 'Sora', 'Manrope', system-ui, sans-serif; }
+  .tm-sub { display: block; margin: .1rem 0 0; color: var(--dim); font-size: .86rem; }
+  .tm-brief { display: block; margin: 0; color: var(--soft); }
+  /* A tap on their name and clients opens their cases (2026-10-16). */
+  .tm-open { display: grid; gap: .6rem; color: inherit; text-decoration: none; border-radius: 12px; margin: -.3rem; padding: .3rem; }
+  .tm-open:hover .tm-name, .tm-open:focus-visible .tm-name { color: var(--cyan); }
+  .tm-open:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .tm-go { margin-left: auto; color: var(--dim); font-size: 1.6rem; line-height: 1; }
   .tm-money { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
   .tm-money strong { font: 600 1.6rem/1.1 'Sora', 'Manrope', system-ui, sans-serif; background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .tm-money span { color: var(--dim); font-size: .86rem; }
   .tm-acts { display: flex; flex-wrap: wrap; gap: .5rem; }
   .tm-acts .btn { min-height: 44px; position: relative; }
+  /* Buttons that read as buttons on the dark cards (Eric, 2026-10-16: "the
+     buttons are dark. They should have some contrast."). */
+  main .btn.quiet { background: rgba(61, 220, 245, .12); border-color: rgba(61, 220, 245, .6); color: var(--ink); font-weight: 700; }
+  main .btn.quiet:hover, main .btn.quiet:focus-visible { background: rgba(61, 220, 245, .22); border-color: #3DDCF5; color: var(--ink); }
   .tm-badge { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #FF7A7A; color: #1A0505; font: 800 .72rem/20px 'Manrope', system-ui, sans-serif; text-align: center; }
   .tm-pill { display: inline-block; margin-left: .35rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--edge-lit); color: var(--soft); font-size: .72rem; font-weight: 800; letter-spacing: .06em; vertical-align: middle; }
   .tm-pill.sample { border-color: rgba(242, 193, 78, .6); color: #F2C14E; }
   /* Their photo and bio, from him (2026-10-15). The photo is shown whole. */
+  /* One Team page (2026-10-16): the accounts the Advocates tab used to hold. */
+  .tm-head { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: center; margin: 0 0 .9rem; }
+  .tm-head .btn { min-height: 44px; }
+  .tm-off-h { margin: 1.2rem 0 .5rem; font-size: .8rem; letter-spacing: .14em; color: var(--dim); }
+  .adv-card { display: grid; gap: .5rem; }
+  .adv-top { display: flex; flex-wrap: wrap; gap: .5rem .8rem; align-items: baseline; justify-content: space-between; }
+  .adv-top h3 { margin: 0; }
+  .adv-acts { display: flex; flex-wrap: wrap; gap: .5rem; }
+  .adv-acts .btn { min-height: 44px; }
+  .adv-row { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  .adv-row input[type="number"] { width: 6rem; min-height: 44px; }
+  .pill-off { opacity: .7; }
   .tm-sheet .ask-form { display: grid; gap: .7rem; }
   .tm-sheet label.dim { display: grid; gap: .3rem; }
   .tm-sheet textarea.ask-input { min-height: 7.5rem; resize: vertical; font: inherit; }
@@ -83,6 +104,8 @@
   table.pr th:first-child, table.pr td:first-child { position: sticky; left: 0; text-align: left; background: var(--sur-base); z-index: 1; }
   table.pr th:first-child { background: var(--sur-lit); }
   table.pr tr.pr-total td { font-weight: 800; border-top: 2px solid var(--edge-lit); }
+  /* The total with the sample counted (2026-10-16), in her gold. */
+  table.pr tr.pr-with td { border-top: 1px dashed rgba(242, 193, 78, .6); color: #F2C14E; }
   table.pr button.pr-amt { min-height: 36px; padding: .2rem .55rem; border: 1px solid transparent; border-radius: 10px; background: none; color: inherit; font: inherit; font-weight: 700; cursor: pointer; }
   table.pr button.pr-amt:hover, table.pr button.pr-amt:focus-visible { border-color: var(--cyan); }
   table.pr button.pr-plus { min-width: 36px; min-height: 36px; margin-left: .3rem; border: 1px solid var(--edge-lit); border-radius: 10px; background: var(--sur-lit); color: var(--ink); font: 700 1rem/1 inherit; cursor: pointer; }
@@ -155,7 +178,6 @@
       <a href="/admin-leads.html">Leads</a>
       <a href="/admin-calendar.html">Calendar</a>
       <a href="/admin-chats.html">Chats</a>
-      <a href="/admin-availability.html">Availability</a>
       <a href="/admin-dictionary.html">📚 Terms</a>
       <span data-nav-auth></span>
     </nav>
@@ -177,7 +199,15 @@
     <button type="button" role="tab" aria-selected="false" data-emp-tab="history">Pay history</button>
   </div>
   <section data-emp-page="team">
+    <!-- ONE TEAM PAGE (Eric, 2026-10-15: "remove redundancy"). The Advocates
+         tab listed these same people; adding one starts here, and each
+         card's Account holds their share, password and turning them off. -->
+    <div class="tm-head">
+      <button type="button" class="btn quiet" data-add-adv>Add an advocate</button>
+      <span class="dim small" id="adv-said" role="status"></span>
+    </div>
     <div id="team" class="team"><p class="dim">Loading…</p></div>
+    <div id="team-off" class="team"></div>
     <div class="emp-sample panel" id="emp-sample" hidden></div>
   </section>
   <section data-emp-page="payroll" hidden>

@@ -88,7 +88,9 @@ console.log('\n--- B. Delete on his own cases ---');
     /if \(e\.target\.closest\?\.\('\[data-del\]'\)\) \{\n\s+e\.preventDefault\(\);\n\s+return;\n\s+\}/.test(DRAWER)
     // RE-PINNED 2026-10-15 (v7.46): Eric's quiet view of a contractor's shelf is read-only, so no card in it carries Delete.
     // NEGATIVE CONTROL (run 2026-10-15, v7.46): `deletable: !asUid && ` dropped back to `deletable: ` made B2 read FAIL.
-    && /deletable: !asUid && !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
+    // RE-PINNED 2026-10-16 (v7.55): `!c.sample && ` added; the sample contractor's invented clients go only with her.
+    // NEGATIVE CONTROL (run 2026-10-16): `!c.sample && ` taken back out made B2 read FAIL.
+    && /deletable: !asUid && !c\.sample && !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
     && /function wireShelfDelete\(listEl\) \{[\s\S]*?const yes = await ask\(\{\n\s+title: `Delete \$\{name\}\?`,[\s\S]*?danger: true,[\s\S]*?fetch\('\/api\/admin\/delete-case', \{[\s\S]*?body: JSON\.stringify\(\{ caseId: el\.dataset\.del \}\),[\s\S]*?load\(\);/.test(ADMIN)
     && /if \(\(e\.key === 'Enter' \|\| e\.key === ' '\) && e\.target\.matches\?\.\('\[data-del\]'\)\)/.test(ADMIN)
     && /import \{ ask \} from '\.\/sheet\.js';/.test(ADMIN) && /wireShelfDelete\(document\.getElementById\('list'\)\);/.test(ADMIN));

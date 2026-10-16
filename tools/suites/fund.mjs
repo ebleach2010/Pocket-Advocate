@@ -842,7 +842,10 @@ const app = (w, uid = 'ann') => w.docs.get(`fundApplications/${uid}`)?.data;
   const SIGNIN = f('public/signin.html');
   const tabs = (html) => [...(html.match(/<nav class="tabs">([\s\S]*?)<\/nav>/) || ['', ''])[1].matchAll(/<a href="([^"]+)"/g)].map((m) => m[1]);
   // RE-PINNED 2026-10-14 (v7.36): Eric, "any person who has submitted their information through any route gets added to a 'leads' tab". Leads sits after Clients on every admin page.
-  const ADV = '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html';
+  // RE-PINNED 2026-10-16 (v7.55): Availability is part of the Calendar page now (one Calendar page), so the tabs lose it;
+  // its old address forwards there and carries the same tabs.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.55): the Availability link put back in admin.html's tabs made F26 read FAIL.
+  const ADV = '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-dictionary.html';
   const adminPages = ['admin', 'admin-case', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-fund'];
   // RE-PINNED 2026-10-15 (v7.38, the tighten audit): Book is closed, so sign-in otherwise defaults to Chat, the open
   // package, and the client's own pages lost their "Book" tab (it pointed at the home); they keep About and Reviews.

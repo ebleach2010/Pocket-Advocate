@@ -271,13 +271,24 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
     && /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/.test(W)
     && /if \(unmailable\(to\)\) return false;/.test(EMAIL),
     JSON.stringify({ client: client.out, plain: plain.out.code, own: own.out.code, show: show.out, stranger: stranger.out.code }));
+  // 2026-10-16: the sample contractor's invented clients are showcase cases, and deleted one by one from his shelf
+  // they left her with "No clients right now". The route refuses them; they go only with her, from Employer mode.
+  const hers = await run({ showcase: true, sample: true, clientUid: null });
+  // NEGATIVE CONTROL (run 2026-10-16): handleDeleteCase's `if (doc.data.sample)` refusal made `if (false)` made this read
+  //   FAIL  X8 delete refuses one of the sample contractor's invented clients, says where she is removed, and wipes nothing
+  check('X8 delete refuses one of the sample contractor\'s invented clients, says where she is removed, and wipes nothing',
+    hers.out.code === 409 && /Employer mode/.test(hers.out.obj.error || '') && hers.wiped.length === 0, JSON.stringify(hers.out));
 }
 
 // ---- the page, the shelf, the demo ---------------------------------------
 // NEGATIVE CONTROL (run 2026-09-06): the pause-or-close card's `${c.showcase || c.self ?` gate changed to `${true ?` made this read
 //   FAIL  X6 Delete sits beside pause and close on a case with nobody behind it and on his own case's card, both confirm and post to the delete route, the shelf builds the showcase from one door and marks its row, and the demo mirrors both routes
+// RE-PINNED 2026-10-16 (v7.55): the gate is `${(c.showcase && !c.sample) || c.self ?`. The sample contractor's
+// invented clients are showcase cases too, and deleted one by one they left her with none; they go only with her.
+// NEGATIVE CONTROL (run 2026-10-16): the gate put back to `${c.showcase || c.self ?` made this read
+//   FAIL  X6 Delete sits beside pause and close on a case with nobody behind it and on his own case's card, both confirm and post to the delete route, the shelf builds the showcase from one door and marks its row, and the demo mirrors both routes
 check('X6 Delete sits beside pause and close on a case with nobody behind it and on his own case\'s card, both confirm and post to the delete route, the shelf builds the showcase from one door and marks its row, and the demo mirrors both routes',
-  /\$\{c\.showcase \|\| c\.self \? `\n\s+<hr[^\n]*\n\s+<p class="dim small"[^\n]*\$\{c\.showcase\n\s+\? 'This is the showcase case/.test(CASE)
+  /\$\{\(c\.showcase && !c\.sample\) \|\| c\.self \? `\n\s+<hr[^\n]*\n\s+<p class="dim small"[^\n]*\$\{c\.showcase\n\s+\? 'This is the showcase case/.test(CASE)
   && /<button class="btn quiet danger" data-delete-case>Delete this case<\/button>/.test(CASE)
   // RE-PINNED 2026-10-15 (v7.41): Eric, "let me delete my own cases". On his own case Delete moved to the top of
   // the Overview, open or closed, and it asks in the app's own sheet instead of the browser's grey box.

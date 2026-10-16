@@ -19,6 +19,8 @@
 //   C. (v7.54) the doubles cut: Track retired, one Log, Saved under Notes,
 //      the PDF on Uploads, one clock switch, each status said once, one-line
 //      explanations.
+//   D. (v7.55) one Team page (Advocates inside Employer mode) and one
+//      Calendar page (Availability's tools as folds under the month).
 //
 // Run: node cleanup.mjs
 import { readFileSync } from 'node:fs';
@@ -312,6 +314,42 @@ console.log('\n--- C. the doubles cut (v7.54) ---');
     && /Your record of the work\. <strong>Your client sees an entry only if you fill in the client line\.<\/strong>/.test(CASE)
     && /Wins on this case\. <strong>Your client sees every one\.<\/strong>/.test(CASE)
     && /They send it back, and you file it as a filled form\./.test(CASE));
+}
+
+console.log('\n--- D. one Team page, one Calendar page (v7.55) ---');
+{
+  const { readdirSync, existsSync } = await import('node:fs');
+  const EMP = f('public/js/admin-employer.js');
+  const ACC = f('public/js/admin-accounts.js');
+  // NEGATIVE CONTROL (run 2026-10-16, v7.55): the team card's Account button taken out made this read
+  //   FAIL  D1 one Team page: Employer mode adds advocates and opens each one's account, the Advocates tab is gone and its address forwards there
+  check('D1 one Team page: Employer mode adds advocates and opens each one\'s account, the Advocates tab is gone and its address forwards there',
+    /import \{ listAccounts, openAddAdvocate, openAccount, paintOff \} from '\.\/admin-accounts\.js';/.test(EMP)
+    && /\$\{p\.owner \|\| p\.sample \? '' : '<button type="button" class="btn quiet" data-account>Account<\/button>'\}/.test(EMP)
+    && /data-add-adv/.test(f('public/admin-employer.html')) && /id="team-off"/.test(f('public/admin-employer.html'))
+    && ["action: 'create'", "action: 'update', commissionPct: pct", "action: 'reset-password'", "action: 'deactivate'", "action: 'activate'", 'advisorEnabled: on'].every((t) => ACC.includes(t))
+    && /danger: true,/.test(ACC)
+    && !/admin-advocates\.html', 'Advocates'/.test(f('public/js/admin-staffnav.js'))
+    && !existsSync(j(ROOT, 'public/js/admin-advocates.js'))
+    && /location\.replace\('\/admin-employer\.html'\);/.test(f('public/admin-advocates.html'))
+    && /link: '\/admin-employer\.html',/.test(ADV)
+    && /'\/js\/admin-accounts\.js',/.test(f('tools/blindness-audit.mjs')) && !DASH.test(ACC));
+
+  const pages = readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n));
+  const withLink = pages.filter((n) => /<a href="\/admin-availability\.html"/.test(f(`public/${n}`)));
+  const CALH = f('public/admin-calendar.html');
+  // NEGATIVE CONTROL (run 2026-10-16, v7.55): admin-calendar.js's mountAvailability call taken out made this read
+  //   FAIL  D2 one Calendar page: opening slots, taking new cases and each day's open slots are folds under the month, Availability's address forwards, and no menu names it
+  check('D2 one Calendar page: opening slots, taking new cases and each day\'s open slots are folds under the month, Availability\'s address forwards, and no menu names it',
+    /import \{ mountAvailability \} from '\.\/admin-availability\.js';/.test(f('public/js/admin-calendar.js'))
+    && /if \(user && STAFF\.role === 'admin'\) mountAvailability\(user\);/.test(f('public/js/admin-calendar.js'))
+    && /export function mountAvailability\(signedIn\) \{/.test(f('public/js/admin-availability.js'))
+    && !/hydrateNav\(\);/.test(f('public/js/admin-availability.js'))
+    && ['<summary><strong>Taking new cases</strong></summary>', '<summary><strong>Open new slots</strong></summary>', '<summary><strong>Open slots, by day</strong></summary>'].every((t) => CALH.includes(t))
+    && /8am to 7pm\./.test(CALH) && !/id="office"/.test(CALH)
+    && /location\.replace\('\/admin-calendar\.html'\);/.test(f('public/admin-availability.html'))
+    && withLink.length === 0,
+    JSON.stringify(withLink));
 }
 
 const failed = results.filter((r) => !r.pass);

@@ -2,8 +2,10 @@
 // across a date range, see what's open / held / booked, delete open slots.
 // All writes go through the Worker — the browser never touches `availability`.
 
+// ONE CALENDAR PAGE (2026-10-16, Eric: "remove redundancy"). Availability's
+// day list repeated the Calendar's month; its tools are folds on the Calendar
+// page now, and this module mounts them there (mountAvailability).
 import { db, collection, getDocs } from './firebase.js';
-import { requireAdmin, hydrateNav } from './auth.js';
 import { mountOfficeControl } from './admin-hours.js';
 import { SALES_OPEN } from './sales.js';
 
@@ -13,9 +15,13 @@ const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]; // last 60-min slot en
 // booking lead window are unbookable, so we neither create nor display them.
 const LEAD_TIME_HOURS = 72;
 
-hydrateNav();
-const user = await requireAdmin();
-if (user) init();
+let user = null;
+
+/** The slot tools, on the Calendar page, for the signed-in him. */
+export function mountAvailability(signedIn) {
+  user = signedIn;
+  if (user && document.getElementById('hours')) init();
+}
 
 function init() {
   document.getElementById('hours').innerHTML = HOURS.map((h) => `
@@ -28,9 +34,10 @@ function init() {
   // once; the ids it clears are whatever the latest paint found open.
   document.getElementById('clear-all').addEventListener('click', () =>
     clearSlots(openNow, 'across the whole calendar'));
-  // In or out, on the page where the rest of his calendar decisions live. The
-  // same control is on the shelf; both read and write the one settings doc.
-  mountOfficeControl(document.getElementById('office'), { getToken: () => user.getIdToken() });
+  // In or out has one home now, Your status on Clients (2026-10-16); this
+  // mounts only where a page still carries the slot for it.
+  const office = document.getElementById('office');
+  if (office) mountOfficeControl(office, { getToken: () => user.getIdToken() });
   wireClosure();
   for (const el of document.querySelectorAll('[data-when-sales-open]')) el.hidden = !SALES_OPEN;
   loadCalendar();

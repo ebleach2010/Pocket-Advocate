@@ -5,6 +5,7 @@
 import './admin-ledger.js';
 import { db, collection, getDocs } from './firebase.js';
 import { requireAdmin, hydrateNav, STAFF, staffCasesQuery } from './auth.js';
+import { mountAvailability } from './admin-availability.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with LEAD_TIME_HOURS in worker/schedule.js.
@@ -21,6 +22,9 @@ let leadNames = {};
 let shown = new Date(); // any date inside the displayed month (MST frame)
 
 if (user) init();
+// Opening slots, taking new cases and in or out (2026-10-16): Availability's
+// tools, as folds under the month.
+if (user && STAFF.role === 'admin') mountAvailability(user);
 
 async function init() {
   try {

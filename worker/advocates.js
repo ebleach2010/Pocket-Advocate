@@ -254,7 +254,7 @@ async function staffMe(request, env, h) {
       await patchDoc(env, path, { onboardedAt: new Date() }, { mask: ['onboardedAt'] });
       if (!staff.isAdmin && env.ADMIN_UID)
         await notifyUser(env, env.ADMIN_UID, {
-          title: 'Pocket Advocate', body: `${a.name || 'An advocate'} finished setting up their profile.`, link: '/admin-advocates.html',
+          title: 'Pocket Advocate', body: `${a.name || 'An advocate'} finished setting up their profile.`, link: '/admin-employer.html',
         }).catch(() => {});
     }
     return h.json({ ok: true });

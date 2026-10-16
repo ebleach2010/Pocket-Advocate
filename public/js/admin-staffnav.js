@@ -46,7 +46,7 @@ export function mountStaffNav(role) {
       go();
     })).catch(() => {});
   } else {
-    addTab(tabs, '/admin-advocates.html', 'Advocates');
+    // Advocates is part of Employer mode now (2026-10-16: one Team page).
     addTab(tabs, '/admin-account.html', 'My profile');
   }
 }

@@ -359,7 +359,8 @@ async function load() {
       state: c.status === 'closed' ? 'closed' : c.hold?.pausedAt ? 'paused' : 'open',
       // His own cases and the showcase can go (Eric, 2026-10-15: "let me
       // delete my own cases"); a client's case is closed, never deleted.
-      deletable: !asUid && !!(c.self || c.showcase),
+      // The sample contractor's invented clients go only with her, from Employer mode (2026-10-16).
+      deletable: !asUid && !c.sample && !!(c.self || c.showcase),
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),

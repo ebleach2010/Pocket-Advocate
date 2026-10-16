@@ -565,8 +565,10 @@ check('F5 fit.js lists fit slots and only fit slots',
   // NEGATIVE CONTROL (run 2026-10-15, v7.38): the "Free call, 15 minutes" radio put back on the availability page made this read
   //   FAIL  F15 the availability page no longer opens free-call slots, and the code that sends the kind, never a length, stays
   check('F15 the availability page no longer opens free-call slots, and the code that sends the kind, never a length, stays',
-    !/name="kind" value="fit"/.test(f('public/admin-availability.html'))
-    && /name="kind" value="case"|Case, 60 minutes/.test(f('public/admin-availability.html'))
+    // RE-PINNED 2026-10-16 (v7.55): Availability's slot tools are folds on the Calendar page now (one Calendar page).
+    // NEGATIVE CONTROL (run 2026-10-16, v7.55): the fit radio put back into the calendar page's Open new slots made F15 read FAIL.
+    !/name="kind" value="fit"/.test(f('public/admin-calendar.html'))
+    && /name="kind" value="case"|Case, 60 minutes/.test(f('public/admin-calendar.html'))
     && /\{ starts, kind: 'fit' \}/.test(code('public/js/admin-availability.js')));
 }
 {

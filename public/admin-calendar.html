@@ -38,13 +38,16 @@
       <a href="/admin-leads.html">Leads</a>
       <a href="/admin-calendar.html" class="active">Calendar</a>
       <a href="/admin-chats.html">Chats</a>
-      <a href="/admin-availability.html">Availability</a>
       <a href="/admin-dictionary.html">📚 Terms</a>
       <span data-nav-auth></span>
     </nav>
   </div>
 </header>
 <main>
+  <style>
+    .cal-tools { display: grid; gap: .8rem; margin-top: 1.4rem; }
+    .cal-fold > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; }
+  </style>
   <div class="row">
     <h1 style="margin:0;">Calendar</h1>
     <span class="dim small">all times MST</span>
@@ -63,6 +66,52 @@
     <span class="cal-key open"></span> open slot &nbsp;
     <span class="cal-key held"></span> awaiting payment
   </p>
+  <!-- ONE CALENDAR PAGE (2026-10-16, Eric: "remove redundancy"). What was
+       the Availability page: in or out, taking new cases, opening slots, and
+       each day's open slots with an x. -->
+  <div class="cal-tools">
+  <!-- In or out lives on Clients, under Your status (2026-10-16): one switch, one place. -->
+
+  <details class="panel cal-fold" id="closure">
+    <summary><strong>Taking new cases</strong></summary>
+    <p class="dim small" id="closure-state" style="margin:.2rem 0 .7rem;">Checking…</p>
+    <div class="actions" style="flex-wrap:wrap; gap:.4rem;">
+      <button class="btn quiet" data-close-weeks="1">Close 1 week</button>
+      <button class="btn quiet" data-close-weeks="2">Close 2 weeks</button>
+      <button class="btn quiet" data-close-weeks="4">Close 4 weeks</button>
+      <button class="btn" data-close-weeks="0">Reopen now</button>
+    </div>
+    <p class="error" id="closure-error" hidden></p>
+  </details>
+
+  <details class="panel cal-fold">
+    <summary><strong>Open new slots</strong></summary>
+    <p class="dim small">All times MST, a fixed UTC-7, year-round, 8am to 7pm. <span data-when-sales-open>Clients can only book slots you open here, 72+ hours out.</span></p>
+    <label>From <input type="date" id="from"></label>
+    <label style="margin-top:.5rem;">Through <input type="date" id="to"></label>
+    <!-- Which kind of time (Eric, 2026-09-01, the free fit call): a case
+         hour or a free 15-minute call. The Worker fixes the length of a
+         fit slot whatever is sent. -->
+    <div id="kind" style="margin-top:.5rem; display:flex; gap:.9rem; flex-wrap:wrap;">
+      <label class="inline"><input type="radio" name="kind" value="case" checked> Case, 60 minutes</label>
+    </div>
+    <label style="margin-top:.5rem;">Start times (MST)</label>
+    <div id="hours"></div>
+    <label class="inline" style="margin-top:.5rem;"><input type="checkbox" id="weekdays" checked> Weekdays only</label>
+    <p class="error" id="create-error" hidden></p>
+    <p class="ok" id="create-ok" hidden></p>
+    <div class="actions"><button class="btn" id="create">Open these slots</button></div>
+  </details>
+
+  <details class="panel cal-fold">
+    <summary><strong>Open slots, by day</strong></summary>
+  <!-- Eric, 2026-08-30: "make a button to clear the entire calendar, as well
+       as a small x by the day." Hidden until the calendar shows at least one
+       open slot; booked and held appointments are never touched by either. -->
+  <p id="clear-all-row" hidden style="margin:.2rem 0 .7rem;"><button class="btn quiet" id="clear-all">✕ Clear every open slot</button></p>
+  <div id="calendar"><p class="dim">Loading…</p></div>
+  </details>
+  </div>
 </main>
 <script type="module" src="/js/admin-calendar.js"></script>
 <script type="module" src="/js/admin-presence.js"></script>

@@ -258,6 +258,16 @@ async function teamRoute(request, env, url, h) {
       h.readRates(env).catch(() => ({})),
       listDocs(env, 'staffChats', { pageSize: 100, all: true }).catch(() => []),
     ]);
+    // HER CLIENTS, PUT BACK (2026-10-16). His screenshot showed Maya with "No
+    // clients right now": her three invented cases were gone while she stayed
+    // (they could be deleted one by one from his shelf; now they go only with
+    // her). A sample with none of her cases gets them back, written only where
+    // nothing is, since batchCreate skips what exists.
+    if (advocates.some((a) => a.id === SAMPLE_UID && a.data?.sample === true) && !cases.some((r) => r.data?.sample === true)) {
+      const { cases: back, chat } = sampleRecords(new Date(), admin.uid);
+      await batchCreate(env, [...back, ...chat]).catch(() => {});
+      cases.push(...back.map((c) => ({ id: c.path.split('/').pop(), data: c.data })));
+    }
     // How each wants to be paid, as a label and a masked hint: the details
     // themselves are opened only on the payroll.
     const payouts = new Map((await listDocs(env, 'payouts', { pageSize: 100, all: true }).catch(() => []))

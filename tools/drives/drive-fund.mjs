@@ -220,7 +220,9 @@ const door = await adm.$$eval('a', (as) => as.filter((a) => /Fund queue/.test(a.
 // RE-PINNED 2026-10-15 (v7.38): Leads joined the advocacy tabs after Clients on 2026-10-14 (v7.36); this drive had not followed.
 // RE-PINNED 2026-10-15 (v7.45): v7.44 gave his tabs Advocates and My profile (admin-staffnav.js), after the six.
 // NEGATIVE CONTROL (run 2026-10-15, v7.45): the Advocates addTab taken out of admin-staffnav.js made B10 read FAIL.
-check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with no door to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-availability.html,/admin-dictionary.html,/admin-advocates.html,/admin-account.html'
+// RE-PINNED 2026-10-16 (v7.55): Availability is part of the Calendar and Advocates part of Employer mode (one page each).
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): the Availability link put back in admin-fund.html's tabs made B10 read FAIL.
+check('B10 the queue\'s nav is the advocacy tabs; Clients opens, with no door to the Fund queue', navs.join() === '/admin.html,/admin-leads.html,/admin-calendar.html,/admin-chats.html,/admin-dictionary.html,/admin-account.html'
   && /\/admin(\.html)?$/.test(new URL(adm.url()).pathname) && door === null,
   JSON.stringify({ navs, clients: adm.url(), door }));
 

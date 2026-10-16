@@ -989,6 +989,7 @@ export function demoApi(role, store) {
       if (!c) return ok({ ok: true, gone: true });
       if (c.clientUid || !(c.self || c.showcase))
         return fail(409, 'Only a case with nobody real behind it can be deleted: your own, or the showcase. A client\'s case is closed, never deleted.');
+      if (c.sample) return fail(409, 'This is one of the sample contractor\'s invented clients. Remove her in Employer mode and they go with her.');
       let docs = 0;
       for (const k of [...store.docs.keys()]) {
         if (k === `cases/${id}` || k.startsWith(`cases/${id}/`) || k === `caseMeta/${id}`) { store.docs.delete(k); docs++; }
@@ -2583,18 +2584,26 @@ export function demoApi(role, store) {
     };
     const kindOf = (c) => (c?.showcase && !c?.sample ? 'Showcase' : c?.self ? 'Own case' : c?.family ? 'Family' : c?.fullAccess ? 'Full-Service' : 'Advocacy Case');
     const pctOf = (a, id) => (a?.owner || id === 'demo-admin' ? 100 : Number.isFinite(Number(a?.commissionPct)) ? Number(a.commissionPct) : 60);
+    // The sample contractor's three invented clients, as worker/employer.js sampleRecords writes them.
+    const sampleCases = () => {
+      const now = Date.now();
+      const at = (d) => new Date(now + d * 86_400_000).toISOString();
+      const mk = (id, name, extra) => store.docs.set(`cases/${id}`, { sample: true, showcase: true, sampleOf: 'demo-sample', advocateId: 'demo-sample', clientName: name, clientEmail: `${id}@example.com`, createdAt: at(-20), ...extra });
+      mk('demo-sample-dana', 'Dana Whitfield', { status: 'confirmed', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-6) }, appointment: { start: at(4), method: 'video' } });
+      mk('demo-sample-luis', 'Luis Ortega', { status: 'delivered', fullAccess: true, charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-18) }, extraPayments: [{ kind: 'fullaccess', amountCents: 230000, at: at(-12) }] });
+      mk('demo-sample-grace', 'Grace Kim', { status: 'awaiting_report', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-9) }, extraPayments: [{ kind: 'tip', amountCents: 5000, at: at(-2) }] });
+    };
     if (path === '/api/admin/team') {
       if (role !== 'admin') return fail(404, 'Not found');
+      // Her clients put back when she has none left (2026-10-16), as the Worker does.
+      if ((init.method || 'GET') === 'GET' && store.docs.get('advocates/demo-sample')?.sample && !docsUnder('cases/').some((r) => r.data.sample === true)) { sampleCases(); store.persist?.(); }
       if ((init.method || 'GET') === 'POST') {
         if (body.action === 'sample-create') {
           if (store.docs.has('advocates/demo-sample')) return ok({ ok: true, existing: true });
           const now = Date.now();
           const at = (d) => new Date(now + d * 86_400_000).toISOString();
           store.docs.set('advocates/demo-sample', { uid: 'demo-sample', name: 'Maya Torres', email: 'maya.torres@example.com', sample: true, active: true, owner: false, commissionPct: 60, onboardedAt: at(0), credentials: 'RN, BSN. Board Certified Patient Advocate', primarySpecialty: 'Neurology', specialties: ['Neurology', 'Rare Disease'], headshotPath: null });
-          const mk = (id, name, extra) => store.docs.set(`cases/${id}`, { sample: true, showcase: true, sampleOf: 'demo-sample', advocateId: 'demo-sample', clientName: name, clientEmail: `${id}@example.com`, createdAt: at(-20), ...extra });
-          mk('demo-sample-dana', 'Dana Whitfield', { status: 'confirmed', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-6) }, appointment: { start: at(4), method: 'video' } });
-          mk('demo-sample-luis', 'Luis Ortega', { status: 'delivered', fullAccess: true, charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-18) }, extraPayments: [{ kind: 'fullaccess', amountCents: 230000, at: at(-12) }] });
-          mk('demo-sample-grace', 'Grace Kim', { status: 'awaiting_report', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-9) }, extraPayments: [{ kind: 'tip', amountCents: 5000, at: at(-2) }] });
+          sampleCases();
           store.docs.set('payouts/demo-sample', { method: 'zelle', hint: 'Zelle to ma…om (sample)', details: { name: 'Maya Torres', handle: 'maya.torres@example.com' } });
           store.persist?.();
           return ok({ ok: true });
@@ -2744,7 +2753,7 @@ export function demoApi(role, store) {
       if ((init.method || 'GET') === 'GET') {
         const id = q.get('id');
         if (id) { const r = store.docs.get(`payrollRuns/${id}`); return r ? ok({ run: shown({ id, ...r }) }) : fail(404, 'Not found'); }
-        return ok({ runs: runs().map(({ id, data: r }) => ({ id, status: r.status, start: r.start, end: r.end, preset: r.preset, createdAt: r.createdAt, confirmedAt: r.confirmedAt || null, editedAt: r.editedAt || null, totals: r.totals, people: (r.rows || []).filter((x) => !x.sample).length })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
+        return ok({ runs: runs().map(({ id, data: r }) => ({ id, status: r.status, start: r.start, end: r.end, preset: r.preset, createdAt: r.createdAt, confirmedAt: r.confirmedAt || null, editedAt: r.editedAt || null, totals: r.totals, people: (r.rows || []).filter((x) => !x.sample).length, sampleCents: (r.rows || []).filter((x) => x.sample).reduce((t, x) => t + (Number(x.totalCents) || 0), 0) })).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))) });
       }
       if (body.action === 'generate') {
         const s = new Date(`${body.start}T00:00:00-07:00`).getTime();
@@ -2757,8 +2766,10 @@ export function demoApi(role, store) {
           rows.set(id, { uid: id, name: a.name || 'Advocate', owner: !!a.owner, sample: !!a.sample, commissionPct: pctOf(a, id), cases: 0, salesCents: 0, commissionCents: 0, tipsCents: 0, deductionsCents: 0, adjustmentsCents: 0, totalCents: 0, lines: [], adjustments: [] });
         }
         const seen = new Map();
-        for (const { id, data: c } of docsUnder('cases/')) {
-          if (c.self || c.family || (c.showcase && !c.sample)) continue;
+        const cases = docsUnder('cases/');
+        for (const { id, data: c } of cases) {
+          // The sample contractor's money is made for the period below, as worker/payroll.js sampleLines does.
+          if (c.self || c.family || c.showcase || c.sample) continue;
           const row = rows.get(advOf(c)) || rows.get('demo-admin');
           if (!row) continue;
           const add = (kind, label, cents, at) => {
@@ -2770,6 +2781,28 @@ export function demoApi(role, store) {
           const bookedAt = c.charge?.capturedAt || c.createdAt;
           if (base > 0 && inR(bookedAt)) add('booking', 'Advocacy Case', base, bookedAt);
           for (const p of (c.extraPayments || [])) if (!p?.duplicate && Number(p?.amountCents) && inR(p.at)) add(p.kind || 'extra', p.kind === 'tip' ? 'Tip' : p.kind === 'fullaccess' ? 'Full-Service month' : p.kind === 'followup' ? 'Follow-up call' : 'Payment', Number(p.amountCents), p.at);
+        }
+        const hers = cases.find((r) => r.data.sample === true);
+        const maya = hers && rows.get(advOf(hers.data));
+        if (maya) {
+          const NAMES = ['Dana Whitfield', 'Priya Shah', 'Grace Kim', 'Tom Becker', 'Ruth Alvarez', 'Sam Okafor', 'Nina Patel', 'Owen Hughes'];
+          const TIPS = [5000, 7500, 10000];
+          const SHIFT = 7 * 3_600_000; const DAY = 86_400_000;
+          const add = (caseId, client, kind, label, cents, at) => {
+            const pay = kind === 'tip' ? cents : Math.round(cents * maya.commissionPct / 100);
+            if (kind === 'tip') maya.tipsCents += cents; else { maya.salesCents += cents; maya.commissionCents += pay; if (!seen.has(maya.uid)) seen.set(maya.uid, new Set()); seen.get(maya.uid).add(caseId); }
+            maya.lines.push({ caseId, client, sample: true, kind, label, cents, payCents: pay, at: at.toISOString() });
+          };
+          for (let n = Math.ceil((s - SHIFT) / DAY); n * DAY + SHIFT < e; n++) {
+            const week = Math.floor(n / 7);
+            const at = new Date(n * DAY + SHIFT + 10 * 3_600_000);
+            if (!inR(at)) continue;
+            const who = NAMES[week % NAMES.length];
+            if (n % 7 === 2) add(`sample-week-${week}`, who, 'booking', 'Advocacy Case', 210000, at);
+            if (n % 7 === 5 && week % 4 !== 3) add(`sample-week-${week}`, who, 'tip', 'Tip', TIPS[week % TIPS.length], at);
+            if (n % 28 === 16) add('sample-luis-ortega', 'Luis Ortega', 'extend', 'Full-Service extra month', 440000, at);
+          }
+          maya.lines.sort((a, b) => a.at.localeCompare(b.at));
         }
         for (const [uid, set] of seen) rows.get(uid).cases = set.size;
         const list = [...rows.values()].map((r) => ({ ...r, totalCents: r.commissionCents + r.tipsCents - r.deductionsCents })).filter((r) => body.includeAll !== false || r.lines.length)

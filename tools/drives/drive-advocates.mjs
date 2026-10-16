@@ -148,54 +148,69 @@ await adv.waitForTimeout(2500);
 //   FAIL  Finish takes them to their shelf
 ok('Finish takes them to their shelf', /\/admin(\.html)?(\?|$)/.test(adv.url()), adv.url());
 
-console.log('\n--- D. his Advocates tab ---');
+console.log('\n--- D. his team, in Employer mode ---');
+// RE-PINNED 2026-10-16 (v7.55): Eric, "remove redundancy". The Advocates tab and Employer mode listed the same people;
+// adding one, their share and turning them off now live on Employer mode's Team page (each card's Account), and the
+// Advocates address forwards there. The steps and what they prove are the same; the controls moved.
 const adm = await side('admin');
-await adm.goto(`${P}/admin-advocates.html?demo=admin`, { waitUntil: 'networkidle' });
+await adm.goto(`${P}/admin-employer.html?demo=admin`, { waitUntil: 'networkidle' });
 await adm.evaluate(() => { for (const k of Object.keys(localStorage)) if (k.startsWith('pa-demo')) localStorage.removeItem(k); });
 await adm.reload({ waitUntil: 'networkidle' });
 await adm.waitForTimeout(2500);
 const admTabs = await tabsOf(adm);
-// NEGATIVE CONTROL (run 2026-10-15): mountStaffNav's Advocates tab for him taken out made this read
-//   FAIL  his tabs gain Advocates and My profile
-ok('his tabs gain Advocates and My profile', admTabs.includes('Advocates') && admTabs.includes('My profile'), admTabs.join(' | '));
-const cards = () => adm.evaluate(() => [...document.querySelectorAll('.adv-card')].map((c) => ({ name: c.querySelector('h3').textContent.trim(), st: c.querySelector('.status-pill').textContent.trim() })));
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): mountStaffNav's Advocates tab put back for him made this read
+//   FAIL  his tabs carry My profile, and Advocates is part of Employer mode now
+ok('his tabs carry My profile, and Advocates is part of Employer mode now', !admTabs.includes('Advocates') && admTabs.includes('My profile'), admTabs.join(' | '));
+const cards = () => adm.evaluate(() => [...document.querySelectorAll('.tm-card')].map((c) => ({ name: (c.querySelector('.tm-name')?.childNodes[0]?.textContent || '').trim(), st: c.querySelector('.tm-pill')?.textContent.trim() || '', sub: c.querySelector('.tm-sub')?.textContent.trim() || '' })));
 const before = await cards();
-await adm.fill('#adv-add input[name="name"]', 'Marcus Lee');
-await adm.fill('#adv-add input[name="email"]', 'marcus@advocate.demo');
-await adm.fill('#adv-add input[name="password"]', 'first-pass-123');
-await adm.click('#adv-add button[type="submit"]');
-await adm.waitForTimeout(2200);
-const said = (await adm.textContent('#adv-said')) || '';
-const after = await cards();
-const marcus = after.find((c) => c.name === 'Marcus Lee');
-// NEGATIVE CONTROL (run 2026-10-15): the demo's create answering 409 made this read
-//   FAIL  he adds an advocate: the card appears, setting up, and the password never shows on the page
-ok('he adds an advocate: the card appears, setting up, and the password never shows on the page',
-  before.some((c) => c.st === 'YOU') && marcus?.st === 'SETTING UP' && /^Done\./.test(said)
-  && !(await adm.evaluate(() => document.body.innerText.includes('first-pass-123'))), JSON.stringify({ before, after, said }));
 // A step that cannot happen (no card, no sheet) reads as that check's failure,
 // never as a crash that hides the checks after it.
 const tryStep = async (fn) => { try { return await fn(); } catch { return null; } };
-const card = adm.locator('.adv-card', { hasText: 'Marcus Lee' });
-await tryStep(() => card.locator('[data-pct]').fill('55', { timeout: 3000 }));
-await tryStep(() => card.locator('[data-save-pct]').click({ timeout: 3000 }));
+await tryStep(() => adm.click('[data-add-adv]', { timeout: 4000 }));
+await tryStep(() => adm.fill('#adv-add input[name="name"]', 'Marcus Lee', { timeout: 4000 }));
+await tryStep(() => adm.fill('#adv-add input[name="email"]', 'marcus@advocate.demo', { timeout: 4000 }));
+await tryStep(() => adm.fill('#adv-add input[name="password"]', 'first-pass-123', { timeout: 4000 }));
+await tryStep(() => adm.click('#adv-add button[type="submit"]', { timeout: 4000 }));
+await adm.waitForTimeout(2500);
+const said = (await adm.textContent('#adv-said').catch(() => '')) || '';
+const after = await cards();
+const marcus = after.find((c) => c.name === 'Marcus Lee');
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): the demo's create branch renamed away (an unknown action) made this read
+//   FAIL  he adds an advocate from Employer mode: the card appears, setting up, and the password never shows on the page
+ok('he adds an advocate from Employer mode: the card appears, setting up, and the password never shows on the page',
+  before.some((c) => c.st === 'YOU') && marcus?.st === 'SETTING UP' && /^Done\./.test(said)
+  && !(await adm.evaluate(() => document.body.innerText.includes('first-pass-123'))), JSON.stringify({ before, after, said }));
+const openAccount = async () => {
+  await tryStep(() => adm.locator('.tm-card', { hasText: 'Marcus Lee' }).locator('[data-account]').click({ timeout: 4000 }));
+  await adm.waitForTimeout(600);
+};
+await openAccount();
+await tryStep(() => adm.fill('dialog [data-pct]', '55', { timeout: 3000 }));
+await tryStep(() => adm.click('dialog [data-save-pct]', { timeout: 3000 }));
+await adm.waitForTimeout(900);
+const pctSaid = (await tryStep(() => adm.textContent('dialog [data-said]', { timeout: 3000 }))) || '';
+await tryStep(() => adm.click('dialog [data-no]', { timeout: 3000 }));
+await adm.waitForTimeout(1500);
+const pctNow = (await cards()).find((c) => c.name === 'Marcus Lee')?.sub || '';
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): the share button sending `commissionPct: pct / 100` made this read
+//   FAIL  he sets their share from their card's Account and it holds
+ok('he sets their share from their card\'s Account and it holds', /55%/.test(pctSaid) && /Their share: 55%/.test(pctNow), JSON.stringify({ pctSaid, pctNow }));
+await openAccount();
+await tryStep(() => adm.click('dialog [data-active="off"]', { timeout: 3000 }));
 await adm.waitForTimeout(600);
-const pctSaid = (await tryStep(() => card.locator('[data-said]').textContent({ timeout: 3000 }))) || '';
-await adm.waitForTimeout(1200);
-const pctNow = await tryStep(() => adm.locator('.adv-card', { hasText: 'Marcus Lee' }).locator('[data-pct]').inputValue({ timeout: 3000 }));
-// NEGATIVE CONTROL (run 2026-10-15): the share button sending `commissionPct: pct / 100` made this read
-//   FAIL  he sets their share and it holds
-ok('he sets their share and it holds', /55%/.test(pctSaid) && pctNow === '55', JSON.stringify({ pctSaid, pctNow }));
-await tryStep(() => adm.locator('.adv-card', { hasText: 'Marcus Lee' }).locator('[data-active="off"]').click({ timeout: 3000 }));
-await adm.waitForTimeout(500);
-const sheet = await adm.evaluate(() => { const d = document.querySelector('dialog.ask-sheet'); return d ? { title: d.querySelector('h2')?.textContent, danger: !!d.querySelector('.btn.danger') } : null; });
-await tryStep(() => adm.click('dialog.ask-sheet button[value="ok"]', { timeout: 3000 }));
-await adm.waitForTimeout(2200);
-const offNow = (await cards()).find((c) => c.name === 'Marcus Lee');
+const sheet = await adm.evaluate(() => { const d = [...document.querySelectorAll('dialog.ask-sheet')].find((x) => x.open && /Turn off/.test(x.textContent)); return d ? { title: d.querySelector('h2')?.textContent, danger: !!d.querySelector('.btn.danger') } : null; });
+await tryStep(() => adm.click('dialog.ask-sheet[open] button[value="ok"]', { timeout: 3000 }));
+await adm.waitForTimeout(2500);
+const offNow = await adm.evaluate(() => ({
+  inTeam: [...document.querySelectorAll('.tm-card')].some((c) => /Marcus Lee/.test(c.textContent)),
+  off: [...document.querySelectorAll('#team-off [data-off]')].map((c) => c.textContent.replace(/\s+/g, ' ').trim()),
+}));
 if (SHOTS) await adm.screenshot({ path: `${SHOTS}/advocates-4-his-tab.png`, fullPage: true });
-// NEGATIVE CONTROL (run 2026-10-15): Turn off's ask sheet answered without `danger: off` made this read
-//   FAIL  turning one off asks first, in red, and the card reads OFF
-ok('turning one off asks first, in red, and the card reads OFF', !!sheet && /Turn off Marcus Lee/.test(sheet.title) && sheet.danger && offNow?.st === 'OFF', JSON.stringify({ sheet, offNow }));
+// NEGATIVE CONTROL (run 2026-10-16, v7.55): Turn off's ask sheet answered without `danger: true` made this read
+//   FAIL  turning one off asks first, in red, and they move to Turned off with OFF
+ok('turning one off asks first, in red, and they move to Turned off with OFF',
+  !!sheet && /Turn off Marcus Lee/.test(sheet.title) && sheet.danger && !offNow.inTeam && offNow.off.some((t) => /Marcus Lee/.test(t) && /OFF/.test(t)),
+  JSON.stringify({ sheet, offNow }));
 await adm.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await adm.waitForTimeout(2500);
 const hisNames = await adm.evaluate(() => [...document.querySelectorAll('#list .folder-name')].map((e) => e.textContent.trim()));
@@ -207,7 +222,7 @@ console.log('\n--- E. narrow screens ---');
 const narrow = { adv: await side('advocate', 320), adm: await side('admin', 320) };
 await narrow.adv.goto(`${P}/admin-account.html?demo=advocate`, { waitUntil: 'networkidle' });
 await narrow.adv.waitForTimeout(2000);
-await narrow.adm.goto(`${P}/admin-advocates.html?demo=admin`, { waitUntil: 'networkidle' });
+await narrow.adm.goto(`${P}/admin-employer.html?demo=admin`, { waitUntil: 'networkidle' });
 await narrow.adm.waitForTimeout(2000);
 const wide = { setup390: advSideways, account320: await sideways(narrow.adv), advocates320: await sideways(narrow.adm) };
 // NEGATIVE CONTROL (run 2026-10-15): `.adv-add input { min-width: 400px }` put in the page's style made this read
@@ -215,6 +230,7 @@ const wide = { setup390: advSideways, account320: await sideways(narrow.adv), ad
 //   FAIL  at 320px neither page scrolls sideways
 ok('at 320px neither page scrolls sideways', Object.values(wide).every((v) => v <= 0), JSON.stringify(wide));
 // NEGATIVE CONTROL (run 2026-10-15): a `null.x` put at the top of admin-advocates.js made this read
+// RE-PINNED 2026-10-16 (v7.55): admin-advocates.js is gone; the same control on admin-accounts.js's openAccount made this read FAIL.
 //   (first run, the throw inside the un-awaited load(), MISSED: a rejected promise is not a page error; the second
 //   crashed the drive on the missing card, so the card steps are guarded now, then re-run)
 //   FAIL  no page threw
