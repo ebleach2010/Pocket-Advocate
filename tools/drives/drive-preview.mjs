@@ -106,8 +106,13 @@ const chat = await page.evaluate(() => [...document.querySelectorAll('.msg')].ma
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/preview-3-chat.png` });
 // NEGATIVE CONTROL (run 2026-10-15): the preview's one reply taken out of /api/notify made this read
 //   FAIL  the chat carries the whole story, their message lands, and one reply shows what an answer looks like
-ok('the chat carries the whole story, their message lands, and one reply shows what an answer looks like',
-  n0 >= 50 && chat.some((t) => /Hello from the preview/.test(t)) && /This is the preview, so your message stays in this browser/.test(chat[chat.length - 1] || ''), `${n0} then ${chat.length}`);
+// RE-PINNED 2026-10-16 (v7.61): Eric, "more friendly and softer toned ... This chat isn't usable in the way a fake
+// contractor is": the answer is a warm reply like a real one, never a note about the preview.
+// NEGATIVE CONTROL (run 2026-10-16, v7.61): /api/notify's reply put back to the old note about the preview made this read
+//   FAIL  the chat carries the whole story, their message lands, and a warm reply comes back like a real one
+ok('the chat carries the whole story, their message lands, and a warm reply comes back like a real one',
+  n0 >= 50 && chat.some((t) => /Hello from the preview/.test(t)) && /^Thank you for telling me\. I'm really glad you reached out/.test(chat[chat.length - 1] || '')
+  && !/preview/i.test(chat[chat.length - 1] || ''), `${n0} then ${chat.length}: ${chat[chat.length - 1]}`);
 await page.evaluate(() => document.querySelector('.ftab[data-page="docs"]')?.click());
 await page.waitForTimeout(1200);
 const docs0 = await page.evaluate(() => [...document.querySelectorAll('[data-files] li')].map((l) => l.innerText.replace(/\s+/g, ' ')));

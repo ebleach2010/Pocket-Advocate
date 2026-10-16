@@ -23,7 +23,7 @@ const STEPS = [
   { tab: 'progress', at: '[data-hours-card]', title: 'Hours, out in the open', body: 'On Full-Service you see every hour Eric works on the case, and what he is doing right now.' },
   { tab: 'progress', at: '[data-worklog]', title: 'The work log', body: 'Every call, fax and appeal made for the case, with the date and who it was with.' },
   { tab: 'chat', at: '[data-chat-who]', title: 'Eric, in office', body: 'The green pill means Eric is in. Tap the ? any time to see when he answers.' },
-  { tab: 'chat', at: '[data-chat]', title: 'Chat', body: 'Records, scheduling, anything new or urgent with your health. Try it: type a message and tap Send. In the preview you get one reply.' },
+  { tab: 'chat', at: '[data-chat]', title: 'Chat', body: 'Records, scheduling, anything new or urgent with your health. Try it: type a message and tap Send, and see how a reply feels.' },
   { tab: 'chat', at: '[data-nextcall]', title: 'For the next call', body: 'Questions for the call go on this list, and you go through them together on the call.' },
   { tab: 'docs', at: '[data-drop]', title: 'Docs: add anything', body: 'Labs, imaging, letters. Tap here to add a file. Try one: in the preview it stays in this browser.' },
   { tab: 'docs', at: '[data-files]', title: 'Every file in one place', body: 'Uploads, files from the chat, the call recording and Eric\'s report. Joe adds a couple most days.' },

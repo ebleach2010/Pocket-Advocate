@@ -11,7 +11,22 @@ const PASS = new Set(['/api/rates', '/api/reviews', '/api/changelog', '/api/vers
 const SHOP = new Set(['/api/checkout', '/api/chat-unlock', '/api/upgrade', '/api/followup', '/api/extend',
   '/api/subscribe', '/api/portal', '/api/invite', '/api/invite/confirm']);
 export const NOT_HERE = 'This is a preview, so nothing in it can be bought or booked. Everything else on this case works.';
-export const FIRST_REPLY = 'Got it. This is the preview, so your message stays in this browser and nobody reads it. On a real case it comes straight to me, and I answer you here.';
+// What a visitor hears back, one answer to each message they send, in turn
+// (Eric, 2026-10-16: "Have the example chat in the suite for clients be more
+// friendly and softer toned. This chat isn't usable in the way a fake
+// contractor is. You can send a message but a generic answer about how I
+// would respond here ... appear"). A real conversation's kind of answer;
+// the strip at the top already says this is a preview.
+export const PREVIEW_REPLIES = [
+  "Thank you for telling me. I'm really glad you reached out, and I'm on it. Is there anything else you'd like me to know before our call?",
+  'That makes a lot of sense. When did you first notice it? Even a rough guess helps.',
+  "I hear you. You don't have to carry this part on your own. Would it help if I called the office for you this week?",
+  "That's a good question. Let me look into it properly, and I'll come back to you today with a clear answer.",
+  "Of course. I've added it to our list for the next call so it doesn't get lost.",
+  "Take your time. Whenever you're ready, send me what you have, even if it's just a photo of a page.",
+];
+// Kept for anything that still names the first one.
+export const FIRST_REPLY = PREVIEW_REPLIES[0];
 
 const beat = (ms = 250) => new Promise((r) => setTimeout(r, ms));
 const answer = (status, body) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -41,15 +56,16 @@ export function previewApi(store) {
 
     // ---- the chat ------------------------------------------------------------
     if (path === '/api/notify') {
-      // The first message a visitor sends gets one answer, so the thread shows
-      // what a reply looks like. Only one: it is a preview, not a pen pal.
+      // Every message a visitor sends gets a warm answer a moment later, the
+      // next one in turn, so the chat feels like the real thing (2026-10-16).
       const meta = store.docs.get('preview/meta') || {};
-      if (body?.kind === 'case' && body?.id === PREVIEW_CASE && !meta.replied) {
-        store.docs.set('preview/meta', { ...meta, replied: true });
+      if (body?.kind === 'case' && body?.id === PREVIEW_CASE) {
+        const n = Number(meta.replies) || 0;
+        store.docs.set('preview/meta', { ...meta, replies: n + 1 });
         store.persist();
         setTimeout(() => {
-          const p = `cases/${PREVIEW_CASE}/chat/r${Date.now().toString(36)}`;
-          store.docs.set(p, { from: ERIC_UID, role: 'admin', text: FIRST_REPLY, ts: new Date() });
+          const p = `cases/${PREVIEW_CASE}/chat/r${Date.now().toString(36)}${n}`;
+          store.docs.set(p, { from: ERIC_UID, role: 'admin', text: PREVIEW_REPLIES[n % PREVIEW_REPLIES.length], ts: new Date() });
           store.fire(p);
         }, 2200);
       }

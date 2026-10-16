@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.60';
+export const VERSION = '7.61';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.60';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // DEMO MODE (Eric, 2026-10-16: "There should also be a button at the top
+    // called 'demo mode' where you press it and 4 of these clients appear",
+    // and "allow me to adjust each fake contractor's amount of clients and
+    // type before I run fake payroll"). Admin only.
+    version: '7.61',
+    quiet: true,
+    client: [],
+    admin: [
+      'Demo mode, on Clients: a practice copy with four clients and four team members. Your real clients stay hidden until you tap Exit.',
+      'In it, the chat answers back, files and photos go up, the time runs, and Update reads again.',
+      'On its payroll, set how many clients each team member has and what kind, then run it.',
+      'The preview on your home page talks more warmly, and answers every message a visitor sends.',
+    ],
+  },
   {
     // INVENTED CLIENTS OFF HIS SHELF (Eric, 2026-10-16: "Remove both", then
     // "'Delete' for sample fake clients should be on the folders. For real

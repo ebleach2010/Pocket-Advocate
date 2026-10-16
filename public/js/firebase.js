@@ -17,7 +17,12 @@
  */
 const DEMO = (() => {
   try {
-    if (/(^|\.)thepocketadvocates\.com$/i.test(location.hostname)) return '';
+    // DEMO MODE (Eric, 2026-10-16): his practice copy, on his working pages,
+    // for this tab, after he taps Demo mode on Clients. Its files are served to
+    // his sign-in alone; anyone else who sets the flag gets the real app below.
+    if (/(^|\.)thepocketadvocates\.com$/i.test(location.hostname)) {
+      return /^\/admin/.test(location.pathname) && sessionStorage.getItem('pa-demo-live') === '1' ? 'admin' : '';
+    }
     const q = new URLSearchParams(location.search).get('demo');
     if (q === '0') { sessionStorage.removeItem('pa-demo'); return ''; }
     if (q) { sessionStorage.setItem('pa-demo', q); return q; }
@@ -52,7 +57,13 @@ const PREVIEW = (() => {
 const impl = PREVIEW
   ? await import('./preview/store.js').then((m) => m.mountPreview())
   : DEMO
-    ? await import('./demo/store.js').then((m) => m.mountDemo(DEMO))
+    ? await import('./demo/store.js').then((m) => m.mountDemo(DEMO)).catch(async (err) => {
+      // The practice copy would not load (its files are his alone): the real
+      // app, and the switch off, rather than a page that never starts.
+      if (!/(^|\.)thepocketadvocates\.com$/i.test(location.hostname)) throw err;
+      try { sessionStorage.removeItem('pa-demo-live'); } catch { /* nothing to clear */ }
+      return import('./firebase-real.js');
+    })
     : await import('./firebase-real.js');
 
 export const {

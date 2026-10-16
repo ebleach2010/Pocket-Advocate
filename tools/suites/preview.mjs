@@ -172,11 +172,17 @@ console.log('\n--- B. everything works, and nothing leaves ---');
   await call('/api/notify', { kind: 'case', id: CID });
   await new Promise((r) => setTimeout(r, 2600));
   const after = await msgs();
-  const replies = after.filter((m) => m.text === apiMod.FIRST_REPLY);
+  const replies = after.filter((m) => m.role === 'admin' && (apiMod.PREVIEW_REPLIES || []).includes(m.text));
   // NEGATIVE CONTROL (run 2026-10-15): the `!meta.replied` guard taken out of /api/notify made this read
   //   FAIL  B3 their message lands, and the first one gets a single answer saying nobody reads it here; a second does not
-  check('B3 their message lands, and the first one gets a single answer saying nobody reads it here; a second does not',
-    after.some((m) => m.text === 'Hello' && m.role === 'client') && replies.length === 1 && replies[0].role === 'admin',
+  // RE-PINNED 2026-10-16 (v7.61): Eric, "Have the example chat in the suite for clients be more friendly and softer
+  // toned. This chat isn't usable in the way a fake contractor is. You can send a message but a generic answer about
+  // how I would respond here ... appear". Every message gets a warm answer of its own, the next in turn, and none of
+  // them is a note about the preview (the strip at the top says that).
+  // NEGATIVE CONTROL (run 2026-10-16, v7.61): the reply's `n % PREVIEW_REPLIES.length` made `0` made B3 read FAIL.
+  check('B3 their message lands, and each one gets a warm answer of its own, the next in turn; none is a note about the preview',
+    after.some((m) => m.text === 'Hello' && m.role === 'client') && replies.length === 2
+    && new Set(replies.map((m) => m.text)).size === 2 && replies.every((m) => !/preview|nobody reads/i.test(m.text)),
     `${replies.length} replies`);
 }
 

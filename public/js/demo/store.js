@@ -51,10 +51,16 @@
 // worker/index.js - and firebase.js refuses to load it on the live host.
 
 import { seed } from './seed.js';
+import { seedLive } from './live.js';
 import { demoApi } from './api.js';
 import { CHANGELOG, VERSION } from '../changelog.js';
 
-const KEY = 'pa-demo-store';
+// DEMO MODE (Eric, 2026-10-16): his practice copy, opened from Clients. It
+// keeps a world of its own (live.js: four clients, four team members) under
+// its own key, apart from the preview demo's, for this tab until he exits.
+export const LIVE = (() => { try { return sessionStorage.getItem('pa-demo-live') === '1'; } catch { return false; } })();
+const KEY = LIVE ? 'pa-demo-live-store' : 'pa-demo-store';
+const SEED = LIVE ? seedLive : seed;
 
 /**
  * What a CLIENT's browser is not allowed to keep on disk.
@@ -142,7 +148,7 @@ function load() {
       // panel, glossary and notes were blank on that first visit.
       if (!adm?.docs?.length) {
         const tmp = new Map();
-        seed({ set: (p, v) => tmp.set(p, v), file: () => {} });
+        SEED({ set: (p, v) => tmp.set(p, v), file: () => {} });
         for (const [k, v] of tmp) if (ADMIN_ONLY(k) && !docs.has(k)) docs.set(k, v);
         persist();
       }
@@ -192,7 +198,7 @@ export function reset() {
   // Same rule as load(): empty in place, never rebind (demoApi holds these).
   docs.clear();
   files.clear();
-  seed({ set: (p, v) => docs.set(p, v), file: (p, v) => files.set(p, v) });
+  SEED({ set: (p, v) => docs.set(p, v), file: (p, v) => files.set(p, v) });
   persist();
   // The advocate half is written to disk only from an advocate tab. It used
   // to be written from client tabs too (fixture data, so no real secret),

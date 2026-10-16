@@ -1527,7 +1527,21 @@ export default {
     // like the admin ones: a browser that never asked for the demo gets the
     // same 404 it would get for a path that is not there. On the production
     // host demoRole is always '', so they are simply not served at all.
-    if (DEMO_ASSET.test(assetPath) && !demo) return notFound(env, request, url);
+    //
+    // DEMO MODE (Eric, 2026-10-16: "a button at the top called 'demo mode'
+    // where you press it and 4 of these clients appear"). On the live site the
+    // practice copy runs from these same files, served to his signed cookie
+    // alone, private and never cached; to anyone else they stay the same miss.
+    if (DEMO_ASSET.test(assetPath) && !demo) {
+      const his = PROD_HOST.test(url.hostname) && !!env.ADMIN_UID
+        && (await adminCookieUid(request, env).catch(() => null)) === env.ADMIN_UID;
+      if (!his) return notFound(env, request, url);
+      const res = await env.ASSETS.fetch(request);
+      const out = new Response(res.body, res);
+      out.headers.set('cache-control', 'private, no-store');
+      out.headers.set('vary', 'Cookie');
+      return out;
+    }
 
     // A browser that asked for the admin demo gets the admin half of it, on a
     // preview host only. The cookie is set here so the pages the demo
@@ -2433,7 +2447,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-16-fakes-off';
+const BUILD_TAG = 'v2026-10-16-demo-mode';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2441,7 +2455,7 @@ const BUILD_TAG = 'v2026-10-16-fakes-off';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.60';
+const VERSION = '7.61';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

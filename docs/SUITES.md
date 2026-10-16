@@ -1939,3 +1939,34 @@ door, card and shelf checks; drive-employer's and drive-invite's + menu; release
 R1. drive-cleanup and drive-employer
 now make the demo's sample through her route (their setup, no check changed).
 
+### Demo mode, his practice copy (2026-10-16, v7.61)
+
+Eric: "There should also be a button at the top called 'demo mode' where you
+press it and 4 of these clients appear. You can do a fake update with the
+advisor, the chat sends basic questions back when asked, you can upload
+documents and photos, start the time, and even within there start employer
+mode with the four 'employees' who each have done a different service and
+have made different amounts of money." His choice: a separate copy, his real
+clients hidden until Exit. Then: "allow me to adjust each fake contractor's
+amount of clients and type before I run fake payroll". The button on Clients
+sets sessionStorage pa-demo-live and reloads; firebase.js opens the demo
+store on his working pages (on the live host only with that switch, falling
+back to the real app if the files will not load), and the Worker serves
+/js/demo/* on the live host to his signed cookie alone. The store keeps its
+own key and seeds js/demo/live.js: the demo's seed reshaped to four clients
+worked by Ana, Marcus, Grace and Luis (Advocacy Case, Full-Service, a
+follow-up call and a tip, Priority Chat), paid last month so the payroll's
+default shows them. In it the chat answers back (/api/notify), every folder
+deletes, Priority Chat counts in the team and the payroll (demoInvoices), and
+the payroll tab mounts js/demo/practice.js, which sets each person's clients
+and kind, paid inside the form's dates (/api/demo/practice). The strip says
+Demo mode with Start over and Exit.
+
+The public preview's chat (js/preview/joe.js) is warmer in his lines, and
+every message a visitor sends gets an answer in turn (PREVIEW_REPLIES), never
+a note about the preview (Eric: "more friendly and softer toned").
+
+New: demomode.mjs (16 checks, run against the shipped demo files under node);
+drive-demomode. Re-pinned with controls: opencases B2; preview B3;
+drive-preview's chat; release R1.
+

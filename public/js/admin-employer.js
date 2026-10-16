@@ -257,6 +257,18 @@ form.addEventListener('change', (e) => {
   if (e.target.name === 'start' || e.target.name === 'end') form.querySelector('input[value="custom"]').checked = true;
 });
 fillDates();
+// DEMO MODE (Eric, 2026-10-16: "allow me to adjust each fake contractor's
+// amount of clients and type before I run fake payroll. So from the payroll
+// screen in the suite would be best I assume"). Inside Demo mode only: the
+// practice team's clients, set above the form and paid inside its dates.
+try {
+  if (sessionStorage.getItem('pa-demo-live') === '1') {
+    import('./demo/practice.js').then((m) => m.mountPractice(document.getElementById('practice'), {
+      dates: () => ({ start: form.start.value, end: form.end.value }),
+      onSet: () => load(),
+    })).catch(() => { /* the payroll still runs without it */ });
+  }
+} catch { /* no storage: not in Demo mode */ }
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const said = document.getElementById('pr-said');

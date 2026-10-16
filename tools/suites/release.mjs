@@ -190,6 +190,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // invented clients are gone, Delete is on their folders and a real case is deleted from Settings.
   // NEGATIVE CONTROL (run 2026-10-16, v7.60): the worker's VERSION left at '7.59' made this read
   //   FAIL  R1 both versions read 7.60 with the new tag, the 7.60 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-16 (v7.61): both versions read 7.61 with the demo-mode tag, and the 7.61 entry says what Demo
+  // mode is, what works in it, and the practice team on its payroll.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.61): the worker's BUILD_TAG left at the fakes-off tag made this read
+  //   FAIL  R1 both versions read 7.61 with the new tag, the 7.61 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry761 = (CL.match(/\{\n\s+\/\/ DEMO MODE \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry760 = (CL.match(/\{\n\s+\/\/ INVENTED CLIENTS OFF HIS SHELF \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry759 = (CL.match(/\{\n\s+\/\/ HIS THREE ACTS ON THEIR CASES \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry758 = (CL.match(/\{\n\s+\/\/ NEVER STUCK SIGNING IN \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
@@ -256,9 +261,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.60 with the new tag, the 7.60 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.60';/.test(CL) && /const VERSION = '7\.60';/.test(W) && /const BUILD_TAG = 'v2026-10-16-fakes-off';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.60'
+  check('R1 both versions read 7.61 with the new tag, the 7.61 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.61';/.test(CL) && /const VERSION = '7\.61';/.test(W) && /const BUILD_TAG = 'v2026-10-16-demo-mode';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.61'
+    && /version: '7\.61',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry761)
+    && /Demo mode, on Clients: a practice copy with four clients and four team members\./.test(entry761) && /set how many clients each team member has and what kind/.test(entry761)
+    && !DASH.test(entry761) && !HARD.some((re) => re.test(entry761))
     && /version: '7\.60',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry760)
     && /An invented client carries Delete on its folder\./.test(entry760) && /deleted from ⚙ Settings on their case, after you type their name\./.test(entry760)
     && !DASH.test(entry760) && !HARD.some((re) => re.test(entry760))

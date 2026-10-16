@@ -93,7 +93,9 @@ console.log('\n--- B. Delete on his own cases ---');
     // RE-PINNED 2026-10-16 (v7.60): Eric, "'Delete' for sample fake clients should be on the folders. For real clients
     // it should be in settings": every case with nobody real behind it carries Delete, the sample's included.
     // NEGATIVE CONTROL (run 2026-10-16, v7.60): `!c.clientUid && ` dropped made B2 read FAIL.
-    && /deletable: !asUid && !c\.clientUid && !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
+    // RE-PINNED 2026-10-16 (v7.61): inside Demo mode every client is invented, so every folder deletes (DEMO_LIVE).
+    // NEGATIVE CONTROL (run 2026-10-16, v7.61): `DEMO_LIVE || ` taken out made B2 read FAIL.
+    && /deletable: !asUid && \(DEMO_LIVE \|\| \(!c\.clientUid && !!\(c\.self \|\| c\.showcase\)\)\),/.test(ADMIN)
     && /function wireShelfDelete\(listEl\) \{[\s\S]*?const yes = await ask\(\{\n\s+title: `Delete \$\{name\}\?`,[\s\S]*?danger: true,[\s\S]*?fetch\('\/api\/admin\/delete-case', \{[\s\S]*?body: JSON\.stringify\(\{ caseId: el\.dataset\.del \}\),[\s\S]*?load\(\);/.test(ADMIN)
     && /if \(\(e\.key === 'Enter' \|\| e\.key === ' '\) && e\.target\.matches\?\.\('\[data-del\]'\)\)/.test(ADMIN)
     && /import \{ ask \} from '\.\/sheet\.js';/.test(ADMIN) && /wireShelfDelete\(document\.getElementById\('list'\)\);/.test(ADMIN));

@@ -5,13 +5,23 @@
 // and it is also the risk: nobody should ever be a paragraph into reading a
 // case before working out that none of it happened.
 
-import { reset } from './store.js';
+import { reset, LIVE } from './store.js';
 
 export function mountBanner(role) {
   if (document.querySelector('.demo-bar')) return;
   const bar = document.createElement('div');
   bar.className = 'demo-bar';
-  bar.innerHTML = `
+  // DEMO MODE (Eric, 2026-10-16): his practice copy on the live site says so,
+  // starts over, and exits back to his real clients. No client side to cross
+  // to: the public preview on the home page is that.
+  bar.innerHTML = LIVE ? `
+    <span class="demo-dot" aria-hidden="true"></span>
+    <span class="demo-what"><strong>Demo mode.</strong>
+      <span class="demo-more">A practice copy. Your real clients are safe; nothing here is saved to anyone, charged or sent.</span></span>
+    <span class="demo-acts">
+      <button type="button" class="btn ghost" data-demo-reset>Start over</button>
+      <button type="button" class="btn ghost" data-demo-exit>Exit</button>
+    </span>` : `
     <span class="demo-dot" aria-hidden="true"></span>
     <span class="demo-what"><strong>Demo.</strong>
       <span class="demo-more">Invented case. Nothing saved, charged or sent.</span></span>
@@ -50,6 +60,10 @@ export function mountBanner(role) {
   slim();
   window.addEventListener('scroll', slim, { passive: true });
 
+  bar.querySelector('[data-demo-exit]')?.addEventListener('click', () => {
+    try { sessionStorage.removeItem('pa-demo-live'); } catch { /* storage blocked: the reload below still leaves */ }
+    location.href = '/admin.html';
+  });
   bar.querySelector('[data-demo-reset]').addEventListener('click', () => {
     reset();
     // A full reload, because half the app is holding state from the case that

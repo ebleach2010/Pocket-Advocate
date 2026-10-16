@@ -15,6 +15,9 @@ import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 // The Community Assistance Fund (2026-10-04): its routes, mirrored with the
 // Worker's own rules.
 import { fundDemo } from './fund.js';
+// DEMO MODE (2026-10-16): his practice copy's team, and what its clients ask back.
+import { LIVE_TEAM, LIVE_QUESTIONS } from './live.js';
+const LIVE = (() => { try { return sessionStorage.getItem('pa-demo-live') === '1'; } catch { return false; } })();
 
 /**
  * The document types a file can be FILED as, mirroring FILING_CATEGORIES in
@@ -1005,7 +1008,8 @@ export function demoApi(role, store) {
       if (!c) return ok({ ok: true, gone: true });
       // As the Worker (2026-10-16): nobody real behind it goes from the
       // folder; a real client's case only with their name typed in Settings.
-      const fake = !c.clientUid && !!(c.self || c.showcase);
+      // In his practice copy every client is invented, so every folder deletes.
+      const fake = LIVE || (!c.clientUid && !!(c.self || c.showcase));
       if (!fake) {
         const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
         const typed = norm(body.confirmName);
@@ -2616,6 +2620,97 @@ export function demoApi(role, store) {
       mk('demo-sample-luis', 'Luis Ortega', { status: 'delivered', fullAccess: true, charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-18) }, extraPayments: [{ kind: 'fullaccess', amountCents: 230000, at: at(-12) }] });
       mk('demo-sample-grace', 'Grace Kim', { status: 'awaiting_report', charge: { state: 'captured', capturedCents: 210000, capturedAt: at(-9) }, extraPayments: [{ kind: 'tip', amountCents: 5000, at: at(-2) }] });
     };
+    // DEMO MODE: the practice team's clients, set from the payroll screen
+    // (Eric, 2026-10-16: "allow me to adjust each fake contractor's amount of
+    // clients and type before I run fake payroll"). Demo mode only, his only.
+    // Each person's book is replaced with that many clients of that kind, paid
+    // inside the dates he chose, so the payroll he runs next shows exactly it.
+    if (path === '/api/demo/practice') {
+      if (!LIVE || role !== 'admin') return fail(404, 'Not found');
+      const rates = { caseCents: 210000, addonCents: 32500, subCents: 5000, fullCents: 440000, ...(store.docs.get('config/rates') || {}) };
+      const team = LIVE_TEAM.filter((t) => store.docs.get(`advocates/${t.uid}`)?.active === true);
+      const bookOf = (uid) => {
+        const cases = docsUnder('cases/').filter((r) => r.data.advocateId === uid && !r.data.self);
+        const subs = docsUnder('subscriptions/').filter((r) => r.data.advocateId === uid);
+        return { cases, subs };
+      };
+      const kindNow = ({ cases, subs }) => (subs.length && !cases.length ? 'chat'
+        : cases.some((r) => r.data.fullAccess) ? 'full'
+          : cases.some((r) => (r.data.extraPayments || []).some((p) => p?.kind === 'followup')) ? 'followup' : 'case');
+      if ((init.method || 'GET') === 'GET') {
+        const saved = store.docs.get('demo/practice') || {};
+        return ok({
+          people: team.map((t) => {
+            const b = bookOf(t.uid);
+            const a = store.docs.get(`advocates/${t.uid}`) || {};
+            return { uid: t.uid, name: a.name || t.name, pct: pctOf(a, t.uid), clients: saved[t.uid]?.clients ?? (b.cases.length + b.subs.length), kind: saved[t.uid]?.kind || kindNow(b) };
+          }),
+        });
+      }
+      const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+      const s = DAY_RE.test(String(body.start || '')) ? new Date(`${body.start}T12:00:00-07:00`).getTime() : NaN;
+      const e = DAY_RE.test(String(body.end || '')) ? new Date(`${body.end}T12:00:00-07:00`).getTime() : NaN;
+      if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return fail(400, 'Choose the payroll dates first, the end after the start.');
+      const want = new Map((Array.isArray(body.people) ? body.people : []).map((p) => [String(p?.uid || ''), p]));
+      const KINDS = ['case', 'full', 'followup', 'chat'];
+      const NAMES = ['Avery Brooks', 'Mina Patel', 'Owen Hughes', 'Ruth Alvarez', 'Theo Grant', 'Lena Novak', 'Caleb Ward', 'Iris Moreno', 'Felix Chen', 'Hana Sato', 'Jonah Reyes', 'Nora Quinn'];
+      const saved = { ...(store.docs.get('demo/practice') || {}) };
+      let total = 0;
+      team.forEach((t, ti) => {
+        const p = want.get(t.uid);
+        if (!p) return;
+        const clients = Math.max(0, Math.min(12, Math.round(Number(p.clients) || 0)));
+        const kind = KINDS.includes(p.kind) ? p.kind : 'case';
+        // Their old book goes, with everything under it.
+        const { cases, subs } = bookOf(t.uid);
+        for (const r of [...cases.map((x) => `cases/${x.id}`), ...subs.map((x) => `subscriptions/${x.id}`)]) {
+          for (const k of [...store.docs.keys()]) if (k === r || k.startsWith(`${r}/`)) store.docs.delete(k);
+          for (const k of [...store.files.keys()]) if (k.startsWith(`${r}/`)) store.files.delete(k);
+        }
+        const first = (store.docs.get(`advocates/${t.uid}`)?.name || t.name).split(' ')[0];
+        for (let n = 0; n < clients; n++) {
+          const at = new Date(s + ((n + 1) / (clients + 1)) * (e - s + 86_400_000 / 2));
+          const id = `practice-${t.uid.replace(/^demo-/, '')}-${n + 1}`;
+          const name = NAMES[(ti * 3 + n) % NAMES.length];
+          const client = `${id}-client`;
+          const email = `${name.split(' ')[0].toLowerCase()}.${n + 1}@example.demo`;
+          if (kind === 'chat') {
+            store.docs.set(`subscriptions/${client}`, {
+              uid: client, email, name, advocateId: t.uid, status: 'active', createdAt: at,
+              currentPeriodEnd: new Date(at.getTime() + 30 * 86_400_000), stripeCustomerId: `cus_${id}`,
+              demoInvoices: [{ cents: rates.subCents, at }],
+              lastMessage: { text: `Hi ${first}, thank you for taking me on.`, from: client, role: 'client', ts: at, emailed: true },
+            });
+            store.docs.set(`subscriptions/${client}/chat/p001`, { from: client, role: 'client', text: `Hi ${first}, thank you for taking me on.`, ts: at });
+            total += 1;
+            continue;
+          }
+          // A follow-up call is paid in this period on a case bought before it.
+          const booked = kind === 'followup' ? new Date(s - 20 * 86_400_000) : at;
+          const c = {
+            advocateId: t.uid, clientUid: client, clientEmail: email, clientName: name, clientTz: 'America/Denver',
+            status: kind === 'followup' ? 'delivered' : kind === 'full' ? 'awaiting_report' : 'confirmed',
+            createdAt: booked, publicElection: { choice: 'private', history: [{ choice: 'private', at: booked }] },
+            forms: { disclaimer: booked, privacy: booked, recording: booked }, files: [],
+            caseRateCents: rates.caseCents, addonRateCents: rates.addonCents, addOnFollowUp: kind === 'followup',
+            charge: { state: 'captured', capturedCents: kind === 'full' ? rates.fullCents : rates.caseCents, capturedAt: booked },
+            work: { seconds: 0, startedAt: null },
+            appointment: { start: new Date(booked.getTime() + 4 * 86_400_000), durationMin: 60, method: 'video', joinLink: null, requested: false },
+            lastMessage: { text: `Hi ${first}, thank you for taking my case.`, from: client, role: 'client', ts: at, emailed: true },
+          };
+          if (kind === 'full') Object.assign(c, { fullAccess: true, fullAccessAt: booked, fullAccessMonths: 1, consultDoneAt: booked, reportDueAt: null });
+          if (kind === 'followup') Object.assign(c, { reportDeliveredAt: new Date(s - 6 * 86_400_000), extraPayments: [{ kind: 'followup', amountCents: rates.addonCents, at }] });
+          store.docs.set(`cases/${id}`, c);
+          store.docs.set(`cases/${id}/chat/p001`, { from: client, role: 'client', text: `Hi ${first}, thank you for taking my case.`, ts: at });
+          total += 1;
+        }
+        saved[t.uid] = { clients, kind };
+      });
+      store.docs.set('demo/practice', saved);
+      store.persist?.();
+      store.fire?.('');
+      return ok({ ok: true, clients: total });
+    }
     if (path === '/api/admin/team') {
       if (role !== 'admin') return fail(404, 'Not found');
       // Her clients put back when she has none left (2026-10-16), as the Worker does.
@@ -2653,6 +2748,17 @@ export function demoApi(role, store) {
         if (c.self || c.family || (c.showcase && !c.sample)) continue;
         const { paid, tips } = paidOf(c);
         p.paidCents += paid; p.tipsCents += tips; p.proposedCents += Math.round(paid * p.commissionPct / 100) + tips;
+      }
+      // Priority Chat, as worker/employer.js teamSummary counts it (2026-10-16).
+      const subCents = Number({ subCents: 5000, ...(store.docs.get('config/rates') || {}) }.subCents) || 0;
+      for (const { data: sb } of docsUnder('subscriptions/')) {
+        if (!sb || sb.status === 'canceled' || sb.cancelAtPeriodEnd || !(new Date(sb.currentPeriodEnd || 0).getTime() > Date.now())) continue;
+        const p = people.get(advOf(sb));
+        if (!p) continue;
+        p.chatLines += 1;
+        p.kinds['Priority Chat'] = (p.kinds['Priority Chat'] || 0) + 1;
+        p.paidCents += subCents;
+        p.proposedCents += Math.round(subCents * p.commissionPct / 100);
       }
       const team = [...people.values()].sort((a, b) => (b.owner - a.owner) || (a.sample - b.sample) || a.name.localeCompare(b.name))
         .map((p) => {
@@ -2805,6 +2911,21 @@ export function demoApi(role, store) {
           const bookedAt = c.charge?.capturedAt || c.createdAt;
           if (base > 0 && inR(bookedAt)) add('booking', 'Advocacy Case', base, bookedAt);
           for (const p of (c.extraPayments || [])) if (!p?.duplicate && Number(p?.amountCents) && inR(p.at)) add(p.kind || 'extra', p.kind === 'tip' ? 'Tip' : p.kind === 'fullaccess' ? 'Full-Service month' : p.kind === 'followup' ? 'Follow-up call' : 'Payment', Number(p.amountCents), p.at);
+        }
+        // Priority Chat months. The real report asks Stripe for these; in the
+        // demo each subscription carries its own invoices (`demoInvoices`).
+        for (const { id, data: sb } of docsUnder('subscriptions/')) {
+          const row = rows.get(advOf(sb)) || rows.get('demo-admin');
+          if (!row) continue;
+          for (const inv of (Array.isArray(sb.demoInvoices) ? sb.demoInvoices : [])) {
+            const cents = Number(inv?.cents) || 0;
+            if (!cents || !inR(inv.at)) continue;
+            const pay = Math.round(cents * row.commissionPct / 100);
+            row.salesCents += cents; row.commissionCents += pay;
+            if (!seen.has(row.uid)) seen.set(row.uid, new Set());
+            seen.get(row.uid).add(`sub-${id}`);
+            row.lines.push({ caseId: '', client: sb.name || sb.email || 'Priority Chat', kind: 'sub', label: 'Priority Chat month', cents, payCents: pay, at: new Date(inv.at).toISOString() });
+          }
         }
         const hers = cases.find((r) => r.data.sample === true);
         const maya = hers && rows.get(advOf(hers.data));
@@ -3027,6 +3148,28 @@ export function demoApi(role, store) {
         : fail(403, 'Admin only');
     }
     if (path === '/api/reviews') return ok({ reviews: [] });
+    // DEMO MODE (Eric, 2026-10-16: "the chat sends basic questions back when
+    // asked"): in his practice copy, a message he sends to a client is
+    // answered a moment later with the kind of question a client asks next.
+    if (path === '/api/notify' && LIVE && role === 'admin') {
+      const col = body?.kind === 'sub' ? 'subscriptions' : body?.kind === 'case' ? 'cases' : '';
+      const id = String(body?.id || '');
+      const parent = col && /^[\w-]{1,64}$/.test(id) ? store.docs.get(`${col}/${id}`) : null;
+      const client = parent && !parent.self && parent.status !== 'closed' ? (col === 'cases' ? parent.clientUid : id) : '';
+      if (client) {
+        const asked = [...store.docs.entries()].filter(([k, m]) => k.startsWith(`${col}/${id}/chat/`) && m?.demoAsked).length;
+        const text = LIVE_QUESTIONS[asked % LIVE_QUESTIONS.length];
+        setTimeout(() => {
+          const at = new Date();
+          const k = `${col}/${id}/chat/q${at.getTime().toString(36)}`;
+          store.docs.set(k, { from: client, role: 'client', text, ts: at, demoAsked: true });
+          store.docs.set(`${col}/${id}`, { ...store.docs.get(`${col}/${id}`), lastMessage: { text, from: client, role: 'client', ts: at, emailed: false } });
+          store.fire?.(k);
+          store.fire?.(`${col}/${id}`);
+        }, 2500);
+      }
+      return ok({ ok: true });
+    }
     if (path === '/api/uploaded' || path === '/api/notify' || path === '/api/push/test') return ok({ ok: true });
     if (path === '/api/chat/reply') {
       // His answer to a question in his own chat (2026-09-03). Mirrors

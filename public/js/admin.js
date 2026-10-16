@@ -47,6 +47,8 @@ let leadForm = { prepare() {} };
 // database he can already read, nothing on it can be changed, and nothing
 // on it tells them or their clients he looked.
 const asUid = STAFF.role === 'admin' ? (new URLSearchParams(location.search).get('as') || '').replace(/[^\w-]/g, '').slice(0, 64) : '';
+// Demo mode, his practice copy (2026-10-16): every client in it is invented.
+const DEMO_LIVE = (() => { try { return sessionStorage.getItem('pa-demo-live') === '1'; } catch { return false; } })();
 const advocate = STAFF.role === 'advocate' || !!asUid;
 const caseHref = (id) => `/admin-case.html?id=${encodeURIComponent(id)}${asUid ? `&as=${encodeURIComponent(asUid)}` : ''}`;
 if (user && advocate) {
@@ -363,7 +365,8 @@ async function load() {
       // invented clients included (Eric, 2026-10-16: "'Delete' for sample fake
       // clients should be on the folders. For real clients it should be in
       // settings").
-      deletable: !asUid && !c.clientUid && !!(c.self || c.showcase),
+      // In Demo mode every client is invented, so every folder deletes.
+      deletable: !asUid && (DEMO_LIVE || (!c.clientUid && !!(c.self || c.showcase))),
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -873,6 +876,28 @@ function mountEmployerDoor() {
   };
   paint();
   setInterval(() => { if (document.visibilityState === 'visible') paint(); }, 60_000);
+  mountDemoDoor(head);
+}
+
+/**
+ * DEMO MODE (Eric, 2026-10-16: "There should also be a button at the top
+ * called 'demo mode' where you press it and 4 of these clients appear"). His
+ * choice the same day: a separate practice copy, his real clients hidden
+ * until he taps Exit on its strip. The tap only sets this tab's switch and
+ * reloads; firebase.js opens the copy (js/demo/live.js) from there.
+ */
+function mountDemoDoor(head) {
+  let live = false;
+  try { live = sessionStorage.getItem('pa-demo-live') === '1'; } catch { /* no storage, no copy to open */ return; }
+  if (live || document.querySelector('[data-demo-mode]')) return;
+  const row = document.createElement('p');
+  row.className = 'demo-door-row';
+  row.innerHTML = '<button type="button" class="btn quiet demo-door" data-demo-mode>Demo mode</button>';
+  row.querySelector('[data-demo-mode]').addEventListener('click', () => {
+    try { sessionStorage.setItem('pa-demo-live', '1'); } catch { return; }
+    location.reload();
+  });
+  head.after(row);
 }
 
 /** The strip across the top of a quiet view: whose shelf this is, that they cannot tell, and the way out. */
