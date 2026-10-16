@@ -21,6 +21,7 @@
 //      cases one tap from their name
 //   H. (v7.56) four audits: his pages send a contractor home, and their chat
 //      has none of his message makers
+//   I. (v7.57) warm everywhere, Blue and purple a choice in Settings
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -298,13 +299,18 @@ const mayaCard = await eric.evaluate(() => {
 });
 // Eric, 2026-10-16: "I just missed it because the buttons are dark. The[y] should have some contrast."
 const pop = await eric.evaluate(() => {
-  const rgba = (v) => { const m = v.match(/[\d.]+/g) || []; return { r: +m[0], g: +m[1], b: +m[2], a: m[3] === undefined ? 1 : +m[3] }; };
+  // rgb()/rgba(), or color(srgb r g b / a) with 0 to 1 channels, which is how a color-mix() reads back.
+  const rgba = (v) => { const m = v.match(/[\d.]+/g) || []; const k = /^color\(srgb/.test(v) ? 255 : 1; return { r: +m[0] * k, g: +m[1] * k, b: +m[2] * k, a: m[3] === undefined ? 1 : +m[3] }; };
   return [...document.querySelectorAll('.tm-card .tm-acts .btn.quiet')].map((btn) => {
     const cs = getComputedStyle(btn);
     const edge = rgba(cs.borderTopColor); const fill = rgba(cs.backgroundColor); const ink = rgba(cs.color);
-    return { text: btn.textContent.trim(), edge: edge.a >= 0.5 && edge.g > 150 && edge.b > 150, fill: fill.a > 0.05, ink: ink.r + ink.g + ink.b > 600 };
+    // RE-PINNED 2026-10-16 (v7.57): the edge is the look's own accent (peach when warm, cyan when blue and purple), so
+    // it is judged bright rather than cyan.
+    return { text: btn.textContent.trim(), edge: edge.a >= 0.5 && edge.r + edge.g + edge.b > 450, fill: fill.a > 0.05, ink: ink.r + ink.g + ink.b > 600 };
   });
 });
+// NEGATIVE CONTROL (run 2026-10-16, v7.57): the page's `main .btn.quiet` rule made `main .btn.nope` still made this read
+//   FAIL  every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words
 // NEGATIVE CONTROL (run 2026-10-16, v7.55): the page's `main .btn.quiet` rule made `main .btn.nope` made this read
 //   FAIL  every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words
 ok('every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words',
@@ -376,6 +382,42 @@ const makers = await ana2.evaluate(() => [...document.querySelectorAll('#chat .a
 //   FAIL  a contractor who opens his Leads by address is taken to their shelf, and their chat offers neither of his message makers
 ok('a contractor who opens his Leads by address is taken to their shelf, and their chat offers neither of his message makers',
   /\/admin(\.html)?(\?|$)/.test(leadsUrl) && !makers.some((t) => /⚕|✍/.test(t)), JSON.stringify({ leadsUrl, makers }));
+
+console.log('\n--- I. warm everywhere, blue and purple in Settings (v7.57) ---');
+// Eric, 2026-10-16: "Warm gradient we have going on should be default everywhere, with the blue/purple being in settings"
+const lk = await side('admin');
+await lk.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(lk, 2000);
+const paint = () => lk.evaluate(() => ({
+  look: document.documentElement.dataset.look || '',
+  ground: getComputedStyle(document.body).backgroundColor,
+  plus: getComputedStyle(document.querySelector('.add-btn') || document.body).backgroundImage.slice(0, 60),
+  bar: document.querySelector('meta[name="theme-color"]')?.getAttribute('content') || '',
+}));
+const warmFirst = await paint();
+await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
+await tryStep(() => lk.waitForSelector('.settings-card [data-scheme="cool"]', { timeout: 6000 }));
+const offered = await lk.evaluate(() => [...document.querySelectorAll('.settings-card .scheme-swatch .scheme-name')].map((x) => x.textContent.trim()));
+await tryStep(() => lk.click('.settings-card [data-scheme="cool"]', { timeout: 3000 }));
+await lk.waitForTimeout(400);
+const coolNow = await paint();
+await lk.reload({ waitUntil: 'networkidle' });
+await settle(lk, 1500);
+const coolKept = await paint();
+await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
+await tryStep(() => lk.click('.settings-card [data-scheme="warm"]', { timeout: 6000 }));
+await lk.waitForTimeout(400);
+const warmBack = await paint();
+if (SHOTS) await lk.screenshot({ path: `${SHOTS}/cleanup-9-warm-back.png` });
+// NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's link taken off admin.html made this read
+//   FAIL  his pages are warm unless Blue and purple is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back
+ok('his pages are warm unless Blue and purple is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back',
+  warmFirst.look === '' && /rgb\(30, 21, 25\)/.test(warmFirst.ground) && /255, 196, 138/.test(warmFirst.plus) && warmFirst.bar === '#1E1519'
+  && offered.join('|') === 'Warm|Blue and purple|High contrast'
+  && coolNow.look === 'cool' && !/30, 21, 25/.test(coolNow.ground) && /61, 220, 245/.test(coolNow.plus) && coolNow.bar === '#0A0A0C'
+  && coolKept.look === 'cool' && /61, 220, 245/.test(coolKept.plus)
+  && warmBack.look === '' && /rgb\(30, 21, 25\)/.test(warmBack.ground),
+  JSON.stringify({ warmFirst, offered, coolNow, coolKept, warmBack }));
 
 console.log('\n--- C. errors ---');
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): a `null.x` put first in wireAddMenu's + click made this read

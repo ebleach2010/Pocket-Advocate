@@ -277,7 +277,10 @@ console.log('\n--- E. the pages ---');
   // NEGATIVE CONTROL (run 2026-10-15): the demo's /api/staff/settings route taken out made this read
   //   FAIL  E4 the demo mirrors it: Ana's settings save and read back, and her client's door sign and prices follow them
   check('E4 the demo mirrors it: Ana\'s settings save and read back, and her client\'s door sign and prices follow them',
-    /if \(path === '\/api\/staff\/settings'\) \{\n\s+if \(role !== 'advocate'\) return fail\(404, 'Not found'\);/.test(DEMO)
+    // RE-PINNED 2026-10-16 (v7.56, caught at v7.57): the demo refuses an advocate still setting up here too, as the
+    // Worker's requireStaff does.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.57): the demo route's `|| !staff` taken out made E4 read FAIL.
+    /if \(path === '\/api\/staff\/settings'\) \{\n\s+\/\/ Setup first, as the Worker's requireStaff \(2026-10-16\)\.\n\s+if \(role !== 'advocate' \|\| !staff\) return fail\(404, 'Not found'\);/.test(DEMO)
     && /const own = demoContractor\(q\.get\('advocate'\)\);/.test(DEMO) && /const own = path === '\/api\/availability' \? demoContractor\(q\.get\('advocate'\)\) : null;/.test(DEMO));
   // NEGATIVE CONTROL (run 2026-10-15): an em dash put in staffsettings.js made this read
   //   FAIL  E5 the new files carry no dash

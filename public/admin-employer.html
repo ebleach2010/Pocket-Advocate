@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#0A0A0C">
+<meta name="theme-color" content="#1E1519">
 <title>Employer mode · Pocket Advocate</title>
 <script>
 // Every page is black now (Eric, 2026-10-15: "everywhere should have this
@@ -19,14 +19,20 @@
   try {
     var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
     document.documentElement.dataset.scheme = s;
+    // Warm is the look everywhere; blue and purple is a choice in Settings
+    // (Eric, 2026-10-16: "Warm gradient we have going on should be default
+    // everywhere, with the blue/purple being in settings").
+    var cool = localStorage.getItem('pa-look') === 'cool';
+    if (cool) document.documentElement.dataset.look = 'cool';
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/admin.css?v=stat138">
 <link rel="stylesheet" href="/css/look.css?v=7">
+<link rel="stylesheet" href="/css/warm.css?v=2">
 <script type="module" src="/js/nav-menu.js"></script>
 <style>
   /* Employer mode (2026-10-15): his team at a glance, and the way into each. */
@@ -35,12 +41,12 @@
   .emp-back { font-weight: 600; }
   .emp-tabs { display: flex; gap: .4rem; margin: .9rem 0 1rem; }
   .emp-tabs button { min-height: 44px; padding: .4rem 1rem; border-radius: 999px; border: 1px solid var(--edge-base); background: var(--sur-base); color: var(--soft); font: inherit; font-weight: 700; cursor: pointer; }
-  .emp-tabs button.on { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px rgba(61, 220, 245, .35); }
+  .emp-tabs button.on { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 35%, transparent); }
   .team { display: grid; gap: .8rem; }
   .tm-card { display: grid; gap: .6rem; }
   .tm-top { display: flex; align-items: center; gap: .8rem; }
   .tm-photo { flex: none; width: 56px; height: 56px; border-radius: 50%; object-fit: cover; border: 2px solid var(--edge-lit); background: var(--sur-lit); }
-  .tm-init { flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: linear-gradient(135deg, #3DDCF5, #B9A6FF); color: #02161A; font: 700 1.2rem/1 'Sora', 'Manrope', system-ui, sans-serif; }
+  .tm-init { flex: none; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 50%; background: var(--warm-pop, linear-gradient(135deg, #3DDCF5, #B9A6FF)); color: #02161A; font: 700 1.2rem/1 'Sora', 'Manrope', system-ui, sans-serif; }
   .tm-name { display: block; margin: 0; font: 600 1.1rem/1.25 'Sora', 'Manrope', system-ui, sans-serif; }
   .tm-sub { display: block; margin: .1rem 0 0; color: var(--dim); font-size: .86rem; }
   .tm-brief { display: block; margin: 0; color: var(--soft); }
@@ -50,14 +56,15 @@
   .tm-open:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
   .tm-go { margin-left: auto; color: var(--dim); font-size: 1.6rem; line-height: 1; }
   .tm-money { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
-  .tm-money strong { font: 600 1.6rem/1.1 'Sora', 'Manrope', system-ui, sans-serif; background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .tm-money strong { font: 600 1.6rem/1.1 'Sora', 'Manrope', system-ui, sans-serif; background: var(--warm-pop, linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%)); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .tm-money span { color: var(--dim); font-size: .86rem; }
   .tm-acts { display: flex; flex-wrap: wrap; gap: .5rem; }
   .tm-acts .btn { min-height: 44px; position: relative; }
   /* Buttons that read as buttons on the dark cards (Eric, 2026-10-16: "the
      buttons are dark. They should have some contrast."). */
-  main .btn.quiet { background: rgba(61, 220, 245, .12); border-color: rgba(61, 220, 245, .6); color: var(--ink); font-weight: 700; }
-  main .btn.quiet:hover, main .btn.quiet:focus-visible { background: rgba(61, 220, 245, .22); border-color: #3DDCF5; color: var(--ink); }
+  /* In the look's own accent (2026-10-16): peach when warm, cyan when blue and purple. */
+  main .btn.quiet { background: color-mix(in srgb, var(--cyan) 12%, transparent); border-color: color-mix(in srgb, var(--cyan) 60%, transparent); color: var(--ink); font-weight: 700; }
+  main .btn.quiet:hover, main .btn.quiet:focus-visible { background: color-mix(in srgb, var(--cyan) 22%, transparent); border-color: var(--cyan); color: var(--ink); }
   .tm-badge { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #FF7A7A; color: #1A0505; font: 800 .72rem/20px 'Manrope', system-ui, sans-serif; text-align: center; }
   .tm-pill { display: inline-block; margin-left: .35rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--edge-lit); color: var(--soft); font-size: .72rem; font-weight: 800; letter-spacing: .06em; vertical-align: middle; }
   .tm-pill.sample { border-color: rgba(242, 193, 78, .6); color: #F2C14E; }
@@ -87,8 +94,8 @@
   .pr-presets { display: flex; flex-wrap: wrap; gap: .4rem; margin: 0; padding: 0; border: 0; }
   .pr-presets legend { padding: 0; margin-bottom: .4rem; font-weight: 700; }
   .pr-presets label { flex: 1 1 calc(50% - .4rem); display: inline-flex; align-items: center; gap: .45rem; min-height: 44px; padding: 0 .9rem; border: 1px solid var(--edge-base); border-radius: 999px; cursor: pointer; white-space: nowrap; }
-  .pr-presets label:has(input:checked) { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px rgba(61, 220, 245, .35); }
-  .pr-presets input { accent-color: #3DDCF5; }
+  .pr-presets label:has(input:checked) { border-color: var(--cyan); color: var(--ink); box-shadow: 0 0 0 1px color-mix(in srgb, var(--cyan) 35%, transparent); }
+  .pr-presets input { accent-color: var(--cyan); }
   .pr-dates { display: flex; flex-wrap: wrap; gap: .6rem; }
   .pr-dates label { display: grid; gap: .25rem; font-size: .88rem; }
   .pr-dates input { min-height: 44px; }

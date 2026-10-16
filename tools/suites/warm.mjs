@@ -14,7 +14,7 @@
 //
 // Run: node warm.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { fileURLToPath as f2 } from 'node:url';
+import { fileURLToPath as f2, pathToFileURL } from 'node:url';
 import { dirname as d, join as j } from 'node:path';
 
 const ROOT = j(d(f2(import.meta.url)), '..', '..');
@@ -48,6 +48,8 @@ function rules(css) {
 }
 
 const WARM = f('public/css/warm.css');
+// The warm root (2026-10-16): not High contrast, and not Blue and purple chosen in Settings.
+const W = ':root:not([data-scheme="contrast"]):not([data-look="cool"])';
 const CLIENT_PAGES = ['case.html', 'chat.html', 'subscription.html', 'return.html'];
 
 console.log('\n--- A. the client\'s side, warm ---');
@@ -56,10 +58,16 @@ console.log('\n--- A. the client\'s side, warm ---');
   const loads = pages.filter((n) => /\/css\/warm\.css\?v=/.test(f(`public/${n}`)));
   // NEGATIVE CONTROL (run 2026-10-15): warm.css's link put on admin-case.html made this read
   //   FAIL  A1 the four pages a client lives in load the warm sheet, and no page of his, the home or a package page does
+  // RE-PINNED 2026-10-16 (v7.57): Eric, "Warm gradient we have going on should be default everywhere, with the
+  // blue/purple being in settings". Every page loads it now but the home and the package pages, which have their
+  // own (landing-warm.css), and the hidden fund form.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's link taken off admin-case.html made A1 read FAIL.
+  const LANDING_PAGES = ['index.html', 'advocacy-case.html', 'full-service.html', 'priority-chat.html', 'fund.html'];
   check('A1 the four pages a client lives in load the warm sheet, and no page of his, the home or a package page does',
-    JSON.stringify(loads.sort()) === JSON.stringify([...CLIENT_PAGES].sort()), loads.join(','));
+    CLIENT_PAGES.every((n) => loads.includes(n)) && loads.includes('admin.html') && loads.includes('admin-case.html') && loads.includes('signin.html')
+    && JSON.stringify(loads.sort()) === JSON.stringify(pages.filter((n) => !LANDING_PAGES.includes(n)).sort()), loads.join(','));
   const R = rules(WARM);
-  const tokens = R.find(([sel, body]) => sel === ':root:not([data-scheme="contrast"]) body' && /--bg:/.test(body))?.[1] || '';
+  const tokens = R.find(([sel, body]) => sel === `${W} body` && /--bg:/.test(body))?.[1] || '';
   const tok = (k) => (tokens.match(new RegExp(`${k}: ([^;]+);`)) || [])[1];
   // NEGATIVE CONTROL (run 2026-10-15): warm.css's --bg put back to #0A0A0C made this read
   //   FAIL  A2 the ground is warm, not black: a plum brown ground, warm white ink, peach light, and the warm pop for what acts
@@ -67,8 +75,8 @@ console.log('\n--- A. the client\'s side, warm ---');
     tok('--bg') === '#1E1519' && tok('--ink') === '#FFF5EE' && tok('--cyan') === '#FFB27A' && /linear-gradient\(110deg, #FFC48A/.test(tok('--warm-pop') || '')
     && R.some(([sel, body]) => /\.btn\.glow/.test(sel) && /background: var\(--warm-pop\)/.test(body)),
     JSON.stringify({ bg: tok('--bg'), ink: tok('--ink'), cyan: tok('--cyan') }));
-  const meWarm = R.find(([sel]) => sel === ':root:not([data-scheme="contrast"]) .msg.me')?.[1] || '';
-  const themWarm = R.find(([sel]) => sel === ':root:not([data-scheme="contrast"]) .msg.them')?.[1] || '';
+  const meWarm = R.find(([sel]) => sel === `${W} .msg.me`)?.[1] || '';
+  const themWarm = R.find(([sel]) => sel === `${W} .msg.them`)?.[1] || '';
   // NEGATIVE CONTROL (run 2026-10-15): the client's own bubble back to a faint wash made this read
   //   FAIL  A3 the chat is lit: their words in the warm pop with dark ink, his on a warm raised card, never the black look's grey
   check('A3 the chat is lit: their words in the warm pop with dark ink, his on a warm raised card, never the black look\'s grey',
@@ -78,10 +86,13 @@ console.log('\n--- A. the client\'s side, warm ---');
   // Everything that paints colour is under the not-High-contrast root, so
   // somebody who chose High contrast for their eyes keeps it. The only rules
   // outside it lay out pieces that exist on the client's side alone.
-  const STRUCTURE = /^(\.msg-row|\.msg-ava|\.chat-day|\.chat-who|\.cheer|:root\[data-scheme="contrast"\] \.cheer)/;
+  // RE-PINNED 2026-10-16 (v7.57): every colour rule is under the warm root (not High contrast, not Blue and
+  // purple); the Settings swatches (.sc-warm, .sc-cool) paint their own fixed chips whatever is chosen.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): a bare `.add-btn { background: var(--warm-pop); }` added to warm.css made A4 read FAIL.
+  const STRUCTURE = /^(\.msg-row|\.msg-ava|\.chat-day|\.chat-who|\.cheer|:root\[data-scheme="contrast"\] \.cheer|\.sc-warm|\.sc-cool)/;
   // Split a selector list on its top-level commas only (an :is(a, b) stays whole).
   const parts = (sel) => { const out = []; let depth = 0; let cur = ''; for (const ch of sel) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && !depth) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out; };
-  const loose = R.filter(([sel]) => !parts(sel).every((x) => x.trim().startsWith(':root:not([data-scheme="contrast"])') || x.trim().startsWith(':where(:root:not([data-scheme="contrast"]))') || STRUCTURE.test(x.trim())));
+  const loose = R.filter(([sel]) => !parts(sel).every((x) => x.trim().startsWith(W) || x.trim().startsWith(`:where(${W})`) || STRUCTURE.test(x.trim())));
   // NEGATIVE CONTROL (run 2026-10-15): a bare `.msg.me { background: #FFC08F; }` added to warm.css made this read
   //   FAIL  A4 High contrast keeps its own colours: every colour rule is under the not-High-contrast root, and the rest only lay out the client's own pieces
   check('A4 High contrast keeps its own colours: every colour rule is under the not-High-contrast root, and the rest only lay out the client\'s own pieces',
@@ -199,6 +210,43 @@ console.log('\n--- D. his tan folders ---');
     && R.some(([sel, body]) => sel === ':root:not([data-scheme="contrast"]) .drawer .fld-alert' && /background: #7A271F;/.test(body) && /color: #FFFFFF;/.test(body))
     && R.some(([sel, body]) => sel === ':root:not([data-scheme="contrast"]) .drawer .folder-body' && /--orange: #7A4A00;/.test(body))
     && !DASH.test(ADMIN.slice(ADMIN.indexOf('THE TAN FOLDERS, BACK'))));
+}
+
+console.log('\n--- E. warm everywhere, blue and purple in Settings (v7.57) ---');
+{
+  // Eric, 2026-10-16: "Warm gradient we have going on should be default everywhere, with the blue/purple being in settings"
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
+  const meta = { content: '#1E1519', setAttribute(k, v) { this.content = v; } };
+  globalThis.document = { documentElement: { dataset: { scheme: 'calm' } }, querySelector: () => meta, dispatchEvent: () => true };
+  globalThis.CustomEvent = class { constructor(n, o) { this.type = n; this.detail = o?.detail; } };
+  const T = await import(pathToFileURL(j(ROOT, 'public/js/theme.js')).href);
+  const first = T.currentAppearance();
+  T.applyAppearance('cool');
+  const cool = { look: document.documentElement.dataset.look, stored: store.get('pa-look'), scheme: store.get('pa-scheme'), meta: meta.content, now: T.currentAppearance() };
+  T.applyAppearance('warm');
+  const warm = { look: document.documentElement.dataset.look, stored: store.get('pa-look'), meta: meta.content, now: T.currentAppearance() };
+  T.applyAppearance('contrast');
+  const contrast = { scheme: document.documentElement.dataset.scheme, meta: meta.content, now: T.currentAppearance() };
+  const SET = f('public/js/settings.js');
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): applyAppearance's `document.documentElement.dataset.look = 'cool'` taken out made this read
+  //   FAIL  E1 warm is the look unless this device chooses Blue and purple in Settings: the choice is kept, takes effect at once and paints the bar; High contrast still outranks both
+  check('E1 warm is the look unless this device chooses Blue and purple in Settings: the choice is kept, takes effect at once and paints the bar; High contrast still outranks both',
+    first === 'warm' && cool.look === 'cool' && cool.stored === 'cool' && cool.scheme === 'calm' && cool.meta === '#0A0A0C' && cool.now === 'cool'
+    && warm.look === undefined && warm.stored === 'warm' && warm.meta === '#1E1519' && warm.now === 'warm'
+    && contrast.scheme === 'contrast' && contrast.meta === '#000000' && contrast.now === 'contrast'
+    && /\$\{APPEARANCES\.map\(\(x\) => `/.test(SET) && /applyAppearance\(b\.dataset\.scheme\);/.test(SET) && /const scheme = currentAppearance\(\);/.test(SET),
+    JSON.stringify({ first, cool, warm, contrast }));
+  const R = rules(WARM);
+  const has = (sel, re) => R.some(([s2, body]) => s2 === `${W} ${sel}` && re.test(body));
+  const EMPL = f('public/admin-employer.html');
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's `.add-btn` rule taken out made this read
+  //   FAIL  E2 his working pages are warm too: the +, an open case's breathing rim and the chat bubble take the warm pop, and Employer mode's money, initials and buttons follow the look
+  check('E2 his working pages are warm too: the +, an open case\'s breathing rim and the chat bubble take the warm pop, and Employer mode\'s money, initials and buttons follow the look',
+    has('.add-btn', /background: var\(--warm-pop\);/) && has('.drawer .folder.st-open:not(.working):not(.self)', /linear-gradient\(135deg, #FFC48A, #F59BBF\)/)
+    && has('.sc-fab', /background: var\(--warm-pop\);/) && /@keyframes st-open-glow-warm/.test(WARM)
+    && (EMPL.match(/var\(--warm-pop, linear-gradient/g) || []).length === 2 && /main \.btn\.quiet \{ background: color-mix\(in srgb, var\(--cyan\) 12%, transparent\);/.test(EMPL)
+    && !/rgba\(61, 220, 245/.test(EMPL));
 }
 
 const failed = results.filter((r) => !r.pass).length;

@@ -2,7 +2,7 @@
 // Injected into the top nav for any signed-in user.
 import { enablePush } from './push.js';
 import { db, doc, getDoc, setDoc } from './firebase.js';
-import { SCHEMES, currentScheme, applyScheme } from './theme.js';
+import { APPEARANCES, currentAppearance, applyAppearance } from './theme.js';
 import { barActs } from './nav-menu.js';
 
 export function initSettings(user, isAdmin = false, isContractor = false) {
@@ -33,7 +33,8 @@ function openPanel(user, isAdmin = false, isContractor = false) {
     window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
   const needsInstall = isIOS && !standalone;
 
-  const scheme = currentScheme();
+  // Warm, Blue and purple, or High contrast (2026-10-16).
+  const scheme = currentAppearance();
   const overlay = document.createElement('div');
   overlay.id = 'pa-settings';
   overlay.className = 'settings-overlay';
@@ -55,7 +56,7 @@ function openPanel(user, isAdmin = false, isContractor = false) {
       <h4 style="margin:1.2rem 0 .1rem;">Appearance</h4>
       <p class="dim small" style="margin:0 0 .5rem;">Applies on this device, right away.</p>
       <div class="scheme-grid" data-schemes>
-        ${SCHEMES.map((x) => `
+        ${APPEARANCES.map((x) => `
           <button class="scheme-swatch${x.id === scheme ? ' on' : ''}" data-scheme="${x.id}"
             aria-pressed="${x.id === scheme}">
             <span class="scheme-chip sc-${x.id}" aria-hidden="true"><i></i><i></i><i></i></span>
@@ -103,7 +104,7 @@ function openPanel(user, isAdmin = false, isContractor = false) {
   // of sync with what the scheme actually looks like.
   overlay.querySelectorAll('[data-scheme]').forEach((b) =>
     b.addEventListener('click', () => {
-      applyScheme(b.dataset.scheme);
+      applyAppearance(b.dataset.scheme);
       overlay.querySelectorAll('[data-scheme]').forEach((x) => {
         const on = x === b;
         x.classList.toggle('on', on);

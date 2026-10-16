@@ -174,6 +174,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // first, a reset or turn-off signs them out, their clients see their name, and what security changed.
   // NEGATIVE CONTROL (run 2026-10-16, v7.56): the worker's BUILD_TAG left at the one-team tag made this read
   //   FAIL  R1 both versions read 7.56 with the new tag, the 7.56 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-16 (v7.57): both versions read 7.57 with the warm-default tag, and the 7.57 entry says warm is
+  // the look everywhere and Blue and purple is in Settings.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): changelog.js's VERSION left at '7.56' made this read
+  //   FAIL  R1 both versions read 7.57 with the new tag, the 7.57 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry757 = (CL.match(/\{\n\s+\/\/ WARM EVERYWHERE \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry756 = (CL.match(/\{\n\s+\/\/ FOUR AUDITS \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry755 = (CL.match(/\{\n\s+\/\/ ONE TEAM PAGE, ONE CALENDAR \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-16 (v7.54): both versions read 7.54 with the doubles-cut tag, and the 7.54 entry says Track is gone,
@@ -236,9 +241,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.56 with the new tag, the 7.56 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.56';/.test(CL) && /const VERSION = '7\.56';/.test(W) && /const BUILD_TAG = 'v2026-10-16-four-audits';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.56'
+  check('R1 both versions read 7.57 with the new tag, the 7.57 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.57';/.test(CL) && /const VERSION = '7\.57';/.test(W) && /const BUILD_TAG = 'v2026-10-16-warm-default';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.57'
+    && /version: '7\.57',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry757)
+    && /Warm is the look on every page now/.test(entry757) && /Blue and purple is in Settings/.test(entry757)
+    && !DASH.test(entry757) && !HARD.some((re) => re.test(entry757))
     && /version: '7\.56',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry756)
     && /A new contractor sets up first/.test(entry756) && /signs them out everywhere, at once\./.test(entry756)
     && !DASH.test(entry756) && !HARD.some((re) => re.test(entry756))

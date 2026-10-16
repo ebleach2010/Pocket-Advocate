@@ -186,18 +186,22 @@ console.log('\n--- C. one look ---');
     const landing = links.indexOf('landing');
     // RE-PINNED 2026-10-15 (v7.45): Eric, "I'd like the client side to look warm and engaging", on all client
     // pages: the four a client lives in load warm.css right after the look, and no other page loads it.
+    // RE-PINNED 2026-10-16 (v7.57): Eric, "Warm gradient we have going on should be default everywhere, with the
+    // blue/purple being in settings". Every page but the home and the package pages (which have landing-warm.css)
+    // loads warm.css right after the look; the head snippet keeps High contrast and reads Blue and purple
+    // (pa-look) before paint, and the shipped theme-color is the warm ground.
     const warm = links.indexOf('warm');
-    const WARM_PAGES = ['case.html', 'chat.html', 'subscription.html', 'return.html'];
-    const ok = look >= 0 && (WARM_PAGES.includes(n) ? warm === look + 1 && warm === links.length - 1 : warm === -1)
-      && (landing >= 0 ? look === landing - 1 && landing === links.length - 1 : WARM_PAGES.includes(n) || look === links.length - 1)
+    const ok = look >= 0 && (landing >= 0 ? warm === -1 && look === landing - 1 && landing === links.length - 1 : warm === look + 1 && warm === links.length - 1)
       && /<html lang="en" data-default-scheme="calm">/.test(h)
       && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(h)
-      && /<meta name="theme-color" content="#0A0A0C">/.test(h);
+      && /var cool = localStorage\.getItem\('pa-look'\) === 'cool';\n\s+if \(cool\) document\.documentElement\.dataset\.look = 'cool';/.test(h)
+      && /<meta name="theme-color" content="#1E1519">/.test(h);
     if (!ok) bad.push(`${n}:${links.join('/')}`);
   }
   // NEGATIVE CONTROL (run 2026-10-15): look.css's link taken off chat.html made this read
   // NEGATIVE CONTROL (run 2026-10-15, v7.45): warm.css's link put on admin.html made this read
   //   FAIL  C1 every page but the hidden fund form loads the look last (the home's own sheet after it), paints black, and keeps High contrast
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's link taken off admin.html made C1 read FAIL.
   check('C1 every page but the hidden fund form loads the look last (the home\'s own sheet after it), paints black, and keeps High contrast',
     pages.length >= 25 && bad.length === 0, bad.join(' '));
   const tokens = (css, sel) => {
@@ -215,8 +219,12 @@ console.log('\n--- C. one look ---');
   const THEME = f('public/js/theme.js');
   // NEGATIVE CONTROL (run 2026-10-15): Daylight put back into SCHEMES made this read
   //   FAIL  C3 the scheme picker offers the look and High contrast, nothing else, and the look is the default
+  // RE-PINNED 2026-10-16 (v7.57): the picker offers the two looks, Warm (the default) and Blue and purple, and
+  // High contrast; the schemes underneath are still the look and High contrast, the look still the default.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.57): Daylight put into APPEARANCES made C3 read FAIL.
   check('C3 the scheme picker offers the look and High contrast, nothing else, and the look is the default',
-    (THEME.match(/\{ id: '(\w+)'/g) || []).join() === "{ id: 'calm',{ id: 'contrast'" && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(THEME));
+    (THEME.match(/\{ id: '(\w+)'/g) || []).join() === "{ id: 'calm',{ id: 'contrast',{ id: 'warm',{ id: 'cool',{ id: 'contrast'" && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(THEME)
+    && /return localStorage\.getItem\(LOOK_KEY\) === 'cool' \? 'cool' : 'warm';/.test(THEME));
 }
 
 // ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.56';
+export const VERSION = '7.57';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.56';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // WARM EVERYWHERE (Eric, 2026-10-16: "Warm gradient we have going on
+    // should be default everywhere, with the blue/purple being in settings").
+    // Admin only.
+    version: '7.57',
+    quiet: true,
+    client: [],
+    admin: [
+      'Warm is the look on every page now, yours included.',
+      'Blue and purple is in Settings, under Appearance, for anyone who prefers it. It is kept on each device.',
+    ],
+  },
   {
     // FOUR AUDITS (Eric, 2026-10-16: "Send out four agents to look for any
     // errors in the UI, onboarding process, and functionality of new

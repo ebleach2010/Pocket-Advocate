@@ -14,7 +14,7 @@ const KEY = 'pa-scheme';
 // The ids are STORAGE KEYS and never change: a client who picked one in
 // July keeps their choice. Only the labels moved with the restyle.
 export const SCHEMES = [
-  { id: 'calm', label: 'Standard', blurb: 'Black, with the cyan and violet glow.' },
+  { id: 'calm', label: 'Standard', blurb: 'Warm, or blue and purple, as chosen below.' },
   { id: 'contrast', label: 'High contrast', blurb: 'Maximum legibility.' },
 ];
 
@@ -43,13 +43,46 @@ export function applyScheme(id) {
   try { localStorage.setItem(KEY, id); } catch { /* storage blocked */ }
   document.documentElement.dataset.scheme = id;
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', THEME_COLOR[id] || THEME_COLOR.neon);
+  if (meta) meta.setAttribute('content', schemeThemeColor(id));
   // Announced so the night shift (night-shift.js) can stand down for the
   // visit: a scheme somebody just chose outranks the door sign.
   document.dispatchEvent(new CustomEvent('pa-scheme-set', { detail: { id } }));
 }
 
-/** The theme-color a scheme deserves, for anything repainting the meta. */
+/** The theme-color a scheme deserves, for anything repainting the meta: the warm ground unless this device chose Blue and purple. */
 export function schemeThemeColor(id) {
-  return THEME_COLOR[id] || THEME_COLOR.neon;
+  if (id === 'contrast') return THEME_COLOR.contrast;
+  return currentLook() === 'cool' ? THEME_COLOR.calm : WARM_COLOR;
+}
+
+// THE LOOK (Eric, 2026-10-16: "Warm gradient we have going on should be
+// default everywhere, with the blue/purple being in settings"). Warm unless
+// this device chose Blue and purple. The head snippet on every page sets
+// data-look="cool" from pa-look before anything paints, and warm.css (and
+// landing-warm.css) stand down for it; High contrast outranks both.
+const LOOK_KEY = 'pa-look';
+const WARM_COLOR = '#1E1519';
+
+export function currentLook() {
+  try { return localStorage.getItem(LOOK_KEY) === 'cool' ? 'cool' : 'warm'; } catch { return 'warm'; }
+}
+
+/** What Settings offers: the two looks, and High contrast for somebody's eyes. */
+export const APPEARANCES = [
+  { id: 'warm', label: 'Warm', blurb: 'Plum, peach and rose. The standard look.' },
+  { id: 'cool', label: 'Blue and purple', blurb: 'Black, with the cyan and violet glow.' },
+  { id: 'contrast', label: 'High contrast', blurb: 'Maximum legibility.' },
+];
+
+export function currentAppearance() {
+  return currentScheme() === 'contrast' ? 'contrast' : currentLook();
+}
+
+export function applyAppearance(id) {
+  if (id === 'contrast') { applyScheme('contrast'); return; }
+  if (id !== 'warm' && id !== 'cool') return;
+  try { localStorage.setItem(LOOK_KEY, id); } catch { /* storage blocked */ }
+  if (id === 'cool') document.documentElement.dataset.look = 'cool';
+  else delete document.documentElement.dataset.look;
+  applyScheme('calm');
 }

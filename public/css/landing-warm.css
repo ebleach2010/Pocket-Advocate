@@ -9,12 +9,13 @@
    The same world as the client's side (warm.css): a plum brown ground,
    peach and rose light where the black look had cyan and violet. The
    Priority Chat card keeps its gold, and High contrast, chosen for
-   somebody's eyes, is never touched. */
+   somebody's eyes, is never touched. Nor is Blue and purple, chosen in
+   Settings (data-look="cool", 2026-10-16). */
 
-:root:not([data-scheme="contrast"]):has(body.landing) {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]):has(body.landing) {
   background: #1E1519;
 }
-:root:not([data-scheme="contrast"]) body.landing {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing {
   --bg: #1E1519;
   --bg-deep: #160F12;
   --panel: #2A1E24;
@@ -55,48 +56,48 @@
 }
 
 /* The wordmark keeps the brand's cyan, the way it does on the client's side. */
-:root:not([data-scheme="contrast"]) body.landing .brand .spark { color: #3DDCF5; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .brand .spark { color: #3DDCF5; }
 
 /* The live card: a peach rim and wash instead of the cyan. */
-:root:not([data-scheme="contrast"]) body.landing .opt-live {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-live {
   border-color: rgba(255, 178, 122, .62);
   background:
     linear-gradient(180deg, rgba(255, 178, 122, .12), rgba(255, 178, 122, .02) 58%),
     var(--sur-base);
   box-shadow: 0 0 0 1px rgba(255, 178, 122, .22), 0 22px 60px rgba(255, 140, 100, .14);
 }
-:root:not([data-scheme="contrast"]) body.landing .opt-live .opt-ic,
-:root:not([data-scheme="contrast"]) body.landing .num { border-color: rgba(255, 178, 122, .4); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-live .opt-ic,
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .num { border-color: rgba(255, 178, 122, .4); }
 
 /* Everything that wore the cyan to violet wears the warm pop. */
-:root:not([data-scheme="contrast"]) body.landing :is(.wl-bubble, .ask-fab) {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing :is(.wl-bubble, .ask-fab) {
   background: var(--warm-pop);
   color: #2B1207;
   box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .32);
 }
-:root:not([data-scheme="contrast"]) body.landing .wl-bubble::after { background: #F59BBF; }
-:root:not([data-scheme="contrast"]) body.landing .pv-bubble::after { background: #FFC48A; }
-:root:not([data-scheme="contrast"]) body.landing .opt-gold {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .wl-bubble::after { background: #F59BBF; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pv-bubble::after { background: #FFC48A; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold {
   box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .32);
 }
-:root:not([data-scheme="contrast"]) body.landing .opt-gold::before,
-:root:not([data-scheme="contrast"]) body.landing .opt-gold::after {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold::before,
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold::after {
   background:
     conic-gradient(from var(--pa-ring), transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg),
     var(--warm-pop);
 }
-:root:not([data-scheme="contrast"]) body.landing .pkg-callout {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-callout {
   background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box;
   box-shadow: 0 10px 30px rgba(255, 140, 100, .14);
 }
-:root:not([data-scheme="contrast"]) body.landing .pkg-tldr { box-shadow: inset 3px 0 0 #FFB27A; }
-:root:not([data-scheme="contrast"]) body.landing .pkg-hero {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-tldr { box-shadow: inset 3px 0 0 #FFB27A; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-hero {
   background:
     linear-gradient(160deg, rgba(255, 178, 122, .14), rgba(245, 155, 191, .07) 55%, transparent 80%),
     var(--sur-base);
 }
-:root:not([data-scheme="contrast"]) body.landing :is(.pkg-tag, .pkg-price) { background: var(--warm-pop); -webkit-background-clip: text; background-clip: text; }
-:root:not([data-scheme="contrast"]) body.landing .pkg-points li::before { background: linear-gradient(110deg, #FFC48A, #F59BBF); -webkit-background-clip: text; background-clip: text; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing :is(.pkg-tag, .pkg-price) { background: var(--warm-pop); -webkit-background-clip: text; background-clip: text; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-points li::before { background: linear-gradient(110deg, #FFC48A, #F59BBF); -webkit-background-clip: text; background-clip: text; }
 
 /* The bubbles' breathing glow, in peach. Loaded only while the warm look is
    on, so this takes the animation's place only then. */
@@ -106,7 +107,7 @@
 }
 
 /* Buttons that act. */
-:root:not([data-scheme="contrast"]) body.landing :is(.btn.glow, .btn.mag.glow) {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing :is(.btn.glow, .btn.mag.glow) {
   border-color: transparent;
   background: var(--warm-pop);
   color: #2B1207;

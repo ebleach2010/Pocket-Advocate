@@ -239,8 +239,12 @@ console.log('\n--- E. his side again: the list empties, the cards by state, Dele
   const sc = cards['demo-case-showcase']; const paused = cards['demo-case']; const invited = cards[inviteId];
   // NEGATIVE CONTROL (run 2026-10-15): rowFor passing no `state` made this read
   //   FAIL  open cards wear the cyan to violet rim and breathe, a paused one the gold, and only his own and the showcase carry Delete
-  ok('open cards wear the cyan to violet rim and breathe, a paused one the gold, and only his own and the showcase carry Delete',
-    /st-open/.test(sc?.cls) && /rgb\(61, 220, 245\)/.test(sc?.rim) && sc?.anim === 'st-open-glow'
+  // RE-PINNED 2026-10-16 (v7.57, warm is the look everywhere): his open folders now wear the warm
+  // peach to pink rim and its own breath, so the cyan rim and st-open-glow are read as warm ones.
+  // NEGATIVE CONTROL (run 2026-10-16): warm.css's open folder rim taken back to #3DDCF5 made this read
+  //   FAIL  open cards wear the warm rim and breathe, a paused one the gold, and only his own and the showcase carry Delete
+  ok('open cards wear the warm rim and breathe, a paused one the gold, and only his own and the showcase carry Delete',
+    /st-open/.test(sc?.cls) && /rgb\(255, 196, 138\)/.test(sc?.rim) && sc?.anim === 'st-open-glow-warm'
     && /st-paused/.test(paused?.cls) && /rgb\(233, 185, 73\)/.test(paused?.rim) && paused?.anim === 'st-paused-glow'
     && /st-open/.test(invited?.cls) && sc?.del && !paused?.del && !invited?.del, JSON.stringify({ sc, paused, invited }));
   // Delete from the card: the sheet asks, Keep it keeps it. Each step is read before the next tap, so a

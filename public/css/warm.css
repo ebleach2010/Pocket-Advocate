@@ -1,22 +1,24 @@
-/* THE CLIENT'S SIDE, WARM (Eric, 2026-10-15, looking at the preview: "fix
+/* THE WARM LOOK, EVERYWHERE (Eric, 2026-10-15, looking at the preview: "fix
    the chat aesthetic so it doesn't look so black/dead. I'd like the client
-   side to look warm and engaging. Right now it's cold and confusing." Asked
-   whether real clients get it too: "All client pages").
+   side to look warm and engaging." Then, 2026-10-16: "Warm gradient we have
+   going on should be default everywhere, with the blue/purple being in
+   settings").
 
-   Loaded last, and only on the pages a client lives in: their case, their
-   chat, their subscription and the page after paying. His side never loads
-   it, so his working pages keep the black look. The home and the package
-   pages keep theirs too.
+   Loaded last on every page but the home and the package pages, which have
+   their own (landing-warm.css): the client's pages, his working pages, the
+   sign-in and the rest. Anybody who chose Blue and purple in Settings
+   (data-look="cool", set before paint from pa-look) keeps the black look
+   with its cyan and violet glow, and High contrast, chosen for somebody's
+   eyes, still wins over both: nothing here touches either.
 
    The ground is a deep plum brown instead of black, the light is peach and
-   rose instead of cyan, and the chat is lit: his words on a warm raised
-   card, theirs in a peach to rose wash. High contrast, chosen for
-   somebody's eyes, still wins: nothing here touches it. */
+   rose instead of cyan, and the chat is lit: the advocate's words on a warm
+   raised card, the client's in a peach to rose wash. */
 
-:root:not([data-scheme="contrast"]) {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) {
   background: #1E1519;
 }
-:root:not([data-scheme="contrast"]) body {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body {
   --bg: #1E1519;
   --bg-deep: #160F12;
   --panel: #2A1E24;
@@ -69,10 +71,10 @@
 }
 
 /* The wordmark keeps the brand's cyan, so the client knows whose app it is. */
-:root:not([data-scheme="contrast"]) .brand .spark { color: #3DDCF5; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .brand .spark { color: #3DDCF5; }
 
 /* Buttons that act: the warm pop. */
-:root:not([data-scheme="contrast"]) :is(.btn.glow, .btn.mag.glow) {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(.btn.glow, .btn.mag.glow) {
   border-color: transparent;
   background: var(--warm-pop);
   color: var(--on-accent);
@@ -80,20 +82,20 @@
 }
 
 /* The case's tab rail, lit in peach; Enhance in rose. */
-:root:not([data-scheme="contrast"]) :is(.folder-tabs > a.on, .fgrp.on) :is(.ftab-ic, .fgrp-ic) { color: #FFB27A; }
-:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a[data-page="addons"] .ftab-ic { color: #F59BBF; }
-:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a.on { border-color: #FFB27A; background: rgba(255, 178, 122, .10); box-shadow: 0 0 0 1px rgba(255, 178, 122, .35), 0 6px 18px rgba(255, 140, 100, .18); }
-:root:not([data-scheme="contrast"]) .case-folder .folder-tabs > a[data-page="addons"].on { border-color: #F59BBF; background: rgba(245, 155, 191, .10); box-shadow: 0 0 0 1px rgba(245, 155, 191, .4), 0 6px 18px rgba(245, 155, 191, .18); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(.folder-tabs > a.on, .fgrp.on) :is(.ftab-ic, .fgrp-ic) { color: #FFB27A; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .case-folder .folder-tabs > a[data-page="addons"] .ftab-ic { color: #F59BBF; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .case-folder .folder-tabs > a.on { border-color: #FFB27A; background: rgba(255, 178, 122, .10); box-shadow: 0 0 0 1px rgba(255, 178, 122, .35), 0 6px 18px rgba(255, 140, 100, .18); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .case-folder .folder-tabs > a[data-page="addons"].on { border-color: #F59BBF; background: rgba(245, 155, 191, .10); box-shadow: 0 0 0 1px rgba(245, 155, 191, .4), 0 6px 18px rgba(245, 155, 191, .18); }
 
 /* Cards: a little warmth from above instead of a flat slab. */
-:root:not([data-scheme="contrast"]) :is(.card-lit, .panel) {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(.card-lit, .panel) {
   background: linear-gradient(180deg, rgba(255, 196, 150, .05), rgba(255, 196, 150, 0) 50%), var(--sur-base);
 }
-:root:not([data-scheme="contrast"]) .card-lit { background: linear-gradient(180deg, rgba(255, 196, 150, .07), rgba(255, 196, 150, 0) 55%), var(--sur-lit); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .card-lit { background: linear-gradient(180deg, rgba(255, 196, 150, .07), rgba(255, 196, 150, 0) 55%), var(--sur-lit); }
 
 /* ---- THE CHAT, LIT ------------------------------------------------------- */
-:root:not([data-scheme="contrast"]) .panel.chat-root,
-:root:not([data-scheme="contrast"]) #chat.panel {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .panel.chat-root,
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) #chat.panel {
   background:
     radial-gradient(120% 60% at 100% 0%, rgba(255, 150, 105, .12), transparent 60%),
     radial-gradient(90% 50% at 0% 100%, rgba(245, 155, 191, .09), transparent 60%),
@@ -101,28 +103,28 @@
   border-color: rgba(255, 196, 150, .18);
 }
 /* His words on a warm raised card, with his face beside the first of a run. */
-:root:not([data-scheme="contrast"]) .msg.them {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg.them {
   background: linear-gradient(180deg, #47343D, #3D2D35);
   border: 1px solid rgba(255, 214, 190, .16);
   color: #FFF5EE;
   box-shadow: 0 6px 16px rgba(10, 4, 6, .28);
 }
 /* Theirs in the warm pop, like a message app's own colour. */
-:root:not([data-scheme="contrast"]) .msg.me {
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg.me {
   background: linear-gradient(135deg, #FFC08F 0%, #FFA287 55%, #F7A6C6 100%);
   border: 0;
   color: #2B1207;
   box-shadow: 0 6px 18px rgba(255, 120, 90, .22);
 }
-:root:not([data-scheme="contrast"]) .msg.me .msg-meta { color: rgba(43, 18, 7, .72); }
-:root:not([data-scheme="contrast"]) .msg.me a { color: #5A1E06; }
-:root:not([data-scheme="contrast"]) .msg.them .msg-meta { color: #D9C2B5; }
-:root:not([data-scheme="contrast"]) .msg-react { border-color: rgba(255, 178, 122, .55); background: rgba(255, 178, 122, .14); color: #FFD2AE; }
-:root:not([data-scheme="contrast"]) .msg-emoji-react { background: #34262D; border-color: rgba(255, 214, 190, .2); }
-:root:not([data-scheme="contrast"]) .chat-form textarea { background: #20171B; border-color: rgba(255, 214, 190, .18); color: var(--ink); }
-:root:not([data-scheme="contrast"]) .chat-form textarea::placeholder { color: #A38D82; }
-:root:not([data-scheme="contrast"]) :is(.attach-btn, .chat-expand) { background: #2E2228; border-color: rgba(255, 214, 190, .16); color: var(--soft); }
-:root:not([data-scheme="contrast"]) .chat-search-btn { background: #34262D; color: var(--soft); border-color: rgba(255, 214, 190, .16); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg.me .msg-meta { color: rgba(43, 18, 7, .72); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg.me a { color: #5A1E06; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg.them .msg-meta { color: #D9C2B5; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg-react { border-color: rgba(255, 178, 122, .55); background: rgba(255, 178, 122, .14); color: #FFD2AE; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg-emoji-react { background: #34262D; border-color: rgba(255, 214, 190, .2); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .chat-form textarea { background: #20171B; border-color: rgba(255, 214, 190, .18); color: var(--ink); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .chat-form textarea::placeholder { color: #A38D82; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(.attach-btn, .chat-expand) { background: #2E2228; border-color: rgba(255, 214, 190, .16); color: var(--soft); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .chat-search-btn { background: #34262D; color: var(--soft); border-color: rgba(255, 214, 190, .16); }
 
 /* His face beside his messages: on the first of each run of his. */
 .msg-row { display: flex; align-items: flex-end; gap: .5rem; }
@@ -154,27 +156,27 @@
 .chat-who .who-line { margin: .1rem 0 0; font-size: .86rem; color: var(--dim); }
 
 /* The status line beneath the pill. */
-:root:not([data-scheme="contrast"]) .doing-line { color: #FFD2AE; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .doing-line { color: #FFD2AE; }
 
 /* Search and the down arrow, in the warm pop. */
-:root:not([data-scheme="contrast"]) .chat-search { box-shadow: 0 0 0 1px rgba(255, 178, 122, .25), 0 8px 24px rgba(255, 140, 100, .14); }
-:root:not([data-scheme="contrast"]) :is(.chat-result mark, mark.chat-hit) { background: var(--warm-pop); color: #2B1207; }
-:root:not([data-scheme="contrast"]) .msg.chat-found { box-shadow: inset 0 0 0 2px #FFB27A, inset 0 0 18px rgba(255, 140, 100, .25); }
-:root:not([data-scheme="contrast"]) .chat-bottom { background: var(--warm-pop); color: #2B1207; box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 22px rgba(10, 4, 6, .45); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .chat-search { box-shadow: 0 0 0 1px rgba(255, 178, 122, .25), 0 8px 24px rgba(255, 140, 100, .14); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(.chat-result mark, mark.chat-hit) { background: var(--warm-pop); color: #2B1207; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg.chat-found { box-shadow: inset 0 0 0 2px #FFB27A, inset 0 0 18px rgba(255, 140, 100, .25); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .chat-bottom { background: var(--warm-pop); color: #2B1207; box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 22px rgba(10, 4, 6, .45); }
 
 /* Focus is peach on their side. */
-:root:not([data-scheme="contrast"]) :focus-visible { outline-color: #FFB27A; }
-:where(:root:not([data-scheme="contrast"])) :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid #FFB27A; outline-offset: 2px; }
-:root:not([data-scheme="contrast"]) :is(input[type=checkbox], input[type=radio]) { accent-color: #FFB27A; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :focus-visible { outline-color: #FFB27A; }
+:where(:root:not([data-scheme="contrast"]):not([data-look="cool"])) :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible { outline: 2px solid #FFB27A; outline-offset: 2px; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(input[type=checkbox], input[type=radio]) { accent-color: #FFB27A; }
 
 /* Progress bars and prices in the warm pop. */
-:root:not([data-scheme="contrast"]) progress::-webkit-progress-value { background: var(--warm-pop); }
-:root:not([data-scheme="contrast"]) progress::-moz-progress-bar { background: var(--warm-pop); }
-:root:not([data-scheme="contrast"]) :is(.pack .price, .fu-buy .price, .price-line strong:first-child) { background: var(--warm-pop); -webkit-background-clip: text; background-clip: text; }
-:root:not([data-scheme="contrast"]) .price-line { background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box; box-shadow: 0 10px 30px rgba(255, 140, 100, .16); }
-:root:not([data-scheme="contrast"]) .push-prompt { border-color: rgba(255, 178, 122, .45); box-shadow: 0 10px 30px rgba(255, 140, 100, .12); }
-:root:not([data-scheme="contrast"]) .star:not(.on) { color: rgba(255, 214, 190, .3); }
-:where(:root:not([data-scheme="contrast"])) hr { background: rgba(255, 214, 190, .12); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) progress::-webkit-progress-value { background: var(--warm-pop); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) progress::-moz-progress-bar { background: var(--warm-pop); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) :is(.pack .price, .fu-buy .price, .price-line strong:first-child) { background: var(--warm-pop); -webkit-background-clip: text; background-clip: text; }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .price-line { background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box; box-shadow: 0 10px 30px rgba(255, 140, 100, .16); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .push-prompt { border-color: rgba(255, 178, 122, .45); box-shadow: 0 10px 30px rgba(255, 140, 100, .12); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .star:not(.on) { color: rgba(255, 214, 190, .3); }
+:where(:root:not([data-scheme="contrast"]):not([data-look="cool"])) hr { background: rgba(255, 214, 190, .12); }
 
 /* ---- YOUR PROGRESS, CELEBRATED (Eric, 2026-10-15: "highlight the progress
    section with a celebratory icon") ---------------------------------------- */
@@ -216,3 +218,41 @@
 @keyframes cheer-fall { 0% { opacity: 1; transform: translateY(0) rotate(0); } 100% { opacity: 0; transform: translateY(70px) rotate(220deg); } }
 @keyframes cheer-fill { from { width: 0; } }
 :root[data-scheme="contrast"] .cheer { background: var(--panel); border-color: var(--ink); box-shadow: none; }
+
+/* The Appearance swatches in Settings (2026-10-16): Warm, and Blue and purple. */
+.sc-warm { background: #1E1519; border-color: rgba(255, 214, 190, .22); }
+.sc-warm i:nth-child(1) { background: #FFC48A; }
+.sc-warm i:nth-child(2) { background: #F59BBF; }
+.sc-warm i:nth-child(3) { background: #FFF5EE; }
+.sc-cool { background: #0A0A0C; border-color: rgba(255, 255, 255, .18); }
+.sc-cool i:nth-child(1) { background: #3DDCF5; }
+.sc-cool i:nth-child(2) { background: #B9A6FF; }
+.sc-cool i:nth-child(3) { background: #F5F5F7; }
+
+/* ---- HIS WORKING PAGES, WARM TOO (2026-10-16) ----------------------------
+   The few things on his side painted cyan to violet by hand, rather than
+   through the tokens above, take the warm pop: the + beside Clients, an open
+   case's breathing rim, and the chat bubble a contractor writes to him from.
+   A paused case keeps its gold, the running clock its green. */
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .add-btn {
+  background: var(--warm-pop);
+  color: #2B1207;
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .5), 0 8px 22px rgba(255, 140, 100, .28);
+}
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .drawer .folder.st-open:not(.working):not(.self) {
+  background: linear-gradient(135deg, #FFC48A, #F59BBF);
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .6), 0 0 16px rgba(255, 140, 100, .3);
+}
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-scheme="contrast"]):not([data-look="cool"]) .drawer .folder.st-open:not(.working):not(.self) { animation: st-open-glow-warm 3s ease-in-out infinite; }
+}
+@keyframes st-open-glow-warm {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 0 12px rgba(255, 140, 100, .28); }
+  50% { box-shadow: 0 0 0 1px rgba(245, 155, 191, .8), 0 0 24px rgba(245, 155, 191, .5); }
+}
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .sc-fab {
+  background: var(--warm-pop);
+  color: #2B1207;
+  box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 10px 28px rgba(10, 4, 6, .45);
+}
+

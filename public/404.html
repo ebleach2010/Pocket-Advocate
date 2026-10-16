@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#0A0A0C">
+<meta name="theme-color" content="#1E1519">
 <title>Not here · Pocket Advocate</title>
 <script>
 // Black, like every page; somebody who chose High contrast keeps it.
@@ -11,8 +11,13 @@
   try {
     var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
     document.documentElement.dataset.scheme = s;
+    // Warm is the look everywhere; blue and purple is a choice in Settings
+    // (Eric, 2026-10-16: "Warm gradient we have going on should be default
+    // everywhere, with the blue/purple being in settings").
+    var cool = localStorage.getItem('pa-look') === 'cool';
+    if (cool) document.documentElement.dataset.look = 'cool';
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
@@ -36,6 +41,7 @@
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/glowup.css?v=sp9">
 <link rel="stylesheet" href="/css/look.css?v=7">
+<link rel="stylesheet" href="/css/warm.css?v=2">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>

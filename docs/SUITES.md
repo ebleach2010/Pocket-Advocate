@@ -1858,3 +1858,22 @@ drive-advocates' setup steps. Fixtures updated: advocates' working
 advocates are set up; the hold, charge, invites and uploads harnesses carry
 the new helpers.
 
+### Warm everywhere, Blue and purple in Settings (2026-10-16, v7.57)
+
+Eric: "Warm gradient we have going on should be default everywhere, with the
+blue/purple being in settings". warm.css now loads after look.css on every
+page but the home and the package pages (landing-warm.css, still behind his
+public switch) and the hidden fund form; both warm sheets stand down for
+data-look="cool", which the head snippet on every page sets before paint
+from pa-look. Settings' Appearance offers Warm (the default), Blue and purple,
+and High contrast (theme.js APPEARANCES, applyAppearance). His hand-painted
+cyan (the +, an open case's rim, the chat bubble, Employer mode's money,
+initials and buttons) follows the look. The theme-color is the warm ground
+unless Blue and purple is chosen.
+
+New: warm E1, E2, drive-cleanup I, each with a recorded control. Re-pinned
+with controls: cancelsearch C1, C3; warm A1, A4; landingwarm B2;
+staffsettings E4 (the v7.56 demo gate, caught here); drive-cleanup's button
+contrast check (a bright edge in the look's own accent); drive-invite's open
+card rim (now the warm peach to pink); release R1.
+

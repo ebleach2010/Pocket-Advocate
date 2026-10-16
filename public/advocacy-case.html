@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#0A0A0C">
+<meta name="theme-color" content="#1E1519">
 <title>Advocacy Case · Pocket Advocate</title>
 <script>
 // The landing is black (Eric, 2026-10-10: "Have it be a more sleek black
@@ -21,8 +21,13 @@
   try {
     var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
     document.documentElement.dataset.scheme = s;
+    // Warm is the look everywhere; blue and purple is a choice in Settings
+    // (Eric, 2026-10-16: "Warm gradient we have going on should be default
+    // everywhere, with the blue/purple being in settings").
+    var cool = localStorage.getItem('pa-look') === 'cool';
+    if (cool) document.documentElement.dataset.look = 'cool';
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>

@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Pocket Advocate">
-<meta name="theme-color" content="#0A0A0C">
+<meta name="theme-color" content="#1E1519">
 <title>Availability · Pocket Advocate admin</title>
 <script>
 // Every page is black now (Eric, 2026-10-15: "everywhere should have this
@@ -19,14 +19,20 @@
   try {
     var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
     document.documentElement.dataset.scheme = s;
+    // Warm is the look everywhere; blue and purple is a choice in Settings
+    // (Eric, 2026-10-16: "Warm gradient we have going on should be default
+    // everywhere, with the blue/purple being in settings").
+    var cool = localStorage.getItem('pa-look') === 'cool';
+    if (cool) document.documentElement.dataset.look = 'cool';
     var m = document.querySelector('meta[name="theme-color"]');
-    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : '#0A0A0C');
+    if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/admin.css?v=stat138">
 <link rel="stylesheet" href="/css/look.css?v=7">
+<link rel="stylesheet" href="/css/warm.css?v=2">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>

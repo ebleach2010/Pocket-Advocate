@@ -102,7 +102,9 @@ console.log('\n--- B. the pages ---');
   check('B2 only a page that wears landing.css gets the warm sheet, right after it, and only an HTML page that answered',
     /if \(!res\.ok \|\| !\/\^text\\\/html\/i\.test\(res\.headers\.get\('content-type'\) \|\| ''\)\) return res;/.test(warm)
     && /if \(!\(await landingWarmOn\(env\)\.catch\(\(\) => false\)\)\) return res;/.test(warm)
-    && /\.on\('link\[rel="stylesheet"\]\[href\^="\/css\/landing\.css"\]', \{\n\s+element\(el\) \{ el\.after\('<link rel="stylesheet" href="\/css\/landing-warm\.css\?v=1">', \{ html: true \}\); \},/.test(warm)
+    // RE-PINNED 2026-10-16 (v7.57): the sheet's address carries ?v=2, since it now stands down for Blue and purple.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.57): the rewrite keyed on every stylesheet again made B2 read FAIL.
+    && /\.on\('link\[rel="stylesheet"\]\[href\^="\/css\/landing\.css"\]', \{\n\s+element\(el\) \{ el\.after\('<link rel="stylesheet" href="\/css\/landing-warm\.css\?v=2">', \{ html: true \}\); \},/.test(warm)
     && /return warmLook\(env, await env\.ASSETS\.fetch\(request\)\);\n  \},/.test(W),
     warm.slice(0, 200));
   const pages = readdirSync(j(ROOT, 'public')).filter((n) => n.endsWith('.html'));
