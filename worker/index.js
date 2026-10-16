@@ -44,6 +44,7 @@
 //   POST   /api/invite/confirm     confirm it: Stripe checkout at his price, or the case at once when free
 //   POST   /api/admin/schedule     book a client at any time at all (admin)
 //   POST   /api/advisor            private LLM advisor: analyse / ask / draft (admin)
+//   POST   /api/admin/oversee      on a case someone else works: remove a message or a file, or send the crisis message (his)
 // Plus a cron (see scheduled()) that emails unread-chat digests.
 // Everything else falls through to the static app in public/.
 
@@ -66,6 +67,8 @@ import {
 } from './schedule.js';
 import { sendEmail, homeScreenTips, signinCodeEmail } from './email.js';
 import { notifyUser } from './push.js';
+// His three acts on a case someone else works (2026-10-16): worker/oversee.js.
+import { handleOversee } from './oversee.js';
 // The advisor's allowlist. Imported here rather than duplicated: the bound the
 // urgent notification enforces and the bound the advisor may propose within
 // are the SAME constant, so the route cannot drift wider than the thing it was
@@ -1459,6 +1462,8 @@ export default {
         return await handleAdminSession(request, env);
       if (url.pathname === '/api/admin/stall' && request.method === 'POST')
         return await handleStall(request, env);
+      if (url.pathname === '/api/admin/oversee' && request.method === 'POST')
+        return await handleOversee(request, env, { requireAdmin, json });
       if (url.pathname.startsWith('/api/')) {
         // The same token check every real route does, and then the same 404.
         //
@@ -2423,7 +2428,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-16-never-stuck';
+const BUILD_TAG = 'v2026-10-16-oversee';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2431,7 +2436,7 @@ const BUILD_TAG = 'v2026-10-16-never-stuck';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.58';
+const VERSION = '7.59';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

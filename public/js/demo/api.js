@@ -3043,6 +3043,60 @@ export function demoApi(role, store) {
       store.fire?.(p);
       return ok({ ok: true, id: rid });
     }
+    // HIS THREE ACTS ON SOMEONE ELSE'S CASE (2026-10-16), mirrored from
+    // worker/oversee.js: remove a message, remove a file, send the crisis
+    // message from him. His alone; his own case refused; "Removed by Eric".
+    if (path === '/api/admin/oversee') {
+      if (role !== 'admin') return fail(404, 'Not found');
+      const cid = String(body.caseId || '');
+      const c = /^[\w-]{1,64}$/.test(cid) ? store.docs.get(`cases/${cid}`) : null;
+      if (!c) return fail(404, 'Not found');
+      if (c.self) return fail(400, 'This is your own case.');
+      const removed = { by: 'Eric', at: new Date() };
+      const strip = (p) => {
+        store.docs.set(p, { ...store.docs.get(p), text: '', attachment: null, quote: null, removed });
+        store.fire?.(p);
+      };
+      if (body.action === 'remove-message') {
+        const msgId = String(body.msgId || '');
+        const p = `cases/${cid}/chat/${msgId}`;
+        const m = /^[\w-]{1,64}$/.test(msgId) ? store.docs.get(p) : null;
+        if (!m) return fail(404, 'Not found');
+        if (m.removed) return ok({ ok: true, already: true });
+        const fp = m.attachment?.path || '';
+        if (fp.startsWith(`cases/${cid}/chat-files/`)) { store.files.delete(fp); store.fire?.(fp); }
+        strip(p);
+        return ok({ ok: true });
+      }
+      if (body.action === 'remove-file') {
+        const fp = String(body.path || '');
+        const mm = fp.match(/^cases\/([\w-]{1,64})\/([\w-]+)\/[^/]{1,300}$/);
+        if (!mm || mm[1] !== cid || !['uploads', 'report', 'recording', 'chat-files'].includes(mm[2]) || fp.includes('..')) return fail(400, 'Bad request');
+        store.files.delete(fp);
+        store.fire?.(fp);
+        if (mm[2] === 'chat-files') {
+          for (const [p, m] of [...store.docs.entries()]) {
+            if (p.startsWith(`cases/${cid}/chat/`) && !m?.removed && m?.attachment?.path === fp) strip(p);
+          }
+        }
+        store.docs.set(`cases/${cid}`, { ...c, removedFiles: [...(c.removedFiles || []), { kind: mm[2], by: 'Eric', at: new Date() }].slice(-50) });
+        store.fire?.(`cases/${cid}`);
+        return ok({ ok: true });
+      }
+      if (body.action === 'crisis') {
+        const text = typeof body.text === 'string' ? body.text.trim() : '';
+        if (!text || text.length > 4000) return fail(400, 'The message is empty or too long.');
+        if (c.status === 'closed') return fail(409, 'This case is closed, so its chat is too.');
+        const id = `eric-${Date.now().toString(36)}`;
+        const now = new Date();
+        store.docs.set(`cases/${cid}/chat/${id}`, { from: me, role: 'admin', text, ts: now, byName: 'Eric' });
+        store.fire?.(`cases/${cid}/chat/${id}`);
+        store.docs.set(`cases/${cid}`, { ...c, lastMessage: { text: text.slice(0, 120), from: me, role: 'admin', ts: now, emailed: false } });
+        store.fire?.(`cases/${cid}`);
+        return ok({ ok: true, id });
+      }
+      return fail(400, 'Bad request');
+    }
     if (path === '/api/chat/react' || path === '/api/chat/pass' || path === '/api/chat/edit') {
       // These write to the message, and in the demo the store is the message.
       // The caller names its case: hardcoding DEMO_CASE_ID here sent the Full

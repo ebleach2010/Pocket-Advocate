@@ -1895,3 +1895,25 @@ New: drive-nostuck (16 checks, about a minute; seven recorded controls);
 landing E4, E5, each with a recorded control. Re-pinned with a control:
 release R1.
 
+### His three acts on a team member's case (2026-10-16, v7.59)
+
+Eric: "I should be able to tap on the employee and see things from their
+perspective without being able to interact with their client. I can still
+delete uploads and chats for real employees if I think they're dangerous, as
+well as hit the ⚕️ icon to send them suicide prevention resources with the
+prewritten message." His choices the same day: the crisis message is from
+him, and a removal leaves "Removed by Eric" for both sides. The quiet view
+(admin-case.html?as=) stays read-only except POST /api/admin/oversee
+(worker/oversee.js, his alone): remove-message strips the words and the file
+(only this case's chat-files) and marks it removed; remove-file deletes from
+this case's four shared folders only and adds a nameless removedFiles entry
+to the case, stripping a chat file's message with it; crisis writes his
+message with byName 'Eric' and tells the client and the advocate without
+quoting it. chat.js paints removed and byName for every side; both upload
+lists say what was removed, never its name. The demo mirrors the route.
+
+New: oversee.mjs (15 checks, 11 recorded controls), drive-oversee (9 checks,
+five recorded controls). Re-pinned with a control: release R1; selfcase S37
+(chat's messageTools option); warm B3 (his message wears his name, not their
+face); filing's advocate-row harness (asUid, for F25 to F27).
+

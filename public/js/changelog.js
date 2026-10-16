@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.58';
+export const VERSION = '7.59';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.58';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HIS THREE ACTS ON THEIR CASES (Eric, 2026-10-16: "I can still delete
+    // uploads and chats for real employees if I think they're dangerous, as
+    // well as hit the ⚕️ icon to send them suicide prevention resources with
+    // the prewritten message"). Admin only.
+    version: '7.59',
+    quiet: true,
+    client: [],
+    admin: [
+      'Looking in on a team member\'s case, 🗑 takes down a message or a file. The client and the team member see Removed by Eric where it was.',
+      '⚕️ Crisis resources, at the top of their case, sends your prewritten message to their client, from you.',
+      'Everything else there stays look only.',
+    ],
+  },
   {
     // NEVER STUCK SIGNING IN (Eric, 2026-10-16: "There are glitches where
     // you get stuck on a loading screen. I'm not sure it's even possible to

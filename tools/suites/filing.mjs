@@ -519,6 +519,9 @@ const slab = (src, from, to) => {
     // them); this harness is his page.
     // NEGATIVE CONTROL (run 2026-10-15, v7.52): the row's escape of the file name taken out still made F25 read FAIL.
     const advocate = false;
+    // RE-PINNED 2026-10-16 (v7.59): the row offers his remove only in a quiet view (asUid); this harness is his own page.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.59): without this line F25 to F27 read FAIL (the lift threw: asUid is not defined).
+    const asUid = '';
     ${aLabel}
     ${aRow}
     return { html: row(__r), group: fileGroup(__r) };

@@ -814,7 +814,10 @@ check('S37 the chat paints a question with a Reply, his answer with the question
   // RE-PINNED 2026-10-15 (v7.46): Eric's quiet view ("see everything they see") reads a contractor's thread from their
   // side, viewAs, after the day lines; nothing else changes and it defaults to his own uid.
   // NEGATIVE CONTROL (run 2026-10-15, v7.46): viewAs defaulting to 'x' made S37 read FAIL.
-  && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false, viewAs = '' \}\) \{/.test(CHAT)
+  // RE-PINNED 2026-10-16 (v7.59): his three acts in a quiet view hang a remove on each message through
+  // messageTools, after viewAs; it defaults to nothing, so every other chat is exactly as it was.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.59): messageTools defaulting to `() => {}` made S37 read FAIL.
+  && /data-reply-strip hidden/.test(CHAT) && /placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false, viewAs = '', messageTools = null \}\) \{/.test(CHAT)
   && /const mine = data\.from === \(viewAs \|\| user\.uid\);/.test(CHAT)
   && /self: !!data\.self,/.test(CASE) && /placeholder: data\.self \? /.test(CASE)
   && /unansweredSelf = !!data\.self;/.test(CASE) && /\$\{unansweredSelf \? '' : `<button class="btn quiet" data-again=/.test(CASE)

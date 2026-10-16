@@ -137,7 +137,10 @@ console.log('\n--- B. his face, and the days ---');
   // NEGATIVE CONTROL (run 2026-10-15): the avatar given to every message, his own question rows included, made this read
   //   FAIL  B3 his face rides only the first of each run of his words, never the client's own or a question row, with a name for a screen reader
   check('B3 his face rides only the first of each run of his words, never the client\'s own or a question row, with a name for a screen reader',
-    /if \(otherAvatar && !mine && !isQ\) \{/.test(CHAT) && /ava\.className = prevTheirs \? 'msg-ava gap' : 'msg-ava';/.test(CHAT)
+    // RE-PINNED 2026-10-16 (v7.59): a message he sends on someone else's case (byName) carries his name,
+    // never their advocate's face.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.59): the avatar's `&& !data.byName` taken out made B3 read FAIL.
+    /if \(otherAvatar && !mine && !isQ && !data\.byName\) \{/.test(CHAT) && /ava\.className = prevTheirs \? 'msg-ava gap' : 'msg-ava';/.test(CHAT)
     && /ava\.alt = prevTheirs \? '' : \(otherName \|\| ''\);/.test(CHAT) && /prevTheirs = !mine && !isQ;/.test(CHAT)
     && /return diff === 0 \? 'Today' : diff === 1 \? 'Yesterday' : dayFmt\.format\(d\);/.test(CHAT));
   const big = statSync(j(ROOT, 'public/img/eric-headshot.jpg')).size;

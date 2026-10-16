@@ -1141,7 +1141,7 @@ async function refreshFiles(c, el) {
     } catch { /* folder may not exist yet */ }
   }
   if (!rows.length) {
-    listEl.innerHTML = '<li class="dim small">Nothing here yet. Add files above, or share them in chat and long-press to save.</li>';
+    listEl.innerHTML = '<li class="dim small">Nothing here yet. Add files above, or share them in chat and long-press to save.</li>' + removedLi(c.removedFiles);
     return;
   }
   // Uploads are stored as `${Date.now()}-${name}` so two files called the same
@@ -1219,6 +1219,7 @@ async function refreshFiles(c, el) {
         <a href="${r.url}" target="_blank" rel="noopener">${esc(readName(r))}</a></span>
       <span class="fmeta">${fmt.format(r.ts)} · ${prettySize(r.size)}</span>
     </li>`).join('');
+  listEl.insertAdjacentHTML('beforeend', removedLi(c.removedFiles));
 
   // Long-press (or right-click) a file you put here to remove it. Offered on
   // your own kinds only; the report and the recording are the case record.
@@ -1252,6 +1253,20 @@ async function refreshFiles(c, el) {
       } catch (err) { alert(`Couldn't delete: ${err.message}`); }
     });
   });
+}
+
+/**
+ * A file Eric removed from the case (2026-10-16) is said, not hidden: one
+ * line, never the file's name.
+ */
+function removedLi(list) {
+  const items = Array.isArray(list) ? list : [];
+  if (!items.length) return '';
+  const last = items[items.length - 1];
+  const at = last?.at?.toDate ? last.at.toDate() : last?.at ? new Date(last.at) : null;
+  const day = at && !Number.isNaN(at.getTime())
+    ? new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' }).format(at) : '';
+  return `<li class="dim small" data-removed-files>Removed by Eric: ${items.length === 1 ? 'one file' : `${items.length} files`}${day ? `, the latest on ${day}` : ''}.</li>`;
 }
 
 /** Long-press (550ms) or right-click asks, then runs the delete. */

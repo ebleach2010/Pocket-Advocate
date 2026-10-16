@@ -111,7 +111,7 @@ export function advocateFirstNow(advocateId) {
  *   each run of theirs (the client's side, 2026-10-15). dayLines: a line
  *   naming the day between the days of the conversation.
  */
-export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false, viewAs = '' }) {
+export function mountChat({ container, parentPath, user, myRole, saveUid, disabled = false, notice = '', composerButton = null, onStatus = null, placeholder = 'Write a message…', otherAvatar = '', otherName = '', dayLines = false, viewAs = '', messageTools = null }) {
   container.classList.add('chat-root');
   // The lane chips lived and died on 2026-08-22 (Eric: "Just get rid of all
   // of them. They're pointless. Have it just be a chat."). Do not rebuild a
@@ -246,6 +246,28 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       const div = document.createElement('div');
       div.className = `msg ${mine ? 'me' : 'them'}${isQ ? ' q' : ''}`;
       div.dataset.mid = m.id;
+      // REMOVED BY ERIC (2026-10-16): a message he took down from a case
+      // someone else works. Both sides see where it was, never what it said.
+      if (data.removed) {
+        div.classList.add('removed');
+        const gone = document.createElement('span');
+        gone.className = 'msg-removed';
+        gone.style.cssText = 'font-style:italic; opacity:.72;';
+        gone.textContent = `Removed by ${data.removed.by || 'Eric'}`;
+        div.appendChild(gone);
+        log.appendChild(div);
+        prevTheirs = false;
+        continue;
+      }
+      // A message he sent himself on someone else's case carries his name,
+      // so nobody takes his words for their advocate's.
+      if (data.byName) {
+        const by = document.createElement('span');
+        by.className = 'msg-by';
+        by.style.cssText = 'display:block; font-size:.74rem; font-weight:700; opacity:.85; margin-bottom:.2rem;';
+        by.textContent = data.byName;
+        div.appendChild(by);
+      }
       if (data.quote) {
         // His answer carries the question it answers, above his words.
         const qt = document.createElement('span');
@@ -380,8 +402,10 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
           deadline: sentAt ? sentAt.getTime() + EDIT_WINDOW_MS : 0,
         });
       }
+      // Whatever the page that mounted this chat adds to each message.
+      if (messageTools) messageTools(div, m.id, data);
 
-      if (otherAvatar && !mine && !isQ) {
+      if (otherAvatar && !mine && !isQ && !data.byName) {
         const row = document.createElement('div');
         row.className = 'msg-row';
         const ava = document.createElement('img');

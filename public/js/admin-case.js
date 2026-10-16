@@ -779,6 +779,8 @@ function render(el) {
     notice: asUid ? 'Seeing what they see. Nothing you type here is sent.' : 'Chat ended when this case closed.',
     // In a quiet view, their messages are on the right, the way they see them.
     viewAs: asUid || '',
+    // ...and each one he can take down (2026-10-16), leaving "Removed by Eric".
+    messageTools: asUid ? removeMessageTool : null,
     // Always there, on every case, saying nothing about anyone. The point is
     // that it is one tap from the conversation rather than four taps away on
     // the last page, because the moment he wants it is not a moment for
@@ -3772,7 +3774,7 @@ async function refreshFiles({ fromCache = false } = {}) {
     : '';
   if (gen !== filesGen) return;
   if (!rows.length) {
-    listEl.innerHTML = short || '<p class="dim small">No files yet.</p>';
+    listEl.innerHTML = (short || '<p class="dim small">No files yet.</p>') + removedNote(data?.removedFiles);
     return;
   }
   const reviewable = advisorReadable;
@@ -3815,6 +3817,10 @@ async function refreshFiles({ fromCache = false } = {}) {
         style="background:none; border:0; padding:.3rem .35rem; font-size:1.25rem; line-height:1; cursor:pointer;${r.starred ? '' : ' opacity:.35; filter:grayscale(1);'}"
         aria-label="${r.starred ? `Unstar ${esc(readName(r))}` : `Star ${esc(readName(r))}: pin to the top`}"
         title="${r.starred ? 'Unstar: back into its day' : 'Star: pin to the top'}">⭐</button>`}
+      ${asUid && r.kind !== 'saved'
+        ? `<button type="button" class="btn quiet" data-oversee-file="${i}" data-quiet-ok
+             aria-label="Remove ${esc(readName(r))}" title="Remove this file. Both sides see Removed by Eric.">🗑</button>`
+        : ''}
       ${!advocate && reviewable(r)
         ? `<button class="btn quiet file-review" data-review="${i}"
              aria-label="Hand ${esc(readName(r))} to the advisor to read"
@@ -3851,6 +3857,22 @@ async function refreshFiles({ fromCache = false } = {}) {
         <ul class="filelist">${day.groups.get(g).map(row).join('')}</ul>`).join('')}
     </section>`).join('');
   listEl.innerHTML = short + pinnedHtml + daysHtml;
+  listEl.insertAdjacentHTML('beforeend', removedNote(data?.removedFiles));
+  // His remove, in a quiet view (2026-10-16): asked first, then gone for both sides.
+  listEl.querySelectorAll('[data-oversee-file]').forEach((b) => b.addEventListener('click', async () => {
+    const r = rows[Number(b.dataset.overseeFile)];
+    if (!r) return;
+    const yes = await ask({
+      title: 'Remove this file?', body: `${readName(r)} is deleted for good. The client and the advocate see "Removed by Eric" in its place.`,
+      okLabel: 'Remove it', danger: true,
+    });
+    if (!yes) return;
+    b.disabled = true;
+    const out = await oversee({ action: 'remove-file', caseId, path: r.path });
+    if (!out.ok) { b.disabled = false; alert(out.error || 'That did not go through. Try again.'); return; }
+    data = { ...(data || {}), removedFiles: [...(data?.removedFiles || []), { kind: r.kind, by: 'Eric', at: new Date().toISOString() }] };
+    refreshFiles();
+  }));
   // One day per page (Eric, 2026-08-30), same pager as the work log. A
   // search shows its one flat section and needs no pager at all.
   if (!q) pageByDay('files', [...listEl.querySelectorAll('.up-day')],
@@ -7008,6 +7030,65 @@ function paintCallDoc(host) {
   if (callDocCaseFiles === null) listCaseFilesIntoPicker();
 }
 
+// ---- HIS THREE ACTS IN A QUIET VIEW (Eric, 2026-10-16) ---------------------
+//
+// "I can still delete uploads and chats for real employees if I think they're
+// dangerous, as well as hit the ⚕️ icon to send them suicide prevention
+// resources with the prewritten message." Everything else in a quiet view
+// stays read-only. A removal leaves "Removed by Eric" for both sides (his
+// choice); the crisis message is from him by name. worker/oversee.js.
+
+/** One of the three, through the one route the quiet view lets out. */
+async function oversee(body) {
+  try {
+    const token = await user.getIdToken();
+    const res = await fetch('/api/admin/oversee', {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const out = await res.json().catch(() => ({}));
+    return res.ok ? { ok: true, ...out } : { ok: false, error: out.error || `Failed (${res.status})` };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+/** The 🗑 on each message in a quiet view: asked first, then "Removed by Eric" for both sides. */
+function removeMessageTool(div, msgId, d) {
+  if (d.removed || !(d.text || d.attachment)) return;
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'msg-remove';
+  b.setAttribute('data-quiet-ok', '');
+  b.setAttribute('aria-label', 'Remove this message');
+  b.title = 'Remove this message. Both sides see Removed by Eric.';
+  b.textContent = '🗑';
+  b.style.cssText = 'display:block; margin:.35rem 0 0 auto; background:none; border:0; padding:.2rem .3rem; font-size:1rem; line-height:1; cursor:pointer; opacity:.75;';
+  b.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const yes = await ask({
+      title: 'Remove this message?',
+      body: `${d.attachment ? 'The message and its file are' : 'It is'} deleted for good. The client and the advocate see "Removed by Eric" in its place.`,
+      okLabel: 'Remove it', danger: true,
+    });
+    if (!yes) return;
+    b.disabled = true;
+    const out = await oversee({ action: 'remove-message', caseId, msgId });
+    if (!out.ok) { b.disabled = false; alert(out.error || 'That did not go through. Try again.'); }
+  });
+  div.appendChild(b);
+}
+
+/** Under the uploads: what was removed, never what it was called. */
+function removedNote(list) {
+  const items = Array.isArray(list) ? list : [];
+  if (!items.length) return '';
+  const last = items[items.length - 1];
+  const at = last?.at?.toDate ? last.at.toDate() : last?.at ? new Date(last.at) : null;
+  const day = at && !Number.isNaN(at.getTime())
+    ? new Intl.DateTimeFormat('en-US', { timeZone: MOUNTAIN_TZ, month: 'short', day: 'numeric' }).format(at) : '';
+  return `<p class="dim small removed-files" data-removed-files>🗑 Removed by Eric: ${items.length === 1 ? 'one file' : `${items.length} files`}${day ? `, the latest on ${day}` : ''}.</p>`;
+}
+
 /**
  * A quiet view's rules, for the whole page: a strip that says whose view this
  * is and the way back; no request that writes leaves the page; and the
@@ -7033,13 +7114,15 @@ function quietView(uid) {
   window.fetch = (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url || '';
     const method = String(init.method || (typeof input === 'object' && input?.method) || 'GET').toUpperCase();
-    if (method !== 'GET' && /^(\/|https?:\/\/[^/]+\/)api\//.test(url)) {
+    // His three acts (2026-10-16) are the one write that leaves.
+    if (method !== 'GET' && /^(\/|https?:\/\/[^/]+\/)api\//.test(url) && !/^(\/|https?:\/\/[^/]+\/)api\/admin\/oversee$/.test(url)) {
       say(LINE);
       return Promise.resolve(new Response(JSON.stringify({ error: LINE }), { status: 409, headers: { 'content-type': 'application/json' } }));
     }
     return realFetch(input, init);
   };
-  const SAFE = '.folder-groups button, .folder-tabs a, .folder-tabs button, .ftab, .fgrp, summary, a[href], .chat-search-btn, .chat-search, .chat-search *, .chat-result, .chat-bottom, [data-expand], .quiet-bar *, [data-quiet-ok]';
+  // The asking sheet and the crisis draft are his to use here (2026-10-16).
+  const SAFE = '.folder-groups button, .folder-tabs a, .folder-tabs button, .ftab, .fgrp, summary, a[href], .chat-search-btn, .chat-search, .chat-search *, .chat-result, .chat-bottom, [data-expand], .quiet-bar *, [data-quiet-ok], dialog.ask-sheet *, .duty-card *';
   const ACTS = 'button, [role="button"], input, select, textarea, [contenteditable="true"], label.attach-btn, label.dropzone, [data-clock]';
   const stop = (e) => {
     const el = e.target.closest?.(ACTS);
@@ -7052,6 +7135,7 @@ function quietView(uid) {
     document.addEventListener(type, (e) => {
       if (type === 'keydown' && !(e.target.closest?.('input, textarea, [contenteditable="true"]'))) return;
       if (type === 'keydown' && e.target.closest?.('.chat-search')) return;
+      if (type === 'submit' && e.target.closest?.('dialog.ask-sheet')) return;
       if (type === 'submit') { e.preventDefault(); e.stopImmediatePropagation(); say(LINE); return; }
       stop(e);
     }, true);
@@ -7059,7 +7143,15 @@ function quietView(uid) {
   const bar = document.createElement('div');
   bar.className = 'quiet-bar';
   bar.setAttribute('role', 'status');
-  bar.innerHTML = `<span>Seeing what <strong data-quiet-name>this advocate</strong> sees on this case. They cannot tell you are here.</span> <a class="btn quiet" href="/admin.html?as=${encodeURIComponent(uid)}">Back to their shelf</a>`;
+  bar.innerHTML = `<span>Seeing what <strong data-quiet-name>this advocate</strong> sees on this case. They cannot tell you are here. Only 🗑 and ⚕️ reach anyone.</span> <button type="button" class="btn" data-quiet-duty title="Send the crisis resources, from you">⚕️ Crisis resources</button> <a class="btn quiet" href="/admin.html?as=${encodeURIComponent(uid)}">Back to their shelf</a>`;
+  bar.querySelector('[data-quiet-duty]').addEventListener('click', () => openDutyDraft({
+    tz: data?.clientTz || '',
+    onSend: async (text) => {
+      const out = await oversee({ action: 'crisis', caseId, text });
+      if (!out.ok) throw new Error(out.error || 'That did not go through. Try again.');
+      say('Sent, from you.');
+    },
+  }));
   const place = () => { const m = document.querySelector('main'); if (m && !m.querySelector('.quiet-bar')) m.prepend(bar); };
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', place); else place();
   user.getIdToken().then((token) => realFetch('/api/admin/advocates', {
