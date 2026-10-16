@@ -77,8 +77,11 @@ await settle(page, 2500);
   if (SHOTS) await page.screenshot({ path: `${SHOTS}/invite-b-plus.png` });
   // NEGATIVE CONTROL (run 2026-10-15): wireAddMenu's + listening for 'dblclick' instead of 'click' made this read
   //   FAIL  a tap on the + opens his menu: Showcase, My own case, Schedule a case from a lead, then the family case
-  ok('a tap on the + opens his menu: Showcase, My own case, Schedule a case from a lead, then the family case',
-    closed && opened && items.join('|') === 'Showcase|My own case|Schedule a case from a lead|Family case', items.join('|'));
+  // RE-PINNED 2026-10-16 (v7.60): no Showcase door (Eric, "Remove both": Demo mode replaces Joe Bloe).
+  // NEGATIVE CONTROL (run 2026-10-16, v7.60): the Showcase door put back in admin.html's + menu made this read
+  //   FAIL  a tap on the + opens his menu: My own case, Schedule a case from a lead, then the family case
+  ok('a tap on the + opens his menu: My own case, Schedule a case from a lead, then the family case',
+    closed && opened && items.join('|') === 'My own case|Schedule a case from a lead|Family case', items.join('|'));
   await page.click('.clients-head h1');
   await page.waitForTimeout(300);
   ok('a tap anywhere else puts it away', await page.evaluate(() => document.getElementById('add-menu').hidden));
@@ -210,11 +213,10 @@ console.log('\n--- E. his side again: the list empties, the cards by state, Dele
   await page.reload({ waitUntil: 'networkidle' });
   await settle(page, 2500);
   ok('the waiting list is empty once they confirm', await page.evaluate(() => !document.querySelector('#invites [data-inv]')));
-  // The showcase, opened from the +.
-  await page.click('[data-add-open]');
-  await page.click('[data-showcase-door]');
-  await page.waitForURL((u) => /admin-case(\.html)?\?id=/.test(u.toString()), { timeout: 15000 });
-  ok('Showcase walks into Joe Bloe', new URL(page.url()).searchParams.get('id') === 'demo-case-showcase', page.url());
+  // RE-PINNED 2026-10-16 (v7.60): the + has no Showcase door (Eric, "Remove both": Demo mode replaces Joe Bloe), so the
+  // demo builds him through the route the door used, for the cards below.
+  const built = await page.evaluate(async () => (await (await fetch('/api/admin/showcase-case', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).json()).id || '');
+  ok('Showcase walks into Joe Bloe', built === 'demo-case-showcase', built);
   await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
   await settle(page, 2500);
   // A paused case, for the gold.
@@ -266,8 +268,11 @@ console.log('\n--- E. his side again: the list empties, the cards by state, Dele
   await page.waitForTimeout(1800);
   // NEGATIVE CONTROL (run 2026-10-15): wireShelfDelete's `load();` after a delete taken out made this read
   //   FAIL  Delete it takes the showcase off the shelf, and the + can open him fresh
-  ok('Delete it takes the showcase off the shelf, and the + can open him fresh', /admin(\.html)?$/.test(new URL(page.url()).pathname)
-    && await page.evaluate(() => !document.querySelector('.folder[data-id="demo-case-showcase"]') && !!document.querySelector('[data-showcase-door]')).catch(() => false));
+  // RE-PINNED 2026-10-16 (v7.60): and the + has no door to build him again; Demo mode replaces him.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.60): the Showcase door put back in admin.html's + menu made this read
+  //   FAIL  Delete it takes the showcase off the shelf, and the + has no door to build him again
+  ok('Delete it takes the showcase off the shelf, and the + has no door to build him again', /admin(\.html)?$/.test(new URL(page.url()).pathname)
+    && await page.evaluate(() => !document.querySelector('.folder[data-id="demo-case-showcase"]') && !document.querySelector('[data-showcase-door]')).catch(() => false));
 }
 
 ok('no page errors', errs.length === 0, errs.join(' | '));

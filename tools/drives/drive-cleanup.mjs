@@ -291,7 +291,11 @@ console.log('\n--- G. the sample contractor\'s pay, and their cases one tap away
 // beyond zero. And I should be able to tap on that team member and see their cases, unless I'm missing it"
 await eric.goto(`${P}/admin-employer.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(eric, 2000);
-await tryStep(() => eric.click('[data-sample="create"]', { timeout: 4000 }));
+// RE-PINNED 2026-10-16 (v7.60): Employer mode has no sample box now (Demo mode replaces her, Eric: "Remove both");
+// the demo still keeps her, made through the route the button used, so her pay stays drivable.
+await eric.evaluate(() => fetch('/api/admin/team', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"action":"sample-create"}' }));
+await eric.reload({ waitUntil: 'networkidle' });
+await settle(eric, 1500);
 await tryStep(() => eric.waitForSelector('.tm-card[data-uid="demo-sample"]', { timeout: 8000 }));
 const mayaCard = await eric.evaluate(() => {
   const c = document.querySelector('.tm-card[data-uid="demo-sample"]');

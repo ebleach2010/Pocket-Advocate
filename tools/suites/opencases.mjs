@@ -90,7 +90,10 @@ console.log('\n--- B. Delete on his own cases ---');
     // NEGATIVE CONTROL (run 2026-10-15, v7.46): `deletable: !asUid && ` dropped back to `deletable: ` made B2 read FAIL.
     // RE-PINNED 2026-10-16 (v7.55): `!c.sample && ` added; the sample contractor's invented clients go only with her.
     // NEGATIVE CONTROL (run 2026-10-16): `!c.sample && ` taken back out made B2 read FAIL.
-    && /deletable: !asUid && !c\.sample && !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
+    // RE-PINNED 2026-10-16 (v7.60): Eric, "'Delete' for sample fake clients should be on the folders. For real clients
+    // it should be in settings": every case with nobody real behind it carries Delete, the sample's included.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.60): `!c.clientUid && ` dropped made B2 read FAIL.
+    && /deletable: !asUid && !c\.clientUid && !!\(c\.self \|\| c\.showcase\),/.test(ADMIN)
     && /function wireShelfDelete\(listEl\) \{[\s\S]*?const yes = await ask\(\{\n\s+title: `Delete \$\{name\}\?`,[\s\S]*?danger: true,[\s\S]*?fetch\('\/api\/admin\/delete-case', \{[\s\S]*?body: JSON\.stringify\(\{ caseId: el\.dataset\.del \}\),[\s\S]*?load\(\);/.test(ADMIN)
     && /if \(\(e\.key === 'Enter' \|\| e\.key === ' '\) && e\.target\.matches\?\.\('\[data-del\]'\)\)/.test(ADMIN)
     && /import \{ ask \} from '\.\/sheet\.js';/.test(ADMIN) && /wireShelfDelete\(document\.getElementById\('list'\)\);/.test(ADMIN));
@@ -109,8 +112,11 @@ console.log('\n--- C. the + ---');
   const items = [...menu.matchAll(/<button type="button" role="menuitem" ([^>]+)>([^<]+)<\/button>/g)].map((m) => [m[1], m[2]]);
   // NEGATIVE CONTROL (run 2026-10-15): "Schedule a case from a lead" moved above "My own case" in admin.html made this read
   //   FAIL  C1 the + beside the heading opens his three in his order and words, then the family case, each opening its own door
+  // RE-PINNED 2026-10-16 (v7.60): the Showcase door is gone (Eric, "Remove both": Demo mode replaces Joe Bloe), so his
+  // + opens My own case, a case from a lead and the family case.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.60): the Showcase door put back as the menu's first item made C1 read FAIL.
   check('C1 the + beside the heading opens his three in his order and words, then the family case, each opening its own door',
-    JSON.stringify(items) === JSON.stringify([['data-showcase-door', 'Showcase'], ['data-open-door="self"', 'My own case'],
+    JSON.stringify(items) === JSON.stringify([['data-open-door="self"', 'My own case'],
       ['data-open-door="lead"', 'Schedule a case from a lead'], ['data-open-door="family"', 'Family case']])
     && /<h1>Clients<\/h1>\s*<div class="add-wrap">\s*<button type="button" class="add-btn" data-add-open aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu" aria-label="Open a case">\+<\/button>/.test(HTML)
     && HTML.indexOf('data-add-open') < HTML.indexOf('id="list"') && HTML.indexOf('id="add-forms"') < HTML.indexOf('id="list"'),
@@ -122,7 +128,9 @@ console.log('\n--- C. the + ---');
     /if \(!menu\.hidden && !e\.target\.closest\?\.\('\.add-wrap'\)\) setOpen\(false\);/.test(wire)
     && /if \(e\.key === 'Escape' && !menu\.hidden\) \{ setOpen\(false\); btn\.focus\(\); \}/.test(wire)
     && /door\.addEventListener\('click', \(\) => \{ setOpen\(false\); openForm\(door\.dataset\.openDoor\); \}\);/.test(wire)
-    && /fetch\('\/api\/admin\/showcase-case', \{/.test(wire)
+    // RE-PINNED 2026-10-16 (v7.60): no door builds Joe Bloe any more.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.60): a `fetch('/api/admin/showcase-case', {` put back in wireAddMenu made C2 read FAIL.
+    && !/showcase-case/.test(wire)
     && /paintAddForms\(cases\);\n\s+if \(!cases\.length\) \{/.test(ADMIN)
     // RE-PINNED 2026-10-15 (v7.46): Eric, "Remove the ability to make their own case or family case for contractors":
     // a contractor's + paints the lead form alone; his paints all three, as before.

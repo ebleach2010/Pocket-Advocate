@@ -62,8 +62,12 @@ const head = await adm.evaluate(() => {
 });
 // NEGATIVE CONTROL (run 2026-10-15): mountEmployerDoor() taken out of his branch in admin.js made this read
 //   FAIL  beside the big Clients sits his Employer mode, and his + keeps all four doors
-ok('beside the big Clients sits his Employer mode, and his + keeps all four doors',
-  /^Employer mode/.test(head.text || '') && head.href === '/admin-employer.html' && head.sameRow && head.plus.length === 4, JSON.stringify(head));
+// RE-PINNED 2026-10-16 (v7.60): the + has three doors, the Showcase gone (Eric, "Remove both": Demo mode replaces it).
+// NEGATIVE CONTROL (run 2026-10-16, v7.60): the Showcase door put back in admin.html's + menu made this read
+//   FAIL  beside the big Clients sits his Employer mode, and his + keeps its three doors
+ok('beside the big Clients sits his Employer mode, and his + keeps its three doors',
+  /^Employer mode/.test(head.text || '') && head.href === '/admin-employer.html' && head.sameRow
+  && head.plus.join('|') === 'My own case|Schedule a case from a lead|Family case', JSON.stringify(head));
 const shine = await adm.evaluate(() => { const b = document.querySelector('[data-employer]'); const cs = b ? getComputedStyle(b) : null; return cs ? { bg: cs.backgroundImage, anim: cs.animationName } : null; });
 // Eric, 2026-10-15: "employer mode (which should be green shine)".
 // NEGATIVE CONTROL (run 2026-10-15, v7.50): the green button's rule taken off (`.btn.employer-btn {` made `.btn.employer-btn-x {`) made this read
@@ -98,8 +102,11 @@ await adm.goto(`${P}/admin-employer.html?demo=admin`, { waitUntil: 'networkidle'
 await settle(adm, 2000);
 const team = () => adm.evaluate(() => [...document.querySelectorAll('.tm-card')].map((c) => ({ name: c.querySelector('.tm-name')?.textContent.trim(), brief: c.querySelector('.tm-brief')?.textContent.trim(), money: c.querySelector('.tm-money strong')?.textContent.trim(), acts: [...c.querySelectorAll('.tm-acts a, .tm-acts button')].map((x) => x.textContent.trim()) })));
 const before = await team();
-await tryStep(() => adm.click('[data-sample="create"]', { timeout: 3000 }));
-await adm.waitForTimeout(1500);
+// RE-PINNED 2026-10-16 (v7.60): Employer mode has no sample box now (Demo mode replaces her, Eric: "Remove both");
+// the demo still keeps her, made through the route the button used.
+await adm.evaluate(() => fetch('/api/admin/team', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"action":"sample-create"}' }));
+await adm.reload({ waitUntil: 'networkidle' });
+await settle(adm, 1500);
 const after = await team();
 const maya = after.find((t) => /Maya Torres/.test(t.name || ''));
 if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-2-team.png`, fullPage: true });

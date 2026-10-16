@@ -41,10 +41,15 @@ await page.reload({ waitUntil: 'networkidle' });
 await settle(page);
 // RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says
 // 'showcase'". The door is the + menu's first item, and it is always there: it builds him or walks into him.
+// RE-PINNED 2026-10-16 (v7.60): the door is gone (Eric, "Remove both": Demo mode replaces Joe Bloe). He is built
+// through the route the door used, so the delete below still has a case with nobody behind it.
+// NEGATIVE CONTROL (run 2026-10-16, v7.60): the Showcase door put back in admin.html's + menu made this read
+//   FAIL  the + offers no showcase door
 await page.click('[data-add-open]');
-ok('the + offers the showcase door', (await page.textContent('[data-showcase-door]').catch(() => '') || '').trim() === 'Showcase');
-await page.click('[data-showcase-door]');
-await page.waitForURL((u) => /admin-case(\.html)?\?id=/.test(u.toString()), { timeout: 15000 });
+ok('the + offers no showcase door', !(await page.$('[data-showcase-door]')) && !!(await page.$('[data-open-door="self"]')));
+await page.keyboard.press('Escape');
+await page.evaluate(() => fetch('/api/admin/showcase-case', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' }));
+await page.goto(`${P}/admin-case.html?id=demo-case-showcase&demo=admin`, { waitUntil: 'networkidle' });
 await settle(page, 2000);
 const showId = idOf(page.url());
 ok('and walks into his case', showId === 'demo-case-showcase', showId);
@@ -69,7 +74,10 @@ const card = await page.evaluate(() => {
     note: (d.textContent || '').replace(/\s+/g, ' '),
   };
 });
-ok('the Pause or close card carries Pause, Close and Delete, and says what this case is', !!card && card.pause && card.close && card.del === 'Delete this case' && /showcase case: invented from end to end/.test(card.note), JSON.stringify(card && { pause: card.pause, close: card.close, del: card.del }));
+// RE-PINNED 2026-10-16 (v7.60): the note says the case is invented end to end; there is no door to rebuild it from.
+// NEGATIVE CONTROL (run 2026-10-16, v7.60): the note's 'This case is invented from end to end' changed to 'Invented.' made this read
+//   FAIL  the Pause or close card carries Pause, Close and Delete, and says what this case is
+ok('the Pause or close card carries Pause, Close and Delete, and says what this case is', !!card && card.pause && card.close && card.del === 'Delete this case' && /This case is invented from end to end/.test(card.note), JSON.stringify(card && { pause: card.pause, close: card.close, del: card.del }));
 if (SHOTS) { await page.evaluate(() => document.querySelector('details[data-k="hold"]')?.scrollIntoView()); await page.screenshot({ path: `${SHOTS}/01-delete-card.png` }); }
 await page.click('[data-delete-case]');
 // RE-PINNED 2026-10-15 (v7.41): Delete asks in the app's own sheet now, not the browser's confirm().
@@ -81,7 +89,10 @@ const after = await page.evaluate((id) => ({
   // His folder, not his name: the door itself names him.
   listed: [...document.querySelectorAll('a[href*="admin-case"]')].some((a) => a.href.includes(`id=${id}`)),
 }), showId);
-ok('the shelf comes back without him, and the door is there to build him again', after.door === 'Showcase' && !after.listed, JSON.stringify(after));
+// RE-PINNED 2026-10-16 (v7.60): no door to build him again.
+// NEGATIVE CONTROL (run 2026-10-16, v7.60): the Showcase door put back in admin.html's + menu made this read
+//   FAIL  the shelf comes back without him, and no door builds him again
+ok('the shelf comes back without him, and no door builds him again', after.door === '' && !after.listed, JSON.stringify(after));
 
 console.log('\n--- C. his own case, deleted from its own card ---');
 await page.click('[data-add-open]');

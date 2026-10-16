@@ -1003,9 +1003,15 @@ export function demoApi(role, store) {
       const id = String(body.caseId || '');
       const c = store.docs.get(`cases/${id}`);
       if (!c) return ok({ ok: true, gone: true });
-      if (c.clientUid || !(c.self || c.showcase))
-        return fail(409, 'Only a case with nobody real behind it can be deleted: your own, or the showcase. A client\'s case is closed, never deleted.');
-      if (c.sample) return fail(409, 'This is one of the sample contractor\'s invented clients. Remove her in Employer mode and they go with her.');
+      // As the Worker (2026-10-16): nobody real behind it goes from the
+      // folder; a real client's case only with their name typed in Settings.
+      const fake = !c.clientUid && !!(c.self || c.showcase);
+      if (!fake) {
+        const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        const typed = norm(body.confirmName);
+        if (body.real !== true || !typed || ![norm(c.clientName), norm(c.clientEmail)].filter(Boolean).includes(typed))
+          return fail(409, `To delete a client's case, type ${c.clientName || 'their name'} exactly, in Settings on their case.`);
+      }
       let docs = 0;
       for (const k of [...store.docs.keys()]) {
         if (k === `cases/${id}` || k.startsWith(`cases/${id}/`) || k === `caseMeta/${id}`) { store.docs.delete(k); docs++; }

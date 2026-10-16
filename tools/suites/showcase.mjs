@@ -230,7 +230,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
 // ---- the routes, the diag door, and every place a client would be told or counted ----
 {
   const delSrc = lift(W, 'async function handleDeleteCase(request, env) {');
-  const run = async (caseData, { admin = true } = {}) => {
+  const run = async (caseData, { admin = true, body = { caseId: 'x' } } = {}) => {
     const wiped = [];
     const api = new Function('deps', `
       const { requireAdmin, json, getDoc, wipeCase } = deps;
@@ -242,7 +242,7 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
       getDoc: async () => (caseData ? { data: caseData } : null),
       wipeCase: async (env, id, opts) => { wiped.push([id, opts]); return { docs: 3, files: 1 }; },
     });
-    const out = await api({ json: async () => ({ caseId: 'x' }) }, {});
+    const out = await api({ json: async () => body }, {});
     return { out, wiped };
   };
   const client = await run({ clientUid: 'someone', status: 'confirmed' });
@@ -254,7 +254,10 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
   // NEGATIVE CONTROL (run 2026-09-06): the delete route's refusal changed to `if (false)` made this read
   //   FAIL  X5 delete refuses a client's case and any case with a uid on it, takes his own and the showcase whole, answers a stranger with the site's 404, and the showcase can be built from the keyed diag door and the admin route; every place a client would be told, counted or billed skips the showcase; example addresses are never mailed
   check('X5 delete refuses a client\'s case and any case with a uid on it, takes his own and the showcase whole, answers a stranger with the site\'s 404, and the showcase can be built from the keyed diag door and the admin route; every place a client would be told, counted or billed skips the showcase; example addresses are never mailed',
-    !!delSrc && client.out.code === 409 && /closed, never deleted/.test(client.out.obj.error) && client.wiped.length === 0
+    // RE-PINNED 2026-10-16 (v7.60): a client's case is refused from anywhere but Settings on their case, with their
+    // name typed (X9 runs that door); the refusal says so.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.60): the real case's `if (!fake) {` made `if (false) {` made X5 read FAIL.
+    !!delSrc && client.out.code === 409 && /type .+ exactly, in Settings on their case\./.test(client.out.obj.error) && client.wiped.length === 0
     && plain.out.code === 409 && plain.wiped.length === 0
     && own.out.code === 200 && own.wiped.length === 1 && own.wiped[0][1].adminUid === 'eric'
     && show.out.code === 200 && show.out.obj.docs === 3 && show.wiped.length === 1
@@ -276,8 +279,26 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
   const hers = await run({ showcase: true, sample: true, clientUid: null });
   // NEGATIVE CONTROL (run 2026-10-16): handleDeleteCase's `if (doc.data.sample)` refusal made `if (false)` made this read
   //   FAIL  X8 delete refuses one of the sample contractor's invented clients, says where she is removed, and wipes nothing
-  check('X8 delete refuses one of the sample contractor\'s invented clients, says where she is removed, and wipes nothing',
-    hers.out.code === 409 && /Employer mode/.test(hers.out.obj.error || '') && hers.wiped.length === 0, JSON.stringify(hers.out));
+  // RE-PINNED 2026-10-16 (v7.60): Eric, "'Delete' for sample fake clients should be on the folders". She is retired
+  // (worker/retire.js), and any invented client left goes from its folder like any other case with nobody behind it.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.60): `|| doc.data.showcase` taken out of `fake` made X8 read FAIL.
+  check('X8 delete takes one of the sample contractor\'s invented clients from its folder, whole',
+    hers.out.code === 200 && hers.wiped.length === 1, JSON.stringify(hers.out));
+  // v7.60 (Eric, 2026-10-16: "For real clients it should be in settings"): the one door a real client's case goes
+  // through, run against fakes: Settings sends `real: true` and the name as typed.
+  const REAL = { clientUid: 'cl-1', clientName: 'Dana  Whitfield', clientEmail: 'dana@x.test', status: 'confirmed' };
+  const typed = await run(REAL, { body: { caseId: 'x', real: true, confirmName: ' dana whitfield ' } });
+  const byMail = await run(REAL, { body: { caseId: 'x', real: true, confirmName: 'DANA@x.test' } });
+  const wrong = await run(REAL, { body: { caseId: 'x', real: true, confirmName: 'Dana' } });
+  const noFlag = await run(REAL, { body: { caseId: 'x', confirmName: 'Dana Whitfield' } });
+  const notHim = await run(REAL, { admin: false, body: { caseId: 'x', real: true, confirmName: 'Dana Whitfield' } });
+  // NEGATIVE CONTROL (run 2026-10-16, v7.60): the real path's `body?.real !== true || ` taken out made this read
+  //   FAIL  X9 a real client's case goes only with real set and their name or email typed (spacing and case forgiven); a near miss, no flag, or anyone but him wipes nothing
+  check('X9 a real client\'s case goes only with real set and their name or email typed (spacing and case forgiven); a near miss, no flag, or anyone but him wipes nothing',
+    typed.out.code === 200 && typed.wiped.length === 1 && byMail.out.code === 200 && byMail.wiped.length === 1
+    && wrong.out.code === 409 && wrong.wiped.length === 0 && noFlag.out.code === 409 && noFlag.wiped.length === 0
+    && notHim.out.code === 404 && notHim.wiped.length === 0,
+    JSON.stringify({ typed: typed.out.code, byMail: byMail.out.code, wrong: wrong.out.code, noFlag: noFlag.out.code, notHim: notHim.out.code }));
 }
 
 // ---- the page, the shelf, the demo ---------------------------------------
@@ -287,8 +308,12 @@ const HARD = /\bAI\b|\bClaude\b|Anthropic|\bmodel\b|\badvisor\b/;
 // invented clients are showcase cases too, and deleted one by one they left her with none; they go only with her.
 // NEGATIVE CONTROL (run 2026-10-16): the gate put back to `${c.showcase || c.self ?` made this read
 //   FAIL  X6 Delete sits beside pause and close on a case with nobody behind it and on his own case's card, both confirm and post to the delete route, the shelf builds the showcase from one door and marks its row, and the demo mirrors both routes
+// RE-PINNED 2026-10-16 (v7.60): the gate is every case with nobody real behind it (`!c.clientUid && (c.showcase ||
+// c.self)`), the sample's included (Eric: "'Delete' for sample fake clients should be on the folders"); the + has no
+// Showcase door (Demo mode replaces Joe Bloe); the demo answers a client's case as the Worker does now.
+// NEGATIVE CONTROL (run 2026-10-16, v7.60): the gate put back to `(c.showcase && !c.sample) || c.self` made X6 read FAIL.
 check('X6 Delete sits beside pause and close on a case with nobody behind it and on his own case\'s card, both confirm and post to the delete route, the shelf builds the showcase from one door and marks its row, and the demo mirrors both routes',
-  /\$\{\(c\.showcase && !c\.sample\) \|\| c\.self \? `\n\s+<hr[^\n]*\n\s+<p class="dim small"[^\n]*\$\{c\.showcase\n\s+\? 'This is the showcase case/.test(CASE)
+  /\$\{!c\.clientUid && \(c\.showcase \|\| c\.self\) \? `\n\s+<hr[^\n]*\n\s+<p class="dim small"[^\n]*\$\{c\.showcase\n\s+\? 'This case is invented from end to end/.test(CASE)
   && /<button class="btn quiet danger" data-delete-case>Delete this case<\/button>/.test(CASE)
   // RE-PINNED 2026-10-15 (v7.41): Eric, "let me delete my own cases". On his own case Delete moved to the top of
   // the Overview, open or closed, and it asks in the app's own sheet instead of the browser's grey box.
@@ -304,12 +329,10 @@ check('X6 Delete sits beside pause and close on a case with nobody behind it and
   && (CASE.match(/\[data-delete-case\]'\)\?\.addEventListener\('click', \(e\) => deleteCase\(e\.currentTarget\)\);/g) || []).length === 2
   // RE-PINNED 2026-10-15 (v7.41): Eric, "a + at the top of my 'all cases' screen and then a drop down that says
   // 'showcase'". The door is the + menu's first item, always there: it builds Joe Bloe or walks into him.
-  && /<button type="button" role="menuitem" data-showcase-door>Showcase<\/button>/.test(f('public/admin.html'))
-  && /menu\.querySelector\('\[data-showcase-door\]'\)\?\.addEventListener\('click'/.test(ADMIN)
-  && /fetch\('\/api\/admin\/showcase-case', \{/.test(ADMIN)
+  && !/data-showcase-door/.test(f('public/admin.html')) && !/data-showcase-door|showcase-case/.test(ADMIN)
   && /SHOWCASE, nobody behind it/.test(ADMIN)
   && /path === '\/api\/admin\/showcase-case'/.test(DEMO) && /path === '\/api\/admin\/delete-case'/.test(DEMO)
-  && /clientName: 'Joe Bloe'/.test(DEMO) && /closed, never deleted/.test(DEMO)
+  && /clientName: 'Joe Bloe'/.test(DEMO) && /To delete a client's case, type \$\{c\.clientName \|\| 'their name'\} exactly, in Settings on their case\./.test(DEMO)
   && /^\.btn\.danger \{/m.test(ACSS)
   && !/[—–]/.test(SRC));
 

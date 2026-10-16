@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.59';
+export const VERSION = '7.60';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.59';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // INVENTED CLIENTS OFF HIS SHELF (Eric, 2026-10-16: "Remove both", then
+    // "'Delete' for sample fake clients should be on the folders. For real
+    // clients it should be in settings", and "Move the employer mode and +
+    // buttons up slightly so they're in line with 'Clients'"). Admin only.
+    version: '7.60',
+    quiet: true,
+    client: [],
+    admin: [
+      'Joe Bloe and the sample contractor are gone from your Clients and Employer mode. Demo mode is next.',
+      'An invented client carries Delete on its folder.',
+      'A real client\'s case is deleted from ⚙ Settings on their case, after you type their name.',
+      'Employer mode and the + sit in line with Clients.',
+    ],
+  },
   {
     // HIS THREE ACTS ON THEIR CASES (Eric, 2026-10-16: "I can still delete
     // uploads and chats for real employees if I think they're dangerous, as

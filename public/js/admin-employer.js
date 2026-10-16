@@ -113,7 +113,8 @@ async function load() {
     });
     el.querySelector('[data-profile]')?.addEventListener('click', () => editProfile(p));
   }
-  paintSample(!!data.sample);
+  // The sample contractor's box went on 2026-10-16: Demo mode has a team of
+  // its own, apart from his real one (his word, "Remove both").
 }
 
 /**
@@ -184,26 +185,6 @@ function editProfile(p) {
     } catch (x) { err.textContent = x.message; err.hidden = false; save.disabled = false; }
   });
   dlg.showModal();
-}
-
-function paintSample(have) {
-  const box = document.getElementById('emp-sample');
-  box.hidden = false;
-  box.innerHTML = have
-    ? `<p style="margin:0 0 .6rem;">Maya Torres is a sample contractor with three invented clients, so you can see the team with someone on it. She is never on the public site and never paid.</p>
-       <button type="button" class="btn danger" data-sample="remove">Remove the sample contractor</button>`
-    : `<p style="margin:0 0 .6rem;">Want to see how this looks with a contractor on it? Add a sample one with three invented clients. Remove her any time.</p>
-       <button type="button" class="btn glow" data-sample="create">Add a sample contractor</button>`;
-  box.querySelector('[data-sample]').addEventListener('click', async (e) => {
-    const make = e.currentTarget.dataset.sample === 'create';
-    if (!make) {
-      const sure = await ask({ title: 'Remove the sample contractor?', body: 'Maya Torres, her three invented clients and their chats are deleted. Nothing real is touched.', okLabel: 'Remove', danger: true });
-      if (!sure) return;
-    }
-    e.currentTarget.disabled = true;
-    try { await call('POST', { action: make ? 'sample-create' : 'sample-remove' }); } catch (err) { box.insertAdjacentHTML('beforeend', `<p class="error">${esc(err.message)}</p>`); }
-    load();
-  });
 }
 
 // ---- the tabs --------------------------------------------------------------------

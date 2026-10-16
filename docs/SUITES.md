@@ -1917,3 +1917,25 @@ five recorded controls). Re-pinned with a control: release R1; selfcase S37
 (chat's messageTools option); warm B3 (his message wears his name, not their
 face); filing's advocate-row harness (asUid, for F25 to F27).
 
+### Invented clients off his shelf, two ways to delete (2026-10-16, v7.60)
+
+Eric: "Remove both" (Joe Bloe and the sample contractor, now that Demo mode
+does what they did); then, with a screenshot of her invented clients on his
+shelf, "'Delete' for sample fake clients should be on the folders. For real
+clients it should be in settings"; and "Move the employer mode and + buttons
+up slightly so they're in line with 'Clients'". worker/retire.js wipes every
+case that says showcase and her three records once, from the cron (minute
+13), behind config/once.samplesRetired. The + has no Showcase door and
+Employer mode no sample box. handleDeleteCase takes any case with nobody
+real behind it (no clientUid, self or showcase) from its folder, and a real
+client's case only with real: true and their name or email typed, which
+only Settings on their case sends (admin-settings.js). The Clients heading
+carries no margin of its own, so the row centres the buttons on its letters.
+
+New: fakes.mjs (6 checks, six recorded controls); showcase X9; drive-fakes (9
+checks, three recorded controls). Re-pinned with controls: showcase X5, X6,
+X8; opencases B2, C1, C2; drive-invite's showcase delete; drive-delete's
+door, card and shelf checks; drive-employer's and drive-invite's + menu; release
+R1. drive-cleanup and drive-employer
+now make the demo's sample through her route (their setup, no check changed).
+

@@ -133,6 +133,20 @@ export function adminSettingsHtml() {
       <button class="btn tiny" data-cap="0" disabled>No limit</button>
     </div>
     <p class="dim small" data-cap-said style="margin:.45rem 0 0;">Reading it back…</p>
+    ${c && c.name ? `
+    <h4 style="margin:1.4rem 0 .1rem;">Delete ${esc(c.name)}'s case</h4>
+    <!-- A REAL CLIENT'S DELETE LIVES HERE (Eric, 2026-10-16: "'Delete' for
+         sample fake clients should be on the folders. For real clients it
+         should be in settings"). On their case only, under their name, and
+         locked until the name is typed: the Worker refuses a real case
+         without it, whatever a page sends. -->
+    <p class="dim small" style="margin:0 0 .5rem;">For good: the chat, the files,
+      the reading, the log and the milestones. Their account stays, and nothing
+      is refunded. Type their name to unlock it.</p>
+    <label class="dim small">Type ${esc(c.name)}
+      <input type="text" data-del-confirm autocomplete="off" autocapitalize="words" spellcheck="false"></label>
+    <button class="btn danger" data-del-case disabled style="min-height:44px; margin-top:.5rem;">Delete this case</button>
+    <p class="dim small" data-del-said role="status" style="margin:.45rem 0 0;"></p>` : ''}
 `;
 }
 
@@ -149,6 +163,7 @@ export function wireAdminSettings(overlay, user) {
   wirePaid(overlay, user);
   wireCapacity(overlay, user);
   wireLook(overlay, user);
+  wireDeleteCase(overlay, user);
   overlay.querySelector('[data-open-admin]')?.addEventListener('click', (e) => {
     const btn = e.currentTarget;
     const on = !btn.classList.contains('on');
@@ -363,6 +378,37 @@ async function wireCapacity(overlay, user) {
 }
 
 /** Dollars as he types them ("2,100", "$2100.00") to whole cents, or NaN. */
+/** Delete this client's case: unlocked by their name, typed; then home to the shelf. */
+function wireDeleteCase(overlay, user) {
+  const c = onCase();
+  const box = overlay.querySelector('[data-del-confirm]');
+  const go = overlay.querySelector('[data-del-case]');
+  const said = overlay.querySelector('[data-del-said]');
+  if (!c || !box || !go) return;
+  const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+  box.addEventListener('input', () => { go.disabled = norm(box.value) !== norm(c.name); });
+  go.addEventListener('click', async () => {
+    if (norm(box.value) !== norm(c.name)) return;
+    go.disabled = true;
+    said.textContent = 'Deleting…';
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/delete-case', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId: c.id, confirmName: box.value, real: true }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `That did not go through (${res.status}).`);
+      said.textContent = 'Deleted.';
+      location.href = '/admin.html';
+    } catch (err) {
+      said.textContent = err.message;
+      go.disabled = false;
+    }
+  });
+}
+
 export function toCents(text) {
   const t = String(text ?? '').replace(/[$,\s]/g, '');
   if (!/^\d+(\.\d{1,2})?$/.test(t)) return NaN;

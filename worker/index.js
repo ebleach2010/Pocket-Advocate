@@ -81,6 +81,8 @@ import { handleFund, drainFundNotices } from './fund.js';
 // page, the password door and their headshots.
 import { handleAdvocates, isStaffLogin, advocateLogin } from './advocates.js';
 import { handleEmployer } from './employer.js';
+// Joe Bloe and the sample contractor, taken off his real shelf once (2026-10-16).
+import { retireSamples } from './retire.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
 // The security rules, published by the Worker when what it carries changes.
@@ -1682,6 +1684,9 @@ export default {
     // The rules this build carries, published once when they change (a read
     // and nothing else when they have not). Its own minute, like the stamp.
     if (minute % 15 === 11) ctx.waitUntil(releaseRules(env).catch((err) => console.warn('rules release:', err.message || err)));
+    // Demo mode replaces them (Eric, 2026-10-16: "Remove both"): Joe Bloe and
+    // the sample contractor go once. A read on its minute until it has run.
+    if (minute % 15 === 13) ctx.waitUntil(retireSamples(env).catch((err) => console.warn('retire samples:', err.message || err)));
 
     // NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420. No scans
     // unless I manually do it. No auto token burn anywhere."). This firing
@@ -2428,7 +2433,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-16-oversee';
+const BUILD_TAG = 'v2026-10-16-fakes-off';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2436,7 +2441,7 @@ const BUILD_TAG = 'v2026-10-16-oversee';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.59';
+const VERSION = '7.60';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -10568,11 +10573,21 @@ async function handleDeleteCase(request, env) {
   if (!/^[\w-]{1,64}$/.test(caseId)) return json({ error: 'Bad case' }, 400);
   const doc = await getDoc(env, `cases/${caseId}`);
   if (!doc) return json({ ok: true, gone: true });
-  if (doc.data.clientUid || !(doc.data.self || doc.data.showcase))
-    return json({ error: 'Only a case with nobody real behind it can be deleted: your own, or the showcase. A client\'s case is closed, never deleted.' }, 409);
-  // The sample contractor's invented clients go with her, from Employer mode
-  // (2026-10-16): deleted one by one, she was left with no clients at all.
-  if (doc.data.sample) return json({ error: 'This is one of the sample contractor\'s invented clients. Remove her in Employer mode and they go with her.' }, 409);
+  // Nobody real behind it: his own, the showcase, a sample's invented client.
+  // Deleted from the folder (Eric, 2026-10-16: "'Delete' for sample fake
+  // clients should be on the folders").
+  const fake = !doc.data.clientUid && !!(doc.data.self || doc.data.showcase);
+  // A REAL CLIENT'S CASE (Eric, 2026-10-16: "For real clients it should be in
+  // settings"). Only from Settings on their own case, and only with their name
+  // typed there, letter for letter: the folder never asks this, and nothing
+  // that is not a deliberate act of his reaches it.
+  if (!fake) {
+    const norm = (v) => String(v || '').trim().replace(/\s+/g, ' ').toLowerCase();
+    const typed = norm(body?.confirmName);
+    const names = [norm(doc.data.clientName), norm(doc.data.clientEmail)].filter(Boolean);
+    if (body?.real !== true || !typed || !names.includes(typed))
+      return json({ error: `To delete a client's case, type ${doc.data.clientName || 'their name'} exactly, in Settings on their case.` }, 409);
+  }
   const out = await wipeCase(env, caseId, { adminUid: admin.uid });
   return json({ ok: true, ...out });
 }

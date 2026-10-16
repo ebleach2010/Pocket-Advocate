@@ -359,8 +359,11 @@ async function load() {
       state: c.status === 'closed' ? 'closed' : c.hold?.pausedAt ? 'paused' : 'open',
       // His own cases and the showcase can go (Eric, 2026-10-15: "let me
       // delete my own cases"); a client's case is closed, never deleted.
-      // The sample contractor's invented clients go only with her, from Employer mode (2026-10-16).
-      deletable: !asUid && !c.sample && !!(c.self || c.showcase),
+      // Every fake one carries Delete on its folder, the sample contractor's
+      // invented clients included (Eric, 2026-10-16: "'Delete' for sample fake
+      // clients should be on the folders. For real clients it should be in
+      // settings").
+      deletable: !asUid && !c.clientUid && !!(c.self || c.showcase),
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
@@ -669,27 +672,8 @@ function wireAddMenu() {
   for (const door of menu.querySelectorAll('[data-open-door]')) {
     door.addEventListener('click', () => { setOpen(false); openForm(door.dataset.openDoor); });
   }
-  // THE SHOWCASE (Eric, 2026-09-06: "Create a completely fake case for me to
-  // show off on YouTube"). Opening it builds Joe Bloe the first time and
-  // walks into him every time after; Delete shuts him, and the next tap here
-  // builds him fresh.
-  menu.querySelector('[data-showcase-door]')?.addEventListener('click', async () => {
-    setOpen(false);
-    btn.disabled = true;
-    if (said) { said.hidden = false; said.textContent = 'Opening the showcase. The first time takes half a minute.'; }
-    try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/showcase-case', {
-        method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{}',
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok || !out.id) throw new Error(out.error || `Failed (${res.status})`);
-      location.href = `/admin-case.html?id=${encodeURIComponent(out.id)}`;
-    } catch (err) {
-      if (said) said.textContent = err.message;
-      btn.disabled = false;
-    }
-  });
+  // The Showcase door (Joe Bloe, 2026-09-06) went on 2026-10-16: Demo mode
+  // has invented clients of its own, apart from his real ones.
 }
 
 /**

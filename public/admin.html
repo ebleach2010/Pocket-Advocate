@@ -31,6 +31,14 @@
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/admin.css?v=stat138">
+<style>
+  /* IN LINE WITH "CLIENTS" (Eric, 2026-10-16: "Move the employer mode and +
+     buttons up slightly so they're in line with 'Clients'"). The heading's own
+     bottom margin sat its letters above the middle of the row the buttons are
+     centred on; the row keeps that space below it instead. */
+  .clients-head { margin-bottom: .55rem; }
+  .clients-head h1 { margin: 0; }
+</style>
 <link rel="stylesheet" href="/css/look.css?v=7">
 <link rel="stylesheet" href="/css/warm.css?v=2">
 <script type="module" src="/js/nav-menu.js"></script>
@@ -53,13 +61,13 @@
   <!-- THE + (Eric, 2026-10-15: "It will be a + at the top of my 'all cases'
        screen and then a drop down that says 'showcase', 'my own case' and
        'schedule a case from a lead'"). The family case keeps its place after
-       his three. -->
+       his three. The Showcase door went on 2026-10-16: Demo mode replaces
+       it (his word, "Remove both"). -->
   <div class="clients-head">
     <h1>Clients</h1>
     <div class="add-wrap">
       <button type="button" class="add-btn" data-add-open aria-haspopup="menu" aria-expanded="false" aria-controls="add-menu" aria-label="Open a case">+</button>
       <div class="add-menu" id="add-menu" role="menu" aria-label="Open a case" hidden>
-        <button type="button" role="menuitem" data-showcase-door>Showcase</button>
         <button type="button" role="menuitem" data-open-door="self">My own case</button>
         <button type="button" role="menuitem" data-open-door="lead">Schedule a case from a lead</button>
         <button type="button" role="menuitem" data-open-door="family">Family case</button>
