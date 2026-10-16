@@ -435,10 +435,14 @@ ck('clock: all switches share one painter set, so no two can disagree',
   const block = (AC.match(/groups: advocate \? \[[\s\S]*?\n    \] : \[([\s\S]*?)\n    \],/) || [])[1] || '';
   const labels = [...block.matchAll(/label: '([^']+)'/g)].map((m) => m[1]);
   const ids = [...block.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
-  ck('groups: the five names are Case, Advisor, Track, Mine and Act',
-     labels.join('|') === 'Case|Advisor|Track|Mine|Act', labels.join('|'));
+  // RE-PINNED AND RENAMED 2026-10-16 (v7.54): Eric, asked whether Track could go: "Retire Track". Its pages moved
+  // (Agenda to Mine, About you to the Voice study fold); the other four names are his as they were.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): his strip's 'Mine' label renamed 'After' made this read
+  //   FAIL  groups: the four names are Case, Advisor, Mine and Act
+  ck('groups: the four names are Case, Advisor, Mine and Act',
+     labels.join('|') === 'Case|Advisor|Mine|Act', labels.join('|'));
   ck('groups: their ids match, so nothing renamed only the visible half',
-     ids.join('|') === 'case|read|track|mine|act', ids.join('|'));
+     ids.join('|') === 'case|read|mine|act', ids.join('|'));
   const mine = (block.match(/id: 'mine'[^}]*pages: \[([^\]]+)\]/) || [])[1] || '';
   ck('groups: the call document is in Mine, so it renders a tab at all',
      /'calldoc'/.test(mine), mine.trim());

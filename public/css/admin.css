@@ -1776,3 +1776,8 @@ main > p > a.small[href="/admin.html"] {
 .quiet-bar .btn { min-height: 44px; }
 body.quiet header .tabs > a { display: none; }
 .quiet-toast { position: fixed; left: 16px; right: 16px; bottom: 20px; z-index: 90; max-width: 26rem; margin: 0 auto; padding: .7rem 1rem; border-radius: 14px; background: #1B1B21; border: 1px solid rgba(242, 193, 78, .55); color: var(--ink); text-align: center; box-shadow: 0 18px 50px rgba(0, 0, 0, .5); }
+
+/* ONE LOG (Eric, 2026-10-15: "Merge logs"): the filter between the work
+   log and the milestones on the case's Log page. */
+.log-filter { display: flex; gap: .4rem; flex-wrap: wrap; margin: 0 0 .7rem; }
+.log-filter .btn.on { border-color: var(--cyan); color: var(--cyan); }

@@ -1737,3 +1737,24 @@ public/js/preview/joe.js) takes the MST day first. Taking the UTC date put
 "today" a day ahead between midnight and 7am UTC, so the preview's newest
 messages and files sat in the future (preview A3 and drive-preview's chat
 check failed at that hour, on the base too). New preview A3b, control recorded.
+
+### The doubles cut (2026-10-16, v7.54)
+
+Eric: "remove redundancy", and yes to "Retire Track, Merge logs, One work
+clock, PDF to Uploads". His case strip is Case, Advisor, Mine, Act: Track is
+gone, Agenda is in Mine with what is still waiting on the client on top
+(the old Unanswered, titled "Waiting on them", hidden when nothing waits), and
+About you is in the Voice study fold on Clients (the voice route answers with
+`about` from advisorStyle/profile, `aboutYou`). The work log and milestones are
+one Log page with an Everything / Work / Milestones filter (the two records
+are unchanged). Saved is mounted under Notes, the whole-file PDF is a one-line
+card at the top of Uploads, and the Chat row's Start button is gone (the
+switch by the name is the clock; the time in Chat still opens the fix sheet).
+The Overview drops the TELEHEALTH and ALERT fact rows (the header chips and
+Waiting on you cards carry them), NEXT names a report date only while it is
+ahead, and the long explanations are one line. Admin sheet stamp stat138.
+
+New: cleanup C1 to C4, drive-cleanup section E (2), controls recorded.
+Re-pinned with controls: charge CH7 (stat138), cleanup B4, defects' group
+names (four), paid M19's slab, personal G2, tighten W4 (renamed: the PDF on
+Uploads), uploads U10b, worklog L28, L28b, M42, drive-advocates, drive-compile (renamed: the card at the top of Uploads), drive-seamless (renamed: no second switch), drive-selfcase, release R1.

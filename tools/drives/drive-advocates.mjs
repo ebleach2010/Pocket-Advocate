@@ -79,7 +79,9 @@ for (const g of ['Case', 'Mine', 'Act']) {
 const groups = await adv.evaluate(() => [...document.querySelectorAll('.folder-groups button')].map((e) => e.textContent.trim()));
 // The tab names without their emoji; exactly these, and none of his private pages.
 const named = Object.fromEntries(Object.entries(groupTabs).map(([g, t]) => [g, (t || []).map((x) => x.replace(/^[^\p{L}]+/u, '').trim())]));
-const WANT = { Case: ['Overview', 'Chat', 'Uploads'], Mine: ['Notes', 'Agenda', 'Saved'], Act: ['Work log', 'Milestones'] };
+// RE-PINNED 2026-10-16 (v7.54): Saved went under Notes and the work log and milestones are one Log (Eric: "Merge logs").
+// NEGATIVE CONTROL (run 2026-10-16, v7.54): the ADVOCATE_PAGES filter taken off still made this read FAIL.
+const WANT = { Case: ['Overview', 'Chat', 'Uploads'], Mine: ['Notes', 'Agenda'], Act: ['Log'] };
 // NEGATIVE CONTROL (run 2026-10-15): the ADVOCATE_PAGES filter taken off admin-case.js's pages made this read
 //   (first run MISSED: the check looked for page names that are not his; now it pins the exact set, then re-run)
 //   FAIL  their case opens in three groups, Case, Mine and Act, with the pages that hold their own work and none of his private reading

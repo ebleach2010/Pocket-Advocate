@@ -1284,7 +1284,9 @@ export function demoApi(role, store) {
         demoVoice.lastRunAt = new Date().toISOString();
         return ok({ ...demoVoice, lastRun: { ran: true, wrote: true, readers: ['diction', 'syntax', 'cadence', 'tone', 'detail', 'beliefs', 'mechanics'] } });
       }
-      return ok({ ...demoVoice });
+      // About you rides the study's answer (2026-10-16), as the Worker's aboutYou does.
+      const style = store.docs.get('advisorStyle/profile') || {};
+      return ok({ ...demoVoice, about: { voice: style.voice || '', stances: style.stances || '', coaching: style.coaching || '', updatedAt: style.updatedAt || null } });
     }
     // One more month on a Full-Service case, stacking. Straight past Stripe,
     // written down, so the demo's window guard actually moves.

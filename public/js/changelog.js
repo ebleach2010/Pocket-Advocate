@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.53';
+export const VERSION = '7.54';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.53';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DOUBLES CUT (Eric, 2026-10-15: "remove redundancy", and yes to
+    // "Retire Track, Merge logs, One work clock, PDF to Uploads"). Admin only.
+    version: '7.54',
+    quiet: true,
+    client: [],
+    admin: [
+      'Track is gone. Agenda is under Mine, with anything still waiting on the client at its top, and About you is in the Voice study fold on Clients.',
+      'Work log and Milestones are one Log under Act, with Everything, Work and Milestones to filter.',
+      'Saved messages sit under your Notes, and the whole case file PDF is a button at the top of Uploads.',
+      'The clock switch is the one by the name. The second Start in Chat is gone; tap the time there to correct it.',
+      'Each status is said once on the Overview, and the long explanations are one line.',
+    ],
+  },
   {
     // WHAT THEY BOUGHT (Eric, 2026-10-15: "be sure that the admin case
     // actually matches what they purchased"; Full-Service is the first

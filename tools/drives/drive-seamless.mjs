@@ -268,12 +268,18 @@ await page.evaluate(() => {
   t?.click();
 });
 await page.waitForTimeout(1200);
-ok('the chat row switch shows the SAME clock running', await page.evaluate(() =>
-  /Stop working/.test(document.querySelector('[data-work-toggle]')?.textContent || '')));
-await page.evaluate(() => document.querySelector('[data-work-toggle]')?.click());
+// RE-PINNED AND RENAMED 2026-10-16 (v7.54): Eric, "One work clock": the Chat row's Start button is gone and the switch by
+// the name is the clock. The time on the Chat row still reads the same clock, and stopping at the header repaints it.
+// NEGATIVE CONTROL (run 2026-10-16, v7.54): the Chat row's Start button put back made the first of these read FAIL.
+ok('the chat row shows the SAME clock running, with no second switch', await page.evaluate(() =>
+  !document.querySelector('[data-work-toggle]')
+  && document.querySelector('[data-work-total]')?.classList.contains('on')
+  && /running/.test(document.querySelector('[data-work-total]')?.textContent || '')));
+await page.evaluate(() => document.querySelector('[data-work-head]')?.click());
 await page.waitForTimeout(1200);
-ok('stopping from the chat row repaints the header switch too', await page.evaluate(() =>
-  !document.querySelector('[data-work-head]')?.classList.contains('glow'))
+ok('stopping at the header switch repaints the chat row too', await page.evaluate(() =>
+  !document.querySelector('[data-work-head]')?.classList.contains('glow')
+  && !document.querySelector('[data-work-total]')?.classList.contains('on'))
   && !(await workOf()).startedAt);
 await page.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(2600);

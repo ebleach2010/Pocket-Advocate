@@ -179,7 +179,7 @@ const advocate = STAFF.role === 'advocate' || !!asUid;
 // An advocate's statuses carry their own first name (2026-10-15); his, his.
 if (STAFF.role === 'advocate') setStatusName(STAFF.name || 'Your advocate');
 if (user && asUid) quietView(asUid);
-const ADVOCATE_PAGES = new Set(['overview', 'chat', 'files', 'notes', 'agenda', 'saved', 'log', 'milestones']);
+const ADVOCATE_PAGES = new Set(['overview', 'chat', 'files', 'notes', 'agenda', 'log']);
 // askIfStillWorking is called from inside load(), not here: prepending its
 // card moments before render() replaced #case's innerHTML made the prompt
 // Eric taps from a push notification flash and vanish. It is the safety
@@ -301,12 +301,16 @@ function render(el) {
     groups: advocate ? [
       // An advocate's strip: three groups, each page one that works for them.
       { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
-      { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'agenda', 'saved'] },
-      { id: 'act', label: 'Act', icon: 'i-scale', pages: ['log', 'milestones'] },
+      // Saved sits under Notes, and the work log and milestones are one Log (2026-10-16).
+      { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'agenda'] },
+      { id: 'act', label: 'Act', icon: 'i-scale', pages: ['log'] },
     ] : [
       { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: 'i-user', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
-      { id: 'track', label: 'Track', icon: 'i-doc', pages: ['unanswered', 'agenda', 'about'] },
+      // TRACK IS RETIRED (Eric, 2026-10-15, asked whether it could go:
+      // "Retire Track"). Its pages moved: Agenda to Mine, with what is still
+      // waiting on the client at its top; About you to the Voice study fold
+      // on Clients; the day summary went in v7.51.
       // 'calldoc' sits in Mine, beside Notes: both start from something Eric
       // wrote himself. A page absent from every group renders no tab at all,
       // which is how the call document first shipped invisible.
@@ -315,14 +319,16 @@ function render(el) {
       // constraint; he asked for a tab by name, on his own phone, so the tab
       // exists and the strip may wrap on the narrowest screens. Its label is
       // the shortest word that says what it is.
-      { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'calldoc', 'drafts', 'saved', 'personal'] },
+      { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'calldoc', 'drafts', 'agenda', 'personal'] },
       // THE ACT GROUP, ON EVERY CASE NOW (Eric, 2026-08-30: "This and work
       // log should be tabs under 'act' since it has so much space"). The log
       // lived under Case since 2026-08-27 because Act only rendered on a
       // Full-Service case; rather than hide the log behind the tier gate
       // again, the gate moved: Act now exists everywhere, carrying the log
       // and the milestones feed, and only Appeals stays Full-Service.
-      { id: 'act', label: 'Act', icon: 'i-scale', pages: [...(data.fullAccess ? ['appeals'] : []), 'log', 'milestones'] },
+      // One Log (Eric, 2026-10-15: "Merge logs"): the work log and the
+      // milestones on one page, with a filter between them.
+      { id: 'act', label: 'Act', icon: 'i-scale', pages: [...(data.fullAccess ? ['appeals'] : []), 'log'] },
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
@@ -367,8 +373,11 @@ function render(el) {
                 <span class="dim small">The client reads:</span>
                 <span class="doing-pills" data-doing-pills></span>
               </div>
+              <!-- ONE CLOCK SWITCH (Eric, 2026-10-15: "One work clock", keep
+                   the clock by the name at the top). The Start button that sat
+                   here was the same switch twice on one screen; the time stays,
+                   because tapping it is how a total is corrected. -->
               <div class="row" data-workclock style="gap:.5rem; align-items:center; margin:.1rem 0 .5rem;">
-                <button class="btn quiet" data-work-toggle style="flex:none;">▶ Start working</button>
                 <!-- The total is a BUTTON and it did not look like one: 30px
                      tall, dim, a dotted underline, and a title attribute a
                      phone never shows. That is the same failure as the clock
@@ -437,19 +446,39 @@ function render(el) {
       // (drive-charge: "it is a 44px target (0px)"). Opening a case lands on
       // Overview, as it always has.
       {
-        id: 'log', title: 'Work log', icon: '🗒',
-        render: (pane) => paintWorkLog(pane),
+        // ONE LOG (Eric, 2026-10-15: "Merge logs"). The work log and the
+        // milestones feed were two tabs with the same type picker; they are
+        // one page now, with a filter. The two records stay what they were:
+        // a log entry reaches the client only with a client line, and every
+        // milestone does.
+        id: 'log', title: 'Log', icon: '🗒',
+        render: (pane) => {
+          pane.innerHTML = `
+            <div class="log-filter" data-log-filter role="group" aria-label="Show">
+              <button type="button" class="btn quiet tiny on" data-show="all" aria-pressed="true">Everything</button>
+              <button type="button" class="btn quiet tiny" data-show="work" aria-pressed="false">Work</button>
+              <button type="button" class="btn quiet tiny" data-show="miles" aria-pressed="false">Milestones</button>
+            </div>
+            <div data-log-work></div>
+            <div data-log-miles></div>`;
+          const work = pane.querySelector('[data-log-work]');
+          const miles = pane.querySelector('[data-log-miles]');
+          paintWorkLog(work);
+          paintMilestones(miles);
+          pane._reload = () => { work._reload?.(); miles._reload?.(); };
+          for (const b of pane.querySelectorAll('[data-show]')) {
+            b.addEventListener('click', () => {
+              const show = b.dataset.show;
+              work.hidden = show === 'miles';
+              miles.hidden = show === 'work';
+              for (const x of pane.querySelectorAll('[data-show]')) {
+                x.classList.toggle('on', x === b);
+                x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+              }
+            });
+          }
+        },
         onShow: (pane) => pane._reload?.(),
-      },
-      // The achievements feed (Eric, 2026-08-30), beside the log under Act.
-      {
-        id: 'milestones', title: 'Milestones', icon: '🏁',
-        render: (pane) => paintMilestones(pane),
-        onShow: (pane) => pane._reload?.(),
-      },
-      {
-        id: 'about', title: 'About you', icon: '🪞',
-        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
       },
       // THE STRIP RENDERS IN THIS ARRAY'S ORDER, not in the order a group
       // lists its pages, so the array is what decides which tab a group opens
@@ -509,34 +538,14 @@ function render(el) {
         // to place the cursor, never turn the page.
         id: 'notes', title: 'Notes', icon: '📝', fade: true,
         render: (pane) => {
-          // COMPILE THE CASE FILE (Eric, 2026-08-26). He asked for this "on
-          // the Mine page", and Mine already holds four tabs, which is the
-          // hard width constraint at 320px: a fifth slices its own label, and
-          // that is a defect he has already photographed once. So it is a card
-          // on Notes, under the notes themselves (moved below them on
-          // 2026-10-15, the tighten audit), which is the page in this group he opens most
-          // and the one that is already his own working space, rather than a
-          // tab that would break the strip to exist.
-          const compileCard = document.createElement('div');
-          compileCard.className = 'panel compile-card';
-          compileCard.innerHTML = `
-            <h3>📚 The whole case file, as one PDF</h3>
-            <p class="dim small">Every file on this case in one document, grouped
-              by type and then by date inside each type. Images print in full.
-              A PDF, a recording or a Word file is listed with a link instead:
-              a browser cannot print one document inside another.</p>
-            <p><button type="button" class="btn" data-compile>Compile it</button></p>
-            ${saidHtml('compile')}`;
-          compileCard.querySelector('[data-compile]')?.addEventListener('click', async (ev) => {
-            const b = ev.currentTarget;
-            b.disabled = true;
-            const was = b.textContent;
-            b.textContent = 'Gathering…';
-            try { await compileCaseFile(); } finally { b.disabled = false; b.textContent = was; }
-          });
           const notesHost = document.createElement('div');
           pane.appendChild(notesHost);
-          pane.appendChild(compileCard);
+          // Saved messages under the notes (2026-10-16): both are private
+          // material on this case, and Saved was a tab of its own for it.
+          const savedHost = document.createElement('div');
+          savedHost.dataset.savedHost = '';
+          pane.appendChild(savedHost);
+          mountSaved({ container: savedHost, kind: 'case', id: caseId, user, myRole: 'admin' });
           // Private to Eric: stored under `private/`, which is browser-denied
           // in both directions, so it only ever moves through the admin-gated
           // Worker route. The saved html arrives with the advisor state poll
@@ -572,7 +581,14 @@ function render(el) {
         // Re-fetched every time the page opens: the client adds to the list
         // from their side and a stale agenda defeats the point.
         id: 'agenda', title: 'Agenda', icon: 'i-cal',
-        render: (pane) => paintAgendaPage(pane),
+        // What is still waiting on the client sits on top (2026-10-16: it was
+        // Track's Unanswered tab, and both are about the next conversation).
+        render: (pane) => {
+          pane.innerHTML = '<div data-waiting-host></div><div data-agenda-host></div>';
+          const host = pane.querySelector('[data-agenda-host]');
+          paintAgendaPage(host);
+          pane._reload = () => host._reload?.();
+        },
         onShow: (pane) => pane._reload?.(),
       },
       {
@@ -582,15 +598,6 @@ function render(el) {
         id: 'education', title: 'Terms', icon: '📚',
         // Painted from the advisor's state poll, same as the differential.
         render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
-      },
-      {
-        // His bookmarks on this thread, each with a note. Private by path: a
-        // client cannot read them, and nothing is written back to the message,
-        // so saving one tells them nothing.
-        id: 'saved', title: 'Saved', icon: '🔖',
-        render: (pane) => {
-          mountSaved({ container: pane, kind: 'case', id: caseId, user, myRole: 'admin' });
-        },
       },
       {
         // His documents on this case, for his eyes only (Eric, 2026-09-03).
@@ -651,11 +658,6 @@ function render(el) {
           }));
         },
       },
-      {
-        // What he asked the client for and never got. Painted from the poll.
-        id: 'unanswered', title: 'Unanswered', icon: '⚠️',
-        render: (pane) => { pane.innerHTML = '<p class="dim">Loading…</p>'; },
-      },
     // An advocate's strip carries their own pages only (2026-10-15). A page in
     // no group would otherwise land in the first one, so the list is cut here.
     ].filter((p) => !advocate || ADVOCATE_PAGES.has(p.id)),
@@ -691,7 +693,9 @@ function render(el) {
       if (t.getTime() > nowMs) nextOf.push({ t, what: 'Check-in' });
     }
   // Full-Service owes no report (Eric, 2026-10-15), so it never says one is due.
-  if (!c.fullAccess && c.status === 'awaiting_report' && c.reportDueAt)
+  // Ahead only (2026-10-16): a report past due is the overdue chip below,
+  // not a NEXT with a date already gone.
+  if (!c.fullAccess && c.status === 'awaiting_report' && c.reportDueAt && toDate(c.reportDueAt).getTime() > nowMs)
     nextOf.push({ t: toDate(c.reportDueAt), what: 'Report due' });
   nextOf.sort((a, b) => a.t - b.t);
   const nextFmt = new Intl.DateTimeFormat('en-US', {
@@ -1024,9 +1028,7 @@ function paintAgendaPage(pane) {
   pane.innerHTML = `
     <div class="panel">
       <h3>🗓 Next call agenda</h3>
-      <p class="dim small">Built from what you and the client put on the list.
-        Check things off during the call; Export writes the post-call summary
-        for you.</p>
+      <p class="dim small">Topics for the next call, from you and the client.</p>
       <ul data-alist style="margin:.4rem 0 0; padding-left:0;"><li class="dim small" style="list-style:none;">Loading…</li></ul>
       <form data-aform style="display:flex; gap:.4rem; margin-top:.6rem;">
         <input type="text" maxlength="500" placeholder="Add an item…" style="flex:1; min-width:0;">
@@ -1534,14 +1536,16 @@ function startWorkClock(c) {
           : `$${dollars(paid)} paid so far.`;
       }
     }
-    btn.textContent = clock.startedAt ? '⏸ Stop working' : '▶ Start working';
-    btn.classList.toggle('glow', !!clock.startedAt);
+    if (btn) {
+      btn.textContent = clock.startedAt ? '⏸ Stop working' : '▶ Start working';
+      btn.classList.toggle('glow', !!clock.startedAt);
+    }
   };
   paint.root = row;
   clockPaints.add(paint);
   paint();
   armClockTick();
-  wireClockToggle(btn);
+  if (btn) wireClockToggle(btn);
   // The time itself opens the sheet (Eric, 2026-08-25: "tap on the time").
   wireClockFix(totalEl);
   // THE PILL NO LONGER TAKES A TAP. It used to open a prompt() that wrote
@@ -1777,9 +1781,12 @@ function paintUnanswered(pane, rows, readAt) {
   const open = rows.filter((r) => r && r.ask && !r.answered)
     .sort((a, b) => new Date(a.firstAskedAt || 0) - new Date(b.firstAskedAt || 0));
 
+  // Nothing waiting is nothing to show (2026-10-16): on top of the agenda an
+  // empty panel would push the agenda down for no reason.
+  if (!open.length) { pane.innerHTML = ''; return; }
   pane.innerHTML = `
     <div class="panel">
-      <h3>Unanswered</h3>
+      <h3>${unansweredSelf ? 'Waiting on you' : 'Waiting on them'}</h3>
       ${open.length ? `
         <p class="dim small">${unansweredSelf ? 'Questions put to you in your chat that you have not answered yet.' : 'Things you asked for that have not come back.'}
           Oldest first.</p>
@@ -2001,8 +2008,8 @@ document.addEventListener('pa-panel-state', (e) => {
   if (typeof d.analysis === 'string') lastAnalysis = d.analysis;
   if (Array.isArray(d.differential)) lastDifferential = d.differential;
   if (Array.isArray(d.glossary)) paintEducation(folder?.el('education'), d.glossary);
-  if (d.about) paintAbout(folder?.el('about'), d.about);
-  if (Array.isArray(d.unanswered)) paintUnanswered(folder?.el('unanswered'), d.unanswered, d.updatedAt);
+  // About you lives in the Voice study fold on Clients now (2026-10-16).
+  if (Array.isArray(d.unanswered)) paintUnanswered(folder?.el('agenda')?.querySelector('[data-waiting-host]'), d.unanswered, d.updatedAt);
 
   const wl = document.querySelector('[data-working]');
   if (!wl) return;
@@ -2559,13 +2566,7 @@ function paintOverview(pane) {
     <details class="mgmt" data-k="auth">
       <summary>📄 Send a form to sign</summary>
       <div class="mgmt-body">
-        <p class="dim small" style="margin:0 0 .6rem;">A blank copy with
-          ${esc(c.clientName || 'the client')}'s name already on it and ruled lines
-          to sign by hand. Tick what you need and send it straight to their
-          documents, or print one to hand over on paper. Signing is by hand on
-          every case: they sign it, send it back to you, and you file the signed
-          copy as a filled form. Records requests take weeks, so the form going
-          out early is the whole game.</p>
+        <p class="dim small" style="margin:0 0 .6rem;">Send blank forms with ${esc(c.clientName || 'the client')}'s name on them to sign by hand, or print them. They send it back, and you file it as a filled form.</p>
         <!-- flex-wrap:nowrap and min-width:0 on the label, both deliberate.
              .row wraps by default, and at 320px that dropped every Print
              button onto a line of its own underneath its form, which reads as
@@ -2588,9 +2589,7 @@ function paintOverview(pane) {
     <details class="mgmt" data-k="sched">
       <summary>📅 Schedule a session</summary>
       <div class="mgmt-body">
-        <p class="dim small">Book this client at any time at all, or nudge the
-          appointment they already have. Lead time, booking horizon and
-          business hours do not apply to you.</p>
+        <p class="dim small">Book or move this client at any time.</p>
         ${c.appointment?.start ? `
         <!-- MOVE IT, do not re-book it (Eric, 2026-08-26: "let me reschedule
              sessions without the scheduling blocks stopping me... reschedule
@@ -2693,7 +2692,7 @@ function paintOverview(pane) {
           ${c.status === 'closed' ? '<span class="dim small">Case closed.</span>' : ''}
         </div>
         ${saidHtml('miles')}
-        <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report triggers its milestone automatically; the buttons cover manual corrections.</p>
+        <p class="dim small" style="margin-top:.6rem;">Uploading a recording or report does this for you. Use these buttons only to correct it.</p>
       </div>`}
     </details>
 
@@ -2716,11 +2715,7 @@ function paintOverview(pane) {
             with it.${c.hold.note ? `<br>Your note to them: <em>${esc(c.hold.note)}</em>` : ''}</p>
           <div class="actions"><button class="btn glow" data-hold-off>Resume the case</button></div>`
         : `
-          <p class="dim small" style="margin:.2rem 0 .6rem;">Stops every clock
-            on this case: the report deadline, the follow-up month, the
-            coordination window. Resuming puts the time back on all of them.
-            An insurance appeal deadline is NOT paused, because that clock
-            belongs to the plan, not to you.</p>
+          <p class="dim small" style="margin:.2rem 0 .6rem;">Pausing stops this case's clocks. Insurance appeal deadlines keep running.</p>
           <label class="dim small" style="display:block; margin-bottom:.4rem;">Back around (optional)
             <input type="date" data-hold-back style="margin-left:.4rem;"></label>
           <label class="dim small" style="display:block; margin-bottom:.6rem;">Why, for the client: <strong style="color:var(--orange)">they read this word for word, and it comes to them as a notification</strong>
@@ -3143,6 +3138,30 @@ const REC_ACCEPT = 'video/*,audio/*,.mp4,.m4a,.mp3,.mkv,.webm';
 const DOC_ACCEPT = '.pdf,.html,.md,.doc,.docx,.jpg,.jpeg,.png,.heic';
 // Asked before a report is marked delivered, by upload or by button (2026-10-15).
 const REPORT_SENT_ASK = 'This tells your client the report is delivered and closes their chat in 48 hours. Continue?';
+/**
+ * THE WHOLE CASE FILE AS ONE PDF (Eric, 2026-08-26), on Uploads since
+ * 2026-10-16 (Eric, asked whether it could move: "PDF to Uploads"). It is a
+ * thing done with the files, so it sits with them, one line, above the list.
+ */
+function compileCardEl() {
+  const card = document.createElement('div');
+  card.className = 'panel compile-card';
+  card.innerHTML = `
+    <div class="row" style="gap:.6rem; align-items:center; flex-wrap:wrap;">
+      <span class="small" style="flex:1 1 12rem;">Every file on this case in one PDF. Recordings, PDFs and Word files are listed with a link: a browser cannot print one document inside another.</span>
+      <button type="button" class="btn quiet" data-compile style="flex:none;">Compile it</button>
+    </div>
+    ${saidHtml('compile')}`;
+  card.querySelector('[data-compile]')?.addEventListener('click', async (ev) => {
+    const b = ev.currentTarget;
+    b.disabled = true;
+    const was = b.textContent;
+    b.textContent = 'Gathering…';
+    try { await compileCaseFile(); } finally { b.disabled = false; b.textContent = was; }
+  });
+  return card;
+}
+
 function paintFiles(pane) {
   pane.innerHTML = `
     <div class="panel">
@@ -3180,6 +3199,7 @@ function paintFiles(pane) {
           autocomplete="off" style="width:100%; margin-top:.25rem;"></label>
       <div class="uploads" id="files"><p class="dim small">Loading…</p></div>
     </div>`;
+  pane.prepend(compileCardEl());
   // The search box lives OUTSIDE #files so repaints never eat a keystroke.
   // A fresh pane always starts unfiltered.
   fileQuery = '';
@@ -4306,10 +4326,9 @@ function infoBar(c, mtFmt, start, due) {
     if (ci?.next) row('CHECK-IN', `${fmt.format(ci.next)} MST`, 'var(--cyan)');
     else if (ci?.due) row('CHECK-IN', `<strong>DUE: ${ci.days}d since the last call</strong>`, 'var(--orange)');
   }
-  if (c.pendingTelehealth?.state === 'requested')
-    row('TELEHEALTH', `<strong>AWAITING YOUR CONFIRM</strong> · ${fmt.format(toDate(c.pendingTelehealth.when))} MST · ${esc(c.pendingTelehealth.clinicName || '')}`,
-      'var(--orange)');
-  if (c.needsReschedule) row('ALERT', 'NEEDS RESCHEDULE', 'var(--danger)');
+  // SAID ONCE (2026-10-16). A telehealth to confirm and a call to reschedule
+  // are alerts: the header's chips carry them, and the Waiting on you cards
+  // hold the buttons. These rows said them a third time.
 
   return `<div class="panel facts">${rows.join('')}</div>`;
 }
@@ -5851,11 +5870,7 @@ function paintMilestones(pane) {
     pane.innerHTML = `
       <div class="panel" data-mile-root>
         <h3 style="margin:0 0 .3rem;">🏁 Milestones</h3>
-        <p class="dim small" style="margin:0 0 .6rem;">What has actually been
-          achieved on this case, newest first: an appointment on the books, a
-          referral out the door, an authorization approved. One time-stamped
-          feed, the spine of the two-week progress report, and <strong>your
-          client sees every entry</strong> on their case page.</p>
+        <p class="dim small" style="margin:0 0 .6rem;">Wins on this case. <strong>Your client sees every one.</strong></p>
         <details class="faq" data-k="mile-new">
           <summary>Mark a milestone</summary>
           <div class="faq-a">
@@ -6020,13 +6035,7 @@ function paintWorkLog(pane) {
     pane.innerHTML = `
       <div class="panel" data-calls-root>
         <h3 style="margin:0 0 .3rem;">🗒 Work log</h3>
-        <p class="dim small" style="margin:0 0 .6rem;">Everything you do on this
-          case, by date, and nothing lands here on its own. Calls, appeals,
-          investigations, appointments you attended. Never counted, never
-          metered.</p>
-        <p class="dim small" style="margin:0 0 .6rem;"><strong>Your client sees
-          an entry only if you write the client line on it.</strong> Leave that
-          box empty and the entry is yours alone.
+        <p class="dim small" style="margin:0 0 .6rem;">Your record of the work. <strong>Your client sees an entry only if you fill in the client line.</strong>
           ${items.length
             ? `${shown} of ${items.length} ${items.length === 1 ? 'entry is' : 'entries are'} on their page.`
             : ''}</p>

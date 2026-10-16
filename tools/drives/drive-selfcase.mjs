@@ -87,7 +87,9 @@ const head = await page.evaluate(() => ({
 ok('the masthead says MY OWN CASE, in purple', /\bself\b/.test(head.cls) && head.pill === 'MY OWN CASE', `${head.pill} / ${head.cls}`);
 const pillColor = await purple(page, '[data-status]');
 ok('and the pill and the name wear the purple', !!pillColor && pillColor.color === hex2rgb(pillColor.want), pillColor ? `${pillColor.color} vs ${pillColor.want}` : '');
-ok('same tabs as any case', ['case', 'read', 'track', 'mine', 'act'].every((g) => head.tabs.includes(g)), head.tabs.join(','));
+// RE-PINNED 2026-10-16 (v7.54): Eric, "Retire Track": his strip is Case, Advisor, Mine, Act on every case, his own included.
+// NEGATIVE CONTROL (run 2026-10-16, v7.54): his Mine group's id renamed 'after' made this read FAIL.
+ok('same tabs as any case', ['case', 'read', 'mine', 'act'].every((g) => head.tabs.includes(g)) && !head.tabs.includes('track'), head.tabs.join(','));
 await page.evaluate(() => { document.querySelector('[data-group="case"]')?.click(); document.querySelector('[data-page="overview"]')?.click(); });
 await page.waitForTimeout(600);
 const ov = await page.evaluate(() => ({

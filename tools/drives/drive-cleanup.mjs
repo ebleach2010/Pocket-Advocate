@@ -12,6 +12,9 @@
 //   D. (v7.53) each case matches what was bought: his shelf by purchase, a
 //      Full-Service case with its consult and no report, an Advocacy Case
 //      leading with its meeting link, and their Full-Service page
+//   E. (v7.54) the doubles cut: four groups, Agenda under Mine, one Log with
+//      a filter, Saved under Notes, the PDF on Uploads, one clock switch, and
+//      About you in the Voice study fold
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -211,6 +214,51 @@ if (SHOTS) await client.screenshot({ path: `${SHOTS}/cleanup-4-client-full.png` 
 //   FAIL  their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way
 ok('their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way',
   theirs.pill === 'FULL-SERVICE' && /Full-Service Case Management/.test(theirs.eyebrow || '') && !theirs.onItsWay, JSON.stringify(theirs));
+
+console.log('\n--- E. the doubles cut (v7.54) ---');
+await eric.goto(`${P}/admin-case.html?id=demo-case&demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2500);
+const strip = await eric.evaluate(() => [...document.querySelectorAll('.folder-groups button')].map((b) => b.textContent.trim()));
+await group(eric, 'Mine', 'agenda');
+const mine = await eric.evaluate(() => ({
+  tabs: [...document.querySelectorAll('.folder-tabs [data-page]')].filter((e) => e.checkVisibility()).map((e) => e.dataset.page),
+  agenda: !!document.querySelector('[data-agenda-host] [data-alist]'),
+  waitingHost: !!document.querySelector('[data-waiting-host]'),
+}));
+await group(eric, 'Act', 'log');
+const log = await eric.evaluate(() => ({
+  tabs: [...document.querySelectorAll('.folder-tabs [data-page]')].filter((e) => e.checkVisibility()).map((e) => e.dataset.page),
+  filter: [...document.querySelectorAll('[data-log-filter] button')].map((b) => b.textContent.trim()),
+  both: !!document.querySelector('[data-log-work] [data-calls-root]') && !!document.querySelector('[data-log-miles] [data-mile-root]'),
+}));
+await tryStep(() => eric.click('[data-log-filter] [data-show="miles"]', { timeout: 4000 }));
+await eric.waitForTimeout(300);
+const onlyMiles = await eric.evaluate(() => ({ work: document.querySelector('[data-log-work]')?.hidden, miles: document.querySelector('[data-log-miles]')?.hidden }));
+await group(eric, 'Mine', 'notes');
+const notesHasSaved = await eric.evaluate(() => !!document.querySelector('.fpage:not([hidden]) [data-saved-host]') || !!document.querySelector('[data-saved-host]'));
+await group(eric, 'Case', 'files');
+const uploadsPdf = await eric.evaluate(() => /Every file on this case in one PDF\./.test(document.querySelector('.compile-card')?.textContent || ''));
+await group(eric, 'Case', 'chat');
+const chatStart = await eric.evaluate(() => [...document.querySelectorAll('button')].some((b) => b.checkVisibility() && /Start working/.test(b.textContent)));
+if (SHOTS) await eric.screenshot({ path: `${SHOTS}/cleanup-5-one-log.png` });
+// NEGATIVE CONTROL (run 2026-10-16, v7.54): his Track group put back (`{ id: 'track', label: 'Track', icon: 'i-doc', pages: ['agenda'] },` after Advisor) made this read
+//   FAIL  his case has four groups, Agenda under Mine, one Log with its filter under Act, Saved under Notes, the PDF on Uploads, and no second Start
+ok('his case has four groups, Agenda under Mine, one Log with its filter under Act, Saved under Notes, the PDF on Uploads, and no second Start',
+  strip.join('|') === 'Case|Advisor|Mine|Act' && mine.tabs.includes('agenda') && mine.agenda && mine.waitingHost
+  && log.tabs.join() === 'log' && log.filter.join('|') === 'Everything|Work|Milestones' && log.both
+  && onlyMiles.work === true && onlyMiles.miles === false && notesHasSaved && uploadsPdf && !chatStart,
+  JSON.stringify({ strip, mine, log, onlyMiles, notesHasSaved, uploadsPdf, chatStart }));
+
+await eric.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
+await settle(eric, 2500);
+const about = await eric.evaluate(() => {
+  const box = document.querySelector('[data-about-you]');
+  return { found: !!box, heads: box ? [...box.querySelectorAll('h4')].map((h) => h.textContent.trim()) : [], inFold: !!box?.closest('details') };
+});
+// NEGATIVE CONTROL (run 2026-10-16, v7.54): the voice block's `${aboutHtml(voice.about)}` taken out made this read
+//   FAIL  About you sits in the Voice study fold on Clients, all three parts
+ok('About you sits in the Voice study fold on Clients, all three parts',
+  about.found && about.inFold && about.heads.join('|') === 'How you write|Where you stand|Strong suits, and things to work on', JSON.stringify(about));
 
 console.log('\n--- C. errors ---');
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): a `null.x` put first in wireAddMenu's + click made this read

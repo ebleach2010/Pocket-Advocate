@@ -470,7 +470,9 @@ ck('L28 and his half of it is on every case as well',
   // RE-PINNED 2026-10-15 (v7.38): the look audit swapped the group's emoji for the stroke icon 'i-scale'.
   // NEGATIVE CONTROL (run 2026-10-15, v7.38): the Act group's icon put back to the emoji made this read
   //   FAIL  L28 and his half of it is on every case as well
-  && /'act', label: 'Act', icon: 'i-scale', pages: \[\.\.\.\(data\.fullAccess \? \['appeals'\] : \[\]\), 'log', 'milestones'\]/.test(strip)
+  // RE-PINNED 2026-10-16 (v7.54): Eric, "Merge logs": the log and the milestones are one Log page, so Act carries 'log'.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): his Act group's 'log' taken out still made L28 read FAIL.
+  && /'act', label: 'Act', icon: 'i-scale', pages: \[\.\.\.\(data\.fullAccess \? \['appeals'\] : \[\]\), 'log'\]/.test(strip)
   && !/\.\.\.\(data\.fullAccess\s*\? \[\{ id: 'act'/.test(strip),
   'log is behind a tier gate the client\'s half is not');
 // FOUR TABS PER GROUP AT 320px IS A HARD LIMIT, and he has photographed the
@@ -501,7 +503,9 @@ ck('L28c and the chart still opens on Overview, not on the log',
 // one he named.
 ck('L28b and no group grew a fifth page doing it (Mine excepted, its fifth is Personal, 2026-09-03)',
   (strip.match(/pages: \[[^\]]*\]/g) || [])
-    .every((p) => (p.match(/'/g) || []).length / 2 <= 4 || /'saved', 'personal'\]/.test(p)),
+    // RE-PINNED 2026-10-16 (v7.54): Mine ends 'agenda', 'personal' now (Track retired, Saved under Notes).
+    // NEGATIVE CONTROL (run 2026-10-16, v7.54): a fifth page added to Case made L28b read FAIL.
+    .every((p) => (p.match(/'/g) || []).length / 2 <= 4 || /'agenda', 'personal'\]/.test(p)),
   (strip.match(/pages: \[[^\]]*\]/g) || []).join(' '));
 // It follows the file list's grammar rather than inventing one, and its pills
 // take one token colour instead of four new hues.
@@ -1360,7 +1364,9 @@ ck('M42 the client sees the milestones, four fields wide, and is told so on his 
   && !/notes/.test((WORKER.match(/milestones: miles[\s\S]{0,600}/) || [''])[0])
   && /data-milestones/.test(CLIENT)
   && /out\.milestones \|\| \[\]/.test(CLIENT)
-  && /your\s+client sees every entry/.test(ADMIN)
+  // RE-PINNED 2026-10-16 (v7.54): the milestones line is one sentence now: "Wins on this case. Your client sees every one."
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): that sentence's "Your client sees every one." taken out made M42 read FAIL.
+  && /Your client sees every one\./.test(ADMIN)
   && /const milestones = \[\.\.\.store\.docs\.entries\(\)\]/.test(DEMO));
 
 const failed = results.filter((r) => !r.pass);

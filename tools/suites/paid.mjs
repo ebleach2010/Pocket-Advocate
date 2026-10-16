@@ -349,7 +349,10 @@ const CASE = {
   // and closed over `c`. load() reassigns `data` and does not re-render the
   // Chat pane, so the pill kept printing the pre-save hourly for as long as
   // the page stayed open.
-  const paint = slab(ADMINCASE, '    const live = data || c;', '    }\n    btn.textContent =');
+  // RE-PINNED 2026-10-16 (v7.54): the Chat row's Start button is gone (Eric: "One work clock"), so the paint ends at
+  // its `if (btn)` guard now; the slab runs to there.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): `const live = data || c;` changed to `const live = c;` still made M19 read FAIL.
+  const paint = slab(ADMINCASE, '    const live = data || c;', '    }\n    if (btn) {');
   // NEGATIVE CONTROL: putting `effectiveHourly(c, t)` back made this read
   //   FAIL  M19 ... -- the pill still reads the closed-over case
   // UPDATED 2026-08-29 with the two-tier clock: the hourly divides the money

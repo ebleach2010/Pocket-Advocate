@@ -305,10 +305,14 @@ console.log('\n--- W. Eric\'s side ---');
   const head = slab(ADMINCASE, 'head.innerHTML = `', '`;');
   const chatPane = slab(ADMINCASE, '<div class="chat-head">', '<div id="chat"></div>');
   const files = slab(ADMINCASE, 'function paintFiles(pane) {', '\nasync function api(');
-  check('W4 the client-reads chips sit on the Chat page under Working on, the notes come before the compile card, and Uploads is one picker, his types in his order and then Recording',
+  // RE-PINNED AND RENAMED 2026-10-16 (v7.54): Eric, asked whether the whole-case PDF could move: "PDF to Uploads". It
+  // left Notes for the top of Uploads, one line.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): the `pane.prepend(compileCardEl());` line taken out made this read
+  //   FAIL  W4 the client-reads chips sit on the Chat page under Working on, the whole-file PDF sits on Uploads, and Uploads is one picker, his types in his order and then Recording
+  check('W4 the client-reads chips sit on the Chat page under Working on, the whole-file PDF sits on Uploads, and Uploads is one picker, his types in his order and then Recording',
     !/data-doing-row/.test(head) && chatPane.indexOf('data-status-pick') > 0 && chatPane.indexOf('data-doing-row') > chatPane.indexOf('data-status-pick')
-    && /pane\.appendChild\(notesHost\);\s*pane\.appendChild\(compileCard\);/.test(ADMINCASE)
-    && (ADMINCASE.match(/pane\.appendChild\(compileCard\)/g) || []).length === 1
+    && /pane\.prepend\(compileCardEl\(\)\);/.test(files) && (ADMINCASE.match(/compileCardEl\(\)/g) || []).length === 2
+    && !/compileCard\b/.test(ADMINCASE)
     // RE-PINNED 2026-10-15 (v7.52): the picker opens on "Choose what this is" now, not on Report (one file picked at once
     // marked a case delivered before its call); his types follow in his order, then Recording.
     // NEGATIVE CONTROL (run 2026-10-15, v7.52): Recording moved ahead of his types still made W4 read FAIL.

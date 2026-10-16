@@ -370,7 +370,10 @@ console.log('\n--- G. the two places, and the words ---');
   check('G2 the Clients page mounts the shelf with scope all, folded; the case page has a Personal tab under Mine, open',
     /id="personal"/.test(f('public/admin.html'))
     && /mountPersonal\(document\.getElementById\('personal'\), \{ getToken: \(\) => user\.getIdToken\(\), scope: 'all' \}\)/.test(code('public/js/admin.js'))
-    && /pages: \['notes', 'calldoc', 'drafts', 'saved', 'personal'\]/.test(code('public/js/admin-case.js'))
+    // RE-PINNED 2026-10-16 (v7.54): Saved went under Notes and Agenda came to Mine when Track retired (Eric: "Retire
+    // Track"); Personal is still the last page of Mine.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.54): 'personal' taken out of Mine's pages made G2 read FAIL.
+    && /pages: \['notes', 'calldoc', 'drafts', 'agenda', 'personal'\]/.test(code('public/js/admin-case.js'))
     && /id: 'personal', title: 'Personal', icon: '🤫'/.test(code('public/js/admin-case.js'))
     && /scope: 'case', caseId, open: true/.test(code('public/js/admin-case.js')));
   check('G3 the routes are registered and requireAdmin is the first thing each does',

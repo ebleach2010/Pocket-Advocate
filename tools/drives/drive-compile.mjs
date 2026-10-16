@@ -25,15 +25,16 @@ page.on('pageerror', (e) => errs.push(e.message));
 await page.goto(`${P}/admin-case.html?id=demo-case&demo=admin`, { waitUntil: 'networkidle' });
 await page.waitForTimeout(3000);
 
-// Onto the Notes page, inside Mine.
+// RE-PINNED AND RENAMED 2026-10-16 (v7.54): Eric, asked whether the whole-case PDF could move: "PDF to Uploads". The
+// card left Notes for the top of Uploads, one line that still says what it cannot include.
+// NEGATIVE CONTROL (run 2026-10-16, v7.54): the `pane.prepend(compileCardEl());` line taken out made the card checks read FAIL.
 const reached = await page.evaluate(() => {
-  const tab = [...document.querySelectorAll('.folder-tabs a, .folder-tabs button')]
-    .find((t) => /notes/i.test(t.textContent || '') || t.dataset.page === 'notes');
+  const tab = document.querySelector('.folder-tabs [data-page="files"]');
   if (!tab) return false;
   tab.click();
   return true;
 });
-ok('the Notes page is reachable', reached);
+ok('the Uploads page is reachable', reached);
 await page.waitForTimeout(1600);
 
 const card = await page.evaluate(() => {
@@ -41,12 +42,13 @@ const card = await page.evaluate(() => {
   const btn = document.querySelector('[data-compile]');
   return {
     there: !!c,
-    heading: c?.querySelector('h3')?.textContent.trim() || '',
+    top: !!c && c.parentElement?.firstElementChild === c,
+    heading: c?.textContent.replace(/\s+/g, ' ').trim().slice(0, 60) || '',
     saysWhatItCannotDo: /cannot print one document inside another/i.test(c?.textContent || ''),
     btnH: btn ? Math.round(btn.getBoundingClientRect().height) : 0,
   };
 });
-ok('the compile card is on the Notes page', card.there, card.heading);
+ok('the compile card is at the top of Uploads', card.there && card.top, card.heading);
 ok('it says up front what it cannot include', card.saysWhatItCannotDo);
 ok('its button is a 44px target', card.btnH >= 44, `${card.btnH}px`);
 

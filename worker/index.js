@@ -527,12 +527,27 @@ async function raiseSubRate(env, attempt = 0) {
  * a switch he can reach at three in the morning, not a redeploy he has to ask
  * for.
  */
+/**
+ * What the study has learned about him (2026-10-16). It was a tab on every
+ * case, the same page each time; it lives in the Voice study fold on Clients
+ * now, beside the study that writes it, so it rides this route's answer.
+ */
+async function aboutYou(env) {
+  const style = await getDoc(env, 'advisorStyle/profile').catch(() => null);
+  return {
+    voice: style?.data.voice || '',
+    stances: style?.data.stances || '',
+    coaching: style?.data.coaching || '',
+    updatedAt: style?.data.updatedAt || null,
+  };
+}
+
 async function handleVoiceLoop(request, env, ctx) {
   const admin = await requireAdmin(request, env);
   // 404, not 403. A route that refuses you is a route that exists, and the
   // name of this one describes something a client must not know is happening.
   if (!admin) return json({ error: 'Not found' }, 404);
-  if (request.method !== 'POST') return json(await voiceLoopState(env));
+  if (request.method !== 'POST') return json({ ...(await voiceLoopState(env)), about: await aboutYou(env) });
   const body = await request.json().catch(() => ({}));
   if (typeof body?.enabled === 'boolean') return json(await setVoiceLoop(env, body.enabled));
   if (body?.run === true) {
@@ -545,7 +560,7 @@ async function handleVoiceLoop(request, env, ctx) {
     // return inside a browser request: this codebase learned that once already.
     return keepaliveRun(ctx, maybeVoiceStudy(env, Date.now(), { force: true }), { raw: true });
   }
-  return json(await voiceLoopState(env));
+  return json({ ...(await voiceLoopState(env)), about: await aboutYou(env) });
 }
 
 async function handleSetRates(request, env) {
@@ -2390,7 +2405,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-15-what-they-bought';
+const BUILD_TAG = 'v2026-10-16-doubles-cut';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2398,7 +2413,7 @@ const BUILD_TAG = 'v2026-10-15-what-they-bought';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.53';
+const VERSION = '7.54';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

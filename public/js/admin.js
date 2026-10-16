@@ -288,6 +288,7 @@ async function load() {
         <button class="btn quiet" id="voice-now">Run one now</button>
       </div>
       <p class="dim small" id="voice-said" style="margin:.4rem 0 0;" hidden></p>
+      ${aboutHtml(voice.about)}
     </details>` : '';
 
   const summary = advocate ? '' : `
@@ -800,6 +801,30 @@ function checkInDue(c) {
   const last = Math.max(first, started, ...past, 0);
   if (!last || last > now) return false;
   return now - last >= 14 * 86_400_000;
+}
+
+/**
+ * ABOUT YOU, beside the study that writes it (2026-10-16). It was a tab on
+ * every case under Track, the same page each time; Track is retired and this
+ * is its one home. Text only: each line is escaped, list markers dropped.
+ */
+function aboutHtml(a) {
+  if (!a) return '';
+  const lines = (t) => String(t || '').split('\n').map((x) => x.replace(/^\s*[-*•]\s*/, '').trim()).filter(Boolean);
+  const block = (title, body, empty) => {
+    const ls = lines(body);
+    return `<h4 class="about-h" style="margin:.9rem 0 .3rem;">${title}</h4>${ls.length
+      ? `<ul style="margin:0; padding-left:1.1rem;">${ls.map((x) => `<li class="small">${esc(x)}</li>`).join('')}</ul>`
+      : `<p class="dim small" style="margin:0;">${empty}</p>`}`;
+  };
+  return `
+      <div class="about-you" data-about-you style="margin-top:.8rem; border-top:1px solid var(--line); padding-top:.6rem;">
+        <p style="margin:0;"><strong>About you</strong> <span class="dim small">What it has learned. Nobody else sees this.</span></p>
+        ${block('How you write', a.voice, 'Not enough edits yet.')}
+        ${block('Where you stand', a.stances, 'No standing positions yet.')}
+        ${block('Strong suits, and things to work on', a.coaching, 'Not enough to say yet.')}
+        ${a.updatedAt ? `<p class="dim small" style="margin:.7rem 0 0;">Last updated ${esc(new Date(a.updatedAt).toLocaleDateString())}.</p>` : ''}
+      </div>`;
 }
 
 /** What they bought, where the shelf's title does not already say it (2026-10-15). */

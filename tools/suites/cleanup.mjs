@@ -16,6 +16,9 @@
 //      consult and the work, never a report, and an upgrade replaces one not
 //      yet delivered; the shelf groups by purchase; Priority Chat's same-day
 //      promise is a reminder.
+//   C. (v7.54) the doubles cut: Track retired, one Log, Saved under Notes,
+//      the PDF on Uploads, one clock switch, each status said once, one-line
+//      explanations.
 //
 // Run: node cleanup.mjs
 import { readFileSync } from 'node:fs';
@@ -232,7 +235,9 @@ console.log('\n--- B. each case matches what was bought (v7.53) ---');
   //   FAIL  B4 a Full-Service case page shows the consult, never a report due, and files no report; an Advocacy Case leads with the meeting link
   check('B4 a Full-Service case page shows the consult, never a report due, and files no report; an Advocacy Case leads with the meeting link',
     /if \(c\.fullAccess && c\.status !== 'delivered' && !c\.reportDeliveredAt\)\n\s+row\('CONSULT',/.test(CASE)
-    && /if \(!c\.fullAccess && c\.status === 'awaiting_report' && c\.reportDueAt\)\n\s+nextOf\.push/.test(CASE)
+    // RE-PINNED 2026-10-16 (v7.54): NEXT names a report date only while it is ahead; past due is the overdue chip.
+    // NEGATIVE CONTROL (run 2026-10-16, v7.54): the CONSULT row's branch taken out still made B4 read FAIL.
+    && /if \(!c\.fullAccess && c\.status === 'awaiting_report' && c\.reportDueAt && toDate\(c\.reportDueAt\)\.getTime\(\) > nowMs\)\n\s+nextOf\.push/.test(CASE)
     && /c\.fullAccess && c\.status !== 'closed' \? 'FULL-SERVICE' :/.test(CASE)
     && /if \(data\.fullAccess\) cat\.querySelector\('option\[value="report"\]'\)\?\.remove\(\);/.test(CASE)
     && /<button class="btn secondary" data-action="recording-uploaded">Consult done<\/button>/.test(CASE)
@@ -255,6 +260,58 @@ console.log('\n--- B. each case matches what was bought (v7.53) ---');
     && !/report still arrives as promised/.test(TERMS) && !/the written report\. Then/.test(TERMS)
     && /'It starts from our initial consult and my record review\. No written report: the work replaces it',/.test(ABOUT)
     && !DASH.test(TERMS) && !DASH.test(ABOUT));
+}
+
+console.log('\n--- C. the doubles cut (v7.54) ---');
+{
+  const ADMIN = f('public/js/admin.js');
+  const pageIds = [...CASE.matchAll(/\n\s+id: '([\w-]+)', title: '/g)].map((m) => m[1]);
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): the Unanswered painter pointed back at folder.el('unanswered') made this read
+  //   FAIL  C1 Track is retired: what is waiting on the client tops the Agenda under Mine, and About you lives in the Voice study fold on Clients
+  check('C1 Track is retired: what is waiting on the client tops the Agenda under Mine, and About you lives in the Voice study fold on Clients',
+    !/id: 'track'/.test(CASE) && !pageIds.includes('unanswered') && !pageIds.includes('about') && !pageIds.includes('saved') && !pageIds.includes('milestones')
+    && /pages: \['notes', 'calldoc', 'drafts', 'agenda', 'personal'\]/.test(CASE)
+    && /pane\.innerHTML = '<div data-waiting-host><\/div><div data-agenda-host><\/div>';/.test(CASE)
+    && /paintUnanswered\(folder\?\.el\('agenda'\)\?\.querySelector\('\[data-waiting-host\]'\), d\.unanswered, d\.updatedAt\);/.test(CASE)
+    && /<h3>\$\{unansweredSelf \? 'Waiting on you' : 'Waiting on them'\}<\/h3>/.test(CASE)
+    && /if \(!open\.length\) \{ pane\.innerHTML = ''; return; \}/.test(CASE)
+    && /return json\(\{ \.\.\.\(await voiceLoopState\(env\)\), about: await aboutYou\(env\) \}\);/.test(W)
+    && /getDoc\(env, 'advisorStyle\/profile'\)/.test(lift(W, 'async function aboutYou(env) {'))
+    && /\$\{aboutHtml\(voice\.about\)\}/.test(ADMIN) && /function aboutHtml\(a\) \{/.test(ADMIN)
+    && /ls\.map\(\(x\) => `<li class="small">\$\{esc\(x\)\}<\/li>`\)/.test(ADMIN),
+    JSON.stringify(pageIds));
+
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): the Log page's `paintMilestones(miles);` taken out made this read
+  //   FAIL  C2 the work log and the milestones are one Log, with a filter between them, under Act for him and for a contractor
+  check('C2 the work log and the milestones are one Log, with a filter between them, under Act for him and for a contractor',
+    /id: 'log', title: 'Log', icon: '🗒',/.test(CASE)
+    && /paintWorkLog\(work\);\n\s+paintMilestones\(miles\);/.test(CASE)
+    && /pane\._reload = \(\) => \{ work\._reload\?\.\(\); miles\._reload\?\.\(\); \};/.test(CASE)
+    && /data-show="all" aria-pressed="true">Everything<\/button>/.test(CASE) && /data-show="miles" aria-pressed="false">Milestones<\/button>/.test(CASE)
+    && /work\.hidden = show === 'miles';\n\s+miles\.hidden = show === 'work';/.test(CASE)
+    && /\{ id: 'act', label: 'Act', icon: 'i-scale', pages: \['log'\] \},/.test(CASE)
+    && /const ADVOCATE_PAGES = new Set\(\['overview', 'chat', 'files', 'notes', 'agenda', 'log'\]\);/.test(CASE)
+    && /\.log-filter \.btn\.on \{/.test(f('public/css/admin.css')));
+
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): the Chat row's Start button put back made this read
+  //   FAIL  C3 Saved sits under Notes, the whole-file PDF on Uploads, and the clock has one switch, the one by the name
+  check('C3 Saved sits under Notes, the whole-file PDF on Uploads, and the clock has one switch, the one by the name',
+    /savedHost\.dataset\.savedHost = '';\n\s+pane\.appendChild\(savedHost\);\n\s+mountSaved\(\{ container: savedHost, kind: 'case', id: caseId, user, myRole: 'admin' \}\);/.test(CASE)
+    && /pane\.prepend\(compileCardEl\(\)\);/.test(CASE)
+    && !/data-work-toggle/.test(CASE.slice(CASE.indexOf("id: 'chat', title: 'Chat'"), CASE.indexOf('<div id="chat"></div>')))
+    && /data-work-head/.test(CASE) && /if \(btn\) wireClockToggle\(btn\);/.test(CASE));
+
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): the TELEHEALTH fact row put back made this read
+  //   FAIL  C4 the Overview says each status once, NEXT only looks ahead, and the long explanations are one line
+  check('C4 the Overview says each status once, NEXT only looks ahead, and the long explanations are one line',
+    !/row\('TELEHEALTH'/.test(CASE) && !/row\('ALERT'/.test(CASE)
+    && /<p class="dim small">Topics for the next call, from you and the client\.<\/p>/.test(CASE)
+    && /<p class="dim small">Book or move this client at any time\.<\/p>/.test(CASE)
+    && /Pausing stops this case's clocks\. Insurance appeal deadlines keep running\./.test(CASE)
+    && /Uploading a recording or report does this for you\. Use these buttons only to correct it\./.test(CASE)
+    && /Your record of the work\. <strong>Your client sees an entry only if you fill in the client line\.<\/strong>/.test(CASE)
+    && /Wins on this case\. <strong>Your client sees every one\.<\/strong>/.test(CASE)
+    && /They send it back, and you file it as a filled form\./.test(CASE));
 }
 
 const failed = results.filter((r) => !r.pass);

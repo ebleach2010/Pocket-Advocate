@@ -166,6 +166,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // photo is, that Employer mode is green, and that he sets a contractor's photo and bio from their card.
   // NEGATIVE CONTROL (run 2026-10-15, v7.50): the worker's BUILD_TAG left at the payroll-paid tag made this read
   //   FAIL  R1 both versions read 7.50 with the new tag, the 7.50 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-16 (v7.54): both versions read 7.54 with the doubles-cut tag, and the 7.54 entry says Track is gone,
+  // the logs are one, Saved and the PDF moved, and the clock has one switch.
+  // NEGATIVE CONTROL (run 2026-10-16, v7.54): the worker's BUILD_TAG left at the what-they-bought tag made this read
+  //   FAIL  R1 both versions read 7.54 with the new tag, the 7.54 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry754 = (CL.match(/\{\n\s+\/\/ THE DOUBLES CUT \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-15 (v7.53): both versions read 7.53 with the what-they-bought tag, and the 7.53 entry says Clients
   // groups by purchase, Full-Service owes the consult and no report, and an upgrade replaces the report.
   // NEGATIVE CONTROL (run 2026-10-15, v7.53): the worker's VERSION left at '7.52' made this read
@@ -221,9 +226,13 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.53 with the new tag, the 7.53 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.53';/.test(CL) && /const VERSION = '7\.53';/.test(W) && /const BUILD_TAG = 'v2026-10-15-what-they-bought';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.53'
+  check('R1 both versions read 7.54 with the new tag, the 7.54 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.54';/.test(CL) && /const VERSION = '7\.54';/.test(W) && /const BUILD_TAG = 'v2026-10-16-doubles-cut';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.54'
+    && /version: '7\.54',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry754)
+    && /Track is gone\./.test(entry754) && /one Log under Act/.test(entry754)
+    && /The second Start in Chat is gone/.test(entry754)
+    && !DASH.test(entry754) && !HARD.some((re) => re.test(entry754))
     && /version: '7\.53',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry753)
     && /grouped by what they bought/.test(entry753) && /owes the first consult, never a report/.test(entry753)
     && /replaces the report/.test(entry753) && /Priority Chat client waiting on a reply/.test(entry753)
