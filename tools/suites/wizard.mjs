@@ -32,6 +32,7 @@ function check(name, cond, detail = '') {
 }
 const STAFF = await import(pathToFileURL(join(ROOT, 'worker/staff.js')).href);
 const ADDONS = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
+const SVCS = await import(pathToFileURL(join(ROOT, 'worker/services.js')).href);
 const SS = await import(pathToFileURL(join(ROOT, 'worker/staffsettings.js')).href);
 const PAY = await import(pathToFileURL(join(ROOT, 'worker/payroll.js')).href);
 const SCHED = await import(pathToFileURL(join(ROOT, 'worker/schedule.js')).href);
@@ -70,6 +71,8 @@ const world = () => {
     notifyUser: async () => {},
     ...STAFF,
     addonsOf: ADDONS.addonsOf, cleanAddons: ADDONS.cleanAddons,
+    // Their own services (v7.74), the real module.
+    servicesOf: SVCS.servicesOf, cleanServices: SVCS.cleanServices,
     cleanSettingsChange: SS.cleanSettingsChange, settingsFrom: SS.settingsFrom, nest: SS.nest,
     bufferHoursOf: SS.bufferHoursOf, cleanBufferHours: SS.cleanBufferHours,
     cleanPayout: PAY.cleanPayout, sealPayout: PAY.sealPayout, PAYOUT_METHODS: PAY.PAYOUT_METHODS,
@@ -199,7 +202,9 @@ console.log('\n--- what they offer ---');
   //   FAIL  W6 only he switches what they offer: their own settings cannot
   check('W6 only he switches what they offer: their own settings cannot',
     /set by Eric/.test(theirs.error || '') && his.patch?.['settings.offers.full'] === false && his.mask.join() === 'settings.offers.full'
-    && /const got = cleanSettingsChange\(body\);/.test(SSRC) && SS.offersFrom(undefined).case === true && SS.offersFrom({ full: false }).full === false);
+    // RE-PINNED 2026-10-17 (v7.74): their settings route takes services apart from the rest, and the rest is still checked as theirs.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): the route's `cleanSettingsChange(rest)` made `cleanSettingsChange(rest, { admin: true })` made W6 read FAIL.
+    && /const got = cleanSettingsChange\(rest\);/.test(SSRC) && SS.offersFrom(undefined).case === true && SS.offersFrom({ full: false }).full === false);
 
   const W = f('worker/index.js');
   const cap = (W.match(/async function fullAccessCapacity\(env, contractor = ''\) \{[\s\S]*?\n\}/) || [''])[0];

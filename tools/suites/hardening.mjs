@@ -307,7 +307,9 @@ console.log('\n--- U. the screens ---');
   // NEGATIVE CONTROL (run 2026-10-16): buyTag's style put back to `color:var(--dim)` made this read
   //   FAIL  U5 the folder's purchase label is in the folder's own ink, and the upload picker sits inside its column
   check('U5 the folder\'s purchase label is in the folder\'s own ink, and the upload picker sits inside its column',
-    /<strong style="color:var\(--manila-ink\);opacity:\.78">\$\{c\.fullAccess \? 'FULL-SERVICE' : 'ADVOCACY CASE'\}<\/strong> · /.test(f('public/js/admin.js'))
+    // RE-PINNED 2026-10-17 (v7.74): a contractor's own service is tagged by its own name, in the same ink.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): buyTag's `c.service?.label ? esc(String(c.service.label).toUpperCase()) : ` taken out made U5 read FAIL.
+    /<strong style="color:var\(--manila-ink\);opacity:\.78">\$\{c\.service\?\.label \? esc\(String\(c\.service\.label\)\.toUpperCase\(\)\) : c\.fullAccess \? 'FULL-SERVICE' : 'ADVOCACY CASE'\}<\/strong> · /.test(f('public/js/admin.js'))
     && /<select id="up-cat">/.test(ADMINCASE) && !/id="up-cat" style="margin-left/.test(ADMINCASE));
 }
 {

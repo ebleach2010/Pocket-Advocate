@@ -203,7 +203,9 @@ const BK = f('public/js/book.js');
 // calendar, no open times), so four strip what they cannot wire.
 // NEGATIVE CONTROL (run 2026-10-17, v7.70): renderAdvocateTimes's no-times `stripUnwiredStep1(el, { keepIntro: true });` taken out made this read FAIL.
 ck('booking: every early return strips the controls it cannot wire, his calendar and a contractor\'s',
-   (BK.match(/\n {4}stripUnwiredStep1\(el/g) || []).length === 4
+   // RE-PINNED 2026-10-17 (v7.74): a fifth early return, a contractor's own service that is not on offer, strips them too.
+   // NEGATIVE CONTROL (run 2026-10-17, v7.74): showService's `stripUnwiredStep1(el, { keepIntro: false });` taken out made this read FAIL.
+   (BK.match(/\n {4}stripUnwiredStep1\(el/g) || []).length === 5
    && /function stripUnwiredStep1\(el/.test(BK));
 ck('booking: a failed calendar read says what to do next',
    /Reload the page and it usually comes back/.test(BK));

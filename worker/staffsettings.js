@@ -22,6 +22,7 @@
 
 import { getDoc, patchDoc } from './firestore.js';
 import { advocateIdOf } from './staff.js';
+import { servicesOf, cleanServices, newlyAsked } from './services.js';
 
 const UID_RE = /^[\w-]{1,64}$/;
 /** The week, Monday first, as their hours are kept. */
@@ -228,9 +229,25 @@ export async function handleStaffSettings(request, env, h) {
   const path = `advocates/${staff.uid}`;
   if (request.method === 'POST') {
     const body = (await request.json().catch(() => null)) || {};
-    const got = cleanSettingsChange(body);
-    if (got.error) return h.json({ error: got.error }, 400);
-    await patchDoc(env, path, nest({ ...got.patch, 'settings.updatedAt': new Date() }), { mask: [...got.mask, 'settings.updatedAt'] });
+    // A service of their own, asked for (2026-10-17: "new tier types that a
+    // contractor wants"). It stays off until he turns it on, and he is told.
+    const { services, ...rest } = body;
+    if (services === undefined || Object.keys(rest).length) {
+      const got = cleanSettingsChange(rest);
+      if (got.error) return h.json({ error: got.error }, 400);
+      await patchDoc(env, path, nest({ ...got.patch, 'settings.updatedAt': new Date() }), { mask: [...got.mask, 'settings.updatedAt'] });
+    }
+    if (services !== undefined) {
+      const cur = await getDoc(env, path).catch(() => null);
+      const got = cleanServices(services, cur?.data?.services, { admin: false });
+      if (got.error) return h.json({ error: got.error }, 400);
+      await patchDoc(env, path, { services: got.value }, { mask: ['services'] });
+      const asked = newlyAsked(cur?.data?.services, got.value);
+      if (asked.length && h.tellEric) {
+        const who = String(cur?.data?.name || 'A team member').trim().split(/\s+/)[0];
+        await h.tellEric(env, `${who} asked to offer ${asked.join(', ')}. Turn it on from their card in Employer mode.`, '/admin-employer.html').catch(() => {});
+      }
+    }
   } else if (request.method !== 'GET') {
     return h.json({ error: 'Not found' }, 404);
   }
@@ -253,5 +270,7 @@ export async function handleStaffSettings(request, env, h) {
     // Their own chat line's link, once he has turned it on (2026-10-17).
     chatPath: mine.offers.chat ? `/subscribe.html?advocate=${encodeURIComponent(staff.uid)}` : null,
     bufferHours: bufferHoursOf(rec?.data),
+    // Their own services, asked for or on (2026-10-17).
+    services: servicesOf(rec?.data),
   });
 }

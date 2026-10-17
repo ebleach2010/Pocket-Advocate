@@ -62,8 +62,16 @@ const STATUS_RANK = { paid: 1, forms: 1, confirmed: 2, awaiting_report: 4, deliv
 const FULL_STEPS = STEPS.map(([k, label]) => (k === 'awaiting_report'
   ? [k, 'The consult is done']
   : k === 'delivered' ? [k, 'Full-Service: the work, a month at a time'] : [k, label]));
+// A CONTRACTOR'S OWN SERVICE (2026-10-17: "Opens a case, no time"): no call
+// and no report, so its steps are the hold, the forms, taken on, and the end.
+const SERVICE_STEPS = [
+  ['paid', 'Paid'],
+  ['forms', 'Forms acknowledged'],
+  ['confirmed', 'Taken on. Plan the next step together in your case chat'],
+  ['closed', 'Closed. The file is yours forever'],
+];
 /** The steps this case runs on. A report already delivered before the upgrade keeps its own line. */
-const stepsOf = (c) => (c?.fullAccess && !c.reportDeliveredAt ? FULL_STEPS : STEPS);
+const stepsOf = (c) => (c?.service && !c.fullAccess ? SERVICE_STEPS : c?.fullAccess && !c.reportDeliveredAt ? FULL_STEPS : STEPS);
 /** The pill's word for where the case stands. */
 const statusWord = (c) => (c.fullAccess && c.status !== 'closed' ? 'FULL-SERVICE' : STATUS_LABEL[c.status] || c.status);
 const STATUS_LABEL = {
@@ -195,10 +203,12 @@ const CHEER = {
   awaiting_report: 'The call is done. Your report is on its way.',
   delivered: 'Your report is ready.',
   closed: 'Your case is complete. The file is yours forever.',
+  // Their own service (2026-10-17) has no call to book: open until it closes.
+  service: 'Your case is open. Plan the next step together in your case chat.',
 };
 function cheerCard(c, rank, closed) {
   const line = c.fullAccess && !closed && c.status !== 'confirmed' && !c.reportDeliveredAt
-    ? 'Full-Service is under way. I am working your case.' : CHEER[c.status];
+    ? 'Full-Service is under way. I am working your case.' : c.service && !closed ? CHEER.service : CHEER[c.status];
   if (!line || c.hold?.pausedAt) return '';
   const total = stepsOf(c).length;
   const done = Math.max(1, Math.min(total, closed ? total : c.status === 'delivered' ? rank : rank - 1));
@@ -736,7 +746,8 @@ function renderProgress(el, c) {
   // (Eric, 2026-08-21: "make the hyperlink section text larger... line it
   // up.") They are two matching buttons on one row now; what stays a sentence
   // is only what is not tappable.
-  const methodLine = method === 'phone'
+  // Their own service (2026-10-17) has no call, so no line about one.
+  const methodLine = c.service && !start ? '' : method === 'phone'
     ? `Phone. I call you at <strong>${esc(c.appointment.phone || 'your number')}</strong>.`
     : c.appointment?.joinLink
       ? ''
@@ -794,7 +805,7 @@ function renderProgress(el, c) {
   // The pill already says FULL-SERVICE (2026-10-17, the look audit: it read
   // twice and wrapped): the words beside it finish the name instead.
   const pillText = chargeLabel(c) || statusWord(c);
-  const kindWords = pillText === 'FULL-SERVICE' ? 'Case Management' : c.fullAccess ? 'Full-Service Case Management' : 'Advocacy Case';
+  const kindWords = pillText === 'FULL-SERVICE' ? 'Case Management' : c.fullAccess ? 'Full-Service Case Management' : c.service?.label ? esc(String(c.service.label)) : 'Advocacy Case';
   el.innerHTML = `
     <div class="stack">
     ${pausedNotice(c)}
@@ -808,7 +819,8 @@ function renderProgress(el, c) {
       ${start ? `
         <h2 class="appt-when">${mtFmt.format(start)} MST<br>
         <span class="dim small" style="display:inline-block;margin-top:.3rem;line-height:1.35;">${localFmt.format(start)} your time</span></h2>`
-    : '<h2 class="appt-when">Your case is open<br><span class="dim small">No call is on the books yet.</span></h2>'}
+    : c.service ? '<h2 class="appt-when">Your case is open<br><span class="dim small">Plan the next step together in your case chat.</span></h2>'
+      : '<h2 class="appt-when">Your case is open<br><span class="dim small">No call is on the books yet.</span></h2>'}
       ${underLine ? `<p class="dim small">${underLine}</p>` : ''}
       ${primaryAction}
       ${requestedNote}
@@ -1615,7 +1627,7 @@ function renderPageFooter(host, c) {
       <div class="case-picker">
         ${cases.map((x) => `
           <button class="chip-label pill ${x.id === currentId ? 'selected' : ''}" data-case="${x.id}">
-            ${x.appointment?.start ? mtFmt.format(toDate(x.appointment.start)) : 'Case'}
+            ${x.appointment?.start ? mtFmt.format(toDate(x.appointment.start)) : x.service?.label ? esc(String(x.service.label)) : 'Case'}
             ${x.status === 'closed' ? ' · closed' : ''}
           </button>`).join('')}
       </div>`);

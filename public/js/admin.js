@@ -197,9 +197,12 @@ async function load() {
   // consult and the work, never a report, so it has a shelf of its own
   // instead of sitting under REPORT PHASE.
   const fullOpen = shelved.filter((c) => c.fullAccess && c.status !== 'closed');
-  const future = shelved.filter((c) => !fullOpen.includes(c) &&
+  // A contractor's own service (2026-10-17: "Opens a case, no time") owes no
+  // call and no report, so it has a shelf of its own too.
+  const svcOpen = shelved.filter((c) => c.service && !c.fullAccess && c.status !== 'closed');
+  const future = shelved.filter((c) => !fullOpen.includes(c) && !svcOpen.includes(c) &&
     c.status !== 'closed' && c.appointment?.start && toDate(c.appointment.start).getTime() > now);
-  const current = shelved.filter((c) => !former.includes(c) && !future.includes(c) && !fullOpen.includes(c));
+  const current = shelved.filter((c) => !former.includes(c) && !future.includes(c) && !fullOpen.includes(c) && !svcOpen.includes(c));
   current.sort((a, b) => toDate(a.reportDueAt || 0) - toDate(b.reportDueAt || 0));
   future.sort((a, b) => toDate(a.appointment?.start) - toDate(b.appointment?.start));
   former.sort((a, b) => toDate(b.closedAt || 0) - toDate(a.closedAt || 0));
@@ -488,6 +491,8 @@ async function load() {
        ${followUpFlag(c)}`))) +
     section('FULL-SERVICE', 'var(--gold)', fullOpen.map((c) => rowFor(c,
       `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}month ${Number(c.fullAccessMonths) || 1}${fullNextLine(c, dateFmt)}`))) +
+    section('OWN SERVICES', 'var(--violet)', svcOpen.map((c) => rowFor(c,
+      `${chargeTag(c)}<strong style="color:var(--manila-strong)">${esc(c.service.label)}</strong> · opened ${c.createdAt ? dateFmt.format(toDate(c.createdAt)) : 'no date'}`))) +
     section('BOOKED: UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
       `${chargeTag(c)}${buyTag(c)}<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
        ${followUpFlag(c)}`))) +
@@ -835,7 +840,7 @@ function aboutHtml(a) {
 function buyTag(c) {
   if (c.self) return '';
   // The folder's own ink (2026-10-16): the page's grey read about 2:1 on tan.
-  return `<strong style="color:var(--manila-ink);opacity:.78">${c.fullAccess ? 'FULL-SERVICE' : 'ADVOCACY CASE'}</strong> · `;
+  return `<strong style="color:var(--manila-ink);opacity:.78">${c.service?.label ? esc(String(c.service.label).toUpperCase()) : c.fullAccess ? 'FULL-SERVICE' : 'ADVOCACY CASE'}</strong> · `;
 }
 
 /** What comes next on a Full-Service case, for its shelf line (2026-10-15). */

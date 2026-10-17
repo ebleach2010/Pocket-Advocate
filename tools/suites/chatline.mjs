@@ -29,6 +29,7 @@ function check(name, cond, detail = '') {
   console.log(`${cond ? 'PASS' : 'FAIL'}  ${name}${cond || !detail ? '' : `  -- ${detail}`}`);
 }
 const STAFF = await import(pathToFileURL(join(ROOT, 'worker/staff.js')).href);
+const SVCS = await import(pathToFileURL(join(ROOT, 'worker/services.js')).href);
 const CHARGE = await import(pathToFileURL(join(ROOT, 'worker/charge.js')).href);
 const ADDONS = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
 const strip = (src) => src.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').replace(/^export \{[^}]*\} from '[^']+';\n/gm, '')
@@ -45,9 +46,9 @@ function world() {
   const getDoc = async (env, p) => (docs.has(p) ? { id: p.split('/').pop(), data: clone(docs.get(p)) } : null);
   const writes = [];
   const patchDoc = async (env, p, data, opts = {}) => { writes.push({ p, data: clone(data), opts }); const cur = opts.mask ? (docs.get(p) || {}) : {}; docs.set(p, { ...cur, ...clone(data) }); return true; };
-  const SS = new Function('getDoc', 'patchDoc', 'advocateIdOf',
+  const SS = new Function('getDoc', 'patchDoc', 'advocateIdOf', 'servicesOf', 'cleanServices', 'newlyAsked',
     `${strip(f('worker/staffsettings.js'))}\nreturn { settingsFrom, offersFrom, contractorOf, contractorSettings, mergeRates, cleanSettingsChange, STAFF_RATE_KEYS };`)(
-    getDoc, patchDoc, STAFF.advocateIdOf);
+    getDoc, patchDoc, STAFF.advocateIdOf, SVCS.servicesOf, SVCS.cleanServices, SVCS.newlyAsked);
   docs.set('advocates/ana', { uid: 'ana', name: 'Ana Rivera', active: true, owner: false, settings: { offers: { chat: true }, rates: { subCents: 6500 } } });
   docs.set('advocates/ben', { uid: 'ben', name: 'Ben Cole', active: true, owner: false, settings: { rates: { subCents: 7000 } } });
   docs.set('advocates/off', { uid: 'off', name: 'Turned Off', active: false, owner: false, settings: { offers: { chat: true } } });
@@ -146,10 +147,11 @@ async function activate(w, metadata, { existing = null } = {}) {
 {
   const w = world();
   const rates = async (q) => {
+    // RE-PINNED 2026-10-17 (v7.74): the rates also list their own services, so the lift takes the store and the services module.
     const h = new Function('contractorSettings', 'readRates', 'fullAccessCapacity', 'mergeRates', 'caseAddons', 'advocateIdOf', 'json',
-      'CHAT_OPEN_CENTS', 'TELEHEALTH_PRICE_CENTS', 'FULL_INCLUDED_HOURS', `${afn('handleRates')} return handleRates;`)(
+      'CHAT_OPEN_CENTS', 'TELEHEALTH_PRICE_CENTS', 'FULL_INCLUDED_HOURS', 'getDoc', 'servicesOf', 'sellable', `${afn('handleRates')} return handleRates;`)(
       w.SS.contractorSettings, readRates, async () => ({ room: true }), w.SS.mergeRates, async () => null, STAFF.advocateIdOf,
-      (o) => o, 5000, 52500, 20);
+      (o) => o, 5000, 52500, 20, w.getDoc, SVCS.servicesOf, SVCS.sellable);
     return h(ENV, new URL(`https://example.invalid/api/rates${q}`));
   };
   const r = { his: await rates(''), hisNamed: await rates(`?advocate=${ERIC}`), ana: await rates('?advocate=ana'), ben: await rates('?advocate=ben'), ghost: await rates('?advocate=nobody') };
@@ -195,6 +197,8 @@ async function activate(w, metadata, { existing = null } = {}) {
   const SSET = f('public/js/admin-staffsettings.js');
   const SSW = f('worker/staffsettings.js');
   const API = f('public/js/demo/api.js');
+  // RE-PINNED 2026-10-17 (v7.74): the demo's rates answer their own services after chatOffered; the match allows it.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.74): the demo rates' `chatOffered, services }` made `chatOffered: false, services }` made K6 read FAIL.
   // NEGATIVE CONTROL (run 2026-10-17, v7.73): subscribe.js's `advocate: ADVOCATE, quotedCents: subCents` taken out of the POST made this read
   //   FAIL  K6 the pages: subscribe names them and sends their price, the chat names them, their booking page and settings link to it, Employer mode switches it with a price, and the demo mirrors it
   check('K6 the pages: subscribe names them and sends their price, the chat names them, their booking page and settings link to it, Employer mode switches it with a price, and the demo mirrors it',
@@ -208,7 +212,7 @@ async function activate(w, metadata, { existing = null } = {}) {
     && /data-offer="chat"/.test(WIZ) && /data-rate="subCents"/.test(WIZ) && /for \(const k of \['case', 'full', 'chat'\]\) st\.offers\[k\]/.test(WIZ) && !/Priority Chat stays yours/.test(WIZ)
     && /\['subCents', '24\/7 Priority Chat, \$ a month'/.test(SSET) && /data-ssh-chat/.test(SSET)
     && /chatPath: mine\.offers\.chat \? `\/subscribe\.html\?advocate=\$\{encodeURIComponent\(staff\.uid\)\}` : null,/.test(SSW)
-    && /if \(adv && theirs\?\.settings\?\.offers\?\.chat !== true\) return fail\(404, 'That chat line is not open\.'\);/.test(API) && /chatOffered \}\);/.test(API)
+    && /if \(adv && theirs\?\.settings\?\.offers\?\.chat !== true\) return fail\(404, 'That chat line is not open\.'\);/.test(API) && /chatOffered(, services)? \}\);/.test(API)
     && ![SUB, SUBN, (BOOK.match(/\nasync function addChatLink\([\s\S]*?\n\}/) || ['-'])[0], SSET].some((x) => DASH.test(x)));
 }
 

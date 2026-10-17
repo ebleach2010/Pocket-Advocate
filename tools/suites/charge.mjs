@@ -235,8 +235,11 @@ const day = 86_400_000;
   // (checkoutAdvocateTime). The check names it and counts four.
   // NEGATIVE CONTROL (run 2026-10-17, v7.70): checkoutAdvocateTime's `payment_intent_data: HOLD_INTENT,` taken out made CH3 read FAIL.
   check('CH3 the slot checkout, the requested-time checkout, the contractor-hours checkout and the telehealth checkout hold the card and are flagged as holds, the subscription is neither, the webhook reads a flagged session\'s intent back before the settlement branch and opens the case or the request only on a standing hold (a hand-captured intent opens it paid, anything else opens nothing), a cancelled intent and a paid case link each have their branch, the case opens with the held record and raises the rate only when paid outright, he is pinged to decide, the mail says the card is held, and the route is registered',
-    (W.match(/payment_intent_data: HOLD_INTENT,/g) || []).length === 4
-    && (W.match(/\.\.\.HOLD_META,/g) || []).length === 4
+    // RE-PINNED 2026-10-17 (v7.74): a fifth checkout holds the card the same way, a contractor's own service bought once
+    // (handleServiceCheckout). It counts five.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): handleServiceCheckout's `payment_intent_data: HOLD_INTENT,` taken out made CH3 read FAIL.
+    (W.match(/payment_intent_data: HOLD_INTENT,/g) || []).length === 5
+    && (W.match(/\.\.\.HOLD_META,/g) || []).length === 5
     && !!subBlock && !/HOLD_INTENT|HOLD_META/.test(subBlock)
     && /import \{\n\s+HOLD_META, HOLD_INTENT, HOLD_DAYS, HOLD_REMIND_AFTER_DAYS, heldChargeOf,/.test(W)
     && W.indexOf("obj.metadata?.hold === '1' && obj.payment_intent") < W.indexOf("obj.payment_status && obj.payment_status !== 'paid'")
@@ -257,7 +260,9 @@ const day = 86_400_000;
     && /if \(created && !held && !\(inviteId && !invitePaid\)\) await raiseRatesFor\(env, \{ advocateId \}\)/.test(W)
     // RE-PINNED 2026-10-16 (v7.56): the case's own advocate is pinged to decide (pingCase), his own cases still him.
     // NEGATIVE CONTROL (run 2026-10-16, v7.56): the held-booking ping put back to `await pingAdmins(env,` made CH3 read FAIL.
-    && /if \(created && held\) \{\n\s+await pingCase\(env, \{ advocateId \},\n\s+`\$\{firstName\(m\.name\) \|\| 'A client'\} booked a case\. Their card is held, not charged: approve or decline it\.`/.test(W)
+    // RE-PINNED 2026-10-17 (v7.74): a contractor's own service names itself in the ping; a case still says it booked a case.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): the ping's `service ? ... :` branch taken out made CH3 read FAIL.
+    && /if \(created && held\) \{\n\s+await pingCase\(env, \{ advocateId \},\n\s+service \? `\$\{firstName\(m\.name\) \|\| 'A client'\} asked for \$\{service\.label\}\. Their card is held, not charged: approve or decline it\.`\n\s+: `\$\{firstName\(m\.name\) \|\| 'A client'\} booked a case\. Their card is held, not charged: approve or decline it\.`/.test(W)
     && /subject: held \? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',/.test(W)
     && /\$\{held \? escHtml\(CHARGE_COPY\.held\) : inviteId && !invitePaid \? 'Your time is confirmed\. Your case file is live\.' : 'Payment confirmed/.test(W)
     && /url\.pathname === '\/api\/admin\/case-charge' && request\.method === 'POST'/.test(W)
@@ -431,7 +436,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     && /const chargeEl = pane\.querySelector\('\[data-charge-card\]'\);\n\s+if \(chargeEl\) wireChargeCard\(chargeEl, c\);/.test(ADMC)
     // RE-PINNED 2026-10-15 (v7.53): the shelf grew a FULL-SERVICE section, which tags a held charge like the other two.
     // NEGATIVE CONTROL (run 2026-10-15, v7.53): the FULL-SERVICE section's chargeTag taken out made CH7 read FAIL.
-    && (ADMIN.match(/\$\{chargeTag\(c\)\}/g) || []).length === 3 && /APPROVE OR DECLINE · \$\{what\}/.test(ADMIN)
+    // RE-PINNED 2026-10-17 (v7.74): the shelf grew an OWN SERVICES section, which tags a held charge like the rest.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): the OWN SERVICES section's chargeTag taken out made CH7 read FAIL.
+    && (ADMIN.match(/\$\{chargeTag\(c\)\}/g) || []).length === 4 && /APPROVE OR DECLINE · \$\{what\}/.test(ADMIN)
     && /stripeTook\(c\)/.test(ADMIN)
     && /^\.charge-amt \{[\s\S]*?min-height: 44px;/m.test(ACSS)
     // Re-pinned 2026-09-22 (v4.7): the trade page is gone and the sheet

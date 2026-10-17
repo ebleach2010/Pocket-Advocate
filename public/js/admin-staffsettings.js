@@ -74,7 +74,33 @@ export function staffSettingsHtml() {
       ${[1, 2, 3, 5].map((n) => `<button class="btn tiny" data-ssc="${n}" disabled>${n}</button>`).join('')}
       <button class="btn tiny" data-ssc="0" disabled>No limit</button>
     </div>
-    <p class="dim small" data-ssc-said style="margin:.45rem 0 0;"></p>`;
+    <p class="dim small" data-ssc-said style="margin:.45rem 0 0;"></p>
+
+    <h4 style="margin:1.2rem 0 .1rem;">Your own services</h4>
+    <!-- Eric, 2026-10-17: "including new tier types that a contractor wants".
+         Theirs to ask for and price; his to turn on before anyone can buy. -->
+    <p class="dim small" style="margin:0 0 .5rem;">Something you offer under your
+      own name, at your price: one-time (it opens a case with no call time) or
+      monthly (a month at a time, like Full-Service). Eric turns each one on
+      before clients can buy it, and again after you change its name or kind.</p>
+    <div class="stack-tight" data-svc-rows></div>
+    <button class="btn tiny" type="button" data-svc-add style="min-height:44px;">+ Add a service</button>
+    <button class="btn glow" type="button" data-svc-save disabled style="min-height:44px; margin-top:.5rem;">Save and send to Eric</button>
+    <p class="dim small" data-svc-said style="margin:.45rem 0 0;"></p>`;
+}
+
+/** One of their own services, as a row they can change: on ones say so, the rest wait for him. */
+function serviceRow(x, i) {
+  return `<div class="card-quiet stack-tight" data-svc="${i}">
+    <label class="dim small">Name<input class="ask-input" type="text" maxlength="60" data-svc-label value="${esc(x.label || '')}"></label>
+    <label class="dim small">One-time or monthly<select class="ask-input" data-svc-kind>
+      <option value="once"${x.kind !== 'month' ? ' selected' : ''}>One-time</option>
+      <option value="month"${x.kind === 'month' ? ' selected' : ''}>Monthly</option></select></label>
+    <label class="dim small">Price, $<input class="ask-input" type="text" inputmode="decimal" data-svc-price value="${esc(dollars(x.cents))}"></label>
+    <label class="dim small">One line about it<input class="ask-input" type="text" maxlength="240" data-svc-about value="${esc(x.about || '')}"></label>
+    <p class="dim small" style="margin:0;" data-svc-state>${x.id ? (x.on ? 'Offered. Clients can buy it.' : 'Waiting for Eric to turn it on.') : 'New. Saving sends it to Eric.'}</p>
+    <button class="btn quiet tiny" type="button" data-svc-remove style="min-height:44px;">Remove</button>
+  </div>`;
 }
 
 async function call(user, body) {
@@ -156,7 +182,40 @@ export function wireStaffSettings(overlay, user) {
     capSaid.textContent = cap ? `At most ${cap} at once.` : 'No limit.';
   };
 
-  call(user).then(paint).catch((x) => { officeSaid.textContent = x.message; });
+  // Their own services (2026-10-17): drawn on load and after their own save, so another save never wipes a half-typed row.
+  const svcSaid = q('[data-svc-said]');
+  let svcs = [];
+  const svcRows = () => qa('[data-svc]').map((row, i) => ({
+    ...(svcs[i] || {}), label: row.querySelector('[data-svc-label]').value.trim(),
+    kind: row.querySelector('[data-svc-kind]').value === 'month' ? 'month' : 'once',
+    raw: row.querySelector('[data-svc-price]').value, about: row.querySelector('[data-svc-about]').value.trim(),
+  }));
+  const drawSvcs = () => {
+    q('[data-svc-rows]').innerHTML = svcs.map((x, i) => serviceRow(x, i)).join('');
+    q('[data-svc-add]').hidden = svcs.length >= 6;
+    q('[data-svc-save]').disabled = false;
+    qa('[data-svc-remove]').forEach((b, i) => b.addEventListener('click', () => { svcs = svcRows(); svcs.splice(i, 1); drawSvcs(); }));
+  };
+  q('[data-svc-add]').addEventListener('click', () => { svcs = svcRows(); svcs.push({ label: '', kind: 'once', cents: 0, about: '' }); drawSvcs(); });
+  q('[data-svc-save]').addEventListener('click', async () => {
+    const rows = svcRows().filter((x) => x.label || x.about || x.raw);
+    const services = [];
+    for (const x of rows) {
+      const n = Number(String(x.raw || '').replace(/[$,\s]/g, ''));
+      if (!x.label) { svcSaid.textContent = 'Each service needs a name.'; return; }
+      if (!Number.isFinite(n) || n < 0.5 || n > 20000) { svcSaid.textContent = `${x.label}: a price from $0.50 to $20,000.`; return; }
+      services.push({ id: x.id, label: x.label, kind: x.kind, cents: Math.round(n * 100), about: x.about });
+    }
+    svcSaid.textContent = 'Saving…';
+    try {
+      const out = await call(user, { services });
+      svcs = out.services || [];
+      drawSvcs();
+      svcSaid.textContent = svcs.some((x) => !x.on) ? 'Saved. Eric is told, and turns it on before clients can buy it.' : 'Saved.';
+    } catch (x) { svcSaid.textContent = x.message; }
+  });
+
+  call(user).then((s) => { paint(s); svcs = s.services || []; drawSvcs(); }).catch((x) => { officeSaid.textContent = x.message; });
 
   qa('[data-sso]').forEach((b) => b.addEventListener('click', async () => {
     officeSaid.textContent = 'Saving…';

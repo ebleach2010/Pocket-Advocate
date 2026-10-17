@@ -21,6 +21,7 @@
 
 import { getDoc, patchDoc, deleteDoc, queryDocs, listDocs } from './firestore.js';
 import { addonsOf, cleanAddons } from './addons.js';
+import { servicesOf, cleanServices } from './services.js';
 import { cleanSettingsChange, settingsFrom, nest, bufferHoursOf, cleanBufferHours } from './staffsettings.js';
 import { cleanPayout, sealPayout, PAYOUT_METHODS } from './payroll.js';
 import { putFile, deleteFile, mediaFetch } from './storage.js';
@@ -177,6 +178,9 @@ async function adminAdvocates(request, env, h) {
     // contractor into the app it will be a simple toggle with a price input").
     const addons = body.addons === undefined ? { value: addonsOf(null) } : cleanAddons(body.addons);
     if (addons.error) return h.json({ error: addons.error }, 400);
+    // Their own services (2026-10-17: "including new tier types that a contractor wants"), his to switch.
+    const services = body.services === undefined ? { value: [] } : cleanServices(body.services, [], { admin: true });
+    if (services.error) return h.json({ error: services.error }, 400);
     // EVERYTHING ELSE, PAGE BY PAGE (Eric, 2026-10-17: "When I add an
     // advocate, it should go page by page through everything I asked I could
     // toggle on or off, their pricing, their initial schedule, profile
@@ -207,6 +211,7 @@ async function adminAdvocates(request, env, h) {
       ...(extra.settings ? { settings: { ...extra.settings, updatedAt: now } } : {}),
       ...(extra.bufferHours !== undefined ? { bufferHours: extra.bufferHours } : {}),
       addons: addons.value,
+      services: services.value,
       advisor: { optedIn: false, enabled: false },
       createdAt: now, createdBy: admin.uid, onboardedAt: null,
       // Their own password first (setupPending in staff.js); the hash is on staffSecrets.
@@ -230,7 +235,7 @@ async function adminAdvocates(request, env, h) {
   if (action === 'get') {
     const p = await getDoc(env, `payouts/${uid}`).catch(() => null);
     return h.json({
-      advocate: advocateView(uid, a), addons: addonsOf(a, { owner: a.owner === true }), settings: settingsFrom(a),
+      advocate: advocateView(uid, a), addons: addonsOf(a, { owner: a.owner === true }), settings: settingsFrom(a), services: servicesOf(a),
       bufferHours: bufferHoursOf(a),
       payout: p?.data?.method ? { method: p.data.method, label: PAYOUT_METHODS[p.data.method] || '', hint: p.data.hint || '' } : null,
       methods: PAYOUT_METHODS, zones: STAFF_ZONES, specialties: SPECIALTIES,
@@ -284,6 +289,12 @@ async function adminAdvocates(request, env, h) {
       const addons = cleanAddons(body.addons);
       if (addons.error) return h.json({ error: addons.error }, 400);
       patch.addons = addons.value; mask.push('addons');
+    }
+    // Their own services (2026-10-17): he adds, changes, takes away and switches them.
+    if ('services' in body && a.owner !== true) {
+      const services = cleanServices(body.services, a.services, { admin: true });
+      if (services.error) return h.json({ error: services.error }, 400);
+      patch.services = services.value; mask.push('services');
     }
     // His pages, again (2026-10-17): what they offer, their prices and week, and how they are paid.
     const extra = cleanSetup(body, { creating: false, owner: a.owner === true });

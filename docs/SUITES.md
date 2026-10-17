@@ -2421,3 +2421,42 @@ by him in Employer mode.
 New: chatline.mjs K1 to K7; drive-chatline (7), every check controlled.
 Re-pinned with controls: advocates F4, charge CH3 (wider window), maintenance
 M24 (wider windows), staffsettings A1 and C1, steps B2, release R1.
+
+### Their own services (2026-10-17, v7.74)
+
+Eric: "Allow me to turn different tiers on and off for each contractor
+(including new tier types that a contractor wants during onboarding)."
+One-time or monthly: "Either, their choice". A one-time one: "Opens a case,
+no time". A monthly one: "Like Full-Service" (v7.75).
+
+- worker/services.js (new): a service is { id, label, about, kind
+  ('once' or 'month'), cents, on, askedAt } on advocates/{uid}.services, six
+  at most. cleanServices checks a change; only he (admin) switches one on.
+  A contractor keeps each switch where it was, a new one starts off, and one
+  whose name or kind they change goes off again (he turned on what he saw);
+  their price stays theirs. sellable is on, priced and one-time.
+- worker/advocates.js: create, get and update carry services (never on his
+  own card). worker/staffsettings.js: their settings take services apart
+  from the rest, cleaned as theirs, and he is told by name (pingAdmins) for
+  each new or changed one waiting on him.
+- worker/index.js: /api/rates lists what can be bought from them (id,
+  label, about, kind, cents only). /api/service-checkout sells one he has
+  turned on, at its price, card held (HOLD_INTENT, HOLD_META), with the
+  number and the forms, a moved price a 409; not a sales route (each service
+  has its own switch). createCaseFromSession opens it with appointment null,
+  service { id, label, kind, cents } as sold, chat open, caseRateCents the
+  service's price, a ping and a client mail that name it.
+- worker/employer.js and worker/payroll.js call the case by its name.
+- Pages: their booking page lists each one; ?service= is its own step 1 (no
+  time, no call kind, "How to reach you") and its own payment step; the
+  client's case runs on SERVICE_STEPS with its own progress line and name
+  in the switcher, and no join link line; his shelf has OWN SERVICES; his
+  case page shows SERVICE where the call would be and owes no report;
+  Employer mode has a Their own services box; their settings have Your own
+  services with Save and send to Eric.
+- Demo mode mirrors it.
+
+New: services.mjs S1 to S9; drive-services (9), every check controlled.
+Re-pinned with controls: charge CH3 (twice) and CH7, cleanup B5 (twice),
+hardening U5, invites E2 (twice), defects (strip count), staffsettings D3,
+wizard W6, chatline K6, release R1.

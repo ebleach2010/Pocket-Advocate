@@ -34,6 +34,7 @@ const W = f('worker/index.js');
 const SHOW = f('worker/showcase.js');
 const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
 const ADDONS = await import(pathToFileURL(j(ROOT, 'worker/addons.js')).href);
+const SVCS = await import(pathToFileURL(j(ROOT, 'worker/services.js')).href);
 const SETTINGS = await import(pathToFileURL(j(ROOT, 'worker/staffsettings.js')).href);
 const PAYROLL = await import(pathToFileURL(j(ROOT, 'worker/payroll.js')).href);
 const ACTS = await import(pathToFileURL(j(ROOT, 'worker/advisor-acts.js')).href);
@@ -596,6 +597,8 @@ console.log('\n--- G. accounts ---');
       ...STAFF,
       // v7.65 (2026-10-17): a contractor's add-ons, checked by worker/addons.js.
       addonsOf: ADDONS.addonsOf, cleanAddons: ADDONS.cleanAddons,
+      // Their own services (v7.74), the real module.
+      servicesOf: SVCS.servicesOf, cleanServices: SVCS.cleanServices,
       // v7.68 (2026-10-17): his pages' settings and a sealed way to be paid (wizard.mjs runs them).
       cleanSettingsChange: SETTINGS.cleanSettingsChange, settingsFrom: SETTINGS.settingsFrom, nest: SETTINGS.nest,
       cleanPayout: PAYROLL.cleanPayout, sealPayout: PAYROLL.sealPayout, PAYOUT_METHODS: PAYROLL.PAYOUT_METHODS,

@@ -17,6 +17,7 @@ const ROOT = j(d(f2(import.meta.url)), '..', '..');
 const f = (p) => readFileSync(j(ROOT, p), 'utf8');
 const W = f('worker/index.js');
 const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
+const SVCS = await import(pathToFileURL(j(ROOT, 'worker/services.js')).href);
 const DASH = new RegExp('[\\u2013\\u2014]');
 const results = [];
 function check(name, cond, detail = '') {
@@ -57,9 +58,9 @@ function world() {
     docs.set(p, opts.mask ? cur : clone(data));
     return true;
   };
-  const SS = new Function('getDoc', 'patchDoc', 'advocateIdOf',
+  const SS = new Function('getDoc', 'patchDoc', 'advocateIdOf', 'servicesOf', 'cleanServices', 'newlyAsked',
     `${strip(f('worker/staffsettings.js'))}\nreturn { settingsFrom, offersFrom, contractorOf, contractorSettings, mergeRates, cleanSettingsChange, handleStaffSettings, STAFF_RATE_KEYS };`)(
-    getDoc, patchDoc, STAFF.advocateIdOf);
+    getDoc, patchDoc, STAFF.advocateIdOf, SVCS.servicesOf, SVCS.cleanServices, SVCS.newlyAsked);
   return { docs, writes, SS };
 }
 const gates = (w) => ({
@@ -228,7 +229,9 @@ console.log('\n--- D. the Worker: each advocate\'s own limit, prices and door si
     && /const \{ manual, responseTime \} = own \? own\.office : await readOfficeHours\(env\);/.test(W)
     && /const r = own \? mergeRates\(base, own\) : base;/.test(W)
     && /return json\(\{\n\s+inOffice: state\.inOffice,\n\s+responseTime,\n\s+\}\);/.test(lift(W, 'async function handleAvailability(env, url) {'))
-    && /if \(url\.pathname === '\/api\/staff\/settings'\)\n\s+return await handleStaffSettings\(request, env, \{ requireStaff, json, readRates, officeStatus \}\);/.test(W)
+    // RE-PINNED 2026-10-17 (v7.74): the route also hands it the way to tell him when they ask for a service of their own.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): `, tellEric: pingAdmins` taken out of the route made D3 read FAIL.
+    && /if \(url\.pathname === '\/api\/staff\/settings'\)\n\s+return await handleStaffSettings\(request, env, \{ requireStaff, json, readRates, officeStatus, tellEric: pingAdmins \}\);/.test(W)
     && W.indexOf("url.pathname === '/api/staff/settings'") < W.indexOf("url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/')"));
   // NEGATIVE CONTROL (run 2026-10-15): the upgrade request's ping put back on every admin made this read
   //   FAIL  D4 a Full-Service request pings the case's own advocate, not every admin

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.73';
+export const VERSION = '7.74';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.73';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THEIR OWN SERVICES (Eric, 2026-10-17: "including new tier types that a
+    // contractor wants during onboarding"; one-time: "Opens a case, no time").
+    // Admin only.
+    version: '7.74',
+    quiet: true,
+    client: [],
+    admin: [
+      'Each team member can have services of their own, at their own price: on What they offer in Employer mode, add one, name it, price it and tick it to offer it.',
+      'They can ask for one from their own settings. It stays off until you turn it on, and you get a notice. If they change its name or kind, it waits for you again.',
+      'A one-time service sells from their booking page with the card held, like a case, and opens a case with no call time. It sits on Clients under OWN SERVICES.',
+      'Monthly services can be added and switched now, and go on sale with the next update.',
+    ],
+  },
   {
     // THEIR OWN CHAT LINE (Eric, 2026-10-17, on Priority Chat per contractor:
     // "Yes, per contractor"). Admin only.

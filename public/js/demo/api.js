@@ -188,6 +188,30 @@ export function demoApi(role, store) {
     if (s.office) next.office = { ...(prev.office || {}), ...(s.office.responseTime !== undefined ? { responseTime: s.office.responseTime || null } : {}) };
     return { value: next };
   };
+  // THEIR OWN SERVICES (2026-10-17), as worker/services.js keeps them: his to switch, theirs to ask for.
+  const demoServices = (rec) => (Array.isArray(rec?.services) ? rec.services : [])
+    .filter((x) => x && /^s[a-z0-9]{8}$/.test(String(x.id)) && String(x.label || '').trim().length >= 2).slice(0, 6)
+    .map((x) => ({ id: x.id, label: String(x.label).trim().slice(0, 60), about: String(x.about || '').trim().slice(0, 240), kind: x.kind === 'month' ? 'month' : 'once', cents: Number.isInteger(x.cents) ? x.cents : 0, on: x.on === true, askedAt: x.askedAt || null }));
+  const cleanDemoServices = (input, prev = [], admin = false) => {
+    if (!Array.isArray(input)) return { error: 'Bad services.' };
+    const before = new Map((prev || []).map((x) => [x.id, x]));
+    const rows = input.filter((x) => x && (String(x.label || '').trim() || String(x.about || '').trim()));
+    if (rows.length > 6) return { error: 'Up to 6 services of their own.' };
+    const value = [];
+    for (const x of rows) {
+      const name = String(x.label || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      if (name.length < 2) return { error: 'Each service needs a name.' };
+      if (!['once', 'month'].includes(x.kind)) return { error: `${name}: one-time or monthly.` };
+      const cents = Number(x.cents);
+      if (!Number.isInteger(cents) || cents < 50 || cents > 2_000_000) return { error: `${name}: a price from $0.50 to $20,000.` };
+      const id = /^s[a-z0-9]{8}$/.test(String(x.id)) ? x.id : `s${Math.random().toString(36).slice(2, 10).padEnd(8, '0')}`;
+      const was = before.get(id);
+      // A changed name or kind goes back to him, as in worker/services.js.
+      const same = !!was && String(was.label || '').toLowerCase() === name.toLowerCase() && was.kind === x.kind;
+      value.push({ id, label: name, about: String(x.about || '').trim().slice(0, 240), kind: x.kind, cents, on: admin ? x.on === true : same && was.on === true, askedAt: admin || same ? was?.askedAt || null : new Date().toISOString() });
+    }
+    return { value };
+  };
   const demoContractor = (uid) => {
     if (!uid || !/^[\w-]{1,64}$/.test(uid) || uid === 'demo-admin') return null;
     const rec = store.docs.get(`advocates/${uid}`);
@@ -336,7 +360,8 @@ export function demoApi(role, store) {
         // Their own chat line, once he has turned it on (2026-10-17).
         const askedFor = q.get('advocate');
         const chatOffered = own ? own.settings?.offers?.chat === true : !askedFor || askedFor === 'demo-admin';
-        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20, addons: demoAddons(q.get('advocate')), chatOffered });
+        const services = own ? demoServices(own).filter((x) => x.on && x.kind === 'once' && x.cents >= 50).map(({ id, label, about, kind, cents }) => ({ id, label, about, kind, cents })) : [];
+        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20, addons: demoAddons(q.get('advocate')), chatOffered, services });
       }
       const want = { ...now };
       for (const k of Object.keys(SEEDS)) if (body && body[k] !== undefined) want[k] = Number(body[k]);
@@ -1783,6 +1808,41 @@ export function demoApi(role, store) {
       // Paid: the walk comes back through the return page, as from Stripe. Free: straight to the case.
       return cents ? ok({ url: `/return.html?session_id=cs_demo_invite_${id}` }) : ok({ ok: true, caseId: id });
     }
+    // A contractor's own service, bought once (2026-10-17: "Opens a case, no time"), as the Worker checks it.
+    if (path === '/api/service-checkout') {
+      const adv = typeof body.advocate === 'string' ? body.advocate : '';
+      const rec = demoContractor(adv);
+      const svc = rec ? demoServices(rec).find((x) => x.id === body.service) : null;
+      if (!svc || !svc.on || svc.kind !== 'once' || svc.cents < 50) return fail(404, 'That service is not offered right now.');
+      if (!/^\+?[\d\s().-]{7,20}$/.test(String(body.phone || ''))) return fail(400, 'A valid phone number is required so your advocate can reach you.');
+      if (!['disclaimer', 'privacy', 'recording', 'service', 'phoneConsent'].every((f) => typeof body?.acks?.[f] === 'number'))
+        return fail(400, 'All acknowledgment forms must be completed first.');
+      if (body.quotedCents !== undefined && Number(body.quotedCents) !== svc.cents) return fail(409, 'rate-changed', { priceCents: svc.cents });
+      await beat(600);
+      const profile = store.docs.get('users/demo-client') || {};
+      const now = new Date();
+      const id = 'demo-case-booked';
+      store.docs.set(`cases/${id}`, {
+        advocateId: adv, clientUid: 'demo-client', clientEmail: profile.email || 'jordan@example.demo', clientName: profile.name || 'Jordan Avery',
+        clientDob: profile.dob || null, clientTz: body.tz || 'America/Denver', clientPhone: body.phone || null,
+        clientAddress: String(body.address || '').trim().slice(0, 300) || null,
+        status: 'confirmed', createdAt: now, appointment: null,
+        service: { id: svc.id, label: svc.label, kind: 'once', cents: svc.cents }, chatUnlocked: true,
+        publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] }, addOnFollowUp: false,
+        forms: Object.fromEntries(Object.entries(body.acks || {}).map(([k, v]) => [k, new Date(v)])),
+        files: [], reportDueAt: null, caseRateCents: svc.cents, addonRateCents: 32500,
+        fullAccess: false, fullAccessAt: null, fullAccessRateCents: null,
+        stripe: { sessionId: 'cs_demo_booked', paymentIntentId: 'pi_demo_booked', amountTotal: svc.cents },
+        charge: {
+          state: 'held', kind: 'case', authorizedCents: svc.cents, capturedCents: 0, paymentIntentId: 'pi_demo_booked', sessionId: 'cs_demo_booked',
+          heldAt: now, expiresAt: new Date(now.getTime() + 7 * 86_400_000), decidedAt: null, capturedAt: null, remindedAt: null, ratedAt: null,
+        },
+        work: { seconds: 0, startedAt: null },
+      });
+      store.persist?.();
+      store.fire?.(`cases/${id}`);
+      return ok({ ok: true, url: '/return.html?session_id=cs_demo_booked' });
+    }
     if (path === '/api/checkout' || path === '/api/subscribe' || path === '/api/followup'
       || path === '/api/upgrade') {
       // The scope note is a real gate, not decoration, so the demo refuses
@@ -3213,7 +3273,13 @@ export function demoApi(role, store) {
           }
           set.hours = body.hours;
         }
-        store.docs.set(key, { ...rec, settings: set });
+        let services = rec.services;
+        if (body.services !== undefined) {
+          const sv = cleanDemoServices(body.services, demoServices(rec), false);
+          if (sv.error) return fail(400, sv.error);
+          services = sv.value;
+        }
+        store.docs.set(key, { ...rec, settings: set, ...(services !== undefined ? { services } : {}) });
         store.persist?.();
       }
       const SEEDS = { caseCents: 210000, addonCents: 32500, fullCents: 440000 };
@@ -3240,6 +3306,7 @@ export function demoApi(role, store) {
         hours: set.hours || null, tz: rec.tz || 'America/Boise', offers: { case: set.offers?.case !== false, full: set.offers?.full !== false, chat: set.offers?.chat === true },
         bookingPath: `/book.html?advocate=${encodeURIComponent(me)}`, bufferHours: demoBuffer(rec),
         chatPath: set.offers?.chat === true ? `/subscribe.html?advocate=${encodeURIComponent(me)}` : null,
+        services: demoServices(store.docs.get(key)),
       });
     }
     if (path === '/api/staff/payout') {
@@ -3415,6 +3482,7 @@ export function demoApi(role, store) {
           primarySpecialty: String(pr.primarySpecialty || ''), specialties: pr.primarySpecialty ? [String(pr.primarySpecialty)] : [],
           credentials: String(pr.credentials || '').trim().slice(0, 200), bio: String(pr.bio || '').trim().slice(0, 1500), headshotPath: null,
           acceptingNew: true, tz: ZONES.includes(pr.tz) ? pr.tz : 'America/Boise', settings: set.value, addons: ad.value,
+          services: body.services === undefined ? [] : (cleanDemoServices(body.services, [], true).value || []),
           ...(Number.isFinite(Number(body.bufferHours)) && body.bufferHours !== '' && body.bufferHours !== null ? { bufferHours: Math.min(12, Math.max(0, Math.round(Number(body.bufferHours) * 2) / 2)) } : {}),
           advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true,
         });
@@ -3430,7 +3498,7 @@ export function demoApi(role, store) {
         const p = store.docs.get(`payouts/${uid}`);
         const s = a.settings || {};
         return ok({
-          advocate: advView(uid, a), addons: demoAddons(uid),
+          advocate: advView(uid, a), addons: demoAddons(uid), services: demoServices(a),
           settings: { rates: s.rates || {}, fullCap: s.fullCap ?? null, offers: { case: s.offers?.case !== false, full: s.offers?.full !== false, chat: s.offers?.chat === true }, hours: s.hours || null, office: { responseTime: s.office?.responseTime || null } },
           bufferHours: demoBuffer(a),
           payout: p?.method ? { method: p.method, label: PAY_METHODS[p.method] || '', hint: p.hint || '' } : null,
@@ -3457,6 +3525,7 @@ export function demoApi(role, store) {
         if ('credentials' in body) next.credentials = String(body.credentials || '').trim().slice(0, 200);
         if ('bio' in body) next.bio = String(body.bio || '').trim().slice(0, 1500);
         if ('addons' in body) { const ad = cleanDemoAddons(body.addons); if (ad.error) return fail(400, ad.error); next.addons = ad.value; }
+        if ('services' in body && !a.owner) { const sv = cleanDemoServices(body.services, demoServices(a), true); if (sv.error) return fail(400, sv.error); next.services = sv.value; }
         if ('primarySpecialty' in body) next.primarySpecialty = String(body.primarySpecialty || '');
         if ('tz' in body && ZONES.includes(body.tz)) next.tz = body.tz;
         // The buffer (2026-10-17), his own card included.

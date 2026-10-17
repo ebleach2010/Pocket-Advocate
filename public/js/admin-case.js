@@ -4395,7 +4395,9 @@ function infoBar(c, mtFmt, start, due) {
         <span class="dim small" data-contact-said></span>
       </span>
     </span>`);
-  row('CALL', start
+  // A contractor's own service (2026-10-17) opens with no call: its name stands where the call would.
+  if (c.service && !start) row('SERVICE', `${esc(c.service.label || 'Their own service')} · no call time`, 'var(--cyan)');
+  else row('CALL', start
     ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
     : 'no appointment', start ? null : 'var(--danger)');
 
@@ -4436,6 +4438,8 @@ function infoBar(c, mtFmt, start, due) {
   // its row is the consult, unless a report was delivered before it began.
   if (c.fullAccess && c.status !== 'delivered' && !c.reportDeliveredAt)
     row('CONSULT', c.consultDoneAt ? 'done' : '<span class="dim">mark it done after the call</span>', 'var(--cyan)');
+  else if (c.service && !c.reportDeliveredAt)
+    row('REPORT', '<span class="dim">none owed: their own service</span>');
   else if (c.status === 'delivered' || c.status === 'closed')
     row('REPORT', c.status === 'closed' ? 'delivered · case closed' : 'DELIVERED', 'var(--cyan)');
   else if (due !== null)

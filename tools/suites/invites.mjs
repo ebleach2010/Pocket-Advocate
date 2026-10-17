@@ -302,13 +302,17 @@ console.log('\n--- E. the wiring ---');
     // NEGATIVE CONTROL (run 2026-10-17, v7.65): the invitation's return taken out of the sign-in made E2 read FAIL.
     // RE-PINNED 2026-10-17 (v7.70): a contractor's own calendar (?advocate=) returns to itself too, after the invitation.
     // NEGATIVE CONTROL (run 2026-10-17, v7.70): the calendar path's `wireStep1(el);` after wireRequest taken out made E2 read FAIL.
-    && /returnTo: INVITE_ID \? `\/book\.html\?invite=\$\{INVITE_ID\}` : ADVOCATE \? `\/book\.html\?advocate=\$\{encodeURIComponent\(ADVOCATE\)\}` : STEP \? `\/book\.html\?step=\$\{STEP\}` : '\/book\.html'/.test(BOOK)
+    // RE-PINNED 2026-10-17 (v7.74): a contractor's own service returns to itself after sign-in too.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): the return's `${SERVICE ? `&service=${SERVICE}` : ''}` taken out made E2 read FAIL.
+    && /returnTo: INVITE_ID \? `\/book\.html\?invite=\$\{INVITE_ID\}` : ADVOCATE \? `\/book\.html\?advocate=\$\{encodeURIComponent\(ADVOCATE\)\}\$\{SERVICE \? `&service=\$\{SERVICE\}` : ''\}` : STEP \? `\/book\.html\?step=\$\{STEP\}` : '\/book\.html'/.test(BOOK)
     && /if \(INVITE_ID && !\(await readInvite\(\)\)\) return;\n\s+render\(\);/.test(BOOK)
     && /if \(state\.invite\) \{\n\s+showInviteTime\(el\);\n\s+wireStep1\(el\);\n\s+return;\n\s+\}/.test(BOOK)
     && /drawDays\(el, slots\);\n\s+\/\/ ---- request a time that isn't on the calendar ----\n\s+wireRequest\(el, closedUntil\);\n\s+wireStep1\(el\);\n\}/.test(BOOK)
     && /drawDays\(el, slots, \{ mst: false \}\);\n\s+wireStep1\(el\);\n\}/.test(BOOK)
-    && (BOOK.match(/\n {4}stripUnwiredStep1\(el/g) || []).length === 4
-    && /if \(!state\.slot && !state\.requestedStart && !state\.invite\) return;/.test(BOOK)
+    // RE-PINNED 2026-10-17 (v7.74): a service that is not offered strips the unwired step too: five.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.74): showService's `stripUnwiredStep1(el, { keepIntro: false });` taken out made E2 read FAIL.
+    && (BOOK.match(/\n {4}stripUnwiredStep1\(el/g) || []).length === 5
+    && /if \(!state\.slot && !state\.requestedStart && !state\.invite && !state\.service\) return;/.test(BOOK)
     && /fetch\('\/api\/invite\/confirm', \{/.test(BOOK) && /fetch\('\/api\/invite', \{/.test(BOOK)
     && /payBtn\.textContent = invite\.priceCents \? `Confirm and pay \$\$\{money\(invite\.priceCents\)\}` : 'Confirm my time';/.test(BOOK)
     && !DASH.test((BOOK.match(/function showInviteTime[\s\S]*?\n\}/) || [''])[0]));

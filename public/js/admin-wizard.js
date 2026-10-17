@@ -155,6 +155,8 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     fullCap: set.fullCap ?? 0,
     addons: theirs?.addons || {},
     custom: (theirs?.addons?.custom || []).map((x) => ({ ...x })),
+    // Their own services (2026-10-17), his to switch; ones they asked for arrive off.
+    services: (theirs?.services || []).map((x) => ({ ...x })),
     hours: set.hours || (editing ? null : { mon: { from: '09:00', to: '17:00' }, tue: { from: '09:00', to: '17:00' }, wed: { from: '09:00', to: '17:00' }, thu: { from: '09:00', to: '17:00' }, fri: { from: '09:00', to: '17:00' }, sat: null, sun: null }),
     tz: a.tz || 'America/Boise',
     // Hours kept clear around each paid appointment (Eric, 2026-10-17: "3 hours before and after ... baseline for everyone").
@@ -197,6 +199,12 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
         <div class="wz-row"><label><input type="checkbox" data-offer="chat"${st.offers.chat ? ' checked' : ''}> 24/7 Priority Chat, a month</label>
           <label class="wz-money">$<input class="ask-input" inputmode="decimal" data-rate="subCents" value="${esc(dollars(st.rates.subCents))}" placeholder="${esc(dollars(mine.subCents))}" aria-label="Priority Chat month price, dollars"></label></div>
         <div class="wz-row wz-sub"><span class="dim small">Their own chat line, with their name and photo. Clients start it from their booking page.</span></div>
+      </div>
+      <div class="wz-box" data-services>
+        <strong>Their own services</strong>
+        <p class="dim small" style="margin:0;">Anything they offer under their own name, at their price. One-time opens a case with no call time; monthly runs a month at a time, like Full-Service. Ticked is offered. One they ask for arrives here off.</p>
+        ${st.services.map((x, i) => serviceRow(x, i)).join('')}
+        ${st.services.length < 6 ? '<button type="button" class="btn quiet" data-add-service>+ Add a service</button>' : ''}
       </div>
       <p class="dim small" style="margin:0;">Turned off, nobody can buy it from them.</p>`,
     addons: () => `
@@ -247,6 +255,21 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     return `<label class="dim small">Buffer around each paid appointment, in hours<input class="ask-input wz-num" type="number" min="0" max="12" step="0.5" data-buffer value="${esc(st.bufferHours)}"></label>
       <p class="dim small" style="margin:0;">Nothing paid can be booked this close before or after another paid appointment. Free calls make no buffer, but cannot land inside one.</p>`;
   }
+  function serviceRow(x, i) {
+    return `<div class="wz-custom wz-svc" data-service="${i}">
+      <input type="checkbox" data-s-on${x.on ? ' checked' : ''} aria-label="Offer it">
+      <input class="ask-input" type="text" data-s-label maxlength="60" value="${esc(x.label || '')}" placeholder="Name it" aria-label="Service name">
+      <select class="ask-input" data-s-kind aria-label="One-time or monthly">
+        <option value="once"${x.kind !== 'month' ? ' selected' : ''}>One-time</option>
+        <option value="month"${x.kind === 'month' ? ' selected' : ''}>Monthly</option>
+      </select>
+      <label class="wz-money">$<input class="ask-input" inputmode="decimal" data-s-price value="${esc(x.raw ?? dollars(x.cents))}" aria-label="Service price, dollars" style="width:5.5rem"></label>
+      <input class="ask-input" type="text" data-s-about maxlength="240" value="${esc(x.about || '')}" placeholder="One line about it" aria-label="About the service">
+      <button type="button" class="btn quiet tiny" data-s-remove aria-label="Remove it">Remove</button>
+      ${x.askedAt && !x.on ? '<span class="dim small" data-s-asked>They asked for this.</span>' : ''}
+      ${x.kind === 'month' ? '<span class="dim small" data-s-later>Monthly services go on sale with the next update.</span>' : ''}
+    </div>`;
+  }
   function customRow(x, i) {
     return `<div class="wz-custom" data-custom="${i}">
       <input type="checkbox" data-c-on${x.on ? ' checked' : ''} aria-label="Offer it">
@@ -268,7 +291,8 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       const p = (k) => money(st.rates[k] ?? mine[k]);
       return [st.offers.case ? `Advocacy Case ${p('caseCents')}, follow-up ${p('addonCents')}` : 'No Advocacy Cases',
         st.offers.full ? `Full-Service ${p('fullCents')} a month${st.fullCap ? `, ${st.fullCap} at once` : ''}` : 'No Full-Service',
-        st.offers.chat ? `Priority Chat ${p('subCents')} a month` : 'No chat line'].join('. ');
+        st.offers.chat ? `Priority Chat ${p('subCents')} a month` : 'No chat line',
+        ...(st.services.length ? [`Their own: ${st.services.map((x) => `${x.label} ${money(x.cents)}${x.kind === 'month' ? ' a month' : ''}${x.on ? '' : ' (off)'}`).join(', ')}`] : [])].join('. ');
     }
     if (id === 'addons') {
       const on = [];
@@ -296,6 +320,22 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     ...(st.custom[i] || {}), on: !!row.querySelector('[data-c-on]').checked,
     label: row.querySelector('[data-c-label]').value.trim(), raw: row.querySelector('[data-c-price]').value,
   }));
+  /** The offer page's switches and prices as they stand, kept while a service row is added or taken away. */
+  const keepOfferFields = () => {
+    for (const k of ['case', 'full', 'chat']) { const box = dlg.querySelector(`[data-offer="${k}"]`); if (box) st.offers[k] = box.checked; }
+    for (const k of ['caseCents', 'addonCents', 'fullCents', 'subCents']) {
+      const got = cents(dlg.querySelector(`[data-rate="${k}"]`)?.value, k);
+      if (!got.error) st.rates[k] = got.value;
+    }
+    const cap = Number(dlg.querySelector('[data-cap]')?.value);
+    if (Number.isInteger(cap) && cap >= 0 && cap <= 99) st.fullCap = cap;
+  };
+  /** Their own services as the rows stand, nothing dropped, so a row's place still matches the screen. */
+  const serviceRows = () => [...dlg.querySelectorAll('[data-service]')].map((row, i) => ({
+    ...(st.services[i] || {}), on: !!row.querySelector('[data-s-on]').checked,
+    label: row.querySelector('[data-s-label]').value.trim(), kind: row.querySelector('[data-s-kind]').value === 'month' ? 'month' : 'once',
+    raw: row.querySelector('[data-s-price]').value, about: row.querySelector('[data-s-about]').value.trim(),
+  }));
   /** The appeal and attending rows as they stand, kept while a row of his own is added or taken away. */
   const keepAddonRows = () => { const picked = readAddonFields(dlg); if (!picked.error) st.addons = { ...st.addons, ...picked.addons }; };
 
@@ -320,6 +360,16 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       const cap = Number(q('[data-cap]')?.value || 0);
       if (!Number.isInteger(cap) || cap < 0 || cap > 99) return 'Clients at once: a number from 0 to 99.';
       st.fullCap = cap;
+      st.services = serviceRows();
+      for (const x of st.services) {
+        if (!x.label && !x.about && !x.on) continue;
+        if (!x.label) return 'Each service needs a name.';
+        const t = String(x.raw ?? '').replace(/[$,\s]/g, '');
+        const n = Number(t);
+        if (!t || !Number.isFinite(n) || n < 0.5 || n > 20000) return `${x.label}: a price from $0.50 to $20,000.`;
+        x.cents = Math.round(n * 100);
+      }
+      st.services = st.services.filter((x) => x.label || x.about || x.on).map(({ raw, ...x }) => x);
     }
     if (id === 'addons') {
       const picked = readAddonFields(dlg);
@@ -420,6 +470,23 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     for (const b of dlg.querySelectorAll('[data-jump]')) b.addEventListener('click', () => go(Number(b.dataset.jump)));
     dlg.querySelector('[data-save]')?.addEventListener('click', () => finish());
     form.addEventListener('submit', (e) => { e.preventDefault(); if (steps[at].id === 'review') finish(); else go(at + 1); });
+    if (steps[at].id === 'offer') {
+      dlg.querySelector('[data-add-service]')?.addEventListener('click', () => {
+        keepOfferFields();
+        st.services = serviceRows();
+        st.services.push({ on: true, label: '', kind: 'once', cents: 0, about: '' });
+        paint();
+        [...dlg.querySelectorAll('[data-s-label]')].pop()?.focus();
+      });
+      for (const row of dlg.querySelectorAll('[data-service]')) {
+        row.querySelector('[data-s-remove]').addEventListener('click', () => {
+          keepOfferFields();
+          st.services = serviceRows();
+          st.services.splice(Number(row.dataset.service), 1);
+          paint();
+        });
+      }
+    }
     if (steps[at].id === 'addons') {
       wireAddonFields(dlg);
       dlg.querySelector('[data-add-custom]')?.addEventListener('click', () => {
@@ -480,6 +547,7 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     };
     const addons = { attend: st.addons.attend || { on: false, cents: 0 }, appeal: st.addons.appeal || { on: false, cents: 0 }, custom: st.custom };
     const payout = !owner && st.payMethod ? { method: st.payMethod, fields: st.pay } : undefined;
+    const services = owner ? undefined : st.services.map(({ id, label, about, kind, cents, on }) => ({ id, label, about, kind, cents, on }));
     try {
       let id = uid;
       let emailed = true;
@@ -489,7 +557,7 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
           body: {
             action: 'update', uid, name: st.name, credentials: st.credentials, bio: st.bio,
             ...(st.primarySpecialty ? { primarySpecialty: st.primarySpecialty } : {}),
-            ...(owner ? {} : { tz: st.tz, commissionPct: st.commissionPct, settings, payout }),
+            ...(owner ? {} : { tz: st.tz, commissionPct: st.commissionPct, settings, payout, services }),
             bufferHours: st.bufferHours,
             addons,
           },
@@ -499,7 +567,7 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
           body: {
             action: 'create', name: st.name, email: st.email, password: st.password, commissionPct: st.commissionPct,
             profile: { credentials: st.credentials, bio: st.bio, primarySpecialty: st.primarySpecialty, ...(st.primarySpecialty ? { specialties: [st.primarySpecialty] } : {}), tz: st.tz },
-            settings, addons, payout, bufferHours: st.bufferHours,
+            settings, addons, payout, bufferHours: st.bufferHours, services,
           },
         });
         id = out.uid;

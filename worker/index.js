@@ -88,6 +88,7 @@ import { handleEmployer } from './employer.js';
 import { retireSamples } from './retire.js';
 import { sweepFullServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
 import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddons } from './addons.js';
+import { servicesOf, serviceOf, sellable } from './services.js';
 import { chatStepUp, stepUpPrice, handleStepUpQuote, endChatForStepUp } from './stepup.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
@@ -670,6 +671,9 @@ async function handleRates(env, url) {
     // permanently on its fallback text, which is a spot that looks plumbed and
     // is not. Caught by curling /api/rates instead of trusting the edit.
     teleCents: TELEHEALTH_PRICE_CENTS,
+    // Their own services a client can buy right now (2026-10-17), once he has turned them on.
+    services: own ? servicesOf((await getDoc(env, `advocates/${url.searchParams.get('advocate')}`).catch(() => null))?.data).filter(sellable)
+      .map(({ id, label, about, kind, cents }) => ({ id, label, about, kind, cents })) : [],
     // Whether this advocate's own chat line can be bought (2026-10-17): his always, a contractor's once he turns it on.
     chatOffered: own ? own.offers.chat === true : !url?.searchParams.get('advocate') || url.searchParams.get('advocate') === env.ADMIN_UID,
     // The hours a Full-Service month includes, from the one constant, so a
@@ -1115,6 +1119,9 @@ export default {
         return await handleSalesSwitches(request, env);
       if (url.pathname === '/api/checkout' && request.method === 'POST')
         return await handleCheckout(request, env);
+      // A contractor's own service (2026-10-17): switched one by one on their card, so not a business-wide sale.
+      if (url.pathname === '/api/service-checkout' && request.method === 'POST')
+        return await handleServiceCheckout(request, env);
       if (url.pathname === '/api/case-for-session' && request.method === 'GET')
         return await handleCaseForSession(request, env, url);
       if (url.pathname === '/api/make-private' && request.method === 'POST')
@@ -1162,7 +1169,7 @@ export default {
         return await handleLook(request, env);
       // A contractor's own settings (2026-10-15): their door sign, prices and limit.
       if (url.pathname === '/api/staff/settings')
-        return await handleStaffSettings(request, env, { requireStaff, json, readRates, officeStatus });
+        return await handleStaffSettings(request, env, { requireStaff, json, readRates, officeStatus, tellEric: pingAdmins });
       if (url.pathname === '/api/admin/advocates' || url.pathname === '/api/admin/advocates/headshot' || url.pathname.startsWith('/api/staff/') || url.pathname.startsWith('/api/advocates/'))
         return await handleAdvocates(request, env, url, { requireAdmin, requireStaff, json, mintCustomToken, issueDeviceToken });
       if (url.pathname === '/api/admin/self-case' && request.method === 'POST')
@@ -2543,7 +2550,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-their-chat';
+const BUILD_TAG = 'v2026-10-17-their-services';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2551,7 +2558,7 @@ const BUILD_TAG = 'v2026-10-17-their-chat';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.73';
+const VERSION = '7.74';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3653,6 +3660,71 @@ async function checkoutAdvocateTime(env, o) {
 }
 
 /**
+ * POST /api/service-checkout   { advocate, service, quotedCents, method, phone, address, acks, tz }
+ *
+ * A CONTRACTOR'S OWN SERVICE, BOUGHT ONCE (Eric, 2026-10-17: "Opens a case, no
+ * time"). It must be one of theirs that he has turned on; the price is the
+ * service's; the agreement and the number are asked for as on any booking;
+ * the card is held until they take it on, and the case it opens has no call
+ * time. Each service has its own switch on their card, so the business-wide
+ * Advocacy Case switch does not govern it.
+ */
+async function handleServiceCheckout(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Sign in to book.' }, 401);
+  const identity = await requireAdultProfile(env, user.uid);
+  if (identity.error) return json({ error: identity.error }, identity.code);
+  const body = await request.json().catch(() => null);
+  if (!body || typeof body !== 'object') return json({ error: 'Bad request' }, 400);
+  const notOffered = () => json({ error: 'That service is not offered right now.' }, 404);
+  const uid = typeof body.advocate === 'string' ? body.advocate : '';
+  if (!/^[\w-]{1,64}$/.test(uid) || uid === env.ADMIN_UID) return notOffered();
+  if (!(await contractorSettings(env, uid).catch(() => null))) return notOffered();
+  const rec = (await getDoc(env, `advocates/${uid}`).catch(() => null))?.data;
+  const svc = serviceOf(rec, body.service);
+  if (!sellable(svc)) return notOffered();
+  const method = METHODS.includes(body.method) ? body.method : 'phone';
+  if (!PHONE_RE.test(cleanPhone(body.phone)))
+    return json({ error: 'A valid phone number is required so your advocate can reach you.' }, 400);
+  const acks = body.acks;
+  for (const form of REQUIRED_ACKS)
+    if (!acks || typeof acks[form] !== 'number')
+      return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
+  if (body.quotedCents !== undefined && Number(body.quotedCents) !== svc.cents)
+    return json({ error: 'rate-changed', priceCents: svc.cents }, 409);
+  const holdExpiresAt = new Date(Date.now() + HOLD_MINUTES * 60_000);
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: identity.email || user.email || undefined,
+    line_items: [{
+      quantity: 1,
+      price_data: { currency: 'usd', unit_amount: svc.cents, product_data: { name: svc.label, description: `With ${firstName(rec?.name)}, your advocate` } },
+    }],
+    payment_intent_data: HOLD_INTENT,
+    success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/book.html?advocate=${encodeURIComponent(uid)}&service=${encodeURIComponent(svc.id)}&canceled=1`,
+    expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
+    metadata: {
+      ...HOLD_META,
+      uid: user.uid,
+      email: identity.email || user.email || '',
+      name: identity.name,
+      dob: identity.dob,
+      tz: validTz(body.tz) || '',
+      method,
+      phone: cleanPhone(body.phone),
+      address: cleanAddress(body.address),
+      acks: JSON.stringify(acks),
+      advocateId: uid,
+      // Which of their services (createCaseFromSession opens it with no time), and its name as sold.
+      serviceId: svc.id,
+      serviceLabel: svc.label,
+    },
+  });
+  return json({ url: session.url });
+}
+
+/**
  * GET /api/advocate-times?advocate=<uid>   public
  * A contractor's bookable times: their hours, less their buffer around every
  * paid appointment. Their name and the times, nothing else.
@@ -4239,7 +4311,8 @@ async function onIntentCanceled(env, pi) {
 
 async function createCaseFromSession(env, session, { held = null } = {}) {
   const m = session.metadata || {};
-  if (!m.uid || (!m.slotId && !m.requestedStart)) return;
+  // A contractor's own service (2026-10-17) opens a case with no time.
+  if (!m.uid || (!m.slotId && !m.requestedStart && !m.serviceId)) return;
 
   // Idempotency: Stripe retries webhooks; don't create the case twice.
   const existing = await queryDocs(env, 'cases', [
@@ -4281,6 +4354,15 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   // Stripe `kind`, because "no kind" is what tells the webhook this session
   // creates a case at all, and both tiers do.
   const isFull = m.tier === 'full';
+  // Their own service, bought once (2026-10-17: "Opens a case, no time"): its
+  // name as it was sold and what was paid, kept on the case so a later change
+  // to the service never rewrites what this client bought.
+  const svcRec = m.serviceId ? (await getDoc(env, `advocates/${advocateId}`).catch(() => null))?.data : null;
+  const svcRow = m.serviceId ? serviceOf(svcRec, m.serviceId) : null;
+  const service = m.serviceId ? {
+    id: m.serviceId, label: String(m.serviceLabel || svcRow?.label || 'Their service').slice(0, 60), kind: 'once',
+    cents: Number(session.amount_total) > 0 ? Number(session.amount_total) : (svcRow?.cents || 0),
+  } : null;
 
   const created = await patchDoc(
     env,
@@ -4298,7 +4380,8 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       clientAddress: m.address || null,
       status: allFormsDone ? 'confirmed' : 'forms',
       createdAt: now,
-      appointment: {
+      // No call time on their own service: they set things up in the case chat, open from the start.
+      appointment: service ? null : {
         start,
         durationMin: slot ? slot.data.durationMin || 60 : 60,
         method: m.method,
@@ -4308,6 +4391,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
         // reserved until the admin confirms it.
         requested: isRequest,
       },
+      ...(service ? { service, chatUnlocked: true } : {}),
       // Always private — the election screen is gone. Field retained so
       // existing cases and the case page keep rendering.
       publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
@@ -4329,7 +4413,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       // of THIS number, not of whatever the rate happens to be by then: a
       // client who paid $275 is not re-based onto a rate that moved after they
       // bought (Eric, "current client gets grandfathered in", 2026-08-20).
-      caseRateCents: inviteId ? invitePaid : rateAtBooking.caseCents,
+      caseRateCents: inviteId ? invitePaid : service ? service.cents : rateAtBooking.caseCents,
       // The follow-up price he was told at booking time. Eric: "The person who
       // books gets the add-on at the price they were originally told." Without
       // this, a client who booked at $265 would be quoted whatever the add-on
@@ -4392,7 +4476,8 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   }
   if (created && held) {
     await pingCase(env, { advocateId },
-      `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
+      service ? `${firstName(m.name) || 'A client'} asked for ${service.label}. Their card is held, not charged: approve or decline it.`
+        : `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
       `/admin-case.html?id=${caseId}`);
   }
 
@@ -4422,7 +4507,9 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   }
 
   const clientEmail = email;
-  if (clientEmail && start) {
+  // Their own service has no call time, so its mail says what was bought and where things start instead.
+  const svcWho = String(svcRec?.name || '').trim().split(/\s+/)[0] || 'your advocate';
+  if (clientEmail && (start || service)) {
     const mtFmt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Etc/GMT+7', weekday: 'long', month: 'long', day: 'numeric',
       hour: 'numeric', minute: '2-digit',
@@ -4431,9 +4518,10 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       to: clientEmail,
       subject: held ? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',
       html: `<p>${held ? escHtml(CHARGE_COPY.held) : inviteId && !invitePaid ? 'Your time is confirmed. Your case file is live.' : 'Payment confirmed. Your case file is live.'}</p>
-        ${whenHtml(start, m.tz)}
+        ${service ? `<p><strong>${escHtml(service.label)}</strong>, with ${escHtml(svcWho)}. There is no call time to pick: you plan the next step together in your case chat.</p>
+        <p>Upload labs, imaging, or records any time.</p>` : `${whenHtml(start, m.tz)}
         <p>Meeting method: ${m.method}.</p>
-        <p>Upload labs, imaging, or records any time before the call.</p>
+        <p>Upload labs, imaging, or records any time before the call.</p>`}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>
         ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
     });

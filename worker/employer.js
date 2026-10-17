@@ -50,6 +50,8 @@ export function caseKind(c) {
   if (c?.showcase && !c?.sample) return 'Showcase';
   if (c?.self) return 'Own case';
   if (c?.family) return 'Family';
+  // Their own service (2026-10-17), by its own name.
+  if (c?.service?.label) return String(c.service.label);
   if (c?.fullAccess) return 'Full-Service';
   return 'Advocacy Case';
 }

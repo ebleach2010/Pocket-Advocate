@@ -71,6 +71,7 @@ const state = {
   address: '', // home address, optional (Eric, 2026-09-03)
   invite: null, // { start: Date, priceCents, name } once the Worker has read his invitation
   advocate: null, // { name } on a contractor's own calendar
+  service: null, // { id, label, about, cents } when buying one of a contractor's own services
 };
 
 const STEPS = [
@@ -102,11 +103,72 @@ const ADVOCATE = (() => {
   const v = new URLSearchParams(location.search).get('advocate') || '';
   return !INVITE_ID && /^[\w-]{1,64}$/.test(v) ? v : '';
 })();
+// A CONTRACTOR'S OWN SERVICE (Eric, 2026-10-17: "Opens a case, no time").
+// /book.html?advocate=<uid>&service=<id>: no time to pick; the details, the
+// agreement and the card hold are the same as any booking, and the case it
+// opens is theirs, planned together in the case chat.
+const SERVICE = (() => {
+  const v = new URLSearchParams(location.search).get('service') || '';
+  return ADVOCATE && /^s[a-z0-9]{8}$/.test(v) ? v : '';
+})();
+if (SERVICE) STEPS[0].label = 'Your details';
 /** Their first name once their times have loaded. */
 const advFirst = () => String(state.advocate?.name || '').split(/\s+/)[0] || 'Your advocate';
 // Their prices and what they offer, asked once (2026-10-17: their own chat line too).
 let advRatesP = null;
 const advRates = () => (advRatesP ||= fetch(`/api/rates?advocate=${encodeURIComponent(ADVOCATE)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+
+/** Their name: from their times when those came back, else asked for (a closed calendar does not carry it). */
+async function advName() {
+  return state.advocate?.name || fetch(`/api/advocates/name?uid=${encodeURIComponent(ADVOCATE)}`)
+    .then((x) => (x.ok ? x.json() : null)).then((d) => String(d?.name || '').trim()).catch(() => '');
+}
+
+/**
+ * Their own services (2026-10-17), each a door to buying it: on their booking
+ * page above their times, or on its own when they take no bookings right now.
+ */
+async function addServiceList(el) {
+  const r = await advRates();
+  const list = Array.isArray(r?.services) ? r.services : [];
+  if (!list.length || el.querySelector('[data-adv-services]')) return;
+  el.querySelector('#days')?.insertAdjacentHTML('beforebegin', `
+    <div class="stack-tight" data-adv-services>
+      ${list.map((x) => `<a class="card-quiet adv-svc" href="/book.html?advocate=${encodeURIComponent(ADVOCATE)}&service=${encodeURIComponent(x.id)}" data-adv-service="${esc(x.id)}">
+        <strong>${esc(x.label)}</strong> <span class="muted">$${money(Number(x.cents) || 0)}</span>
+        ${x.about ? `<span class="muted small" style="display:block;">${esc(x.about)}</span>` : ''}</a>`).join('')}
+    </div>`);
+}
+
+/**
+ * Step 1 for one of their services: what it is, at its price, and no time to
+ * pick. False when it is not on offer, with the reason in place of the step.
+ */
+async function showService(el) {
+  const r = await advRates();
+  const svc = (Array.isArray(r?.services) ? r.services : []).find((x) => x.id === SERVICE);
+  const name = await advName();
+  state.advocate = { name };
+  const first = advFirst();
+  if (!svc) {
+    el.querySelector('h1').textContent = 'Not offered right now';
+    el.querySelector('#days').innerHTML = `<p class="muted" data-svc-closed>That service is not offered right now. <a href="/book.html?advocate=${encodeURIComponent(ADVOCATE)}">See what ${esc(first)} offers</a>.</p>`;
+    stripUnwiredStep1(el, { keepIntro: false });
+    return false;
+  }
+  state.service = { id: svc.id, label: svc.label, about: svc.about || '', cents: Number(svc.cents) || 0 };
+  el.querySelector('h1').textContent = svc.label;
+  el.querySelector('#time-intro').innerHTML = `${svc.about ? `${esc(svc.about)} ` : ''}With <strong>${esc(name || 'your advocate')}</strong>. There is no call time to pick: once ${esc(first)} takes it on, you plan the next step together in your case chat.`;
+  el.querySelector('#days').innerHTML = `<div class="day" data-svc-pick><div class="slots"><div class="slot selected">${esc(svc.label)}, $${money(state.service.cents)}</div></div></div>`;
+  el.querySelector('#request-box')?.remove();
+  // Their way to reach the client stays; there is no call to choose a kind of.
+  el.querySelector('#chips')?.remove();
+  el.querySelector('#video-note')?.remove();
+  for (const h of el.querySelectorAll('h2')) if (/How should we talk/.test(h.textContent)) h.textContent = 'How to reach you';
+  revealAfterTimes(el);
+  el.querySelector('#continue').disabled = false;
+  return true;
+}
 
 /**
  * Their own chat line, once he has turned it on (Eric, 2026-10-17: Priority
@@ -117,8 +179,7 @@ async function addChatLink(el) {
   const r = await advRates();
   if (!r?.chatOffered || el.querySelector('[data-adv-chat]')) return;
   // Their name, from their times when those came back, else asked for (a closed calendar does not carry it).
-  const name = state.advocate?.name || await fetch(`/api/advocates/name?uid=${encodeURIComponent(ADVOCATE)}`)
-    .then((x) => (x.ok ? x.json() : null)).then((d) => String(d?.name || '').trim()).catch(() => '');
+  const name = await advName();
   if (el.querySelector('[data-adv-chat]')) return;
   const first = String(name || '').split(/\s+/)[0];
   const who = first ? ` with ${esc(first)}` : '';
@@ -142,12 +203,13 @@ async function init() {
   if (new URLSearchParams(location.search).get('canceled')) {
     showError(INVITE_ID
       ? 'Checkout was canceled and nothing was charged. Your time is still set aside; confirm when you are ready.'
-      : 'Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.');
+      : SERVICE ? 'Checkout was canceled and nothing was charged. You can try again whenever you are ready.'
+        : 'Checkout was canceled, so the time you selected is no longer being held. Choose a time to try again.');
   }
   user = await currentUser();
   if (!user) {
     // Signed-out visitors sign in right here, inside step 1.
-    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : ADVOCATE ? `/book.html?advocate=${encodeURIComponent(ADVOCATE)}` : STEP ? `/book.html?step=${STEP}` : '/book.html' });
+    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : ADVOCATE ? `/book.html?advocate=${encodeURIComponent(ADVOCATE)}${SERVICE ? `&service=${SERVICE}` : ''}` : STEP ? `/book.html?step=${STEP}` : '/book.html' });
   }
   if (!INVITE_ID && !ADVOCATE) loadStepUp().catch(() => {});
   // requireUser used to create users/{uid} on first sign-in; currentUser +
@@ -382,6 +444,10 @@ async function renderTime() {
     wireStep1(el);
     return;
   }
+  if (SERVICE) {
+    if (await showService(el)) wireStep1(el);
+    return;
+  }
   if (ADVOCATE) {
     await renderAdvocateTimes(el, zone);
     return;
@@ -487,10 +553,12 @@ async function renderAdvocateTimes(el, zone) {
     daysEl.innerHTML = `<p class="muted" data-adv-closed>${esc(err.message)}</p>`;
     stripUnwiredStep1(el, { keepIntro: false });
     addChatLink(el).catch(() => {});
+    addServiceList(el).catch(() => {});
     return;
   }
   state.advocate = { name: String(got.name || '') };
   addChatLink(el).catch(() => {});
+  addServiceList(el).catch(() => {});
   el.querySelector('#time-intro').innerHTML = `<span class="adv-who" data-adv-who><img src="/api/advocates/headshot?uid=${encodeURIComponent(ADVOCATE)}" alt="" width="44" height="44" onerror="this.remove()"><span>With <strong>${esc(state.advocate.name || 'your advocate')}</strong>.</span></span>
     All times are shown in <strong>your</strong> time zone (${esc(zone.replace(/_/g, ' '))}). Appointments must be at least 72 hours out.`;
   const slots = (Array.isArray(got.times) ? got.times : [])
@@ -643,7 +711,7 @@ function wireStep1(el) {
   );
 
   el.querySelector('#continue').addEventListener('click', async () => {
-    if (!state.slot && !state.requestedStart && !state.invite) return;
+    if (!state.slot && !state.requestedStart && !state.invite && !state.service) return;
     const err = el.querySelector('#method-error');
     err.hidden = true;
     if (state.requestedStart) {
@@ -808,7 +876,69 @@ function renderAgreement() {
 
 // ---- Step 3: Payment ----
 
+/**
+ * The last step for one of their own services (2026-10-17): its name and
+ * price, the card held until they take it on, and no time. Its own route,
+ * /api/service-checkout, checks all of it again.
+ */
+function renderServicePayment() {
+  const svc = state.service;
+  const el = mount(`
+    <h1>Lock it in</h1>
+    <section class="stack-tight">
+      <p class="price-line">
+        <span class="eyebrow" data-svc-name>${esc(svc.label)}</span>
+        <span class="price" data-case-price>$${money(svc.cents)}</span>
+        ${svc.about ? `<span class="included" data-included>${esc(svc.about)}</span>` : ''}
+      </p>
+      <p class="muted small">With ${esc(state.advocate?.name || 'your advocate')}<br>
+        No call time: you plan the next step together in your case chat.<br>
+        We reach you at ${esc(state.phone)}</p>
+    </section>
+    <p class="error" id="pay-error" hidden></p>
+    <button class="btn cta" id="pay">Pay $${money(svc.cents)} and book</button>
+    <p class="muted small measure" data-hold-line-svc>Your card is held today, not charged. ${esc(advFirst())} reads every new case before taking it on, and you are charged only when your case is taken. If it cannot be, the hold is released and nothing is charged.</p>
+    <p class="muted small measure">You'll be taken to Stripe's secure checkout, so card details never touch this site. Fees are non-refundable once your case is taken.</p>
+    <p class="back-row"><button class="btn quiet pill" id="back">Back</button></p>`);
+  el.querySelector('#back').addEventListener('click', back);
+  const payBtn = el.querySelector('#pay');
+  payBtn.addEventListener('click', async () => {
+    const errEl = el.querySelector('#pay-error');
+    payBtn.disabled = true;
+    errEl.hidden = true;
+    try {
+      const res = await fetch('/api/service-checkout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${await user.getIdToken()}` },
+        body: JSON.stringify({
+          advocate: ADVOCATE, service: svc.id, quotedCents: svc.cents,
+          method: state.method, phone: state.phone, address: state.address, acks: state.acks,
+          tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      // Their price moved since the page loaded: show the new one and hand the button back.
+      if (res.status === 409 && data.error === 'rate-changed' && Number(data.priceCents) > 0) {
+        svc.cents = Number(data.priceCents);
+        el.querySelector('[data-case-price]').textContent = `$${money(svc.cents)}`;
+        payBtn.textContent = `Pay $${money(svc.cents)} and book`;
+        errEl.textContent = `The price is now $${money(svc.cents)}. Tap Pay again to go ahead.`;
+        errEl.hidden = false;
+        payBtn.disabled = false;
+        return;
+      }
+      if (!res.ok) throw new Error(data.error || `Checkout failed (${res.status})`);
+      location.href = data.url;
+    } catch (err) {
+      errEl.textContent = err.message;
+      errEl.hidden = false;
+      payBtn.disabled = false;
+    }
+  });
+}
+
 function renderPayment() {
+  if (state.service) return renderServicePayment();
   const localLong = new Intl.DateTimeFormat('en-US', {
     weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit', timeZoneName: 'short',
