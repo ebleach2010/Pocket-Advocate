@@ -89,6 +89,7 @@ import { retireSamples } from './retire.js';
 import { sweepFullServiceMonths, sweepServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
 import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddons } from './addons.js';
 import { servicesOf, serviceOf, sellable, serviceWindowEnd } from './services.js';
+import { caseDay } from '../public/js/service-day.js';
 import { chatStepUp, stepUpPrice, handleStepUpQuote, endChatForStepUp } from './stepup.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
@@ -1805,6 +1806,8 @@ export default {
       ctx.waitUntil(readSwitches(env).then((sw) => sweepFullServiceMonths(env, {
         windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: sw.full, baseUrl: env.PUBLIC_BASE_URL,
       })).catch((err) => console.warn('month sweep:', err.message || err)));
+      // A contractor's report past its due day tells him, once (2026-10-17).
+      ctx.waitUntil(sweepLateReports(env).catch((err) => console.warn('late reports:', err.message || err)));
       // Their own monthly services (2026-10-17, v7.75), each on its own switch.
       ctx.waitUntil(sweepServiceMonths(env, {
         windowEnd: (c) => serviceWindowEnd(c, heldMs(c)), notifyUser, sendEmail, pingCase,
@@ -2559,7 +2562,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-smooth';
+const BUILD_TAG = 'v2026-10-17-day-count';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2567,7 +2570,7 @@ const BUILD_TAG = 'v2026-10-17-smooth';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.76';
+const VERSION = '7.77';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -8471,6 +8474,30 @@ async function handleTelehealthDecide(request, env) {
 }
 
 /** Every admin, one line, one link. The fan-out idiom used all over this file. */
+/**
+ * A REPORT PAST ITS DUE DAY (Eric, 2026-10-17: "if a contractor has missed
+ * the due date the app alerts me and marks the contractor in employment
+ * mode"). Once a quarter hour: each contractor's case whose report is past
+ * due, by the same count both sides show (service-day.js), tells him once;
+ * the mark on their card in Employer mode is drawn from that count too.
+ */
+async function sweepLateReports(env) {
+  const rows = await queryDocs(env, 'cases', [['status', 'EQUAL', 'awaiting_report']], 200).catch(() => []);
+  let told = 0;
+  for (const r of rows) {
+    const c = r.data || {};
+    const uid = contractorOf(c, env);
+    if (!uid || c.lateToldAt || c.sample || c.showcase || caseDay(c)?.late !== true) continue;
+    // Stamped first: a second sweep finds it and says nothing.
+    await patchDoc(env, `cases/${r.id}`, { lateToldAt: new Date() }, { mask: ['lateToldAt'] }).catch(() => {});
+    const adv = (await getDoc(env, `advocates/${uid}`).catch(() => null))?.data;
+    const who = String(adv?.name || '').trim().split(/\s+/)[0] || 'A team member';
+    await pingAdmins(env, `${who}'s report for ${firstName(c.clientName)} is past due.`, `/admin-case.html?id=${r.id}`);
+    told += 1;
+  }
+  return told;
+}
+
 async function pingAdmins(env, body, link) {
   const admins = await queryDocs(env, 'users', [['role', 'EQUAL', 'admin']], 5).catch(() => []);
   for (const a of admins) {

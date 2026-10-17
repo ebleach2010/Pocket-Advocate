@@ -210,7 +210,9 @@ console.log('\n--- B. each case matches what was bought (v7.53) ---');
   const ADMIN = f('public/js/admin.js');
   let shelfFns = {};
   try {
-    shelfFns = new Function(`${lift(ADMIN, 'function toDate(v) {')}\n${lift(ADMIN, 'function badge(c) {')}\n${lift(ADMIN, 'function dueSoon(c) {')}\n${lift(ADMIN, 'function buyTag(c) {')}\nreturn { badge, dueSoon, buyTag };`)();
+    // RE-PINNED 2026-10-17 (v7.77): the badge counts a report past due as the day tag does (service-day.js caseDay).
+    const { caseDay } = await import(new URL('../../public/js/service-day.js', import.meta.url).href);
+    shelfFns = new Function('caseDay', `${lift(ADMIN, 'function toDate(v) {')}\n${lift(ADMIN, 'function badge(c) {')}\n${lift(ADMIN, 'function dueSoon(c) {')}\n${lift(ADMIN, 'function buyTag(c) {')}\nreturn { badge, dueSoon, buyTag };`)(caseDay);
   } catch { /* read below */ }
   const overdue = new Date(Date.now() - 5 * 86_400_000);
   const fullCase = { fullAccess: true, status: 'awaiting_report', reportDueAt: overdue };
@@ -223,7 +225,9 @@ console.log('\n--- B. each case matches what was bought (v7.53) ---');
   // NEGATIVE CONTROL (run 2026-10-15, v7.53): badge()'s Full-Service line taken out made this read
   //   FAIL  B3 the shelf groups by what was bought: Full-Service has its own shelf and is never REPORT DUE or OVERDUE, and the call and a Priority Chat client waiting are reminders
   check('B3 the shelf groups by what was bought: Full-Service has its own shelf and is never REPORT DUE or OVERDUE, and the call and a Priority Chat client waiting are reminders',
-    got.fullBadge === 'FULL-SERVICE' && got.advBadge === 'OVERDUE 5d' && got.fullSoon === false && got.advSoon === true
+    // RE-PINNED 2026-10-17 (v7.77): Eric's words for it, "report past due".
+    // NEGATIVE CONTROL (run 2026-10-17, v7.77): the badge put back to `OVERDUE ${-days}d` made B3 read FAIL.
+    got.fullBadge === 'FULL-SERVICE' && got.advBadge === 'REPORT PAST DUE 5d' && got.fullSoon === false && got.advSoon === true
     && /FULL-SERVICE<\/strong> · $/.test(got.tags?.[0] || '') && /ADVOCACY CASE<\/strong> · $/.test(got.tags?.[1] || '') && got.tags?.[2] === ''
     && /const fullOpen = shelved\.filter\(\(c\) => c\.fullAccess && c\.status !== 'closed'\);/.test(ADMIN)
     && /section\('ADVOCACY CASES: REPORT PHASE', 'var\(--cyan\)', current\.map/.test(ADMIN) && /section\('FULL-SERVICE', 'var\(--gold\)', fullOpen\.map/.test(ADMIN)

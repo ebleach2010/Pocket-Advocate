@@ -15,6 +15,7 @@ import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 // The Community Assistance Fund (2026-10-04): its routes, mirrored with the
 // Worker's own rules.
 import { fundDemo } from './fund.js';
+import { caseDay } from '../service-day.js';
 // DEMO MODE (2026-10-16): his practice copy's team, and what its clients ask back.
 import { LIVE_TEAM, LIVE_QUESTIONS, LIVE_CHAT_QUESTIONS, firstRead } from './live.js';
 const LIVE = (() => { try { return sessionStorage.getItem('pa-demo-live') === '1'; } catch { return false; } })();
@@ -3201,7 +3202,7 @@ export function demoApi(role, store) {
       const people = new Map();
       for (const { id, data: a } of docsUnder('advocates/')) {
         if (a.active !== true && !a.owner) continue;
-        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: !!a.headshotPath || !!a.owner, bio: a.bio || '', credentials: a.credentials || '', photoV: String(a.photoV || ''), addons: demoAddons(id), commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
+        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: !!a.headshotPath || !!a.owner, bio: a.bio || '', credentials: a.credentials || '', photoV: String(a.photoV || ''), addons: demoAddons(id), commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, late: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
       }
       for (const { id, data: c } of docsUnder('cases/')) {
         const p = people.get(advOf(c));
@@ -3209,7 +3210,10 @@ export function demoApi(role, store) {
         if (c.status === 'closed') { p.closed += 1; continue; }
         const k = kindOf(c);
         p.open += 1; p.kinds[k] = (p.kinds[k] || 0) + 1;
-        p.clients.push({ id, name: c.clientName || 'Client', kind: k, status: c.status || '' });
+        // A report past its due day marks them (as worker/employer.js counts it).
+        const late = caseDay(c)?.late === true;
+        if (late) p.late += 1;
+        p.clients.push({ id, name: c.clientName || 'Client', kind: k, status: c.status || '', late });
         if (c.self || c.family || (c.showcase && !c.sample)) continue;
         const { paid, tips } = paidOf(c);
         p.paidCents += paid; p.tipsCents += tips; p.proposedCents += Math.round(paid * p.commissionPct / 100) + tips;

@@ -28,6 +28,7 @@ import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { mountFolder, folderEnter } from './folder.js';
 import { ask } from './sheet.js';
 import { live as sales, loadSales, SALES_CLOSED_MESSAGE } from './sales.js';
+import { caseDay } from './service-day.js';
 
 // His switches (2026-10-17), asked for before anything is drawn: a service he
 // has turned off offers nothing new on a case. An add-on follows the service it
@@ -589,7 +590,7 @@ function hoursCard(c) {
       : '';
   return `
     <section class="card hours-card${state === 'ok' ? '' : ` is-${state}`}" data-hours-card>
-      <p class="eyebrow">YOUR MONTH'S HOURS</p>
+      <p class="eyebrow">YOUR MONTH'S HOURS ${dayChip(caseDay(c))}</p>
       <p class="hours-line"><strong style="color:var(--ink);">${fmt(used)}</strong> used${
   w.startedAt ? ` <span style="color:var(--cyan);">· ${doingText(w)}</span>` : ''
 }</p>
@@ -815,6 +816,7 @@ function renderProgress(el, c) {
       <p class="eyebrow" style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;">
         <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${pillText}</span>
         <span>${kindWords}</span>
+        ${c.fullAccess ? '' : dayChip(caseDay(c))}
       </p>
       ${start ? `
         <h2 class="appt-when">${mtFmt.format(start)} MST<br>
@@ -1822,6 +1824,26 @@ function monthAsk(c) {
       <p class="error" data-month-error hidden></p>
     </div>`;
 }
+/**
+ * The day of the service beside the hours (Eric, 2026-10-17), from
+ * service-day.js, the same count his side and the Worker read: Day 12 of 30,
+ * Day 3 of 7 to the call, Day 5 of 14 to the report, and Report past due in
+ * red. Nothing where there is no clock.
+ */
+function dayChip(day) {
+  if (!day) return '';
+  if (!document.getElementById('pa-day-chip')) {
+    const st = document.createElement('style');
+    st.id = 'pa-day-chip';
+    st.textContent = `
+      .day-chip { display: inline-block; padding: .12rem .55rem; border: 1px solid var(--edge-lit, rgba(255, 255, 255, .2));
+        border-radius: 999px; color: var(--ink); font-size: .72rem; font-weight: 700; letter-spacing: .02em; text-transform: none; white-space: nowrap; }
+      .day-chip.late { border-color: #FF6B6B; background: rgba(255, 90, 90, .18); color: #FFB3B3; }`;
+    document.head.appendChild(st);
+  }
+  return `<span class="day-chip${day.late ? ' late' : ''}" data-day-chip>${esc(day.text)}</span>`;
+}
+
 /** The shine, once: a warm edge and a slow sweep, still for anyone who asked for less motion. */
 function monthAskStyle() {
   if (document.getElementById('pa-month-ask')) return;

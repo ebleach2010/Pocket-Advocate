@@ -96,6 +96,7 @@ function card(p) {
             <span class="tm-go" aria-hidden="true">›</span>
           </span>
           <span class="tm-brief">${esc(brief(p))}</span>
+          ${!p.owner && p.late ? `<span class="tm-late" data-tm-late style="display:inline-block;margin-top:.35rem;padding:.12rem .55rem;border:1px solid #FF6B6B;border-radius:999px;background:rgba(255,90,90,.18);color:#FFB3B3;font-size:.74rem;font-weight:800;">${p.late} report${p.late === 1 ? '' : 's'} past due</span>` : ''}
         </a>
       </div>
       <div class="tm-money"><strong>${money(p.proposedCents)}</strong><span>${p.owner ? 'from the clients you have now' : 'theirs from the clients they have now'}${p.tipsCents ? `, ${money(p.tipsCents)} of it tips` : ''}</span></div>

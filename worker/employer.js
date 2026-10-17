@@ -25,6 +25,7 @@ import { caseBookingCents } from './charge.js';
 import { advocateIdOf, DEFAULT_COMMISSION_PCT } from './staff.js';
 import { cleanPayout, sealPayout } from './payroll.js';
 import { addonsOf } from './addons.js';
+import { caseDay } from '../public/js/service-day.js';
 
 const UID_RE = /^[\w-]{1,64}$/;
 const CHAT_MAX = 200;
@@ -90,6 +91,8 @@ export function teamSummary({ advocates, cases, subs, subCents, adminUid }) {
       // He keeps all of his own, the way the payroll pays him.
       commissionPct: owner ? 100 : Number.isFinite(Number(a.data.commissionPct)) ? Number(a.data.commissionPct) : DEFAULT_COMMISSION_PCT,
       open: 0, closed: 0, kinds: {}, chatLines: 0,
+      // Reports past their due day (2026-10-17: "if a contractor has missed the due date the app alerts me and marks the contractor").
+      late: 0,
       paidCents: 0, tipsCents: 0, proposedCents: 0,
       clients: [],
     });
@@ -103,7 +106,9 @@ export function teamSummary({ advocates, cases, subs, subCents, adminUid }) {
     const kind = caseKind(c);
     p.open += 1;
     p.kinds[kind] = (p.kinds[kind] || 0) + 1;
-    p.clients.push({ id: r.id, name: c.clientName || (c.self ? 'Your own case' : 'Client'), kind, status: c.status || '' });
+    const late = caseDay(c)?.late === true;
+    if (late) p.late += 1;
+    p.clients.push({ id: r.id, name: c.clientName || (c.self ? 'Your own case' : 'Client'), kind, status: c.status || '', late });
     // Money only where a client really paid: his own, family, the showcase are none.
     if (c.self || c.family || (c.showcase && !c.sample)) continue;
     const { paid, tips } = casePaid(c);

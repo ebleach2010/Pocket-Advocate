@@ -13,6 +13,7 @@ import { startNightShift } from './night-shift.js';
 startNightShift();
 import { wireHelp } from './help.js';
 import { live as sales, loadSales } from './sales.js';
+import { chatMonths } from './service-day.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -66,6 +67,7 @@ async function load() {
     <div class="row">
       <h1 style="margin:0;">${theirs ? `Your chat with ${safeFirst}` : 'Your chat with me'}</h1>
       <span class="status-pill ${active ? '' : 'closed'}">${active ? 'ACTIVE' : 'ENDED'}</span>
+      ${active && chatMonths(sub) ? `<span class="dim small" data-chat-months>${chatMonths(sub)}</span>` : ''}
     </div>
     <p class="office-row" style="margin-top:.4rem;">${officeCueHtml()}${officeLineHtml()}</p>
     <div class="panel" id="chat"></div>

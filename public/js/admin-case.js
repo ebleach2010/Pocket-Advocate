@@ -26,6 +26,7 @@ import {
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { ask } from './sheet.js';
+import { caseDay } from './service-day.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -726,6 +727,7 @@ function render(el) {
     <div class="case-who">
       <span class="case-name" data-client>${esc(c.clientName || c.clientEmail || c.clientUid)}</span>
       <span class="status-pill${c.self ? ' self' : ''}" data-status>${c.self ? 'MY OWN CASE' : c.fullAccess && c.status !== 'closed' ? 'FULL-SERVICE' : (c.status || '?').replace('_', ' ').toUpperCase()}</span>
+      ${dayChipHtml(caseDay(c))}
     </div>
     ${loopRow}
     ${nextLine}
@@ -4888,6 +4890,16 @@ function prettySize(bytes) {
   if (bytes > 1024) return Math.round(bytes / 1024) + ' KB';
   return bytes + ' B';
 }
+/**
+ * The day of the service beside the clock (Eric, 2026-10-17), the same count
+ * the client's page reads (service-day.js): red once a report is past due.
+ */
+function dayChipHtml(day) {
+  if (!day) return '';
+  return `<span class="day-chip${day.late ? ' late' : ''}" data-day-chip style="display:inline-block;padding:.12rem .55rem;border-radius:999px;font-size:.72rem;font-weight:700;white-space:nowrap;${day.late
+    ? 'border:1px solid #FF6B6B;background:rgba(255,90,90,.18);color:#FFB3B3;' : 'border:1px solid var(--edge-lit, rgba(255,255,255,.2));color:var(--ink);'}">${esc(day.text)}</span>`;
+}
+
 /**
  * A monthly service case's month (2026-10-17, v7.75), mirroring
  * worker/services.js serviceWindowEnd: thirty days a month from the day it was

@@ -6,6 +6,7 @@ import './admin-ledger.js';
 import { db, collection, getDocs, doc, getDoc } from './firebase.js';
 import { requireAdmin, hydrateNav, staffCasesQuery, staffSubsQuery, STAFF } from './auth.js';
 import { mountChat } from './chat.js';
+import { chatMonths } from './service-day.js';
 
 hydrateNav();
 const user = await requireAdmin();
@@ -35,6 +36,7 @@ async function loadThread() {
     <div class="row">
       <h1 style="margin:0; overflow-wrap:anywhere;">${esc(sub.name || sub.email || subUid)}</h1>
       <span class="status-pill ${end > new Date() ? '' : 'closed'}">SUBSCRIBER · ${(sub.status || '?').toUpperCase()}</span>
+      ${end > new Date() && chatMonths(sub) ? `<span class="dim small" data-chat-months>${esc(chatMonths(sub))}</span>` : ''}
     </div>
     <div class="panel" id="chat" style="margin-top:.8rem;"></div>`;
   mountChat({
@@ -92,6 +94,8 @@ async function loadInbox() {
         href: `/admin-chats.html?sub=${d.id}`,
         who: s.name || s.email || d.id,
         badge: `PRIORITY CHAT · ${(s.status || '?').toUpperCase()}`,
+        // By the month (Eric, 2026-10-17: "For chat this can be simply by month. So '1 month of chatting'").
+        months: s.status === 'active' ? chatMonths(s) : null,
         lm: s.lastMessage || null,
       });
     });
@@ -115,7 +119,7 @@ async function loadInbox() {
       ${threads.length ? threads.map((t) => `
         <a class="panel" style="display:block; text-decoration:none; color:inherit;" href="${t.href}">
           <div class="row">
-            <strong>${esc(t.who)}</strong>
+            <strong>${esc(t.who)}</strong>${t.months ? ` <span class="dim small" data-chat-months>${esc(t.months)}</span>` : ''}
             <span>
               ${t.lm && t.lm.role === 'client' ? '<span class="unread-hint">NEW</span> ' : ''}
               <span class="status-pill ${t.kind === 'sub' ? '' : 'closed'}">${t.badge}</span>

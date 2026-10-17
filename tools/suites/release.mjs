@@ -251,6 +251,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // the home, smoother scrolling and no sideways scroll on the home.
   // NEGATIVE CONTROL (run 2026-10-17, v7.76): the worker's BUILD_TAG left at the their-months tag made this read
   //   FAIL  R1 both versions read 7.76 with the new tag, the 7.76 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.77): both versions read 7.77 with the day-count tag, and the 7.77 entry says the day beside
+  // the hours, report past due in red, chat by the month, and his notice and the mark in Employer mode.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.77): the worker's VERSION left at '7.76' made this read
+  //   FAIL  R1 both versions read 7.77 with the new tag, the 7.77 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry777 = (CL.match(/\{\n\s+\/\/ THE DAY OF THE SERVICE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry776 = (CL.match(/\{\n\s+\/\/ BLUE AND GREEN, SMOOTH, NO SIDEWAYS \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry775 = (CL.match(/\{\n\s+\/\/ THEIR MONTHLY SERVICES \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry774 = (CL.match(/\{\n\s+\/\/ THEIR OWN SERVICES \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
@@ -337,9 +342,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.76 with the new tag, the 7.76 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.76';/.test(CL) && /const VERSION = '7\.76';/.test(W) && /const BUILD_TAG = 'v2026-10-17-smooth';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.76'
+  check('R1 both versions read 7.77 with the new tag, the 7.77 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.77';/.test(CL) && /const VERSION = '7\.77';/.test(W) && /const BUILD_TAG = 'v2026-10-17-day-count';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.77'
+    && /version: '7\.77',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry777)
+    && /Beside the hours, each case shows its day/.test(entry777) && /Report past due, in red/.test(entry777) && /1 month of chatting/.test(entry777)
+    && !DASH.test(entry777) && !HARD.some((re) => re.test(entry777))
     && /version: '7\.76',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry776)
     && /Past the home, the app opens in Blue and green/.test(entry776) && /Scrolling is smoother/.test(entry776) && /no longer runs sideways/.test(entry776)
     && !DASH.test(entry776) && !HARD.some((re) => re.test(entry776))

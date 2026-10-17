@@ -2525,3 +2525,28 @@ includes the preview in the main page. Landing page is untouched."
 New: smooth.mjs M1 to M3; drive-smooth (4), every check controlled.
 Re-pinned with controls: warm E1, cancelsearch C1 and C3, hue H5, H6 and H7,
 leads C4, landing B9, packages C1, landingwarm B2, waitlist D7, release R1.
+
+### The day of the service (2026-10-17, v7.77)
+
+Eric: "Next to hours should be the day we're on of the service. For full
+services, this is up to 30 days. If they choose to opt for another month,
+it gets reset. For advocacy case, it's up to the point of the meeting, and
+then it resets for the 14 days to deliver. Days past that flag that in a
+red highlight with 'report past due'. For chat this can be simply by
+month." Where: "Both, and if a contractor has missed the due date the app
+alerts me and marks the contractor in employment mode".
+
+- public/js/service-day.js (new, read by the pages, worker/employer.js and
+  worker/index.js): fullEnd and serviceEnd (the windows' rules), monthDay
+  (months back to back, Day 1 again when one starts), caseDay (Day N of 30;
+  Day N of M to the call; Day N of 14 to the report; Report past due, N
+  days with late: true), chatMonths.
+- Pages: the client's hours card and appointment card, his case header,
+  his shelf (the folder's line and the badge, REPORT PAST DUE Nd, red),
+  both chat pages, Employer mode (N reports past due on a contractor).
+- worker/index.js sweepLateReports, on the quarter hour: each contractor's
+  report past due tells him once (lateToldAt); never his own.
+- worker/employer.js teamSummary counts late per team member. Demo too.
+
+New: days.mjs D1 to D6; drive-days (4), every check controlled. Re-pinned
+with controls: cleanup B3 (REPORT PAST DUE, counted by caseDay), release R1.

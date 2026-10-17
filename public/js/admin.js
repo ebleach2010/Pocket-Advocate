@@ -16,6 +16,7 @@ import { mountWaitlist } from './admin-waitlist.js';
 import { mountPersonal } from './admin-personal.js';
 import { mountInvites, leadFormHtml, wireLeadForm } from './admin-invites.js';
 import { ask } from './sheet.js';
+import { caseDay } from './service-day.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 
@@ -375,8 +376,8 @@ async function load() {
       dx: cover.text || '',
       dxIsMine: cover.by === 'eric',
       badge: badge(c),
-      badgeClass: `${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) ? 'due' : ''}`.trim(),
-      flags: `<span class="folder-note">${detail}${
+      badgeClass: `${c.status === 'closed' ? 'closed' : ''} ${dueSoon(c) || caseDay(c)?.late ? 'due' : ''}`.trim(),
+      flags: `<span class="folder-note">${dayTag(c)}${detail}${
         c.needsReschedule ? '<strong class="fld-alert">NEEDS RESCHEDULE</strong>' : ''
       }${checkInDue(c) ? ' <strong class="fld-alert">CHECK-IN DUE</strong>' : ''
       }${pacingFlags(c).length ? ' <strong class="fld-alert">CHECK THE PACE</strong>' : ''
@@ -746,14 +747,30 @@ function wireShelfDelete(listEl) {
   });
 }
 
+/**
+ * The day of the service at the front of the folder's line (Eric,
+ * 2026-10-17: "Next to hours should be the day we're on of the service"),
+ * the count the client's page reads (service-day.js); red once a report is
+ * past due.
+ */
+function dayTag(c) {
+  const day = caseDay(c);
+  if (!day) return '';
+  return day.late ? `<strong class="fld-alert" data-day-tag>${esc(day.text.toUpperCase())}</strong> · `
+    : `<strong style="color:var(--manila-strong)" data-day-tag>${esc(day.text)}</strong> · `;
+}
+
 function badge(c) {
   if (c.self) return 'MY OWN CASE';
   // What they bought, until it closes (2026-10-15): a Full-Service case is
   // never REPORT DUE or OVERDUE, because it owes no report.
   if (c.fullAccess && c.status !== 'closed') return 'FULL-SERVICE';
   if (c.status === 'awaiting_report' && c.reportDueAt) {
+    // Eric's words for it (2026-10-17): "report past due", counted as the day tag counts it.
+    const late = caseDay(c);
+    if (late?.late) return `REPORT PAST DUE ${late.over}d`;
     const days = Math.ceil((toDate(c.reportDueAt) - Date.now()) / 86_400_000);
-    return days >= 0 ? `REPORT DUE ${days}d` : `OVERDUE ${-days}d`;
+    return `REPORT DUE ${Math.max(0, days)}d`;
   }
   return (c.status || '?').replace('_', ' ').toUpperCase();
 }

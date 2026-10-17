@@ -32,6 +32,9 @@ const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
 const CHARGE = await import(pathToFileURL(j(ROOT, 'worker/charge.js')).href);
 // v7.65 (2026-10-17): teamSummary carries each person's add-ons, from worker/addons.js.
 const ADDONS = await import(pathToFileURL(j(ROOT, 'worker/addons.js')).href);
+// RE-PINNED 2026-10-17 (v7.77): teamSummary counts each person's late reports
+// with caseDay from public/js/service-day.js, so the lift is handed the real one.
+const SD = await import(pathToFileURL(j(ROOT, 'public/js/service-day.js')).href);
 const DASH = new RegExp('[\\u2013\\u2014]');
 const results = [];
 function check(name, cond, detail = '') {
@@ -61,9 +64,9 @@ function world({ stripe = null } = {}) {
     `${strip(f('worker/payroll.js'))}\nreturn { ADVISOR_FOR_ADVOCATES, periodOf, caseLines, sampleLines, stripeLines, advisorLines, buildRows, totalsOf, cleanPayout, sealPayout, openPayout, payoutMap, handlePayroll, PAYOUT_METHODS, ADVISOR_FEE_CENTS };`)(
     ...Object.values({ ...fs, stripeGet, caseBookingCents: CHARGE.caseBookingCents, advocateIdOf: STAFF.advocateIdOf, DEFAULT_COMMISSION_PCT: STAFF.DEFAULT_COMMISSION_PCT }));
   const notifyUser = async (env, uid, m) => { pushes.push({ uid, ...m }); };
-  const EMP = new Function(...Object.keys({ ...fs, notifyUser, caseBookingCents: 0, advocateIdOf: 0, DEFAULT_COMMISSION_PCT: 0, cleanPayout: 0, sealPayout: 0, addonsOf: 0 }),
+  const EMP = new Function(...Object.keys({ ...fs, notifyUser, caseBookingCents: 0, advocateIdOf: 0, DEFAULT_COMMISSION_PCT: 0, cleanPayout: 0, sealPayout: 0, addonsOf: 0, caseDay: 0 }),
     `${strip(f('worker/employer.js'))}\nreturn { teamSummary, casePaid, caseKind, sampleRecords, handleEmployer, SAMPLE_UID, renewing };`)(
-    ...Object.values({ ...fs, notifyUser, caseBookingCents: CHARGE.caseBookingCents, advocateIdOf: STAFF.advocateIdOf, DEFAULT_COMMISSION_PCT: STAFF.DEFAULT_COMMISSION_PCT, cleanPayout: PAY.cleanPayout, sealPayout: PAY.sealPayout, addonsOf: ADDONS.addonsOf }));
+    ...Object.values({ ...fs, notifyUser, caseBookingCents: CHARGE.caseBookingCents, advocateIdOf: STAFF.advocateIdOf, DEFAULT_COMMISSION_PCT: STAFF.DEFAULT_COMMISSION_PCT, cleanPayout: PAY.cleanPayout, sealPayout: PAY.sealPayout, addonsOf: ADDONS.addonsOf, caseDay: SD.caseDay }));
   return { docs, pushes, stripeCalls, PAY, EMP };
 }
 

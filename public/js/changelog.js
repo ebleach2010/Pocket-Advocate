@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.76';
+export const VERSION = '7.77';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.76';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE DAY OF THE SERVICE (Eric, 2026-10-17: "Next to hours should be the
+    // day we're on of the service"). Admin only.
+    version: '7.77',
+    quiet: true,
+    client: [],
+    admin: [
+      'Beside the hours, each case shows its day: Day 12 of 30 for Full-Service and monthly services, then Day 1 again when a new month starts.',
+      'An Advocacy Case counts the days to the call, then the 14 days to the report. Past that it reads Report past due, in red, on your shelf, your case page and the client\'s page.',
+      'Priority Chat reads by the month: 1 month of chatting, then 2 months once the second month starts.',
+      'If a team member\'s report goes past due, you get a notice once, and their card in Employer mode is marked in red.',
+    ],
+  },
   {
     // BLUE AND GREEN, SMOOTH, NO SIDEWAYS (Eric, 2026-10-17: "The app is
     // having some hitching when scrolling in areas, and the landing page has
