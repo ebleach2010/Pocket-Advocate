@@ -67,17 +67,24 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     && shape.bg === (shape.warm ? 'rgb(30, 21, 25)' : 'rgb(10, 10, 12)'), `${shape.scheme} / ${shape.bg} / ${shape.serif} / warm ${shape.warm}`);
   // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". How it works and Straight answers went.
   // RE-PINNED 2026-10-15 (v7.40): Eric, "put my stats at the bottom of the landing page in brief; it will be a tab with an arrow". The numbers left the screens for the pull-up sheet, outside main.
-  ok('the five headings after the hero, in order, the options first',
-    shape.h2s.join('|') === "What it costs|You might need an advocate if|Who you're hiring|What clients say|Ready when you are.", shape.h2s.join('|'));
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case is offered again, so How it works is back after the reasons.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the How it works heading taken out of index.html made this read
+  //   FAIL  the six headings after the hero, in order, the options first
+  ok('the six headings after the hero, in order, the options first',
+    shape.h2s.join('|') === "What it costs|You might need an advocate if|How it works|Who you're hiring|What clients say|Ready when you are.", shape.h2s.join('|'));
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." Nothing under the cards is a door.
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling."
   // RE-PINNED 2026-10-15 (v7.37): the two greyed cards are each a door to their own page; nothing inside them is a separate tap.
-  ok('no notice; the chat line open with Start chatting, the other two greyed with his words and nothing to tap inside, nothing under them',
-    // RE-PINNED 2026-10-15 (v7.37): "What is included" opens the chat's own page.
-    shape.banner && shape.live.join() === '/subscribe.html,/priority-chat.html' && shape.off.length === 2
-    && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0)
-    && shape.acts.length === 0, JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." All three are open: the chat's Start chatting and
+  // its page, the case's Book a case and its page, Full-Service's How to start; nothing greyed, nothing under them.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the case card's "Book a case" taken out of index.html made this read
+  //   FAIL  no notice; all three open, each with its own doors, nothing greyed and nothing under them
+  ok('no notice; all three open, each with its own doors, nothing greyed and nothing under them',
+    shape.banner && shape.live.join() === '/subscribe.html,/priority-chat.html,/book.html,/advocacy-case.html,/full-service.html'
+    && shape.off.length === 0 && shape.acts.length === 0, JSON.stringify({ live: shape.live, off: shape.off, acts: shape.acts }));
+  false && ok('(retired 2026-10-17) no notice; the chat line open with Start chatting, the other two greyed with his words and nothing to tap inside, nothing under them',
+    shape.off.length === 2 && shape.off.every(([t, n]) => t === 'Not currently offering' && n === 0));
   // NEGATIVE CONTROL (run 2026-10-12): `justify-content: flex-end` on .wl-row turned to flex-start made this read
   //   FAIL  the waitlist bubble sits at the top right, above his notice, a full tap high
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The bubble's row is the hero's first.
@@ -85,7 +92,10 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     shape.bubble.inTop && shape.bubble.right <= 24 && shape.bubble.gap >= 0 && shape.bubble.gap < 60 && shape.bubble.h >= 44, JSON.stringify(shape.bubble));
   // RE-PINNED 2026-10-12 (v7.35): Eric, "Remove free call." The step that promised it and its closing button went with it.
   // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". The steps were the closed case's booking steps.
-  ok('five reasons, and no booking steps for the case it is not offering', shape.needs === 5 && shape.steps === 0);
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case's four booking steps are back.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): step 4 taken out of the How it works list made this read
+  //   FAIL  five reasons, and the case's four booking steps
+  ok('five reasons, and the case\'s four booking steps', shape.needs === 5 && shape.steps === 4);
   ok('the closing: the number alone', shape.closing.join() === 'tel:+12086708608');
   // The greyed cards are meant to read as unavailable, but the words on them and everything on the chat
   // card stay legible: his badge and the chat line clear 4.5:1 on their own card.
@@ -93,11 +103,15 @@ console.log('\n--- A. the slots and the doors, 390px ---');
     const lum = (c) => { const m = c.match(/\d+(\.\d+)?/g).map(Number); const f = (v) => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; }; return .2126 * f(m[0]) + .7152 * f(m[1]) + .0722 * f(m[2]); };
     const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + .05) / (y + .05); };
     const ground = 'rgb(19, 19, 23)';
-    return [ratio(getComputedStyle(document.querySelector('.opt-live .svc-line')).color, ground), ratio(getComputedStyle(document.querySelector('.opt-off .opt-badge')).color, 'rgb(15, 15, 18)')];
+    // RE-PINNED 2026-10-17 (v7.71): with every card open there is no badge to measure; every open card's line is, and a badge when one shows.
+    const badges = [...document.querySelectorAll('.opt-off .opt-badge')].map((b) => ratio(getComputedStyle(b).color, 'rgb(15, 15, 18)'));
+    return [...document.querySelectorAll('.opt-live .svc-line')].map((l) => ratio(getComputedStyle(l).color, ground)).concat(badges);
   });
   // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." The notice is gone; the chat card's line takes its place in the measure.
-  ok('the chat line\'s words and the "Not currently offering" badges clear 4.5:1', legible.every((r) => r >= 4.5), legible.map((r) => r.toFixed(1)).join(' / '));
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): `body.landing .opt .svc-line { color: #55555c !important; }` added to landing.css made this read
+  //   FAIL  every open card's words, and any "Not currently offering" badge, clear 4.5:1
+  ok('every open card\'s words, and any "Not currently offering" badge, clear 4.5:1', legible.length >= 3 && legible.every((r) => r >= 4.5), legible.map((r) => r.toFixed(1)).join(' / '));
   if (SHOTS) {
     await page.screenshot({ path: `${SHOTS}/01-hero.png` });
     // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." / "Reorient everything so everything on the main page fits without scrolling." Each other section is a screen of its own, opened by its anchor.
@@ -199,7 +213,10 @@ console.log('\n--- E. the home at every size ---');
   // NEGATIVE CONTROL (run 2026-10-14): landing-tabs.js's Back link line taken out made this read
   //   FAIL  the menu opens every other section as a screen with a Back link
   // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". Five sections are left behind the menu.
-  ok('the menu opens every other section as a screen with a Back link', hrefs.length === 5 && screens.every(Boolean), `${hrefs.join()} ${screens.join()}`);
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." How it works is back behind the menu: six sections.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the menu's How it works link taken out of index.html made this read
+  //   FAIL  the menu opens every other section as a screen with a Back link
+  ok('the menu opens every other section as a screen with a Back link', hrefs.length === 6 && hrefs.join() === '#needs,#how,#who,#proof,#closing,#more' && screens.every(Boolean), `${hrefs.join()} ${screens.join()}`);
   await ctx.close();
 }
 
@@ -213,7 +230,11 @@ console.log('\n--- F. each card opens its own page ---');
   const page = await ctx.newPage();
   const errs = []; page.on('pageerror', (e) => errs.push(String(e).slice(0, 200)));
   const got = [];
-  for (const [sel, pkg, h1] of [['.opt-live .opt-more', 'chat', '24/7 Priority Chat'], ['a.opt-off[href$="advocacy-case.html"]', 'case', 'Advocacy Case'], ['a.opt-off[href$="full-service.html"]', 'full', 'Full-Service Case Management']]) {
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case and Full-Service are open cards again,
+  // so their doors are the case's What is included and Full-Service's How to start, not the whole grey card.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the case card's "What is included" pointed at /full-service.html made this read
+  //   FAIL  every card's door lands on its own package's page, painted, with its own way in
+  for (const [sel, pkg, h1] of [['.opt-live .opt-more', 'chat', '24/7 Priority Chat'], ['.opt-live a.opt-more[href$="advocacy-case.html"]', 'case', 'Advocacy Case'], ['.opt-live a.opt-go[href$="full-service.html"]', 'full', 'Full-Service Case Management']]) {
     await page.goto(`${P}/`, { waitUntil: 'networkidle' });
     const door = await page.$(`#options ${sel}`);
     if (!door) { got.push(false); continue; }

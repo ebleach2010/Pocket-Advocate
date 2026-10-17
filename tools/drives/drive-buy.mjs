@@ -249,8 +249,16 @@ const buys = await page.evaluate(() =>
     .map((x) => (x.textContent || '').trim()));
 // NEGATIVE CONTROL (run 2026-10-15): keepCard's offer test switched off made this read
 //   FAIL  while sales are closed there is nothing to buy on it
-ok('while sales are closed there is nothing to buy on it', buys.length === 0, JSON.stringify(buys));
-ok('and it says so in the approved words instead of quoting prices', /Join the waitlist/i.test(closedLine) && !/\$[\d,]+/.test(ad.text.slice(ad.text.indexOf('Case Enhancements'))), closedLine);
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Sales are open, so the
+// cards come back with their doors and prices: the clinic visit, the follow-up and the step up to
+// Full-Service; the closed sentence is gone. The closed form is kept below as a record, never run.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): SALES_OPEN set back to false in sales.js made this read
+//   FAIL  with sales open there is something to buy on it: the clinic visit, the follow-up and the step up
+ok('with sales open there is something to buy on it: the clinic visit, the follow-up and the step up',
+  ['Pay and request', 'Book a follow-up', 'Ask me to take this case'].every((t) => buys.includes(t)), JSON.stringify(buys));
+ok('and it quotes their prices, with no closed sentence', !closedLine && /\$[\d,]+/.test(ad.text.slice(ad.text.indexOf('Case Enhancements'))), closedLine);
+false && ok('(retired 2026-10-17) while sales are closed there is nothing to buy on it', buys.length === 0, JSON.stringify(buys));
+false && ok('(retired 2026-10-17) and it says so in the approved words instead of quoting prices', /Join the waitlist/i.test(closedLine) && !/\$[\d,]+/.test(ad.text.slice(ad.text.indexOf('Case Enhancements'))), closedLine);
 
 // ---- 6. nothing admin leaked along the way -------------------------------
 console.log('\n--- and none of it showed him anything of Eric\'s ---');

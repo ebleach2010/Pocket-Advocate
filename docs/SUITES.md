@@ -2310,3 +2310,43 @@ New, every one controlled: bookable.mjs B1 to B10, wizard W13, drive-bookable
 (6, plus no page errors). Re-pinned with controls: charge CH3 (a fourth held
 checkout), defects booking strips (four), invites E2, wizard W11 (five pages
 on his card), release R1.
+
+### Every service open (2026-10-17, v7.71)
+
+Eric: "For now, open up all my tier options." Then: "My services are off.
+How do I toggle them back on in app?" There was no switch in the app; this
+is the /open procedure in CLAUDE.md, run by hand.
+
+- public/js/sales.js: SALES_OPEN is true. CHAT_OPEN stays true. The closed
+  message and the gate stay for the day he turns sales off again.
+- Home: the case and the full service are open cards again (no badge, no
+  grey). The case has Book a case (/book.html) and What is included
+  (/advocacy-case.html); the full service has How to start
+  (/full-service.html). How it works is back after Who it's for, his four
+  v7.37 sentences with the report within 14 days, and named in the menu.
+- About: How a case runs is back from v7.37, with the card held, not
+  charged, and the report within 14 days; its steps link goes to the case's
+  own page (the steps moved there in v7.37).
+- No free call: it stays retired.
+
+Re-pinned with controls (each run 2026-10-17): sales A1 (SALES_OPEN back to
+false), leads C2 (the menu's How it works taken out), landing A4 (step 4 back
+to 7 days), landing B2 (Book a case pointed at the full service page),
+landing B6 (the case's What is included on services.html#case), landing B10
+(the footer's Book a case put back), packages A1 (How to start pointed at
+the case page), fitcall F8 (Book a case pointed at /fit.html), tighten U1
+(About's steps link back on services.html), release R1 (BUILD_TAG left at the
+bookable-hours tag). The closed forms of landing A4 and B2 and packages A1
+are kept as never evaluated records.
+
+Drives re-pinned with controls (each run 2026-10-17): drive-buy (the case's
+add-ons offered with prices again; SALES_OPEN back to false), drive-landing
+(six headings, all three cards open with their doors, the four steps, every
+open card's words legible, six screens behind the menu, each open card's
+door to its own page), drive-monthend (the ask for another month offered
+again once withdrawn), drive-seamless (the clinic visit and the step up
+offered on a fresh case), drive-steps (the appeal offered, the chat line's
+step up offered). Their closed forms are kept as never run records.
+drive-landing's contrast check measured the grey badge, which no longer
+exists, and crashed the drive; it now measures every open card's words and
+any badge that shows.

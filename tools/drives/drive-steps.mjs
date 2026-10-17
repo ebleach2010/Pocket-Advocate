@@ -165,9 +165,15 @@ const asking = await cl.evaluate(() => {
 if (SHOTS) await cl.screenshot({ path: `${SHOTS}/steps-c-client.png` });
 // NEGATIVE CONTROL (run 2026-10-17): appealCard's pending state taken out made this read
 //   FAIL  with sales off nothing new is offered, and an appeal already asked for waits with their advocate, theirs to withdraw
-ok('with sales off nothing new is offered, and an appeal already asked for waits with their advocate, theirs to withdraw',
-  offerOff === false && asking.state === 'pending' && /Your appeal request is with \S+\./.test(asking.text) && asking.withdraw && !asking.offer,
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Sales are open, so the appeal is offered on a
+// Full-Service case; once asked for it waits with their advocate, theirs to withdraw, and is not offered twice.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): SALES_OPEN set back to false in sales.js made this read
+//   FAIL  with sales open the appeal is offered, and once asked for it waits with their advocate, theirs to withdraw, not offered twice
+ok('with sales open the appeal is offered, and once asked for it waits with their advocate, theirs to withdraw, not offered twice',
+  offerOff === true && asking.state === 'pending' && /Your appeal request is with \S+\./.test(asking.text) && asking.withdraw && !asking.offer,
   JSON.stringify({ offerOff, asking }));
+false && ok('(retired 2026-10-17) with sales off nothing new is offered, and an appeal already asked for waits with their advocate, theirs to withdraw',
+  offerOff === false && asking.state === 'pending');
 
 await ad.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await ad.waitForTimeout(1500);
@@ -208,7 +214,12 @@ const chatPage = await cl.evaluate(() => ({
 })).catch(() => ({ line: false, card: true }));
 // NEGATIVE CONTROL (run 2026-10-17): subscription.js's `SALES_OPEN &&` taken off the step-up card made this read
 //   FAIL  a subscriber's chat page offers no step up while sales are off
-ok('a subscriber\'s chat page offers no step up while sales are off', chatPage.line && chatPage.card === false, JSON.stringify(chatPage));
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Sales are open, so a renewing chat line is
+// offered the step up.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): SALES_OPEN set back to false in sales.js made this read
+//   FAIL  a subscriber's chat page offers the step up while sales are open
+ok('a subscriber\'s chat page offers the step up while sales are open', chatPage.line && chatPage.card === true, JSON.stringify(chatPage));
+false && ok('(retired 2026-10-17) a subscriber\'s chat page offers no step up while sales are off', chatPage.line && chatPage.card === false);
 
 ok('no page errors', !errs.length, errs.slice(0, 3).join(' | '));
 console.log(`\n${pass} ok, ${fail} failed`);

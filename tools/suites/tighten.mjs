@@ -156,11 +156,17 @@ console.log('\n--- U. one thing in one place ---');
   // NEGATIVE CONTROL (run 2026-10-15): the services closer ("Read the questions first") put back made this read
   //   FAIL  U1 the repeated closers and notes are gone: the Services closer, the case page's chat note, the Contact closer, About's case sections, the third US and Canada line, the doubled disclaimers, and the Reviews eyebrow
   const pages = readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html'));
-  check('U1 the repeated closers and notes are gone: the Services closer, the case page\'s chat note, the Contact closer, About\'s case sections, the third US and Canada line, the doubled disclaimers, and the Reviews eyebrow',
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." About's How a case runs is back with the case (CLAUDE.md
+  // "/open"), once, its steps link sent to the case's own page; What you get out of it stays gone.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): About's steps link put back on /services.html made this read
+  //   FAIL  U1 the repeated closers and notes are gone: the Services closer, the case page's chat note, the Contact closer, About's What you get out of it, the third US and Canada line, the doubled disclaimers, and the Reviews eyebrow; About's How a case runs is back once, sending its steps to the case's page
+  const about = f('public/about.html');
+  check('U1 the repeated closers and notes are gone: the Services closer, the case page\'s chat note, the Contact closer, About\'s What you get out of it, the third US and Canada line, the doubled disclaimers, and the Reviews eyebrow; About\'s How a case runs is back once, sending its steps to the case\'s page',
     !f('public/services.html').includes('Read the questions first')
     && !f('public/advocacy-case.html').includes('class="pkg-note"')
     && !f('public/contact.html').includes('Ready to book?')
-    && !/How a case runs|What you get out of it/.test(f('public/about.html'))
+    && !/What you get out of it/.test(about) && (about.match(/<h2>How a case runs<\/h2>/g) || []).length === 1
+    && /<a class="pill" href="\/advocacy-case\.html">What happens after you book, step by step<\/a>/.test(about) && !/href="\/services\.html">What happens after you book/.test(about)
     && pages.every((n) => !f(`public/${n}`).includes('class="foot-serving"'))
     && ['advocate', 'stats'].every((n) => !f(`public/${n}.html`).includes('<footer class="legal">'))
     && !f('public/reviews.html').includes('<footer class="footer-disclaimer">')

@@ -81,7 +81,13 @@ const after = await cl.evaluate(() => ({
 }));
 // NEGATIVE CONTROL (run 2026-10-17): `[data-request-month]` taken out of case.js's SELLING made this read
 //   FAIL  withdrawn, nothing new can be asked while sales are off, and the page says so
-ok('withdrawn, nothing new can be asked while sales are off, and the page says so',
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Sales are open, so once withdrawn the ask
+// is offered again; the closed form is kept below as a record, never run.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): SALES_OPEN set back to false in sales.js made this read
+//   FAIL  withdrawn, the ask for another month is offered again while sales are open, with no closed sentence
+ok('withdrawn, the ask for another month is offered again while sales are open, with no closed sentence',
+  after.card === 'offer' && after.ask && !after.closedLine, JSON.stringify(after));
+false && ok('(retired 2026-10-17) withdrawn, nothing new can be asked while sales are off, and the page says so',
   after.card === '' && !after.ask && /not currently offering/i.test(after.closedLine), JSON.stringify(after));
 
 console.log('\n--- B. their advocate: the ask on the case and the shelf, and a yes opens it again ---');

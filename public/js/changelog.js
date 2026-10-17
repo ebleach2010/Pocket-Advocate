@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.70';
+export const VERSION = '7.71';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.70';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // EVERY SERVICE OPEN (Eric, 2026-10-17: "For now, open up all my tier
+    // options."). Admin only.
+    version: '7.71',
+    quiet: true,
+    client: [],
+    admin: [
+      'All three services are open again: Priority Chat, the Advocacy Case and Full-Service.',
+      'The home page books a case again, with How it works back in its menu.',
+      'There is no free call.',
+    ],
+  },
   {
     // BOOKABLE HOURS AND A BUFFER (Eric, 2026-10-17: "Available hours. This is
     // where clients can see they can be booked", then "a scheduled time

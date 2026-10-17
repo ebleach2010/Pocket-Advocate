@@ -51,8 +51,12 @@ console.log('\n--- A. the switch and the gate ---');
 // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat". Sales stay off; the chat line's switch is on.
 // NEGATIVE CONTROL (run 2026-10-14, v7.36): CHAT_OPEN set to false made this read
 //   FAIL  A1 sales are off and the chat line is on, and the message offers the waitlist in plain words with no dash
-check('A1 sales are off and the chat line is on, and the message offers the waitlist in plain words with no dash',
-  sales.SALES_OPEN === false && sales.CHAT_OPEN === true && /not currently offering/.test(sales.SALES_CLOSED_MESSAGE)
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Sales are on; the chat line's switch
+// stays on; the closed message and the gate stay for the day he turns them off again (A2 runs the gate shut).
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): SALES_OPEN set back to false made this read
+//   FAIL  A1 sales are on and the chat line is on, and the closed message still offers the waitlist in plain words with no dash
+check('A1 sales are on and the chat line is on, and the closed message still offers the waitlist in plain words with no dash',
+  sales.SALES_OPEN === true && sales.CHAT_OPEN === true && /not currently offering/.test(sales.SALES_CLOSED_MESSAGE)
   && /Join the waitlist/.test(sales.SALES_CLOSED_MESSAGE) && !DASH.test(sales.SALES_CLOSED_MESSAGE)
   && /import \{ SALES_OPEN, CHAT_OPEN, SALES_CLOSED_MESSAGE \} from '\.\.\/public\/js\/sales\.js';/.test(SRC));
 

@@ -94,9 +94,27 @@ check('A3 the five "you might need an advocate if" lines, in order',
 // The steps are the case's own, and the Advocacy Case page carries them (service-about.js, its approved copy).
 // NEGATIVE CONTROL (run 2026-10-15, v7.38): a How it works section put back above the closing made this read
 //   FAIL  A4 the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case's own page still says what happens after the call
-check('A4 the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case\'s own page still says what happens after the call',
-  !/class="land-sec ruled how"/.test(IDX) && !/href="#how"/.test(IDX)
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case is offered again, so its How it works screen is back
+// (CLAUDE.md "/open": restored from v7.37), his four sentences with the report within 14 days, after Who it's for and named in the menu.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): step 4 put back to "Within 7 days" made this read
+//   FAIL  A4 the home carries the case's four booking steps again, his sentences, the report within 14 days, with the menu's link to them; the case's own page still says what happens after the call
+check('A4 the home carries the case\'s four booking steps again, his sentences, the report within 14 days, with the menu\'s link to them; the case\'s own page still says what happens after the call',
+  (() => {
+    const s = sectionAt('class="land-sec ruled how"');
+    const nums = [...s.matchAll(/<span class="num">(\d)<\/span>/g)].map((m) => m[1]).join();
+    return /<section class="land-sec ruled how" id="how">/.test(IDX) && /<a href="#how">How it works<\/a>/.test(IDX)
+      && main.indexOf('ruled needs') < main.indexOf('ruled how') && main.indexOf('ruled how') < main.indexOf('ruled who')
+      && (s.match(/<li>/g) || []).length === 4 && nums === '1,2,3,4' && !/free 15-minute call/i.test(s)
+      && s.includes('Choose a time for a phone or video call and give me the basics about your case. Booking takes about two minutes.')
+      && s.includes('Upload the records you want me to review, including labs, imaging, visit notes, or anything else that helps me understand the case.')
+      && s.includes('We go through your history together, including what has been tried, what has helped, what has not, and where you are stuck.')
+      && s.includes('Within 14 days, I send you a written case report that organizes the history, the open questions, and the next steps worth discussing with your care team.');
+  })()
   // RE-PINNED 2026-10-15 (v7.40): Eric, "Make the advocacy case two weeks to deliver and update that timeframe anywhere else it's noted".
+  && f('public/js/service-about.js').includes('After the call you get a written report within 14 days.'));
+// The v7.38 to v7.70 form, kept as a record of the closed shop: never evaluated.
+false && check('A4 (retired 2026-10-17) the home carries no booking steps for the case it is not offering: no How it works screen and no link to one; the case\'s own page still says what happens after the call',
+  !/class="land-sec ruled how"/.test(IDX) && !/href="#how"/.test(IDX)
   && f('public/js/service-about.js').includes('After the call you get a written report within 14 days.'));
 // The pre-v7.38 form, kept as a record of what the steps said: never evaluated.
 false && check('A4 (retired 2026-10-15) the four steps, his sentences from about.html and services.html, the free call gone',
@@ -190,15 +208,26 @@ console.log('\n--- B. the shape ---');
   // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information."
   // NEGATIVE CONTROL (run 2026-10-15, v7.37): the Advocacy Case card's door pointed at /full-service.html made this read
   //   FAIL  B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering, each card a door to its own page alone; nothing under them is a door
-  check('B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering, each card a door to its own page alone; nothing under them is a door',
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case and the full service are open again (CLAUDE.md
+  // "/open"): no badge, no grey, each a card like the chat's with its own doors: the case's Book a case and What is included, the full
+  // service's How to start, which explains how a month begins. The chat line is still first and ringed; nothing under them is a door.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the Advocacy Case card's "Book a case" pointed at /full-service.html made this read
+  //   FAIL  B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service are open, no badge, each with its own doors; nothing under them is a door
+  check('B2 his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service are open, no badge, each with its own doors; nothing under them is a door',
     !/class="out-banner"/.test(IDX) && !READ.includes('I am currently out of remission')
     && cards.length === 3 && /opt-live opt-gold/.test(cards[0][0]) && /24\/7 Priority Chat/.test(cards[0][1])
     && /<a class="btn glow cta opt-go" href="\/subscribe\.html">Start chatting<\/a>/.test(cards[0][1]) && !/opt-badge/.test(cards[0][1])
-    && cards.slice(1).every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
-    && cards[1][2].trim() === 'href="/advocacy-case.html"' && cards[2][2].trim() === 'href="/full-service.html"'
+    && cards.slice(1).every(([c, h, a]) => c === 'opt-live' && !a.trim() && !/opt-off|opt-badge|Not currently offering|aria-disabled/.test(c + h))
     && /Advocacy Case/.test(cards[1][1]) && /Full-Service Case Management/.test(cards[2][1])
+    && /<div class="opt-acts">\s*<a class="btn glow cta opt-go" href="\/book\.html">Book a case<\/a>\s*<a class="opt-more" href="\/advocacy-case\.html">What is included<\/a>\s*<\/div>/.test(cards[1][1])
+    && /<div class="opt-acts">\s*<a class="btn glow cta opt-go" href="\/full-service\.html">How to start<\/a>\s*<\/div>/.test(cards[2][1])
+    && !/opt-off|opt-badge/.test(opts)
     && doors.length === 0 && !/class="act /.test(hero),
     JSON.stringify({ cards: cards.map(([c]) => c), doors }));
+  // The v7.37 to v7.70 form, kept as a record of the closed shop: never evaluated.
+  false && check('B2 (retired 2026-10-17) his notice is gone; the chat line is first, open and ringed with Start chatting; the case and the full service say Not currently offering, each card a door to its own page alone; nothing under them is a door',
+    cards.slice(1).every(([c, h]) => /opt-off/.test(c) && /<span class="opt-badge">Not currently offering<\/span>/.test(h) && !/<a |<button/.test(h))
+    && cards[1][2].trim() === 'href="/advocacy-case.html"' && cards[2][2].trim() === 'href="/full-service.html"');
   check('B3 the tile is small at the top left of a paper card, and the halo is gone',
     /<img class="hero-logo"[^>]*width="56"/.test(hero) && !/hero-halo/.test(IDX)
     && /body\.landing \.land-sec\.hero \{[^}]*box-shadow: none;/.test(GLOW));
@@ -234,13 +263,17 @@ check('B5 no dock offers anything, and every door but the free call is still rea
 // RE-PINNED 2026-10-15 (v7.37): Eric, "it should go to a page dedicated to what the chat is. Same with the other two options. They should never commingle information." Every card's information is its own page.
 // NEGATIVE CONTROL (run 2026-10-15, v7.37): the chat card's "What is included" put back on /services.html#chat made this read
 //   FAIL  B6 the chat card links to the chat line and its own page, each closed card to its own page, and the services anchors still exist
-check('B6 the chat card links to the chat line and its own page, each closed card to its own page, and the services anchors still exist',
+check('B6 the chat card links to the chat line and its own page, the case to its booking and its own page, the full service to its own page, and the services anchors still exist',
   (() => {
     const s = sectionAt('class="land-sec options cost"');
     const svc = f('public/services.html');
     const links = [...s.matchAll(/<a [^>]*href="([^"]+)"/g)].map((m) => m[1]);
-    return (s.match(/<div class="opt-acts">/g) || []).length === 1
-      && links.join() === '/subscribe.html,/priority-chat.html,/advocacy-case.html,/full-service.html'
+    // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Each card has its own doors again: the case's booking and
+    // its own page, the full service's own page, which is how a month starts. Nothing commingles.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.71): the case card's "What is included" pointed at /services.html#case made this read
+    //   FAIL  B6 the chat card links to the chat line and its own page, the case to its booking and its own page, the full service to its own page, and the services anchors still exist
+    return (s.match(/<div class="opt-acts">/g) || []).length === 3
+      && links.join() === '/subscribe.html,/priority-chat.html,/book.html,/advocacy-case.html,/full-service.html'
       && ['id="case"', 'id="full"', 'id="chat"'].every((id) => svc.includes(id));
   })());
 // RE-PINNED 2026-10-10 (v7.31): Eric, "Reorganize the landing page so all three options are at the top. Have it be a more sleek black style with some color pop", "make the chat the highlight option", "Put 'not currently offering' and gray out the two options outside of chat". The sheet is the chat line's.
@@ -262,8 +295,13 @@ check('B6 the chat card links to the chat line and its own page, each closed car
 }
 // RE-PINNED 2026-10-14 (v7.36): Eric, "add a hamburger menu symbol at the top right where tabs for every other section appears".
 // The page's own screens lead the menu; the Book tab heads its "More" half.
-check('B10 the only door to booking on the landing is the shared Book tab',
-  (IDX.match(/href="\/book\.html"/g) || []).length === 1 && /<span class="tabs-label">More<\/span>\s*<a href="\/book\.html">Book<\/a>/.test(IDX));
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case card's Book a case is the second door to booking;
+// the footer still offers none of its own.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): the footer's `<a href="/book.html">Book a case</a>` put back made this read
+//   FAIL  B10 the doors to booking on the landing are the shared Book tab and the case card's Book a case, nothing else
+check('B10 the doors to booking on the landing are the shared Book tab and the case card\'s Book a case, nothing else',
+  (IDX.match(/href="\/book\.html"/g) || []).length === 2 && /<span class="tabs-label">More<\/span>\s*<a href="\/book\.html">Book<\/a>/.test(IDX)
+  && (sectionAt('class="land-sec options cost"').match(/href="\/book\.html"/g) || []).length === 1);
 // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted". With nothing offered, no About sheet is offered either; the wiring stays for when one returns.
 check('B7 no About sheet is offered while nothing is, and the wiring is still there',
   !/data-about=/.test(main) && /wireAboutButtons\(\)/.test(IDX));

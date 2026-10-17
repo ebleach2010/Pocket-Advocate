@@ -120,8 +120,15 @@ const addons = await page.evaluate(() => ({
 // the Enhance tab offers none and says the approved closed sentence; the purchase this section made comes back
 // with SALES_OPEN (CLAUDE.md, /open).
 const closedLine = await page.evaluate(() => document.querySelector('[data-addons-closed]:not([hidden])')?.textContent || '');
-ok('while sales are closed the new case offers no telehealth, no upgrade and no follow-up', !addons.telehealth && addons.followupHidden && !addons.upgrade);
-ok('and it says so in the approved words', /not currently offering this\. Join the waitlist/.test(closedLine), closedLine);
+// RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." Sales are open, so the fresh case offers the
+// clinic visit and the step up again (the follow-up still waits for the report), with no closed sentence. The closed form
+// is kept below as a record, never run.
+// NEGATIVE CONTROL (run 2026-10-17, v7.71): SALES_OPEN set back to false in sales.js made this read
+//   FAIL  with sales open the new case offers the clinic visit and the step up, and the follow-up waits for the report
+ok('with sales open the new case offers the clinic visit and the step up, and the follow-up waits for the report', addons.telehealth && addons.followupHidden && addons.upgrade, JSON.stringify(addons));
+ok('and no closed sentence is shown', !closedLine, closedLine);
+false && ok('(retired 2026-10-17) while sales are closed the new case offers no telehealth, no upgrade and no follow-up', !addons.telehealth && addons.followupHidden && !addons.upgrade);
+false && ok('(retired 2026-10-17) and it says so in the approved words', /not currently offering this\. Join the waitlist/.test(closedLine), closedLine);
 ok('nothing was written to the booked case', await page.evaluate(() => {
   const rows = JSON.parse(localStorage.getItem('pa-demo-store') || '{}').docs || [];
   const c = rows.find((d) => d[0] === 'cases/demo-case-booked')?.[1];

@@ -49,11 +49,19 @@ console.log('\n--- A. the doors ---');
   const opts = idx.slice(idx.indexOf('id="options"'), idx.indexOf('<section class="land-sec ruled needs"'));
   // NEGATIVE CONTROL (run 2026-10-15): the chat card's door put back on /services.html#chat made this read
   //   FAIL  A1 on the home, each card's information opens its own page: chat's What is included, and each closed card whole
-  check('A1 on the home, each card\'s information opens its own page: chat\'s What is included, and each closed card whole',
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The two closed cards are open cards again, so the whole
+  // card is no longer the door: the case's What is included opens its page, and the full service's How to start opens its own.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the full service's "How to start" pointed at /advocacy-case.html made this read
+  //   FAIL  A1 on the home, each card's information opens its own page: chat's and the case's What is included, the full service's How to start
+  check('A1 on the home, each card\'s information opens its own page: chat\'s and the case\'s What is included, the full service\'s How to start',
     /<a class="opt-more" href="\/priority-chat\.html">What is included<\/a>/.test(opts)
-    && /<a class="opt opt-off" href="\/advocacy-case\.html">[\s\S]*?Advocacy Case<\/h3>[\s\S]*?<\/a>/.test(opts)
-    && /<a class="opt opt-off" href="\/full-service\.html">[\s\S]*?Full-Service Case Management<\/h3>[\s\S]*?<\/a>/.test(opts)
-    && !/services\.html#/.test(idx));
+    && /Advocacy Case<\/h3>(?:(?!<div class="opt )[\s\S])*?<a class="opt-more" href="\/advocacy-case\.html">What is included<\/a>/.test(opts)
+    && /Full-Service Case Management<\/h3>(?:(?!<div class="opt )[\s\S])*?<a class="btn glow cta opt-go" href="\/full-service\.html">How to start<\/a>/.test(opts)
+    && !/opt-off/.test(opts) && !/services\.html#/.test(idx));
+  // The v7.37 to v7.70 form, kept as a record of the closed shop: never evaluated.
+  false && check('A1 (retired 2026-10-17) on the home, each card\'s information opens its own page: chat\'s What is included, and each closed card whole',
+    /<a class="opt opt-off" href="\/advocacy-case\.html">[\s\S]*?Advocacy Case<\/h3>[\s\S]*?<\/a>/.test(opts)
+    && /<a class="opt opt-off" href="\/full-service\.html">[\s\S]*?Full-Service Case Management<\/h3>[\s\S]*?<\/a>/.test(opts));
   const svc = f('public/services.html');
   // NEGATIVE CONTROL (run 2026-10-15): a `data-about="chat"` button put back on services.html made this read
   //   FAIL  A2 on services, each card opens its own page, no shared sheet is left, and the case's own steps moved to the case's page

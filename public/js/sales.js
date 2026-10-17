@@ -7,7 +7,8 @@
 // Book, subscribe and services load sales-closed.js, which says so and
 // offers the waitlist instead, package by package. Pure data: the Worker imports this file, so
 // nothing here may touch a page.
-export const SALES_OPEN = false;
+// OPEN (Eric, 2026-10-17: "For now, open up all my tier options.").
+export const SALES_OPEN = true;
 
 // 24/7 Priority Chat, on its own switch (Eric, 2026-10-14: "Unlock priority
 // chat"). The case, full service and every case add-on stay behind

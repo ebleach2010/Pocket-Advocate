@@ -524,8 +524,13 @@ check('F5 fit.js lists fit slots and only fit slots',
   // RE-PINNED 2026-10-14 (v7.36): Eric, "Unlock priority chat and remove banner." The chat card links to the chat line again; still no free call, no case.
   // NEGATIVE CONTROL (run 2026-10-14, v7.36): `<a href="/book.html">Book a case</a>` added to the Advocacy Case card made this read
   //   FAIL  F8 nothing under the three options is a door, no free call and no case anywhere in them; only the chat card links, to the chat line
-  check('F8 nothing under the three options is a door, no free call and no case anywhere in them; only the chat card links, to the chat line',
-    doors.length === 0 && !/free 15-minute call/i.test(opts) && !/href="\/(fit|book)\.html"/.test(opts)
+  // RE-PINNED 2026-10-17 (v7.71): Eric, "For now, open up all my tier options." The case card books again, once; still no free call anywhere
+  // (CLAUDE.md "/open": the free call stays retired) and nothing under the three cards is a door.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.71): the case card's "Book a case" pointed at /fit.html made this read
+  //   FAIL  F8 nothing under the three options is a door and no free call is anywhere in them; the chat card links to the chat line, the case card to booking, once each
+  check('F8 nothing under the three options is a door and no free call is anywhere in them; the chat card links to the chat line, the case card to booking, once each',
+    doors.length === 0 && !/free 15-minute call/i.test(opts) && !/href="\/fit\.html"/.test(opts)
+    && (opts.match(/href="\/book\.html"/g) || []).length === 1
     && (opts.match(/href="\/subscribe\.html"/g) || []).length === 1);
   const dock = idx.slice(idx.indexOf('id="sticky-book"'), idx.indexOf('id="sticky-book"') + 200);
   // RE-PINNED 2026-10-11 (v7.32): Eric, "Mark chat out of service as well. Banner at the top that's highlighted".
