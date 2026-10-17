@@ -1789,8 +1789,9 @@ body.lightbox-open { overflow: hidden; }
 .sc-paper i:nth-child(2) { background: #A8367F; }
 .sc-paper i:nth-child(3) { background: #23201A; }
 .sc-contrast { background: #000; border-color: #6A6A6A; }
-.sc-contrast i:nth-child(1) { background: #4FE9FF; }
-.sc-contrast i:nth-child(2) { background: #FF77E0; }
+/* Black is black and white (2026-10-17). */
+.sc-contrast i:nth-child(1) { background: #FFF; }
+.sc-contrast i:nth-child(2) { background: #8A8A8A; }
 .sc-contrast i:nth-child(3) { background: #FFF; }
 .uploads .filelist { margin: 0; }
 .uploads .filelist li {

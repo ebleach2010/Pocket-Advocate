@@ -2128,3 +2128,42 @@ L28; cleanup C2; selfcase S17, S39; authority S30; cancelsearch D3; checkins
 T10, AB3; charge CH5, CH7; invites E2; monthend C1, D1; pricing T5, T6, Q5;
 staffsettings D2; tighten T3, T4, T5; release R1; drive-employer's profile
 check; drive-advocates' and drive-cleanup's groups (Act is Log). Harnesses given the add-on helpers: employer.mjs, advocates.mjs.
+
+### Three looks, raised buttons (2026-10-17, v7.66)
+
+Eric: "Do you notice how the buttons don't look convex at all, and don't stand
+out compared to normal text? Fix that. ... The color wheel is horrendous. Get
+rid of it. Have it be either the blue/green from before or this warm look, or
+just black on white."
+
+- The wheel is gone: tools/build-hue.mjs, the generated blocks at the end of
+  warm.css and landing-warm.css, the head snippets' hue lines, and applyHue and
+  its friends in theme.js. Settings offers three swatches again: Warm, Blue and
+  green (the black look with the cyan glow, data-look="cool"), and Black (the
+  High contrast scheme: black background, white text). The storage keys did not
+  change, so a device that chose Blue and purple before reads Blue and green.
+- look.css RAISED BUTTONS: tokens --raise-top, --raise-bot, --raise-edge,
+  --raise-hi, --raise, --raise-cta and --press on the not-Black root. A plain
+  button (.btn that is not glow, danger or secondary; the menu and the cog) gets
+  a lit fill from --raise-top to --raise-bot and the page's ink; every button,
+  call to action and case tab wears --raise (lit along the top, shaded along the
+  bottom, a shadow under it), the ones that act wear --raise-cta; the tab you
+  are on is pressed in (--press); pressed, anything sinks a pixel. The shadows
+  sit over whatever colour a button already has. warm.css and landing-warm.css
+  set the fill in plum under the warm guard. Black is left plain.
+- The same raise reaches the case and chat chips (.chip-label), booking times
+  (.slot), the chat's small buttons (search, attach, help, pass) and Employer
+  mode's tabs; a chosen one (.selected or .on) is pressed in. That rule carries
+  :not(:disabled) to match the raise's weight, since :is() weighs as its
+  heaviest argument. The home's buttons that act wear the raise under their warm
+  glow. Employer mode's quiet buttons keep their accent edge and tint (his
+  "They should have some contrast") with the raise's shadows over them: the
+  page's rule is written to outweigh the plain lit fill.
+- Stamps: look.css v=8, site.css sp17, warm.css v=5, landing-warm.css v=4.
+
+New: raised.mjs (6 checks, every one controlled); drive-hue section D (6, every
+one controlled; the Warm-from-Black control run by hand, the runner's run coming
+back empty). Re-pinned with controls: hue H1 to H8 (now: the wheel gone,
+the three looks); drive-hue sections A and B (the three looks in the wheel's
+place); warm A4, E1, E2; landingwarm B2, B3; auditfix A10; cancelsearch C3;
+opencases A1; drive-cleanup's look check and its team card control; release R1.

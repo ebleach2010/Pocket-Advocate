@@ -8,7 +8,6 @@
 //
 // Run: node landingwarm.mjs
 import { readFileSync, readdirSync } from 'node:fs';
-import { source as handWritten } from '../build-hue.mjs';
 import { fileURLToPath as f2 } from 'node:url';
 import { dirname as d, join as j } from 'node:path';
 
@@ -107,7 +106,9 @@ console.log('\n--- B. the pages ---');
     // NEGATIVE CONTROL (run 2026-10-16, v7.57): the rewrite keyed on every stylesheet again made B2 read FAIL.
     // RE-PINNED 2026-10-17 (v7.64): ?v=3, since the sheet now ends in the color wheel's block.
     // NEGATIVE CONTROL (run 2026-10-17, v7.64): the address put back to ?v=2 made B2 read FAIL.
-    && /\.on\('link\[rel="stylesheet"\]\[href\^="\/css\/landing\.css"\]', \{\n\s+element\(el\) \{ el\.after\('<link rel="stylesheet" href="\/css\/landing-warm\.css\?v=3">', \{ html: true \}\); \},/.test(warm)
+    // RE-PINNED 2026-10-17 (v7.66): ?v=4, since the wheel's block is gone and the raised buttons' plum fill is in.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.66): the address put back to ?v=3 made B2 read FAIL.
+    && /\.on\('link\[rel="stylesheet"\]\[href\^="\/css\/landing\.css"\]', \{\n\s+element\(el\) \{ el\.after\('<link rel="stylesheet" href="\/css\/landing-warm\.css\?v=4">', \{ html: true \}\); \},/.test(warm)
     && /return warmLook\(env, await env\.ASSETS\.fetch\(request\)\);\n  \},/.test(W),
     warm.slice(0, 200));
   const pages = readdirSync(j(ROOT, 'public')).filter((n) => n.endsWith('.html'));
@@ -117,7 +118,10 @@ console.log('\n--- B. the pages ---');
   // generated from these rules behind the same guard, and hue.mjs checks it.
   // NEGATIVE CONTROL (run 2026-10-17, v7.64): `body.landing .opt { background: red; }` put just above the wheel's block
   // made B3 read FAIL.
-  const rules = handWritten(CSS).replace(/\/\*[\s\S]*?\*\//g, '').split('}').map((r) => r.trim()).filter((r) => r && !r.startsWith('@keyframes') && !/^\d|^to|^from|^0%|^50%/.test(r));
+  // RE-PINNED 2026-10-17 (v7.66): the wheel is gone, so the whole sheet is judged again.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.66): `body.landing .opt { background: red; }` added to the end of the sheet
+  // made B3 read FAIL.
+  const rules = CSS.replace(/\/\*[\s\S]*?\*\//g, '').split('}').map((r) => r.trim()).filter((r) => r && !r.startsWith('@keyframes') && !/^\d|^to|^from|^0%|^50%/.test(r));
   // A selector list split on its own commas, not the ones inside :is( ).
   const top = (sel) => { const out = []; let depth = 0; let cur = ''; for (const ch of sel) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && !depth) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out; };
   const unguarded = rules.map((r) => r.split('{')[0].trim()).filter((sel) => sel && !/^(0%|50%|@keyframes)/.test(sel) && top(sel).some((x) => x.trim() && !x.trim().startsWith(':root:not([data-scheme="contrast"])')));

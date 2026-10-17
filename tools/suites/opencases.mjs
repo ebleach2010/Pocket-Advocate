@@ -65,7 +65,8 @@ console.log('\n--- A. the menu over the case page\'s tabs ---');
   const order = pages.every((p) => {
     const h = f(`public/${p}.html`);
     const at = (css) => h.indexOf(`href="/css/${css}`);
-    return /look\.css\?v=7"/.test(h) && at('look.css') > at('site.css') && at('site.css') > 0 && at('look.css') > at('admin.css');
+    // RE-PINNED 2026-10-17 (v7.66): ?v=8, the raised buttons are at the end of look.css.
+    return /look\.css\?v=8"/.test(h) && at('look.css') > at('site.css') && at('site.css') > 0 && at('look.css') > at('admin.css');
   }) && !/header\.bar[^{]*\{[^}]*z-index/.test(f('public/css/landing.css'));
   // NEGATIVE CONTROL (run 2026-10-15): look.css's `header.bar { z-index: 20; }` taken out made this read
   //   FAIL  A1 the bar sits above the case page's sticky tab rail, so its open menu is never under it, and below the demo strip; look.css loads last and fresh on every page

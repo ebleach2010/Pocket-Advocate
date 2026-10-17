@@ -21,7 +21,8 @@
 //      cases one tap from their name
 //   H. (v7.56) four audits: his pages send a contractor home, and their chat
 //      has none of his message makers
-//   I. (v7.57) warm everywhere, Blue and purple a choice in Settings; (v7.64) the color wheel and Black instead
+//   I. (v7.57) warm everywhere, Blue and purple a choice in Settings; (v7.64) the color wheel and Black instead;
+//      (v7.66) the wheel gone, Warm, Blue and green and Black
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -323,6 +324,9 @@ const pop = await eric.evaluate(() => {
 //   FAIL  every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words
 // NEGATIVE CONTROL (run 2026-10-16, v7.55): the page's `main .btn.quiet` rule made `main .btn.nope` made this read
 //   FAIL  every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words
+// NEGATIVE CONTROL (run 2026-10-17, v7.66): the page's rule, now written to outweigh look.css's raised fill, made
+// `:root main .btn.nope:not(` made this read
+//   FAIL  every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words
 ok('every button on a team card stands out from the dark card: a bright edge, a tinted fill and light words',
   pop.length >= 4 && pop.every((x) => x.edge && x.fill && x.ink), JSON.stringify(pop.slice(0, 4)));
 await tryStep(() => eric.click('.tm-card[data-uid="demo-sample"] .tm-name', { timeout: 4000 }));
@@ -407,20 +411,21 @@ const paint = () => lk.evaluate(() => ({
 }));
 const warmFirst = await paint();
 // RE-PINNED 2026-10-17 (v7.64): Eric, "Keep the whole color scheme and gradient, but allow it to be adjusted via a color
-// wheel in settings ... Include black". Settings offers the wheel and Black; a tap on the wheel turns his pages too.
-const wheelBox = async () => lk.locator('#pa-settings [data-hue-wheel]').boundingBox().catch(() => null);
+// wheel in settings ... Include black". Settings offered the wheel and Black; a tap on the wheel turned his pages too.
+// RE-PINNED 2026-10-17 (v7.66): Eric, "The color wheel is horrendous. Get rid of it. Have it be either the blue/green
+// from before or this warm look, or just black on white". Settings offers Warm, Blue and green and Black again; a tap
+// on Blue and green turns his pages, and Warm brings them back.
 await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
-await tryStep(() => lk.waitForSelector('.settings-card [data-hue-wheel]', { timeout: 6000 }));
+await tryStep(() => lk.waitForSelector('.settings-card [data-scheme="cool"]', { timeout: 6000 }));
 const offered = await lk.evaluate(() => [...document.querySelectorAll('.settings-card .scheme-swatch .scheme-name')].map((x) => x.textContent.trim()));
-const wb = await wheelBox();
-if (wb) await lk.mouse.click(wb.x + wb.width / 2 + Math.sin((200 * Math.PI) / 180) * wb.width * 0.42, wb.y + wb.height / 2 - Math.cos((200 * Math.PI) / 180) * wb.width * 0.42);
-await lk.waitForTimeout(500);
+await tryStep(() => lk.click('.settings-card [data-scheme="cool"]', { timeout: 3000 }));
+await lk.waitForTimeout(400);
 const coolNow = await paint();
 await lk.reload({ waitUntil: 'networkidle' });
 await settle(lk, 1500);
 const coolKept = await paint();
 await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
-await tryStep(() => lk.click('.settings-card [data-hue-reset]', { timeout: 6000 }));
+await tryStep(() => lk.click('.settings-card [data-scheme="warm"]', { timeout: 6000 }));
 await lk.waitForTimeout(400);
 const warmBack = await paint();
 if (SHOTS) await lk.screenshot({ path: `${SHOTS}/cleanup-9-warm-back.png` });
@@ -428,12 +433,14 @@ if (SHOTS) await lk.screenshot({ path: `${SHOTS}/cleanup-9-warm-back.png` });
 //   FAIL  his pages are warm unless Blue and purple is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back
 // NEGATIVE CONTROL (run 2026-10-17, v7.64): theme.js's paintHue setting no data-hue made this read
 //   FAIL  his pages are warm unless the wheel in Settings turns them: it takes effect at once, stays after a reload, and Back to the warm look brings it back
-ok('his pages are warm unless the wheel in Settings turns them: it takes effect at once, stays after a reload, and Back to the warm look brings it back',
+// NEGATIVE CONTROL (run 2026-10-17, v7.66): Blue and green taken out of APPEARANCES in theme.js made this read
+//   FAIL  his pages are warm unless Blue and green is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back
+ok('his pages are warm unless Blue and green is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back',
   warmFirst.look === '' && /rgb\(30, 21, 25\)/.test(warmFirst.ground) && /255, 196, 138/.test(warmFirst.plus) && warmFirst.bar === '#1E1519'
-  && offered.join('|') === 'Black'
-  && coolNow.hue === '144' && !/30, 21, 25/.test(coolNow.ground) && !/255, 196, 138/.test(coolNow.plus)
-  && coolKept.hue === '144' && coolKept.plus === coolNow.plus
-  && warmBack.hue === '' && /rgb\(30, 21, 25\)/.test(warmBack.ground) && /255, 196, 138/.test(warmBack.plus),
+  && offered.join('|') === 'Warm|Blue and green|Black'
+  && coolNow.look === 'cool' && coolNow.hue === '' && !/30, 21, 25/.test(coolNow.ground) && /61, 220, 245/.test(coolNow.plus) && coolNow.bar === '#0A0A0C'
+  && coolKept.look === 'cool' && /61, 220, 245/.test(coolKept.plus)
+  && warmBack.look === '' && /rgb\(30, 21, 25\)/.test(warmBack.ground) && /255, 196, 138/.test(warmBack.plus),
   JSON.stringify({ warmFirst, offered, coolNow, coolKept, warmBack }));
 
 console.log('\n--- C. errors ---');

@@ -14,7 +14,6 @@
 //
 // Run: node warm.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs';
-import { source as handWritten } from '../build-hue.mjs';
 import { fileURLToPath as f2, pathToFileURL } from 'node:url';
 import { dirname as d, join as j } from 'node:path';
 
@@ -97,7 +96,11 @@ console.log('\n--- A. the client\'s side, warm ---');
   // generated from these same rules, behind the same guards plus [data-hue], and hue.mjs checks it.
   // NEGATIVE CONTROL (run 2026-10-17, v7.64): a bare `.add-btn { background: var(--warm-pop); }` put just above the
   // wheel's block made A4 read FAIL.
-  const loose = rules(handWritten(WARM)).filter(([sel]) => !parts(sel).every((x) => x.trim().startsWith(W) || x.trim().startsWith(`:where(${W})`) || STRUCTURE.test(x.trim())));
+  // RE-PINNED 2026-10-17 (v7.66): the color wheel is gone (Eric: "The color wheel is horrendous. Get rid of it"), so
+  // the whole sheet is judged again.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.66): a bare `.add-btn { background: var(--warm-pop); }` added to the end of
+  // warm.css made A4 read FAIL.
+  const loose = rules(WARM).filter(([sel]) => !parts(sel).every((x) => x.trim().startsWith(W) || x.trim().startsWith(`:where(${W})`) || STRUCTURE.test(x.trim())));
   // NEGATIVE CONTROL (run 2026-10-15): a bare `.msg.me { background: #FFC08F; }` added to warm.css made this read
   //   FAIL  A4 High contrast keeps its own colours: every colour rule is under the not-High-contrast root, and the rest only lay out the client's own pieces
   check('A4 High contrast keeps its own colours: every colour rule is under the not-High-contrast root, and the rest only lay out the client\'s own pieces',
@@ -249,17 +252,24 @@ console.log('\n--- E. warm everywhere, blue and purple in Settings (v7.57) ---')
     // color wheel in settings ... Include black"); a device that chose Blue and purple keeps it until it chooses again.
     // NEGATIVE CONTROL (run 2026-10-17, v7.64): applyAppearance's Blue and purple line made `if (id === 'cool') void 0;`
     // made E1 read FAIL.
-    && /applyAppearance\(on \? 'contrast' : 'warm'\);/.test(SET) && /const scheme = currentAppearance\(\);/.test(SET),
+    // RE-PINNED 2026-10-17 (v7.66): the wheel is gone and Settings offers Warm, Blue and green and Black as three
+    // swatches again (Eric: "Have it be either the blue/green from before or this warm look, or just black on white").
+    // NEGATIVE CONTROL (run 2026-10-17, v7.66): Blue and green taken out of APPEARANCES in theme.js made E1 read FAIL.
+    && /applyAppearance\(b\.dataset\.scheme\);/.test(SET) && /const scheme = currentAppearance\(\);/.test(SET)
+    && T.APPEARANCES.map((x) => x.label).join('|') === 'Warm|Blue and green|Black',
     JSON.stringify({ first, cool, warm, contrast }));
   const R = rules(WARM);
   const has = (sel, re) => R.some(([s2, body]) => s2 === `${W} ${sel}` && re.test(body));
   const EMPL = f('public/admin-employer.html');
   // NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's `.add-btn` rule taken out made this read
   //   FAIL  E2 his working pages are warm too: the +, an open case's breathing rim and the chat bubble take the warm pop, and Employer mode's money, initials and buttons follow the look
+  // RE-PINNED 2026-10-17 (v7.66): Employer mode's quiet buttons are written to outweigh look.css's raised plain fill
+  // (`:root main .btn.quiet:not(...)`), so they keep the look's accent under the raise.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.66): the page's rule's `var(--cyan) 12%` made `#3DDCF5 12%` made E2 read FAIL.
   check('E2 his working pages are warm too: the +, an open case\'s breathing rim and the chat bubble take the warm pop, and Employer mode\'s money, initials and buttons follow the look',
     has('.add-btn', /background: var\(--warm-pop\);/) && has('.drawer .folder.st-open:not(.working):not(.self)', /linear-gradient\(135deg, #FFC48A, #F59BBF\)/)
     && has('.sc-fab', /background: var\(--warm-pop\);/) && /@keyframes st-open-glow-warm/.test(WARM)
-    && (EMPL.match(/var\(--warm-pop, linear-gradient/g) || []).length === 2 && /main \.btn\.quiet \{ background: color-mix\(in srgb, var\(--cyan\) 12%, transparent\);/.test(EMPL)
+    && (EMPL.match(/var\(--warm-pop, linear-gradient/g) || []).length === 2 && /:root main \.btn\.quiet:not\(\.glow, \.danger, \.secondary, \.on, :disabled\) \{ background: color-mix\(in srgb, var\(--cyan\) 12%, transparent\);/.test(EMPL)
     && !/rgba\(61, 220, 245/.test(EMPL));
 }
 

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.65';
+export const VERSION = '7.66';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.65';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THREE LOOKS, RAISED BUTTONS (Eric, 2026-10-17: "The color wheel is
+    // horrendous. Get rid of it. Have it be either the blue/green from before
+    // or this warm look, or just black on white", and "the buttons don't look
+    // convex at all"). Admin only.
+    version: '7.66',
+    quiet: true,
+    client: [],
+    admin: [
+      'The color wheel is gone. Settings offers three looks: Warm, Blue and green, and Black, which is a black background with white text.',
+      'Buttons stand off the page now: a lit fill, a highlight along the top and a shadow under it, so they never read as plain text. Pressed, they sink, and the tab you are on sits pressed in.',
+    ],
+  },
   {
     // EVERY STEP UP AN ENHANCEMENT (Eric, 2026-10-17: "make every step up an
     // enhancement", "Credit $50, end chat", "$350", "$525", "The full month",

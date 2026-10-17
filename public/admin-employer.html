@@ -24,18 +24,15 @@
     // everywhere, with the blue/purple being in settings").
     var cool = localStorage.getItem('pa-look') === 'cool';
     if (cool) document.documentElement.dataset.look = 'cool';
-    // The color wheel in Settings turns the warm look round the wheel; Black has no colour to turn.
-    var hue = parseInt(localStorage.getItem('pa-hue'), 10);
-    if (s !== 'contrast' && !cool && hue > 0 && hue < 360) { document.documentElement.dataset.hue = String(hue); document.documentElement.style.setProperty('--pa-hue', String(hue)); }
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
 })();
 </script>
-<link rel="stylesheet" href="/css/site.css?v=sp16">
+<link rel="stylesheet" href="/css/site.css?v=sp17">
 <link rel="stylesheet" href="/css/admin.css?v=stat139">
-<link rel="stylesheet" href="/css/look.css?v=7">
-<link rel="stylesheet" href="/css/warm.css?v=4">
+<link rel="stylesheet" href="/css/look.css?v=8">
+<link rel="stylesheet" href="/css/warm.css?v=5">
 <script type="module" src="/js/nav-menu.js"></script>
 <style>
   /* Employer mode (2026-10-15): his team at a glance, and the way into each. */
@@ -70,9 +67,11 @@
   .tm-acts .btn { min-height: 44px; position: relative; }
   /* Buttons that read as buttons on the dark cards (Eric, 2026-10-16: "the
      buttons are dark. They should have some contrast."). */
-  /* In the look's own accent (2026-10-16): peach when warm, cyan when blue and purple. */
-  main .btn.quiet { background: color-mix(in srgb, var(--cyan) 12%, transparent); border-color: color-mix(in srgb, var(--cyan) 60%, transparent); color: var(--ink); font-weight: 700; }
-  main .btn.quiet:hover, main .btn.quiet:focus-visible { background: color-mix(in srgb, var(--cyan) 22%, transparent); border-color: var(--cyan); color: var(--ink); }
+  /* In the look's own accent (2026-10-16): peach when warm, cyan when blue and green.
+     Written to outweigh look.css's plain raised fill (2026-10-17), so these keep
+     their accent and wear the raise's shadows over it. */
+  :root main .btn.quiet:not(.glow, .danger, .secondary, .on, :disabled) { background: color-mix(in srgb, var(--cyan) 12%, transparent); border-color: color-mix(in srgb, var(--cyan) 60%, transparent); color: var(--ink); font-weight: 700; }
+  :root main .btn.quiet:not(.glow, .danger, .secondary, .on, :disabled):is(:hover, :focus-visible) { background: color-mix(in srgb, var(--cyan) 22%, transparent); border-color: var(--cyan); color: var(--ink); }
   .tm-badge { position: absolute; top: -6px; right: -6px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px; background: #FF7A7A; color: #1A0505; font: 800 .72rem/20px 'Manrope', system-ui, sans-serif; text-align: center; }
   .tm-pill { display: inline-block; margin-left: .35rem; padding: .05rem .5rem; border-radius: 999px; border: 1px solid var(--edge-lit); color: var(--soft); font-size: .72rem; font-weight: 800; letter-spacing: .06em; vertical-align: middle; }
   .tm-pill.sample { border-color: rgba(242, 193, 78, .6); color: #F2C14E; }
