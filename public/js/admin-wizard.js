@@ -27,8 +27,11 @@ const STEPS = [
   { id: 'pay', title: 'Their share and pay' },
   { id: 'review', title: 'Check it over' },
 ];
-/** His own card has no prices, hours or pay here: those live in his settings. */
-const OWNER_STEPS = ['who', 'addons', 'profile', 'review'];
+/**
+ * His own card has no prices, hours or pay here: those live in his settings
+ * and his Calendar. It does have his buffer (2026-10-17), on its hours page.
+ */
+const OWNER_STEPS = ['who', 'addons', 'hours', 'profile', 'review'];
 
 export const DAYS = [['mon', 'Monday'], ['tue', 'Tuesday'], ['wed', 'Wednesday'], ['thu', 'Thursday'], ['fri', 'Friday'], ['sat', 'Saturday'], ['sun', 'Sunday']];
 const ZONE_NAMES = {
@@ -153,6 +156,8 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     custom: (theirs?.addons?.custom || []).map((x) => ({ ...x })),
     hours: set.hours || (editing ? null : { mon: { from: '09:00', to: '17:00' }, tue: { from: '09:00', to: '17:00' }, wed: { from: '09:00', to: '17:00' }, thu: { from: '09:00', to: '17:00' }, fri: { from: '09:00', to: '17:00' }, sat: null, sun: null }),
     tz: a.tz || 'America/Boise',
+    // Hours kept clear around each paid appointment (Eric, 2026-10-17: "3 hours before and after ... baseline for everyone").
+    bufferHours: Number.isFinite(Number(theirs?.bufferHours)) ? Number(theirs.bufferHours) : 3,
     responseTime: set.office?.responseTime || '',
     credentials: a.credentials || '', bio: a.bio || '', primarySpecialty: a.primarySpecialty || '',
     photo: null, hasPhoto: !!a.hasHeadshot,
@@ -196,15 +201,19 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
         ${st.custom.map((x, i) => customRow(x, i)).join('')}
         ${st.custom.length < 6 ? '<button type="button" class="btn quiet" data-add-custom>+ Add one</button>' : ''}
       </div>`,
-    hours: () => `
-      <p class="dim small" style="margin:0;">The days and times they are available. Their in and out of office light follows these. They can change them later.</p>
+    hours: () => owner ? `
+      <p class="dim small" style="margin:0;">Your bookable times are the ones you open in your Calendar.</p>
+      ${bufferField()}` : `
+      <p class="dim small" style="margin:0;">The days and times their clients can book them. Their in and out of office light follows these. They can change them later.</p>
       <div class="wz-box">${DAYS.map(([d, name]) => {
         const v = st.hours?.[d] || null;
         return `<div class="wz-day"><label><input type="checkbox" data-day="${d}"${v ? ' checked' : ''}> ${name}</label>
           <span class="wz-times"><input class="ask-input" type="time" data-from="${d}" value="${esc(v?.from || '09:00')}"${v ? '' : ' disabled'} aria-label="${name} start"> to <input class="ask-input" type="time" data-to="${d}" value="${esc(v?.to || '17:00')}"${v ? '' : ' disabled'} aria-label="${name} end"></span></div>`;
       }).join('')}</div>
       <label class="dim small">Their time zone<select class="ask-input" data-tz>${zones.map((z) => `<option value="${esc(z)}"${z === st.tz ? ' selected' : ''}>${esc(ZONE_NAMES[z] || z)}</option>`).join('')}</select></label>
-      <label class="dim small">What their clients read about replies (optional)<input class="ask-input" data-response maxlength="160" value="${esc(st.responseTime)}" placeholder="For example: I reply within one business day"></label>`,
+      <label class="dim small">What their clients read about replies (optional)<input class="ask-input" data-response maxlength="160" value="${esc(st.responseTime)}" placeholder="For example: I reply within one business day"></label>
+      ${bufferField()}
+      ${editing && uid ? `<p class="small" style="margin:0;overflow-wrap:anywhere;" data-book-link>Their booking link: <a href="/book.html?advocate=${encodeURIComponent(uid)}" target="_blank" rel="noopener">${esc(location.origin)}/book.html?advocate=${esc(uid)}</a></p>` : ''}`,
     profile: () => `
       <div class="wz-pic">
         <img data-pic-preview alt=""${st.photo ? ` src="${esc(URL.createObjectURL(st.photo))}"` : st.hasPhoto && uid ? ` src="/api/advocates/headshot?uid=${encodeURIComponent(uid)}"` : ' hidden'}>
@@ -227,6 +236,11 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       <ul class="wz-review">${steps.filter((s) => s.id !== 'review').map((s) => `<li><div><strong>${esc(s.title)}</strong><span>${esc(summary(s.id))}</span></div><button type="button" class="btn quiet tiny" data-jump="${steps.indexOf(s)}">Change</button></li>`).join('')}</ul>`,
   };
 
+  /** The buffer, the same field on his card and theirs. */
+  function bufferField() {
+    return `<label class="dim small">Buffer around each paid appointment, in hours<input class="ask-input wz-num" type="number" min="0" max="12" step="0.5" data-buffer value="${esc(st.bufferHours)}"></label>
+      <p class="dim small" style="margin:0;">Nothing paid can be booked this close before or after another paid appointment. Free calls make no buffer, but cannot land inside one.</p>`;
+  }
   function customRow(x, i) {
     return `<div class="wz-custom" data-custom="${i}">
       <input type="checkbox" data-c-on${x.on ? ' checked' : ''} aria-label="Offer it">
@@ -257,8 +271,10 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       return on.length ? on.join(', ') : 'None';
     }
     if (id === 'hours') {
+      const buffer = `${st.bufferHours} hour buffer`;
+      if (owner) return `Your Calendar. ${buffer}`;
       const days = DAYS.filter(([d]) => st.hours?.[d]).map(([d, n]) => `${n.slice(0, 3)} ${st.hours[d].from} to ${st.hours[d].to}`);
-      return days.length ? `${days.join(', ')} (${ZONE_NAMES[st.tz] || st.tz})` : 'Your office hours';
+      return `${days.length ? `${days.join(', ')} (${ZONE_NAMES[st.tz] || st.tz})` : 'Your office hours'}. ${buffer}`;
     }
     if (id === 'profile') return [st.photo || st.hasPhoto ? 'Photo' : 'No photo yet', st.credentials || 'no credentials yet', st.bio ? 'bio written' : 'no bio yet'].join(', ');
     if (id === 'pay') {
@@ -314,6 +330,10 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       st.custom = st.custom.filter((x) => x.label || x.on).map(({ raw, ...x }) => x);
     }
     if (id === 'hours') {
+      const buffer = Number(q('[data-buffer]')?.value);
+      if (!Number.isFinite(buffer) || buffer < 0 || buffer > 12 || Math.round(buffer * 2) !== buffer * 2) return 'The buffer: hours from 0 to 12, in half hours.';
+      st.bufferHours = buffer;
+      if (owner) return '';
       const hours = {};
       for (const [d, name] of DAYS) {
         if (!q(`[data-day="${d}"]`)?.checked) { hours[d] = null; continue; }
@@ -463,6 +483,7 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
             action: 'update', uid, name: st.name, credentials: st.credentials, bio: st.bio,
             ...(st.primarySpecialty ? { primarySpecialty: st.primarySpecialty } : {}),
             ...(owner ? {} : { tz: st.tz, commissionPct: st.commissionPct, settings, payout }),
+            bufferHours: st.bufferHours,
             addons,
           },
         });
@@ -471,7 +492,7 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
           body: {
             action: 'create', name: st.name, email: st.email, password: st.password, commissionPct: st.commissionPct,
             profile: { credentials: st.credentials, bio: st.bio, primarySpecialty: st.primarySpecialty, ...(st.primarySpecialty ? { specialties: [st.primarySpecialty] } : {}), tz: st.tz },
-            settings, addons, payout,
+            settings, addons, payout, bufferHours: st.bufferHours,
           },
         });
         id = out.uid;

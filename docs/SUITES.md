@@ -2266,3 +2266,47 @@ Eric: "I should be able to hold to delete/block leads"
 
 New, every one controlled: leads.mjs E1 to E6; waitlist.mjs E1; fitcall.mjs
 F19; drive-leads D (2). Re-pinned with a control: release R1.
+
+### Bookable hours and the buffer (2026-10-17, v7.70)
+
+Eric: "Not weekly hours. Available hours. This is where clients can see they
+can be booked." Then: "Yes, with an adjustable buffer block around it. A
+scheduled time automatically blocks off 3 hours before and after around the
+appointment. This is baseline for everyone. But can be adjusted per
+contractor in employer mode." Free calls, his answer: paid appointments make
+the buffer; a free call makes none, but cannot land inside one.
+
+- worker/booking.js: a contractor's settings.hours (their own clock) become
+  hour long Advocacy Case times on the hour and half hour, inside the same 72
+  hour lead and 1.5 week horizon as his calendar (timesFromHours). Paid
+  appointments (paidIntervals) are booked slots and live holds, invitations
+  still waiting and cases with a set time; free calls, requested times,
+  closed cases and anyone else's are not. The buffer (advocates/{uid}
+  .bufferHours, 0 to 12 in half hours, 3 when unset, his own record
+  included; staffsettings.js bufferHoursOf) keeps every paid booking clear of
+  another. Two holds inside one buffer: the earlier hold keeps it, a booking
+  always wins (mustYield).
+- Routes: GET /api/advocate-times?advocate= (their times and name, public);
+  GET /api/slots/buffered?kind=case|fit (his open slots his buffer hides).
+  Both read the world through a 30 second per isolate memo; checkout reads
+  afresh.
+- Checkout: { advocate, start } books a contractor's time (checkoutAdvocateTime):
+  the time must be one of theirs right now; a slot is made for it, held
+  (adminCreated and fromHours, so a lapsed sale deletes it and his picker
+  never shows it), given back on a race or a changed price, at their price,
+  the same card hold, their case. His own slot checkout and the free call
+  refuse a time inside his buffer; his checkout gives a hold back if a
+  neighbour beat it. Staff scheduling by hand is not held to the buffer.
+- Pages: /book.html?advocate=<uid> is their calendar (their name and face, no
+  request box, no MST line, their price). His calendar and free calls hide
+  buffered slots. Employer mode: the buffer on every card's Available hours
+  page (his card now has that page too, buffer only) and their booking link.
+  Their own settings show the link and the buffer.
+- Demo: api.js mirrors the times, the buffered list, the advocate checkout
+  and the buffer on the card. A client's demo tab keeps no advocate records,
+  so a contractor's link is opened on his side in the demo.
+
+New, every one controlled: bookable.mjs B1 to B10, wizard W13, drive-bookable
+(6, plus no page errors). Re-pinned with controls: charge CH3 (a fourth held
+checkout), defects booking strips (four), invites E2, wizard W11 (five pages
+on his card), release R1.

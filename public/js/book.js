@@ -70,6 +70,7 @@ const state = {
   phone: '',
   address: '', // home address, optional (Eric, 2026-09-03)
   invite: null, // { start: Date, priceCents, name } once the Worker has read his invitation
+  advocate: null, // { name } on a contractor's own calendar
 };
 
 const STEPS = [
@@ -92,6 +93,18 @@ const INVITE_ID = (() => {
   return /^[\w-]{6,64}$/.test(v) ? v : '';
 })();
 
+// A CONTRACTOR'S OWN CALENDAR (Eric, 2026-10-17: their available hours are
+// "where clients can see they can be booked"). /book.html?advocate=<uid>: the
+// times come from their hours, less the buffer around their paid
+// appointments (/api/advocate-times), at their own price. The rest of the
+// booking is the same; the case is theirs.
+const ADVOCATE = (() => {
+  const v = new URLSearchParams(location.search).get('advocate') || '';
+  return !INVITE_ID && /^[\w-]{1,64}$/.test(v) ? v : '';
+})();
+/** Their first name once their times have loaded. */
+const advFirst = () => String(state.advocate?.name || '').split(/\s+/)[0] || 'Your advocate';
+
 init();
 
 async function init() {
@@ -99,7 +112,8 @@ async function init() {
   // The live rate, before anything quotes a number. A failed fetch leaves the
   // compiled-in fallback in place, which is the right price at deploy time and
   // is re-checked by the Worker before a card is ever charged.
-  rates().then((r) => {
+  // A contractor's calendar quotes their price, not his.
+  (ADVOCATE ? fetch(`/api/rates?advocate=${encodeURIComponent(ADVOCATE)}`).then((r) => (r.ok ? r.json() : null)) : rates()).then((r) => {
     if (r && Number(r.caseCents) > 0) caseCents = Number(r.caseCents);
   }).catch(() => {});
   drawRail(); // step 1 shows active even while the sign-in card is up
@@ -111,9 +125,9 @@ async function init() {
   user = await currentUser();
   if (!user) {
     // Signed-out visitors sign in right here, inside step 1.
-    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : STEP ? `/book.html?step=${STEP}` : '/book.html' });
+    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : ADVOCATE ? `/book.html?advocate=${encodeURIComponent(ADVOCATE)}` : STEP ? `/book.html?step=${STEP}` : '/book.html' });
   }
-  if (!INVITE_ID) loadStepUp().catch(() => {});
+  if (!INVITE_ID && !ADVOCATE) loadStepUp().catch(() => {});
   // requireUser used to create users/{uid} on first sign-in; currentUser +
   // ensureSignedIn do not, so replicate auth.js's ensureProfile here. The
   // same read also prefills the inline step-1 profile fields.
@@ -346,6 +360,10 @@ async function renderTime() {
     wireStep1(el);
     return;
   }
+  if (ADVOCATE) {
+    await renderAdvocateTimes(el, zone);
+    return;
+  }
 
   let slots = [];
   // When the books are shut, say so. An empty calendar with no explanation
@@ -371,6 +389,8 @@ async function renderTime() {
       // (fit.js); it is not an hour to sell. The Worker refuses it at
       // checkout too, so this is the courtesy half.
       if (data.kind === 'fit') return;
+      // A contractor's time is never his (2026-10-17); it is never left open either.
+      if (data.fromHours) return;
       const start = data.start && data.start.toDate ? data.start.toDate() : new Date(data.start);
       if (start.getTime() >= cutoff && start.getTime() <= horizon)
         slots.push({ id: docSnap.id, start, durationMin: data.durationMin || 60 });
@@ -388,6 +408,14 @@ async function renderTime() {
     stripUnwiredStep1(el, { keepIntro: true });
     return;
   }
+  // HIS BUFFER (Eric, 2026-10-17: "A scheduled time automatically blocks off 3
+  // hours before and after around the appointment"): an open time inside it is
+  // left out. The courtesy half: the Worker refuses one at checkout anyway.
+  try {
+    const r = await fetch('/api/slots/buffered?kind=case');
+    const blocked = r.ok ? (await r.json()).blocked || [] : [];
+    if (blocked.length) slots = slots.filter((s) => !blocked.includes(s.id));
+  } catch { /* the Worker still refuses a time inside the buffer */ }
   slots.sort((a, b) => a.start - b.start);
 
   const daysEl = el.querySelector('#days');
@@ -415,6 +443,47 @@ async function renderTime() {
     return;
   }
 
+  drawDays(el, slots);
+  // ---- request a time that isn't on the calendar ----
+  wireRequest(el, closedUntil);
+  wireStep1(el);
+}
+
+/**
+ * A contractor's calendar: their open times, their name over them, no
+ * request box (their hours are the offer). Prices and the rest are the same.
+ */
+async function renderAdvocateTimes(el, zone) {
+  el.querySelector('#request-box')?.remove();
+  const daysEl = el.querySelector('#days');
+  let got = {};
+  try {
+    const res = await fetch(`/api/advocate-times?advocate=${encodeURIComponent(ADVOCATE)}`);
+    got = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(got.error || 'That calendar is not open for booking.');
+  } catch (err) {
+    daysEl.innerHTML = `<p class="muted" data-adv-closed>${esc(err.message)}</p>`;
+    stripUnwiredStep1(el, { keepIntro: false });
+    return;
+  }
+  state.advocate = { name: String(got.name || '') };
+  el.querySelector('#time-intro').innerHTML = `<span class="adv-who" data-adv-who><img src="/api/advocates/headshot?uid=${encodeURIComponent(ADVOCATE)}" alt="" width="44" height="44" onerror="this.remove()"><span>With <strong>${esc(state.advocate.name || 'your advocate')}</strong>.</span></span>
+    All times are shown in <strong>your</strong> time zone (${esc(zone.replace(/_/g, ' '))}). Appointments must be at least 72 hours out.`;
+  const slots = (Array.isArray(got.times) ? got.times : [])
+    .map((iso) => ({ id: iso, start: new Date(iso), durationMin: Number(got.durationMin) || 60 }))
+    .filter((x) => !Number.isNaN(x.start.getTime()));
+  if (!slots.length) {
+    daysEl.innerHTML = `<p class="muted" data-adv-none>${esc(advFirst())} has no open times in the next week and a half. Check back soon.</p>`;
+    stripUnwiredStep1(el, { keepIntro: true });
+    return;
+  }
+  drawDays(el, slots, { mst: false });
+  wireStep1(el);
+}
+
+/** The open times, a day at a time, in the client's zone; picking one reveals the rest of step 1. */
+function drawDays(el, slots, { mst = true } = {}) {
+  const daysEl = el.querySelector('#days');
   // Days and headline times run in the CLIENT's zone (Eric, 2026-07-15);
   // Eric's MST equivalent rides underneath so nobody miscounts.
   const dayFmt = new Intl.DateTimeFormat('en-US', {
@@ -442,7 +511,7 @@ async function renderTime() {
           .map(
             (s) => `<button class="slot" data-id="${s.id}">
               ${localFmt.format(s.start)}
-              <span class="local">${mtFmt.format(s.start)} MST my time</span>
+              ${mst ? `<span class="local">${mtFmt.format(s.start)} MST my time</span>` : ''}
             </button>`
           )
           .join('')}
@@ -473,7 +542,10 @@ async function renderTime() {
       state.slot = null; // it vanished while they were away
     }
   }
-  // ---- request a time that isn't on the calendar ----
+}
+
+/** The request box under his calendar: any time, confirmed by hand. */
+function wireRequest(el, closedUntil) {
   const reqDate = el.querySelector('#req-date');
   const reqTime = el.querySelector('#req-time');
   const reqMst = el.querySelector('#req-mst');
@@ -529,7 +601,6 @@ async function renderTime() {
     reqBox.open = true;
     syncRequest();
   }
-  wireStep1(el);
 }
 
 /**
@@ -722,7 +793,7 @@ function renderPayment() {
     timeZone: MOUNTAIN_TZ, weekday: 'long', month: 'long', day: 'numeric',
     hour: 'numeric', minute: '2-digit',
   });
-  const methodLabel = state.method === 'phone' ? `Phone call to ${state.phone}` : 'Video call (I\'ll send the link)';
+  const methodLabel = state.method === 'phone' ? `Phone call to ${state.phone}` : ADVOCATE ? 'Video call (you\'ll get the link)' : 'Video call (I\'ll send the link)';
   const invite = state.invite;
   const when = invite ? invite.start : state.slot ? state.slot.start : state.requestedStart;
   const isRequest = !invite && !state.slot && !!state.requestedStart;
@@ -747,7 +818,7 @@ function renderPayment() {
       ${!invite && stepUp ? `<p class="muted small measure" data-step-credit>Your $${money(stepUp.creditCents)} chat month comes off. Once I take your case your chat line stops renewing, and the case chat takes over.</p>` : ''}
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
-        ${mtFmt.format(when)} MST my time<br>
+        ${ADVOCATE ? `With ${esc(state.advocate?.name || 'your advocate')}` : `${mtFmt.format(when)} MST my time`}<br>
         ${methodLabel} · Private session${isRequest ? ' · <span style="color:var(--orange)">Time requested. Awaiting confirmation.</span>' : ''}
       </p>
     </section>
@@ -772,13 +843,13 @@ function renderPayment() {
          same words the case page and the mail use. -->
     ${invite ? `<p class="muted small measure" data-invite-line>${invite.priceCents
     ? 'Your card is charged when you confirm, through Stripe\'s secure checkout, so card details never touch this site.'
-    : 'There is nothing to pay. Confirming opens your case.'}</p>` : `<p class="muted small measure" data-hold-line>Your card is held today, not charged. I read every new case before I take it on, and you are charged only when I do. If I cannot take your case, the hold is released and nothing is charged.</p>`}
+    : 'There is nothing to pay. Confirming opens your case.'}</p>` : ADVOCATE ? `<p class="muted small measure" data-hold-line-theirs>Your card is held today, not charged. ${esc(advFirst())} reads every new case before taking it on, and you are charged only when your case is taken. If it cannot be, the hold is released and nothing is charged.</p>` : `<p class="muted small measure" data-hold-line>Your card is held today, not charged. I read every new case before I take it on, and you are charged only when I do. If I cannot take your case, the hold is released and nothing is charged.</p>`}
     <!-- The terms sit under the button rather than over it. They are what
          pressing it agrees to, they are still on screen before any card is,
          and above it they were a paragraph of small print standing between a
          person and the only thing this step is for. -->
     ${invite ? '<p class="muted small measure">This time is set aside for you. If I reschedule you more than once, you\'re entitled to a full refund on request.</p>' : ''}
-    <p class="muted small measure"${invite ? ' hidden' : ''}>${isRequest ? 'Requested times are not held while you complete checkout.' : 'Your selected time is held while you complete checkout.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. Case fees are non-refundable once I have taken your case. If I reschedule you more than once, you're entitled to a full refund on request.</p>
+    <p class="muted small measure"${invite ? ' hidden' : ''}>${isRequest ? 'Requested times are not held while you complete checkout.' : 'Your selected time is held while you complete checkout.'} You'll be taken to Stripe's secure checkout, so card details never touch this site. ${ADVOCATE ? 'Case fees are non-refundable once your case is taken. If your time is moved more than once, you\'re entitled to a full refund on request.' : 'Case fees are non-refundable once I have taken your case. If I reschedule you more than once, you\'re entitled to a full refund on request.'}</p>
     <!-- Nothing in here is decided today, so it is context for after the
          decision, not a fourth thing competing with it. -->
     <details class="faq card-quiet" id="addons-preview">
@@ -866,7 +937,9 @@ function renderPayment() {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
         body: JSON.stringify({
-          slotId: state.slot ? state.slot.id : undefined,
+          // A contractor's time is not a slot yet: their uid and the time, checked again by the Worker.
+          ...(ADVOCATE && state.slot ? { advocate: ADVOCATE, start: state.slot.start.toISOString() } : {}),
+          slotId: state.slot && !ADVOCATE ? state.slot.id : undefined,
           requestedStart: state.requestedStart ? state.requestedStart.toISOString() : undefined,
           method: state.method,
           phone: state.phone,

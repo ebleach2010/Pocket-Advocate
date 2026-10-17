@@ -199,8 +199,11 @@ ck('purchase: a pending ask says plainly that nothing was charged',
 ck('purchase: the card repaints when the live price lands',
    /ratesReady\.then\(\(\) => \{/.test(CJ));
 const BK = f('public/js/book.js');
-ck('booking: both early returns strip the controls they cannot wire',
-   (BK.match(/\n {4}stripUnwiredStep1\(el/g) || []).length === 2
+// RE-PINNED 2026-10-17 (v7.70): a contractor's own calendar has the same two early returns (a closed
+// calendar, no open times), so four strip what they cannot wire.
+// NEGATIVE CONTROL (run 2026-10-17, v7.70): renderAdvocateTimes's no-times `stripUnwiredStep1(el, { keepIntro: true });` taken out made this read FAIL.
+ck('booking: every early return strips the controls it cannot wire, his calendar and a contractor\'s',
+   (BK.match(/\n {4}stripUnwiredStep1\(el/g) || []).length === 4
    && /function stripUnwiredStep1\(el/.test(BK));
 ck('booking: a failed calendar read says what to do next',
    /Reload the page and it usually comes back/.test(BK));

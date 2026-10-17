@@ -15,8 +15,9 @@
 //   W8 their week: checked, kept on their clock, and their light follows it; a hand set in or out still wins
 //   W9 his own extras: named and priced, checked, asked for, answered and paid under their own name
 //   W10 the client asks for one of his extras on their case, and it is an offer that closes with sales
-//   W11 the pages themselves: seven in order, four on his own card, back always open, forward only past a good page
+//   W11 the pages themselves: seven in order, five on his own card, back always open, forward only past a good page
 //   W12 their own settings carry their week, and the demo answers the way the Worker does
+//   W13 the buffer: set on their card and his own, half hours from 0 to 12, three when never set, and only by him (v7.70)
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -70,6 +71,7 @@ const world = () => {
     ...STAFF,
     addonsOf: ADDONS.addonsOf, cleanAddons: ADDONS.cleanAddons,
     cleanSettingsChange: SS.cleanSettingsChange, settingsFrom: SS.settingsFrom, nest: SS.nest,
+    bufferHoursOf: SS.bufferHoursOf, cleanBufferHours: SS.cleanBufferHours,
     cleanPayout: PAY.cleanPayout, sealPayout: PAY.sealPayout, PAYOUT_METHODS: PAY.PAYOUT_METHODS,
   };
   const api = new Function(...Object.keys(deps), `${strip(f('worker/advocates.js'))}\nreturn { handleAdvocates, loginPath };`)(...Object.values(deps));
@@ -304,8 +306,11 @@ console.log('\n--- the pages ---');
   const ids = [...WIZ.matchAll(/\{ id: '(\w+)', title: '([^']+)' \}/g)].map((m) => m[1]);
   // NEGATIVE CONTROL (run 2026-10-17): go()'s `if (problem && i > at)` made `if (problem)` (no way back past a bad page) made this read
   //   FAIL  W11 the pages themselves: seven in order, four on his own card, back always open, forward only past a good page, the bank note said plainly
-  check('W11 the pages themselves: seven in order, four on his own card, back always open, forward only past a good page, the bank note said plainly',
-    ids.join() === 'who,offer,addons,hours,profile,pay,review' && /const OWNER_STEPS = \['who', 'addons', 'profile', 'review'\];/.test(WIZ)
+  // RE-PINNED 2026-10-17 (v7.70): his own card has an hours page too, for his buffer ("baseline for everyone. But can be
+  // adjusted per contractor in employer mode"); five pages on his card.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.70): OWNER_STEPS put back to four (no 'hours') made W11 read FAIL.
+  check('W11 the pages themselves: seven in order, five on his own card, back always open, forward only past a good page, the bank note said plainly',
+    ids.join() === 'who,offer,addons,hours,profile,pay,review' && /const OWNER_STEPS = \['who', 'addons', 'hours', 'profile', 'review'\];/.test(WIZ)
     && /if \(problem && i > at\) \{ err\(problem\); return; \}/.test(WIZ)
     && /Bank details are encrypted before they are stored\. Only you see the full numbers; everyone else sees the last four\./.test(WIZ)
     && /'They will add it when they sign in'/.test(WIZ) && /routing\.length !== 9/.test(WIZ)
@@ -323,6 +328,35 @@ console.log('\n--- the pages ---');
     && /if \(body\.offers !== undefined\) return fail\(400, 'What you offer is set by Eric\.'\);/.test(DEMO)
     && /if \(action === 'get'\) \{/.test(DEMO) && /const demoPayout = \(m, fl = \{\}\) => \{/.test(DEMO) && /label: mine \? mine\.label : 'Writing an insurance appeal'/.test(DEMO)
     && !DASH.test(MINE));
+}
+
+{
+  // Eric, 2026-10-17: "A scheduled time automatically blocks off 3 hours before and after around the appointment. This is
+  // baseline for everyone. But can be adjusted per contractor in employer mode."
+  const w = world();
+  const made = await call(w, { ...FULL, email: 'buf@x.test', bufferHours: 1.5 });
+  const uid = made.out?.uid;
+  const stored = w.docs.get(`advocates/${uid}`)?.bufferHours;
+  const mine = await call(w, { action: 'update', uid: ERIC, bufferHours: 2 });
+  const myStored = w.docs.get(`advocates/${ERIC}`)?.bufferHours;
+  const ownerSettings = await call(w, { action: 'update', uid: ERIC, settings: { fullCap: 2 } });
+  const bad = await call(w, { action: 'update', uid, bufferHours: 12.5 });
+  const quarter = await call(w, { action: 'update', uid, bufferHours: 1.25 });
+  const got = await call(w, { action: 'get', uid });
+  const plain = await call(w, { ...FULL, email: 'plain@x.test' });
+  const gotPlain = await call(w, { action: 'get', uid: plain.out?.uid });
+  const notHim = await call(w, { action: 'update', uid, bufferHours: 0 }, 'someone');
+  const WIZ = f('public/js/admin-wizard.js');
+  // NEGATIVE CONTROL (run 2026-10-17, v7.70): cleanSetup's `out.bufferHours = got.value;` taken out made this read
+  //   FAIL  W13 the buffer: set on their card and his own, half hours from 0 to 12, three when never set, and only by him
+  check('W13 the buffer: set on their card and his own, half hours from 0 to 12, three when never set, and only by him',
+    made.status === 200 && stored === 1.5 && mine.status === 200 && myStored === 2 && ownerSettings.status === 400
+    && bad.status === 400 && quarter.status === 400 && w.docs.get(`advocates/${uid}`)?.bufferHours === 1.5
+    && got.out?.bufferHours === 1.5 && gotPlain.out?.bufferHours === 3 && notHim.status === 404
+    && /<input class="ask-input wz-num" type="number" min="0" max="12" step="0\.5" data-buffer/.test(WIZ)
+    && /bufferHours: st\.bufferHours,\n\s+addons,/.test(WIZ) && /settings, addons, payout, bufferHours: st\.bufferHours,/.test(WIZ)
+    && /Free calls make no buffer, but cannot land inside one\./.test(WIZ),
+    JSON.stringify({ made: made.status, stored, mine: mine.status, myStored, ownerSettings: ownerSettings.status, bad: bad.status, quarter: quarter.status, got: got.out?.bufferHours, plain: gotPlain.out?.bufferHours, notHim: notHim.status }));
 }
 
 const failed = results.filter((r) => !r.pass);

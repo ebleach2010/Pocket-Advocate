@@ -12,6 +12,8 @@
 //   POST   /api/waitlist           join the waitlist: name, email, phone, package (public, no account)
 //   GET/POST /api/admin/waitlist   the waitlist: list, mark contacted, remove (admin)
 //   POST   /api/question           the question box: name, email, question, emailed to Eric (public, no account)
+//   GET    /api/advocate-times     a contractor's bookable times from their hours, less their buffer (public)
+//   GET    /api/slots/buffered     his open slots his buffer hides right now (public)
 //   GET    /api/admin/leads        everyone who has given their details by any route, one row per person (admin)
 //   POST   /api/admin/leads        reply to a lead by email, mark their messages read, delete, block or unblock them (admin)
 //   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
@@ -89,6 +91,7 @@ import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddo
 import { chatStepUp, stepUpPrice, handleStepUpQuote, endChatForStepUp } from './stepup.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
+import { bookableTimes, bufferedSlotIds, slotInsideBuffer, holdMustYield, recentBookingWorld, BOOK_MINUTES } from './booking.js';
 // The security rules, published by the Worker when what it carries changes.
 import { releaseRules, RULES_STATUS } from './rules-release.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
@@ -1241,6 +1244,12 @@ export default {
       // field it returns is a public timeline.
       if (url.pathname === '/api/availability' && request.method === 'GET')
         return await handleAvailability(env, url);
+      // Bookable hours (2026-10-17): a contractor's open times, and which of
+      // his open slots his buffer hides. Public, like the open slots themselves.
+      if (url.pathname === '/api/advocate-times' && request.method === 'GET')
+        return await handleAdvocateTimes(env, url);
+      if (url.pathname === '/api/slots/buffered' && request.method === 'GET')
+        return await handleBufferedSlots(env, url);
       // The flight recorder's read hatch. Temporary scaffolding for the
       // advisor incident: run telemetry only, no case content anywhere in
       // the payload. Wrong or missing key answers 404 like every admin
@@ -2484,7 +2493,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-hold-leads';
+const BUILD_TAG = 'v2026-10-17-bookable-hours';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2492,7 +2501,7 @@ const BUILD_TAG = 'v2026-10-17-hold-leads';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.69';
+const VERSION = '7.70';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3394,6 +3403,10 @@ async function handleCheckout(request, env) {
     if (!acks || typeof acks[form] !== 'number')
       return json({ error: 'All acknowledgment forms must be completed first.' }, 400);
 
+  // A time off a contractor's own hours (2026-10-17).
+  if (typeof body.advocate === 'string' && body.advocate)
+    return await checkoutAdvocateTime(env, { user, identity, body, method, phone, acks, clientTz });
+
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
@@ -3424,6 +3437,10 @@ async function handleCheckout(request, env) {
   const closedUntil = await readBookingClosure(env);
   if (closedUntil && new Date(slot.data.start).getTime() < closedUntil)
     return json({ error: closedMessage(closedUntil), closedUntil: new Date(closedUntil) }, 409);
+  // THE BUFFER (2026-10-17): no paid appointment inside the hours he keeps
+  // around another (three unless he set otherwise). A read that fails lets it through.
+  if (await slotInsideBuffer(env, { id: slotId, data: slot.data }).catch(() => false))
+    return json({ error: BUFFER_REFUSAL }, 409);
 
   // Hold the slot. The updateTime precondition makes two simultaneous
   // checkouts for the same slot impossible — the loser gets a 409.
@@ -3435,6 +3452,13 @@ async function handleCheckout(request, env) {
     { ifUpdateTime: slot.updateTime, mask: ['state', 'holdExpiresAt', 'heldByUid'] }
   );
   if (!held) return json({ error: 'Someone just grabbed that time. Pick another slot.' }, 409);
+  // Two clients can each hold a time inside the other's buffer; the later hold gives its time back.
+  if (await holdMustYield(env, slotId).catch(() => false)) {
+    await patchDoc(env, `availability/${slotId}`,
+      { state: 'open', holdExpiresAt: null, heldByUid: null },
+      { mask: ['state', 'holdExpiresAt', 'heldByUid'] }).catch(() => {});
+    return json({ error: BUFFER_RACE }, 409);
+  }
 
   // Between the page quoting a number and this button being pressed, someone
   // else can have booked and moved the rate. The browser sends what it
@@ -3492,6 +3516,104 @@ async function handleCheckout(request, env) {
   });
 
   return json({ url: session.url });
+}
+
+const BUFFER_REFUSAL = 'That time is too close to another appointment. Pick another.';
+const BUFFER_RACE = 'Someone just booked a time next to that one. Pick another.';
+
+/**
+ * Checkout for a time off a contractor's own hours (Eric, 2026-10-17: their
+ * available hours are "where clients can see they can be booked"). Nothing
+ * sits on the calendar until someone picks it: the time is checked against
+ * their hours and buffer, a slot is made for it and held, and it goes back if
+ * a neighbour got there first. Made for this client alone (adminCreated), so a
+ * sale that falls through deletes it rather than leaving an open time on his
+ * picker. Their own price, the same card hold, their approval.
+ */
+async function checkoutAdvocateTime(env, o) {
+  const { user, identity, body, method, phone, acks, clientTz } = o;
+  const uid = String(body.advocate);
+  if (!/^[\w-]{1,64}$/.test(uid) || uid === env.ADMIN_UID) return json({ error: 'That calendar is not open for booking.' }, 404);
+  if (body.tier === 'full')
+    return json({ error: 'Full-Service Case Management is added from inside an open case. Book an Advocacy Case first.' }, 400);
+  const start = new Date(typeof body.start === 'string' ? body.start : NaN);
+  if (Number.isNaN(start.getTime())) return json({ error: 'Pick a time.' }, 400);
+  const open = await bookableTimes(env, uid);
+  if (open.error) return json({ error: open.error }, open.code);
+  if (!open.times.some((t) => t.getTime() === start.getTime()))
+    return json({ error: 'That time is no longer available. Pick another.' }, 409);
+
+  const now = new Date();
+  const holdExpiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
+  // Their uid in the id: slot ids are times, and his time is never theirs.
+  const slotId = `${slotIdFor(start)}-${uid}`.slice(0, 64);
+  const fields = {
+    start, durationMin: BOOK_MINUTES, state: 'held', holdExpiresAt, heldByUid: user.uid, heldBySession: null,
+    caseId: null, advocateId: uid, adminCreated: true, fromHours: true,
+  };
+  let took = await patchDoc(env, `availability/${slotId}`, fields, { mustNotExist: true });
+  if (!took) {
+    const cur = await getDoc(env, `availability/${slotId}`);
+    const lapsed = cur && cur.data.state === 'held' && new Date(cur.data.holdExpiresAt) < now;
+    took = lapsed ? await patchDoc(env, `availability/${slotId}`, fields, { ifUpdateTime: cur.updateTime }) : false;
+  }
+  if (!took) return json({ error: 'Someone just took that time. Pick another.' }, 409);
+  const giveBack = () => deleteDoc(env, `availability/${slotId}`).catch(() => {});
+  if (await holdMustYield(env, slotId).catch(() => false)) {
+    await giveBack();
+    return json({ error: BUFFER_RACE }, 409);
+  }
+
+  const live = await ratesForCase(env, { advocateId: uid });
+  const priceCents = live.caseCents;
+  const quoted = Number(body.quotedCents) || 0;
+  if (quoted && quoted !== priceCents) {
+    await giveBack();
+    return json({ error: 'rate-changed', caseCents: priceCents, addonCents: live.addonCents, fullCents: live.fullCents, creditCents: 0 }, 409);
+  }
+  const session = await stripePost(env, '/checkout/sessions', {
+    mode: 'payment',
+    customer_email: identity.email || user.email || undefined,
+    line_items: caseLineItems(priceCents),
+    payment_intent_data: HOLD_INTENT,
+    success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${env.PUBLIC_BASE_URL}/book.html?advocate=${encodeURIComponent(uid)}&canceled=1`,
+    expires_at: Math.floor(holdExpiresAt.getTime() / 1000),
+    metadata: {
+      ...HOLD_META,
+      uid: user.uid,
+      email: identity.email || user.email || '',
+      name: identity.name,
+      dob: identity.dob,
+      tz: clientTz || '',
+      slotId,
+      method,
+      phone: cleanPhone(phone),
+      address: cleanAddress(body.address),
+      acks: JSON.stringify(acks),
+      // The case is theirs (createCaseFromSession reads it first).
+      advocateId: uid,
+    },
+  });
+  await patchDoc(env, `availability/${slotId}`, { heldBySession: session.id }, { mask: ['heldBySession'] });
+  return json({ url: session.url });
+}
+
+/**
+ * GET /api/advocate-times?advocate=<uid>   public
+ * A contractor's bookable times: their hours, less their buffer around every
+ * paid appointment. Their name and the times, nothing else.
+ */
+async function handleAdvocateTimes(env, url) {
+  const got = await bookableTimes(env, url.searchParams.get('advocate') || '', { world: await recentBookingWorld(env) });
+  if (got.error) return json({ error: got.error }, got.code);
+  return json({ name: got.name, durationMin: got.durationMin, times: got.times.map((t) => t.toISOString()) });
+}
+
+/** GET /api/slots/buffered?kind=case|fit   public: which of his open slots his buffer hides right now. */
+async function handleBufferedSlots(env, url) {
+  const kind = url.searchParams.get('kind') === 'fit' ? 'fit' : 'case';
+  return json({ blocked: await bufferedSlotIds(env, kind, { world: await recentBookingWorld(env) }) });
 }
 
 /** What a booking from chat carries to the case it becomes (2026-10-17). */
@@ -9607,6 +9729,9 @@ async function handleFitCall(request, env) {
   const now = new Date();
   const timingProblem = slotTimingProblem(slot.data.start, slot.data.durationMin || FIT_CALL_MIN, now);
   if (timingProblem) return json({ error: timingProblem }, 409);
+  // A free call makes no buffer, but cannot land inside a paid one (Eric, 2026-10-17: "Paid only").
+  if (await slotInsideBuffer(env, { id: body.slotId, data: slot.data }).catch(() => false))
+    return json({ error: 'That time is too close to another appointment. Pick another.' }, 409);
   // Closed books close this door too: the call exists to decide on a case,
   // and while the books are shut there is no case to decide on.
   const closedUntil = await readBookingClosure(env);

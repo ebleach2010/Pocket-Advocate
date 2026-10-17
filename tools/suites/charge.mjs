@@ -229,9 +229,12 @@ const day = 86_400_000;
   const h5 = await runHeld(null);
   // NEGATIVE CONTROL (run 2026-09-07): createCaseFromSession's `if (created && !held) await raiseRates` changed to `if (created) await raiseRates` made this read
   //   FAIL  CH3 the slot checkout, the requested-time checkout and the telehealth checkout hold the card and are flagged as holds, the subscription is neither, the webhook reads a flagged session's intent back before the settlement branch and opens the case or the request only on a standing hold (a hand-captured intent opens it paid, anything else opens nothing), a cancelled intent and a paid case link each have their branch, the case opens with the held record and raises the rate only when paid outright, he is pinged to decide, the mail says the card is held, and the route is registered
-  check('CH3 the slot checkout, the requested-time checkout and the telehealth checkout hold the card and are flagged as holds, the subscription is neither, the webhook reads a flagged session\'s intent back before the settlement branch and opens the case or the request only on a standing hold (a hand-captured intent opens it paid, anything else opens nothing), a cancelled intent and a paid case link each have their branch, the case opens with the held record and raises the rate only when paid outright, he is pinged to decide, the mail says the card is held, and the route is registered',
-    (W.match(/payment_intent_data: HOLD_INTENT,/g) || []).length === 3
-    && (W.match(/\.\.\.HOLD_META,/g) || []).length === 3
+  // RE-PINNED 2026-10-17 (v7.70): a fourth checkout holds the card the same way, a time off a contractor's own hours
+  // (checkoutAdvocateTime). The check names it and counts four.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.70): checkoutAdvocateTime's `payment_intent_data: HOLD_INTENT,` taken out made CH3 read FAIL.
+  check('CH3 the slot checkout, the requested-time checkout, the contractor-hours checkout and the telehealth checkout hold the card and are flagged as holds, the subscription is neither, the webhook reads a flagged session\'s intent back before the settlement branch and opens the case or the request only on a standing hold (a hand-captured intent opens it paid, anything else opens nothing), a cancelled intent and a paid case link each have their branch, the case opens with the held record and raises the rate only when paid outright, he is pinged to decide, the mail says the card is held, and the route is registered',
+    (W.match(/payment_intent_data: HOLD_INTENT,/g) || []).length === 4
+    && (W.match(/\.\.\.HOLD_META,/g) || []).length === 4
     && !!subBlock && !/HOLD_INTENT|HOLD_META/.test(subBlock)
     && /import \{\n\s+HOLD_META, HOLD_INTENT, HOLD_DAYS, HOLD_REMIND_AFTER_DAYS, heldChargeOf,/.test(W)
     && W.indexOf("obj.metadata?.hold === '1' && obj.payment_intent") < W.indexOf("obj.payment_status && obj.payment_status !== 'paid'")
@@ -515,7 +518,9 @@ check('CH8 the ledger reads what was captured, the demo\'s booking opens on a ho
   // NEGATIVE CONTROL (run 2026-10-15, v7.41): the demo's hold put back to `authorizedCents: 120000` made this read
   //   FAIL  CH8 the ledger reads what was captured, ...
   && /charge: \{\n\s+state: 'held', kind: 'case', authorizedCents: liveCase, capturedCents: 0,\n\s+paymentIntentId: 'pi_demo_booked', sessionId: 'cs_demo_booked',/.test(DEMO)
-  && /const liveCase = Number\(\(store\.docs\.get\('config\/rates'\) \|\| \{\}\)\.caseCents\) \|\| 210000;/.test(DEMO)
+  // RE-PINNED 2026-10-17 (v7.70): a booking off a contractor's own hours holds their price, everyone else's still his.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.70): the demo's liveCase put back to his price alone (`const liveCase = Number(...`) made CH8 read FAIL.
+  && /const liveCase = \(advUid && Number\(demoContractor\(advUid\)\?\.settings\?\.rates\?\.caseCents\)\) \|\| Number\(\(store\.docs\.get\('config\/rates'\) \|\| \{\}\)\.caseCents\) \|\| 210000;/.test(DEMO)
   && /if \(path === '\/api\/admin\/case-charge'\) \{/.test(DEMO)
   && /if \(ch\.state === 'held' && amount > cap\)\n\s+return fail\(400,/.test(DEMO)
   && /\? \{ \.\.\.ch, state: 'comped', capturedCents: 0, decidedAt: now, releasedAt: now, ratedAt: now \}/.test(DEMO)

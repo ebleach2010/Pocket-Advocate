@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.69';
+export const VERSION = '7.70';
 
 /**
  * Newest first.
@@ -51,6 +51,23 @@ export const VERSION = '7.69';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // BOOKABLE HOURS AND A BUFFER (Eric, 2026-10-17: "Available hours. This is
+    // where clients can see they can be booked", then "a scheduled time
+    // automatically blocks off 3 hours before and after around the
+    // appointment. This is baseline for everyone. But can be adjusted per
+    // contractor in employer mode."). Admin only.
+    version: '7.70',
+    quiet: true,
+    client: [],
+    admin: [
+      'A team member\'s available hours are now the times their clients can book them, from their own booking link at their own price.',
+      'Their link is on their Available hours page in Employer mode, and in their own settings.',
+      'Every paid appointment keeps 3 hours clear before and after it, yours included. Change it on anyone\'s card in Employer mode, yours too.',
+      'Free calls make no buffer, but cannot be booked inside one.',
+      'Scheduling a client yourself is not held to the buffer.',
+    ],
+  },
   {
     // HOLD A LEAD TO DELETE OR BLOCK (Eric, 2026-10-17: "I should be able to
     // hold to delete/block leads"). Admin only.

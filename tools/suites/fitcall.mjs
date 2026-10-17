@@ -136,6 +136,8 @@ const deps = {
   sendEmail: async (env, msg) => { emails.push(msg); return true; },
   requireAdmin: async () => (adminOk ? { uid: 'eric' } : null),
   slotTimingProblem, windowProblem, LEAD_TIME_HOURS,
+  // The buffer (2026-10-17) is bookable.mjs's to prove; here no paid appointment is near.
+  slotInsideBuffer: async () => false,
   crypto: webcrypto,
 };
 const build = new Function(

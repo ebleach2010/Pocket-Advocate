@@ -59,6 +59,13 @@ async function loadSlots() {
     if (start.getTime() >= cutoff && start.getTime() <= horizon)
       slots.push({ id: d.id, start, durationMin: data.durationMin || 15 });
   });
+  // Inside his buffer around a paid appointment (2026-10-17): a free call makes
+  // none, but cannot land in one. The Worker refuses one anyway.
+  try {
+    const r = await fetch('/api/slots/buffered?kind=fit');
+    const blocked = r.ok ? (await r.json()).blocked || [] : [];
+    if (blocked.length) return slots.filter((s) => !blocked.includes(s.id)).sort((a, b) => a.start - b.start);
+  } catch { /* the Worker still refuses a time inside the buffer */ }
   slots.sort((a, b) => a.start - b.start);
   return slots;
 }

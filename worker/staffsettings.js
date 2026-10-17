@@ -33,6 +33,27 @@ export const STAFF_RATE_MAX_CENTS = 2_000_000;
 export const STAFF_RATE_KEYS = ['caseCents', 'addonCents', 'fullCents'];
 const LINE_MAX = 160;
 
+// THE BUFFER (Eric, 2026-10-17: "A scheduled time automatically blocks off 3
+// hours before and after around the appointment. This is baseline for
+// everyone. But can be adjusted per contractor in employer mode."). On the
+// record itself (advocates/{uid}.bufferHours), his own included; worker/booking.js applies it.
+export const DEFAULT_BUFFER_HOURS = 3;
+export const BUFFER_MAX_HOURS = 12;
+/** The buffer on an advocate's record, in hours: 0 to 12 in half hours, 3 when never set. */
+export function bufferHoursOf(record) {
+  const v = record?.bufferHours;
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= BUFFER_MAX_HOURS && Math.round(v * 2) === v * 2
+    ? v : DEFAULT_BUFFER_HOURS;
+}
+
+/** A buffer as typed, checked: { value } or { error }. */
+export function cleanBufferHours(input) {
+  const v = typeof input === 'string' && input.trim() !== '' ? Number(input) : input;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > BUFFER_MAX_HOURS || Math.round(v * 2) !== v * 2)
+    return { error: `The buffer is hours, from 0 to ${BUFFER_MAX_HOURS}, in half hours.` };
+  return { value: v };
+}
+
 /** The settings off a record, cleaned the same way on every read. */
 export function settingsFrom(record) {
   const s = record?.settings || {};
@@ -224,5 +245,8 @@ export async function handleStaffSettings(request, env, h) {
     hours: mine.hours,
     tz: rec?.data?.tz || 'America/Boise',
     offers: mine.offers,
+    // Their hours are bookable (2026-10-17): the link their clients book from, and the buffer he set around each paid appointment.
+    bookingPath: `/book.html?advocate=${encodeURIComponent(staff.uid)}`,
+    bufferHours: bufferHoursOf(rec?.data),
   });
 }

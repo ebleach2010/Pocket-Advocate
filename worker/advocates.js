@@ -21,7 +21,7 @@
 
 import { getDoc, patchDoc, deleteDoc, queryDocs, listDocs } from './firestore.js';
 import { addonsOf, cleanAddons } from './addons.js';
-import { cleanSettingsChange, settingsFrom, nest } from './staffsettings.js';
+import { cleanSettingsChange, settingsFrom, nest, bufferHoursOf, cleanBufferHours } from './staffsettings.js';
 import { cleanPayout, sealPayout, PAYOUT_METHODS } from './payroll.js';
 import { putFile, deleteFile, mediaFetch } from './storage.js';
 import { sendEmail } from './email.js';
@@ -130,6 +130,13 @@ function cleanSetup(body, { creating, owner = false }) {
     if (creating) out.settings = nest(got.patch).settings;
     else { out.settingsPatch = got.patch; out.settingsMask = got.mask; }
   }
+  // The buffer around their paid appointments (Eric, 2026-10-17: "baseline for
+  // everyone. But can be adjusted per contractor in employer mode"), his own included.
+  if (body.bufferHours !== undefined && body.bufferHours !== null && body.bufferHours !== '') {
+    const got = cleanBufferHours(body.bufferHours);
+    if (got.error) return { error: got.error };
+    out.bufferHours = got.value;
+  }
   if (body.payout && body.payout.method) {
     if (owner) return { error: 'You are not on the payroll.' };
     const got = cleanPayout(body.payout);
@@ -198,6 +205,7 @@ async function adminAdvocates(request, env, h) {
       credentials: extra.profile.credentials ?? '', bio: extra.profile.bio ?? '', headshotPath: null,
       acceptingNew: true, tz: extra.profile.tz || 'America/Boise',
       ...(extra.settings ? { settings: { ...extra.settings, updatedAt: now } } : {}),
+      ...(extra.bufferHours !== undefined ? { bufferHours: extra.bufferHours } : {}),
       addons: addons.value,
       advisor: { optedIn: false, enabled: false },
       createdAt: now, createdBy: admin.uid, onboardedAt: null,
@@ -223,6 +231,7 @@ async function adminAdvocates(request, env, h) {
     const p = await getDoc(env, `payouts/${uid}`).catch(() => null);
     return h.json({
       advocate: advocateView(uid, a), addons: addonsOf(a, { owner: a.owner === true }), settings: settingsFrom(a),
+      bufferHours: bufferHoursOf(a),
       payout: p?.data?.method ? { method: p.data.method, label: PAYOUT_METHODS[p.data.method] || '', hint: p.data.hint || '' } : null,
       methods: PAYOUT_METHODS, zones: STAFF_ZONES, specialties: SPECIALTIES,
     });
@@ -283,6 +292,7 @@ async function adminAdvocates(request, env, h) {
       patch.settings = { ...nest(extra.settingsPatch).settings, updatedAt: new Date() };
       mask.push(...extra.settingsMask, 'settings.updatedAt');
     }
+    if (extra.bufferHours !== undefined) { patch.bufferHours = extra.bufferHours; mask.push('bufferHours'); }
     // Paid access only for someone who asked for it (Eric: "Admin should not
     // enable paid Advisor access unless the advocate opted in.").
     if ('advisorEnabled' in body) {

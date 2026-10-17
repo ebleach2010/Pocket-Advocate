@@ -193,6 +193,48 @@ export function demoApi(role, store) {
     const rec = store.docs.get(`advocates/${uid}`);
     return rec && rec.active === true && rec.owner !== true ? rec : null;
   };
+  // BOOKABLE HOURS AND THE BUFFER (2026-10-17), as worker/booking.js: a
+  // contractor's hours become their open times, and no paid appointment sits
+  // inside an advocate's buffer (3 hours unless set) of another. Free calls make none.
+  const demoBuffer = (rec) => { const v = rec?.bufferHours; return typeof v === 'number' && v >= 0 && v <= 12 && Math.round(v * 2) === v * 2 ? v : 3; };
+  const demoMs = (v) => { const t = v?.toDate ? v.toDate().getTime() : new Date(v || 0).getTime(); return Number.isFinite(t) ? t : 0; };
+  const whoseDemo = (d) => (typeof d?.advocateId === 'string' && d.advocateId) || 'demo-admin';
+  const demoPaid = (uid) => {
+    const out = [];
+    const now = Date.now();
+    for (const [k, d] of store.docs.entries()) {
+      const [coll, id, more] = k.split('/');
+      if (more || !d || whoseDemo(d) !== uid) continue;
+      if (coll === 'availability' && d.kind !== 'fit' && (d.state === 'booked' || (d.state === 'held' && demoMs(d.holdExpiresAt) > now))) {
+        const a = demoMs(d.start); if (a) out.push({ a, b: a + (Number(d.durationMin) || 60) * 60_000, id: `slot:${id}` });
+      } else if (coll === 'invites' && d.state === 'sent') {
+        const a = demoMs(d.start); if (a) out.push({ a, b: a + 3_600_000, id: `invite:${id}` });
+      } else if (coll === 'cases' && d.status !== 'closed' && !d.self && !d.showcase && d.appointment && !d.appointment.requested) {
+        const a = demoMs(d.appointment.start); if (a) out.push({ a, b: a + (Number(d.appointment.durationMin) || 60) * 60_000, id: `case:${id}` });
+      }
+    }
+    return out;
+  };
+  const inDemoBuffer = (list, bufMs, s, e, except = '') => list.some((x) => x.id !== except && s < x.b + bufMs && e > x.a - bufMs);
+  const demoTimes = (uid) => {
+    const rec = demoContractor(uid);
+    const hours = rec?.settings?.hours;
+    if (!rec || rec.settings?.offers?.case === false || !hours) return null;
+    const f = new Intl.DateTimeFormat('en-US', { timeZone: rec.tz || 'America/Boise', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    const toMin = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+    const paid = demoPaid(uid);
+    const buf = demoBuffer(rec) * 3_600_000;
+    const now = Date.now();
+    const out = [];
+    for (let t = Math.ceil((now + 72 * 3_600_000) / 900_000) * 900_000; t <= now + 252 * 3_600_000; t += 900_000) {
+      const p = Object.fromEntries(f.formatToParts(new Date(t)).map((x) => [x.type, x.value]));
+      const min = (Number(p.hour) % 24) * 60 + Number(p.minute);
+      const span = hours[String(p.weekday).slice(0, 3).toLowerCase()];
+      if (min % 30 || !span || min < toMin(span.from) || min + 60 > toMin(span.to)) continue;
+      if (!inDemoBuffer(paid, buf, t, t + 3_600_000)) out.push(new Date(t).toISOString());
+    }
+    return { name: rec.name || '', times: out };
+  };
 
   window.fetch = async (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url || '';
@@ -248,6 +290,25 @@ export function demoApi(role, store) {
         store.persist?.();
       }
       return ok({ landingWarm: store.docs.get('config/look')?.landingWarm !== false });
+    }
+    // A contractor's open times, and his open slots inside his buffer (2026-10-17).
+    if (path === '/api/advocate-times') {
+      const got = demoTimes(q.get('advocate'));
+      if (!got) return fail(404, 'That calendar is not open for booking.');
+      return ok({ name: got.name, durationMin: 60, times: got.times });
+    }
+    if (path === '/api/slots/buffered') {
+      const fit = q.get('kind') === 'fit';
+      const paid = demoPaid('demo-admin');
+      const buf = demoBuffer(store.docs.get('advocates/demo-admin')) * 3_600_000;
+      const blocked = [];
+      for (const [k, d] of store.docs.entries()) {
+        const [coll, id, more] = k.split('/');
+        if (coll !== 'availability' || more || !d || d.state !== 'open' || whoseDemo(d) !== 'demo-admin' || (d.kind === 'fit') !== fit) continue;
+        const a = demoMs(d.start);
+        if (a && inDemoBuffer(paid, buf, a, a + (Number(d.durationMin) || (fit ? 15 : 60)) * 60_000, `slot:${id}`)) blocked.push(id);
+      }
+      return ok({ blocked });
     }
     if (path === '/api/rates' || path === '/api/admin/rates') {
       const SEEDS = { caseCents: 210000, addonCents: 32500, subCents: 5000, fullCents: 440000, floorCents: 7500 };
@@ -1729,21 +1790,30 @@ export function demoApi(role, store) {
         if (body.tier === 'full')
           return fail(400, 'Full-Service Case Management is added from inside an open case now. '
             + 'Book an Advocacy Case, then add it from your case page.');
+        // A time off a contractor's own hours (2026-10-17): checked against their hours and buffer.
+        const advUid = typeof body.advocate === 'string' && body.advocate ? body.advocate : '';
+        if (advUid) {
+          const got = demoTimes(advUid);
+          if (!got) return fail(404, 'That calendar is not open for booking.');
+          const want = new Date(typeof body.start === 'string' ? body.start : NaN);
+          if (Number.isNaN(want.getTime()) || !got.times.includes(want.toISOString())) return fail(409, 'That time is no longer available. Pick another.');
+        }
         const profile = store.docs.get('users/demo-client') || {};
-        const slot = body.slotId ? store.docs.get(`availability/${body.slotId}`) : null;
+        const slot = body.slotId && !advUid ? store.docs.get(`availability/${body.slotId}`) : null;
         // The Worker refuses a slot taken out from under the buyer; a stale
         // tab re-paying here must not silently re-point a booked one.
         if (body.slotId && slot && slot.state !== 'open')
           return fail(409, 'That time was just taken. Pick another.');
-        const isRequest = !body.slotId && !!body.requestedStart;
-        const start = isRequest ? new Date(body.requestedStart)
+        const isRequest = !advUid && !body.slotId && !!body.requestedStart;
+        const start = advUid ? new Date(body.start) : isRequest ? new Date(body.requestedStart)
           : slot ? new Date(slot.start) : new Date();
         const now = new Date();
         const id = 'demo-case-booked';
         // The case price as the demo's settings hold it (2026-10-15), the
         // number the payment step quoted.
-        const liveCase = Number((store.docs.get('config/rates') || {}).caseCents) || 210000;
+        const liveCase = (advUid && Number(demoContractor(advUid)?.settings?.rates?.caseCents)) || Number((store.docs.get('config/rates') || {}).caseCents) || 210000;
         store.docs.set(`cases/${id}`, {
+          ...(advUid ? { advocateId: advUid } : {}),
           clientUid: 'demo-client',
           clientEmail: profile.email || 'jordan@example.demo',
           clientName: profile.name || 'Jordan Avery',
@@ -1783,6 +1853,10 @@ export function demoApi(role, store) {
           work: { seconds: 0, startedAt: null },
         });
         if (slot) store.docs.set(`availability/${body.slotId}`, { ...slot, state: 'booked', caseId: id });
+        if (advUid) {
+          const sid = `${start.toISOString().replace(/[:.]/g, '-').replace('T', '_').slice(0, 16)}-${advUid}`.slice(0, 64);
+          store.docs.set(`availability/${sid}`, { start, durationMin: 60, state: 'booked', caseId: id, advocateId: advUid, adminCreated: true, fromHours: true });
+        }
                 store.fire?.(`cases/${id}`);
         return ok({ ok: true, url: '/return.html?session_id=cs_demo_booked' });
       }
@@ -3136,6 +3210,7 @@ export function demoApi(role, store) {
         office: { inOffice: manual ? manual === 'in' : scheduled, scheduled, manual, responseTime: set.office.responseTime || null },
         rates, standard: { caseCents: std.caseCents, addonCents: std.addonCents, fullCents: std.fullCents }, fullCap: set.fullCap,
         hours: set.hours || null, tz: rec.tz || 'America/Boise', offers: { case: set.offers?.case !== false, full: set.offers?.full !== false },
+        bookingPath: `/book.html?advocate=${encodeURIComponent(me)}`, bufferHours: demoBuffer(rec),
       });
     }
     if (path === '/api/staff/payout') {
@@ -3311,6 +3386,7 @@ export function demoApi(role, store) {
           primarySpecialty: String(pr.primarySpecialty || ''), specialties: pr.primarySpecialty ? [String(pr.primarySpecialty)] : [],
           credentials: String(pr.credentials || '').trim().slice(0, 200), bio: String(pr.bio || '').trim().slice(0, 1500), headshotPath: null,
           acceptingNew: true, tz: ZONES.includes(pr.tz) ? pr.tz : 'America/Boise', settings: set.value, addons: ad.value,
+          ...(Number.isFinite(Number(body.bufferHours)) && body.bufferHours !== '' && body.bufferHours !== null ? { bufferHours: Math.min(12, Math.max(0, Math.round(Number(body.bufferHours) * 2) / 2)) } : {}),
           advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true,
         });
         store.docs.set(`users/${uid}`, { email, name, role: 'advocate' });
@@ -3327,6 +3403,7 @@ export function demoApi(role, store) {
         return ok({
           advocate: advView(uid, a), addons: demoAddons(uid),
           settings: { rates: s.rates || {}, fullCap: s.fullCap ?? null, offers: { case: s.offers?.case !== false, full: s.offers?.full !== false }, hours: s.hours || null, office: { responseTime: s.office?.responseTime || null } },
+          bufferHours: demoBuffer(a),
           payout: p?.method ? { method: p.method, label: PAY_METHODS[p.method] || '', hint: p.hint || '' } : null,
           methods: PAY_METHODS, zones: ZONES, specialties: SPECIALTIES,
         });
@@ -3353,6 +3430,12 @@ export function demoApi(role, store) {
         if ('addons' in body) { const ad = cleanDemoAddons(body.addons); if (ad.error) return fail(400, ad.error); next.addons = ad.value; }
         if ('primarySpecialty' in body) next.primarySpecialty = String(body.primarySpecialty || '');
         if ('tz' in body && ZONES.includes(body.tz)) next.tz = body.tz;
+        // The buffer (2026-10-17), his own card included.
+        if (body.bufferHours !== undefined && body.bufferHours !== null && body.bufferHours !== '') {
+          const b = Number(body.bufferHours);
+          if (!Number.isFinite(b) || b < 0 || b > 12 || Math.round(b * 2) !== b * 2) return fail(400, 'The buffer is hours, from 0 to 12, in half hours.');
+          next.bufferHours = b;
+        }
         if (body.settings && Object.keys(body.settings).length) {
           if (a.owner) return fail(400, 'Your own prices and hours are in your settings.');
           const set = demoSettings(body.settings, a.settings || {});

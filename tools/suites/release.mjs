@@ -222,6 +222,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // delete or block, what each does, and the blocked list.
   // NEGATIVE CONTROL (run 2026-10-17, v7.69): changelog.js's VERSION left at '7.68' made this read
   //   FAIL  R1 both versions read 7.69 with the new tag, the 7.69 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.70): both versions read 7.70 with the bookable-hours tag, and the 7.70 entry says their
+  // hours are bookable from their link, the buffer and where it is set, and free calls.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.70): the worker's BUILD_TAG left at the hold-leads tag made this read
+  //   FAIL  R1 both versions read 7.70 with the new tag, the 7.70 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry770 = (CL.match(/\{\n\s+\/\/ BOOKABLE HOURS AND A BUFFER \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry769 = (CL.match(/\{\n\s+\/\/ HOLD A LEAD TO DELETE OR BLOCK \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry768 = (CL.match(/\{\n\s+\/\/ ADD AN ADVOCATE, PAGE BY PAGE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry767 = (CL.match(/\{\n\s+\/\/ HIS NAME, AND A LEAD'S MESSAGES BESIDE THEM \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
@@ -301,9 +306,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.69 with the new tag, the 7.69 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.69';/.test(CL) && /const VERSION = '7\.69';/.test(W) && /const BUILD_TAG = 'v2026-10-17-hold-leads';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.69'
+  check('R1 both versions read 7.70 with the new tag, the 7.70 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.70';/.test(CL) && /const VERSION = '7\.70';/.test(W) && /const BUILD_TAG = 'v2026-10-17-bookable-hours';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.70'
+    && /version: '7\.70',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry770)
+    && /available hours are now the times their clients can book them/.test(entry770) && /Free calls make no buffer, but cannot be booked inside one\./.test(entry770)
+    && !DASH.test(entry770) && !HARD.some((re) => re.test(entry770))
     && /version: '7\.69',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry769)
     && /Hold a card on Leads to delete or block that person\./.test(entry769) && /each with Unblock\./.test(entry769)
     && !DASH.test(entry769) && !HARD.some((re) => re.test(entry769))

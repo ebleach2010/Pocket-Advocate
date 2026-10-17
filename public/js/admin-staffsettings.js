@@ -34,9 +34,10 @@ export function staffSettingsHtml() {
     <p class="dim small" data-sso-said style="margin:.45rem 0 0;">Reading your settings…</p>
 
     <h4 style="margin:1.2rem 0 .1rem;">Your available hours</h4>
-    <p class="dim small" style="margin:0 0 .5rem;">Your In office light follows
-      these, on your own clock (2026-10-17). With none set it follows Monday to
-      Thursday, 8am to 7pm Mountain.</p>
+    <p class="dim small" style="margin:0 0 .5rem;">The times your clients can book
+      you, on your own clock, and your In office light follows them (2026-10-17).
+      With none set, nobody can book you from your link, and the light follows
+      Monday to Thursday, 8am to 7pm Mountain.</p>
     <div data-ssh style="display:grid; gap:.45rem;">
       ${DAYS.map(([d, name]) => `
       <div style="display:grid; grid-template-columns:7.5rem minmax(0,1fr); align-items:center; gap:.5rem;">
@@ -46,6 +47,9 @@ export function staffSettingsHtml() {
     </div>
     <button class="btn tiny" data-ssh-save disabled style="margin-top:.4rem; min-height:44px;">Save hours</button>
     <p class="dim small" data-ssh-said style="margin:.45rem 0 0;"></p>
+    <p class="dim small" data-ssh-buffer style="margin:.45rem 0 0;"></p>
+    <p class="small" data-ssh-link hidden style="margin:.45rem 0 0; overflow-wrap:anywhere;">Your booking link: <a data-ssh-href target="_blank" rel="noopener"></a>
+      <button class="btn tiny" type="button" data-ssh-copy style="min-height:44px;">Copy</button></p>
 
     <h4 style="margin:1.2rem 0 .1rem;">Your prices</h4>
     <p class="dim small" style="margin:0 0 .5rem;">For your own clients, live the
@@ -113,6 +117,16 @@ export function wireStaffSettings(overlay, user) {
       }
     }
     q('[data-ssh-save]').disabled = false;
+    // Their calendar (2026-10-17): the link their clients book from, and the buffer Eric keeps around each paid appointment.
+    const buf = s.bufferHours ?? 3;
+    q('[data-ssh-buffer]').textContent = `Nothing paid can be booked within ${buf} hour${buf === 1 ? '' : 's'} before or after another paid appointment of yours. Eric sets this.`;
+    if (s.bookingPath) {
+      const url = `${location.origin}${s.bookingPath}`;
+      const a = q('[data-ssh-href]');
+      a.href = s.bookingPath;
+      a.textContent = url;
+      q('[data-ssh-link]').hidden = false;
+    }
     line.value = s.office?.responseTime || '';
     line.disabled = false;
     q('[data-sso-line-save]').disabled = false;
@@ -158,6 +172,10 @@ export function wireStaffSettings(overlay, user) {
   qa('[data-ssh-day]').forEach((box) => box.addEventListener('change', () => {
     for (const k of ['from', 'to']) q(`[data-ssh-${k}="${box.dataset.sshDay}"]`).disabled = !box.checked;
   }));
+  q('[data-ssh-copy]').addEventListener('click', async () => {
+    const b = q('[data-ssh-copy]');
+    try { await navigator.clipboard.writeText(q('[data-ssh-href]').textContent); b.textContent = 'Copied'; } catch { b.textContent = 'Hold the link to copy it'; }
+  });
   q('[data-ssh-save]').addEventListener('click', async () => {
     const hours = {};
     for (const [d, name] of DAYS) {
