@@ -949,7 +949,7 @@ async function warmLook(env, res) {
   // Only a page that wears landing.css gets the warm sheet, right after it.
   return new HTMLRewriter()
     .on('link[rel="stylesheet"][href^="/css/landing.css"]', {
-      element(el) { el.after('<link rel="stylesheet" href="/css/landing-warm.css?v=2">', { html: true }); },
+      element(el) { el.after('<link rel="stylesheet" href="/css/landing-warm.css?v=3">', { html: true }); },
     })
     .transform(res);
 }
@@ -2466,7 +2466,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-month-end';
+const BUILD_TAG = 'v2026-10-17-color-wheel';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2474,7 +2474,7 @@ const BUILD_TAG = 'v2026-10-17-month-end';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.63';
+const VERSION = '7.64';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you

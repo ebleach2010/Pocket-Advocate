@@ -121,7 +121,7 @@ console.log('\n--- A. the real site ---');
   //   FAIL  A10 the warm look's services card and the preview's Exit are warm, and each card's title and price share a row
   check('A10 the warm look\'s services card and the preview\'s Exit are warm, and each card\'s title and price share a row',
     WARM.includes(`${W} .pack#chat { background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box;`)
-    && WARM.includes(`${W} .pack#chat .pack-cta {`) && /\/css\/warm\.css\?v=3/.test(SERV)
+    && WARM.includes(`${W} .pack#chat .pack-cta {`) && /\/css\/warm\.css\?v=4/.test(SERV) /* RE-PINNED 2026-10-17 (v7.64): ?v=4, the sheet ends in the color wheel's block; the `.pack#chat` control re-run and read FAIL. */
     && /<style>\.pack > :is\(\.eyebrow, \.pa-off-badge, \.pack-cta\) \{ grid-column: 1 \/ -1; \}<\/style>/.test(SERV)
     && BAR.includes(`${W.replace('):not([data-look="cool"])', ')').replace(':root:not([data-scheme="contrast"])', ':root:not([data-look="cool"]):not([data-scheme="contrast"])')} .pv-exit {`)
     && /animation-name: pv-glow-warm;/.test(BAR));

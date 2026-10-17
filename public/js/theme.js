@@ -67,22 +67,64 @@ export function currentLook() {
   try { return localStorage.getItem(LOOK_KEY) === 'cool' ? 'cool' : 'warm'; } catch { return 'warm'; }
 }
 
-/** What Settings offers: the two looks, and High contrast for somebody's eyes. */
+/**
+ * What Settings offers (Eric, 2026-10-17: "Keep the whole color scheme and
+ * gradient, but allow it to be adjusted via a color wheel in settings ...
+ * Include black, though, which just makes things black background white text
+ * for simplicity and those with eye sensitivity"): the warm look, turned to
+ * any colour on the wheel, or Black. Blue and purple is a turn of the wheel
+ * now; a device that chose it keeps it until it chooses again.
+ */
 export const APPEARANCES = [
-  { id: 'warm', label: 'Warm', blurb: 'Plum, peach and rose. The standard look.' },
-  { id: 'cool', label: 'Blue and purple', blurb: 'Black, with the cyan and violet glow.' },
-  { id: 'contrast', label: 'High contrast', blurb: 'Maximum legibility.' },
+  { id: 'warm', label: 'Colour', blurb: 'Turn the wheel to colour the whole look. The gradient comes along.' },
+  { id: 'contrast', label: 'Black', blurb: 'Black background, white text. Easiest on sensitive eyes.' },
 ];
+
+// THE COLOR WHEEL. A turn of the warm look round the wheel, in degrees: 0 is
+// the warm look itself. warm.css and landing-warm.css end in rules that
+// tools/build-hue.mjs makes from their own colours, live only while <html
+// data-hue> is set, which the head snippet on every page does before paint.
+const HUE_KEY = 'pa-hue';
+// Where the warm look's accent (#FFB27A) sits on the wheel, in oklch degrees.
+export const WARM_HUE = 56;
+
+export function currentHue() {
+  try { const n = parseInt(localStorage.getItem(HUE_KEY), 10); return n > 0 && n < 360 ? n : 0; } catch { return 0; }
+}
+
+function paintHue(turn) {
+  const root = document.documentElement;
+  if (turn) { root.dataset.hue = String(turn); root.style.setProperty('--pa-hue', String(turn)); }
+  else { delete root.dataset.hue; root.style.removeProperty('--pa-hue'); }
+}
+
+/** The warm look turned `turn` degrees round the wheel (0 is the warm look), and out of Black. */
+export function applyHue(turn) {
+  const n = ((Math.round(Number(turn) || 0) % 360) + 360) % 360;
+  try {
+    if (n) localStorage.setItem(HUE_KEY, String(n)); else localStorage.removeItem(HUE_KEY);
+    localStorage.removeItem(LOOK_KEY);
+  } catch { /* storage blocked: it still applies for this visit */ }
+  delete document.documentElement.dataset.look;
+  paintHue(n);
+  applyScheme('calm');
+}
+
+/** The turn that puts the look's accent at this hue on the wheel. */
+export const turnFor = (hue) => (((Math.round(hue) - WARM_HUE) % 360) + 360) % 360;
 
 export function currentAppearance() {
   return currentScheme() === 'contrast' ? 'contrast' : currentLook();
 }
 
 export function applyAppearance(id) {
-  if (id === 'contrast') { applyScheme('contrast'); return; }
+  // Black is black: no colour turned into it.
+  if (id === 'contrast') { paintHue(0); applyScheme('contrast'); return; }
   if (id !== 'warm' && id !== 'cool') return;
   try { localStorage.setItem(LOOK_KEY, id); } catch { /* storage blocked */ }
   if (id === 'cool') document.documentElement.dataset.look = 'cool';
   else delete document.documentElement.dataset.look;
+  // Out of Black, back to the colour this device turned the wheel to.
+  paintHue(id === 'warm' ? currentHue() : 0);
   applyScheme('calm');
 }

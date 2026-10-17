@@ -2,7 +2,7 @@
 // Injected into the top nav for any signed-in user.
 import { enablePush } from './push.js';
 import { db, doc, getDoc, setDoc } from './firebase.js';
-import { APPEARANCES, currentAppearance, applyAppearance } from './theme.js';
+import { currentAppearance, applyAppearance, applyHue, currentHue, turnFor, WARM_HUE } from './theme.js';
 import { barActs } from './nav-menu.js';
 
 export function initSettings(user, isAdmin = false, isContractor = false) {
@@ -33,7 +33,7 @@ function openPanel(user, isAdmin = false, isContractor = false) {
     window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
   const needsInstall = isIOS && !standalone;
 
-  // Warm, Blue and purple, or High contrast (2026-10-16).
+  // The color wheel over the warm look, or Black (2026-10-17).
   const scheme = currentAppearance();
   const overlay = document.createElement('div');
   overlay.id = 'pa-settings';
@@ -57,15 +57,22 @@ function openPanel(user, isAdmin = false, isContractor = false) {
 
       <h4 style="margin:1.2rem 0 .1rem;">Appearance</h4>
       <p class="dim small" style="margin:0 0 .5rem;">Applies on this device, right away.</p>
-      <div class="scheme-grid" data-schemes>
-        ${APPEARANCES.map((x) => `
-          <button class="scheme-swatch${x.id === scheme ? ' on' : ''}" data-scheme="${x.id}"
-            aria-pressed="${x.id === scheme}">
-            <span class="scheme-chip sc-${x.id}" aria-hidden="true"><i></i><i></i><i></i></span>
-            <span class="scheme-name">${x.label}</span>
-            <span class="scheme-blurb dim small">${x.blurb}</span>
-          </button>`).join('')}
+      <div class="hue-pick${scheme === 'contrast' ? ' is-off' : ''}" data-hue-pick>
+        <div class="hue-wheel" data-hue-wheel role="slider" tabindex="0" aria-label="Colour"
+          aria-valuemin="0" aria-valuemax="359" aria-valuenow="${(WARM_HUE + currentHue()) % 360}">
+          <span class="hue-ring" aria-hidden="true"></span>
+          <span class="hue-core" aria-hidden="true"></span>
+          <span class="hue-knob" data-hue-knob aria-hidden="true"></span>
+        </div>
+        <div class="hue-side">
+          <p style="margin:0;"><strong>Colour</strong><br><span class="dim small">Turn the wheel to colour the whole look. The gradient comes along.</span></p>
+        </div>
+        <button type="button" class="btn quiet hue-reset" data-hue-reset>Back to the warm look</button>
       </div>
+      <button type="button" class="scheme-swatch hue-black${scheme === 'contrast' ? ' on' : ''}" data-black aria-pressed="${scheme === 'contrast'}">
+        <span class="scheme-name">Black</span>
+        <span class="scheme-blurb dim small">Black background, white text. Easiest on sensitive eyes.</span>
+      </button>
       ${isAdmin ? '<div data-admin-rows></div>' : isContractor ? '<div data-staff-rows></div>' : ''}
     </div>`;
   document.body.appendChild(overlay);
@@ -102,18 +109,11 @@ function openPanel(user, isAdmin = false, isContractor = false) {
     testBtn.disabled = false;
   });
 
-  // Applies immediately, so he sees the change rather than imagining it. The
-  // swatches are painted from real scheme tokens, so a swatch cannot drift out
-  // of sync with what the scheme actually looks like.
-  overlay.querySelectorAll('[data-scheme]').forEach((b) =>
-    b.addEventListener('click', () => {
-      applyAppearance(b.dataset.scheme);
-      overlay.querySelectorAll('[data-scheme]').forEach((x) => {
-        const on = x === b;
-        x.classList.toggle('on', on);
-        x.setAttribute('aria-pressed', String(on));
-      });
-    }));
+  // THE COLOR WHEEL (Eric, 2026-10-17: "Keep the whole color scheme and
+  // gradient, but allow it to be adjusted via a color wheel in settings").
+  // Applies as the finger moves, so he sees the change rather than imagining
+  // it; Black sits beside it and a turn of the wheel takes it off again.
+  wireHueWheel(overlay);
 
   // The advocate's own rows come from a module a client is never served. A
   // dynamic import, so the request only happens for him: this file is public,
@@ -164,4 +164,82 @@ async function disablePush(user) {
   } catch (e) {
     console.warn('disable push', e);
   }
+}
+
+// The wheel's look, once: a ring of colour round the look's own gradient, and
+// a knob where the look's accent sits.
+const HUE_CSS = `
+  .hue-pick { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: .9rem; align-items: center; margin: .2rem 0 .7rem; }
+  .hue-pick.is-off .hue-wheel { opacity: .45; }
+  .hue-wheel { position: relative; width: 9.5rem; aspect-ratio: 1; border-radius: 50%; cursor: pointer; touch-action: none; }
+  .hue-ring { position: absolute; inset: 0; border-radius: 50%;
+    background: conic-gradient(${Array.from({ length: 13 }, (_, i) => `oklch(.78 .13 ${i * 30})`).join(', ')});
+    -webkit-mask: radial-gradient(circle, transparent 60%, #000 61%); mask: radial-gradient(circle, transparent 60%, #000 61%); }
+  .hue-core { position: absolute; inset: 27%; border-radius: 50%; background: var(--warm-pop, var(--cyan)); box-shadow: var(--glow-c); }
+  .hue-knob { position: absolute; top: 50%; left: 50%; width: 1.5rem; height: 1.5rem; margin: -.75rem 0 0 -.75rem; border-radius: 50%;
+    border: 3px solid #FFFFFF; box-shadow: 0 0 0 1px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .5); pointer-events: none; }
+  .hue-wheel:focus-visible { outline: 2px solid var(--cyan); outline-offset: 4px; }
+  .hue-side { display: grid; gap: .5rem; justify-items: start; }
+  .hue-reset { grid-column: 1 / -1; justify-self: start; }
+  .hue-black { width: 100%; text-align: left; }
+  @media (max-width: 360px) { .hue-pick { grid-template-columns: 1fr; justify-items: center; } }`;
+
+function wireHueWheel(root) {
+  if (!document.getElementById('pa-hue-css')) {
+    const st = document.createElement('style');
+    st.id = 'pa-hue-css';
+    st.textContent = HUE_CSS;
+    document.head.appendChild(st);
+  }
+  const pick = root.querySelector('[data-hue-pick]');
+  const wheel = root.querySelector('[data-hue-wheel]');
+  const knob = root.querySelector('[data-hue-knob]');
+  const black = root.querySelector('[data-black]');
+  if (!pick || !wheel || !knob) return;
+  const place = (hue) => {
+    const a = (hue * Math.PI) / 180;
+    const r = wheel.clientWidth * 0.4;
+    knob.style.transform = `translate(${Math.sin(a) * r}px, ${-Math.cos(a) * r}px)`;
+    knob.style.background = `oklch(.78 .13 ${hue})`;
+    wheel.setAttribute('aria-valuenow', String(Math.round(hue)));
+  };
+  const setBlack = (on) => {
+    pick.classList.toggle('is-off', on);
+    if (black) { black.classList.toggle('on', on); black.setAttribute('aria-pressed', String(on)); }
+  };
+  const choose = (hue) => {
+    applyHue(turnFor(hue));
+    place(hue);
+    setBlack(false);
+  };
+  place((WARM_HUE + currentHue()) % 360);
+  let frame = 0;
+  const fromPointer = (e) => {
+    const r = wheel.getBoundingClientRect();
+    const deg = (Math.atan2(e.clientX - (r.left + r.width / 2), -(e.clientY - (r.top + r.height / 2))) * 180) / Math.PI;
+    const hue = (deg + 360) % 360;
+    cancelAnimationFrame(frame);
+    frame = requestAnimationFrame(() => choose(hue));
+  };
+  wheel.addEventListener('pointerdown', (e) => {
+    wheel.setPointerCapture?.(e.pointerId);
+    fromPointer(e);
+    const move = (ev) => fromPointer(ev);
+    const up = () => { wheel.removeEventListener('pointermove', move); wheel.removeEventListener('pointerup', up); wheel.removeEventListener('pointercancel', up); };
+    wheel.addEventListener('pointermove', move);
+    wheel.addEventListener('pointerup', up);
+    wheel.addEventListener('pointercancel', up);
+  });
+  wheel.addEventListener('keydown', (e) => {
+    const step = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 5 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -5 : 0;
+    if (!step) return;
+    e.preventDefault();
+    choose(((Number(wheel.getAttribute('aria-valuenow')) || WARM_HUE) + step + 360) % 360);
+  });
+  root.querySelector('[data-hue-reset]')?.addEventListener('click', () => choose(WARM_HUE));
+  black?.addEventListener('click', () => {
+    const on = currentAppearance() !== 'contrast';
+    applyAppearance(on ? 'contrast' : 'warm');
+    setBlack(on);
+  });
 }

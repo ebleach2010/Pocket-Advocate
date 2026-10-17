@@ -25,6 +25,9 @@
     // everywhere, with the blue/purple being in settings").
     var cool = localStorage.getItem('pa-look') === 'cool';
     if (cool) document.documentElement.dataset.look = 'cool';
+    // The color wheel in Settings turns the warm look round the wheel; Black has no colour to turn.
+    var hue = parseInt(localStorage.getItem('pa-hue'), 10);
+    if (s !== 'contrast' && !cool && hue > 0 && hue < 360) { document.documentElement.dataset.hue = String(hue); document.documentElement.style.setProperty('--pa-hue', String(hue)); }
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
   } catch (e) { /* storage blocked: the shipped default is already correct */ }
@@ -33,7 +36,7 @@
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/admin.css?v=stat139">
 <link rel="stylesheet" href="/css/look.css?v=7">
-<link rel="stylesheet" href="/css/warm.css?v=3">
+<link rel="stylesheet" href="/css/warm.css?v=4">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body>

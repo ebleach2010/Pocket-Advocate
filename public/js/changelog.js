@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.63';
+export const VERSION = '7.64';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.63';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE COLOR WHEEL AND BLACK (Eric, 2026-10-17: "Keep the whole color
+    // scheme and gradient, but allow it to be adjusted via a color wheel in
+    // settings ... Include black, though"). Admin only.
+    version: '7.64',
+    quiet: true,
+    client: [],
+    admin: [
+      'Settings has a color wheel now. Turn it and the whole look follows, the gradient too. Back to the warm look puts it back.',
+      'Black is a black background with white text, for sensitive eyes.',
+      'Blue and purple left Settings: turn the wheel to blue instead. A phone that chose it keeps it until you pick again.',
+      'Checked: a team member cannot draft a duty of care note, not even by typing the address.',
+    ],
+  },
   {
     // THE END OF A MONTH, AND ITS PACE (Eric, 2026-10-17: "Close, with a heads
     // up. If they pass closing, under [Case Enhancements] there's a shining

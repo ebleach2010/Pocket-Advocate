@@ -2047,3 +2047,33 @@ New: monthend.mjs (22 checks, every one controlled); drive-monthend (7, six
 controlled); cancelsearch D5 (controlled). Re-pinned with controls: pricing H1;
 landing A6; defects scope note; worklog L18, L39, L42, L67; clock C51c, C51d,
 C51e; tighten T3; charge CH6; selfcase S35; hardening F2; release R1.
+
+### The color wheel and Black (2026-10-17, v7.64)
+
+Eric: "Keep the whole color scheme and gradient, but allow it to be adjusted
+via a color wheel in settings. I don't think it's too complicated to do more
+than that for color options. Include black, though, which just makes things
+black background white text for simplicity and those with eye sensitivity."
+And: "Don't allow other contractors to draft duty of care notes."
+
+tools/build-hue.mjs writes a block at the end of warm.css and landing-warm.css
+from their own rules: every paint declaration again, each colour as
+oklch(from <colour> l c calc(h + var(--pa-hue)) / alpha), behind @supports for
+relative colour and the warm look's own guards plus :where([data-hue]), so the
+default is the warm look byte for byte and no rule changes weight. Success,
+error and warning colours stay put. `node tools/build-hue.mjs` rebuilds;
+`--check` says whether a sheet is stale (hue.mjs H1 runs it). Edit the rules
+above the block, never the block. Every page's head snippet sets data-hue and
+--pa-hue before paint, never in Black or Blue and purple. theme.js: applyHue,
+currentHue, turnFor, WARM_HUE (56, the accent's hue). Settings: the wheel (a
+slider: finger or arrow keys), Back to the warm look, and Black (the High
+contrast scheme). Stamps: warm.css v=4, landing-warm.css v=3.
+
+A contractor's case never builds the Drafts page (ADVOCATE_PAGES), so neither
+the strip nor ?page=drafts nor the chat composer offers the duty of care note;
+drive-hue proves it from their side.
+
+New: hue.mjs (8 checks, every one controlled); drive-hue (9, every one
+controlled; the Black-to-colour control run by hand, the runner tripping on a
+two-line edit). Re-pinned with controls: warm A4, E1; landingwarm B2, B3;
+auditfix A10; cancelsearch C3; drive-cleanup's wheel check; release R1.

@@ -223,8 +223,11 @@ console.log('\n--- C. one look ---');
   // RE-PINNED 2026-10-16 (v7.57): the picker offers the two looks, Warm (the default) and Blue and purple, and
   // High contrast; the schemes underneath are still the look and High contrast, the look still the default.
   // NEGATIVE CONTROL (run 2026-10-16, v7.57): Daylight put into APPEARANCES made C3 read FAIL.
+  // RE-PINNED 2026-10-17 (v7.64): Eric, "allow it to be adjusted via a color wheel in settings ... Include black":
+  // the picker offers the warm look (its wheel) and Black; the schemes underneath are still the look and High contrast.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.64): Daylight put into APPEARANCES made C3 read FAIL.
   check('C3 the scheme picker offers the look and High contrast, nothing else, and the look is the default',
-    (THEME.match(/\{ id: '(\w+)'/g) || []).join() === "{ id: 'calm',{ id: 'contrast',{ id: 'warm',{ id: 'cool',{ id: 'contrast'" && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(THEME)
+    (THEME.match(/\{ id: '(\w+)'/g) || []).join() === "{ id: 'calm',{ id: 'contrast',{ id: 'warm',{ id: 'contrast'" && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(THEME)
     && /return localStorage\.getItem\(LOOK_KEY\) === 'cool' \? 'cool' : 'warm';/.test(THEME));
 }
 

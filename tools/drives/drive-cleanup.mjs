@@ -21,7 +21,7 @@
 //      cases one tap from their name
 //   H. (v7.56) four audits: his pages send a contractor home, and their chat
 //      has none of his message makers
-//   I. (v7.57) warm everywhere, Blue and purple a choice in Settings
+//   I. (v7.57) warm everywhere, Blue and purple a choice in Settings; (v7.64) the color wheel and Black instead
 //
 // Run: PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-cleanup.mjs
 import { chromium } from 'playwright';
@@ -398,33 +398,40 @@ await lk.goto(`${P}/admin.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(lk, 2000);
 const paint = () => lk.evaluate(() => ({
   look: document.documentElement.dataset.look || '',
+  hue: document.documentElement.dataset.hue || '',
   ground: getComputedStyle(document.body).backgroundColor,
   plus: getComputedStyle(document.querySelector('.add-btn') || document.body).backgroundImage.slice(0, 60),
   bar: document.querySelector('meta[name="theme-color"]')?.getAttribute('content') || '',
 }));
 const warmFirst = await paint();
+// RE-PINNED 2026-10-17 (v7.64): Eric, "Keep the whole color scheme and gradient, but allow it to be adjusted via a color
+// wheel in settings ... Include black". Settings offers the wheel and Black; a tap on the wheel turns his pages too.
+const wheelBox = async () => lk.locator('#pa-settings [data-hue-wheel]').boundingBox().catch(() => null);
 await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
-await tryStep(() => lk.waitForSelector('.settings-card [data-scheme="cool"]', { timeout: 6000 }));
+await tryStep(() => lk.waitForSelector('.settings-card [data-hue-wheel]', { timeout: 6000 }));
 const offered = await lk.evaluate(() => [...document.querySelectorAll('.settings-card .scheme-swatch .scheme-name')].map((x) => x.textContent.trim()));
-await tryStep(() => lk.click('.settings-card [data-scheme="cool"]', { timeout: 3000 }));
-await lk.waitForTimeout(400);
+const wb = await wheelBox();
+if (wb) await lk.mouse.click(wb.x + wb.width / 2 + Math.sin((200 * Math.PI) / 180) * wb.width * 0.42, wb.y + wb.height / 2 - Math.cos((200 * Math.PI) / 180) * wb.width * 0.42);
+await lk.waitForTimeout(500);
 const coolNow = await paint();
 await lk.reload({ waitUntil: 'networkidle' });
 await settle(lk, 1500);
 const coolKept = await paint();
 await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
-await tryStep(() => lk.click('.settings-card [data-scheme="warm"]', { timeout: 6000 }));
+await tryStep(() => lk.click('.settings-card [data-hue-reset]', { timeout: 6000 }));
 await lk.waitForTimeout(400);
 const warmBack = await paint();
 if (SHOTS) await lk.screenshot({ path: `${SHOTS}/cleanup-9-warm-back.png` });
 // NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's link taken off admin.html made this read
 //   FAIL  his pages are warm unless Blue and purple is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back
-ok('his pages are warm unless Blue and purple is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back',
+// NEGATIVE CONTROL (run 2026-10-17, v7.64): theme.js's paintHue setting no data-hue made this read
+//   FAIL  his pages are warm unless the wheel in Settings turns them: it takes effect at once, stays after a reload, and Back to the warm look brings it back
+ok('his pages are warm unless the wheel in Settings turns them: it takes effect at once, stays after a reload, and Back to the warm look brings it back',
   warmFirst.look === '' && /rgb\(30, 21, 25\)/.test(warmFirst.ground) && /255, 196, 138/.test(warmFirst.plus) && warmFirst.bar === '#1E1519'
-  && offered.join('|') === 'Warm|Blue and purple|High contrast'
-  && coolNow.look === 'cool' && !/30, 21, 25/.test(coolNow.ground) && /61, 220, 245/.test(coolNow.plus) && coolNow.bar === '#0A0A0C'
-  && coolKept.look === 'cool' && /61, 220, 245/.test(coolKept.plus)
-  && warmBack.look === '' && /rgb\(30, 21, 25\)/.test(warmBack.ground),
+  && offered.join('|') === 'Black'
+  && coolNow.hue === '144' && !/30, 21, 25/.test(coolNow.ground) && !/255, 196, 138/.test(coolNow.plus)
+  && coolKept.hue === '144' && coolKept.plus === coolNow.plus
+  && warmBack.hue === '' && /rgb\(30, 21, 25\)/.test(warmBack.ground) && /255, 196, 138/.test(warmBack.plus),
   JSON.stringify({ warmFirst, offered, coolNow, coolKept, warmBack }));
 
 console.log('\n--- C. errors ---');

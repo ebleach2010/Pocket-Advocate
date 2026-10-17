@@ -14,6 +14,7 @@
 //
 // Run: node warm.mjs
 import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { source as handWritten } from '../build-hue.mjs';
 import { fileURLToPath as f2, pathToFileURL } from 'node:url';
 import { dirname as d, join as j } from 'node:path';
 
@@ -92,7 +93,11 @@ console.log('\n--- A. the client\'s side, warm ---');
   const STRUCTURE = /^(\.msg-row|\.msg-ava|\.chat-day|\.chat-who|\.cheer|:root\[data-scheme="contrast"\] \.cheer|\.sc-warm|\.sc-cool)/;
   // Split a selector list on its top-level commas only (an :is(a, b) stays whole).
   const parts = (sel) => { const out = []; let depth = 0; let cur = ''; for (const ch of sel) { if (ch === '(') depth++; if (ch === ')') depth--; if (ch === ',' && !depth) { out.push(cur); cur = ''; } else cur += ch; } out.push(cur); return out; };
-  const loose = R.filter(([sel]) => !parts(sel).every((x) => x.trim().startsWith(W) || x.trim().startsWith(`:where(${W})`) || STRUCTURE.test(x.trim())));
+  // RE-PINNED 2026-10-17 (v7.64): judged on the sheet as written by hand. The color wheel's block at its end is
+  // generated from these same rules, behind the same guards plus [data-hue], and hue.mjs checks it.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.64): a bare `.add-btn { background: var(--warm-pop); }` put just above the
+  // wheel's block made A4 read FAIL.
+  const loose = rules(handWritten(WARM)).filter(([sel]) => !parts(sel).every((x) => x.trim().startsWith(W) || x.trim().startsWith(`:where(${W})`) || STRUCTURE.test(x.trim())));
   // NEGATIVE CONTROL (run 2026-10-15): a bare `.msg.me { background: #FFC08F; }` added to warm.css made this read
   //   FAIL  A4 High contrast keeps its own colours: every colour rule is under the not-High-contrast root, and the rest only lay out the client's own pieces
   check('A4 High contrast keeps its own colours: every colour rule is under the not-High-contrast root, and the rest only lay out the client\'s own pieces',
@@ -221,7 +226,9 @@ console.log('\n--- E. warm everywhere, blue and purple in Settings (v7.57) ---')
   const store = new Map();
   globalThis.localStorage = { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) };
   const meta = { content: '#1E1519', setAttribute(k, v) { this.content = v; } };
-  globalThis.document = { documentElement: { dataset: { scheme: 'calm' } }, querySelector: () => meta, dispatchEvent: () => true };
+  // RE-PINNED 2026-10-17 (v7.64): the root has a style now, for the color wheel's --pa-hue.
+  const rootStyle = new Map();
+  globalThis.document = { documentElement: { dataset: { scheme: 'calm' }, style: { setProperty: (k, v) => rootStyle.set(k, v), removeProperty: (k) => rootStyle.delete(k) } }, querySelector: () => meta, dispatchEvent: () => true };
   globalThis.CustomEvent = class { constructor(n, o) { this.type = n; this.detail = o?.detail; } };
   const T = await import(pathToFileURL(j(ROOT, 'public/js/theme.js')).href);
   const first = T.currentAppearance();
@@ -238,7 +245,11 @@ console.log('\n--- E. warm everywhere, blue and purple in Settings (v7.57) ---')
     first === 'warm' && cool.look === 'cool' && cool.stored === 'cool' && cool.scheme === 'calm' && cool.meta === '#0A0A0C' && cool.now === 'cool'
     && warm.look === undefined && warm.stored === 'warm' && warm.meta === '#1E1519' && warm.now === 'warm'
     && contrast.scheme === 'contrast' && contrast.meta === '#000000' && contrast.now === 'contrast'
-    && /\$\{APPEARANCES\.map\(\(x\) => `/.test(SET) && /applyAppearance\(b\.dataset\.scheme\);/.test(SET) && /const scheme = currentAppearance\(\);/.test(SET),
+    // RE-PINNED 2026-10-17 (v7.64): Settings offers the color wheel and Black (Eric: "allow it to be adjusted via a
+    // color wheel in settings ... Include black"); a device that chose Blue and purple keeps it until it chooses again.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.64): applyAppearance's Blue and purple line made `if (id === 'cool') void 0;`
+    // made E1 read FAIL.
+    && /applyAppearance\(on \? 'contrast' : 'warm'\);/.test(SET) && /const scheme = currentAppearance\(\);/.test(SET),
     JSON.stringify({ first, cool, warm, contrast }));
   const R = rules(WARM);
   const has = (sel, re) => R.some(([s2, body]) => s2 === `${W} ${sel}` && re.test(body));
