@@ -132,17 +132,21 @@
 .msg-ava {
   flex: none; width: 34px; height: 34px; border-radius: 50%;
   object-fit: cover; object-position: 50% 50%;
-  border: 2px solid rgba(255, 196, 150, .55);
+  border: 2px solid rgba(255, 255, 255, .22);
   box-shadow: 0 4px 12px rgba(10, 4, 6, .35);
 }
 .msg-ava.gap { visibility: hidden; }
 
-/* A day's line between the days of a conversation. */
+/* A day's line between the days of a conversation. Neutral greys here and
+   peach only in the warm look (2026-10-17, the look audit: the chip and the
+   photo ring stayed peach in Blue and purple). */
 .chat-day {
   align-self: center; margin: .6rem 0 .1rem; padding: .2rem .75rem;
   border-radius: 999px; font-size: .74rem; font-weight: 700; letter-spacing: .04em;
-  color: #F2E1D6; background: rgba(255, 196, 150, .10); border: 1px solid rgba(255, 196, 150, .18);
+  color: var(--soft); background: rgba(255, 255, 255, .06); border: 1px solid rgba(255, 255, 255, .14);
 }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .chat-day { color: #F2E1D6; background: rgba(255, 196, 150, .10); border-color: rgba(255, 196, 150, .18); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .msg-ava { border-color: rgba(255, 196, 150, .55); }
 
 /* Who they are talking to, at the top of the chat. */
 .chat-who { display: flex; align-items: center; gap: .75rem; margin: 0 0 .6rem; }
@@ -256,3 +260,8 @@
   box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 10px 28px rgba(10, 4, 6, .45);
 }
 
+/* ---- SERVICES (2026-10-17, the look audit) ------------------------------
+   The live package wore the black look's cyan ring and button on the warm
+   page; here it wears the warm light. */
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .pack#chat { background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box; box-shadow: 0 0 0 1px rgba(255, 178, 122, .22), 0 10px 30px rgba(255, 140, 100, .18); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) .pack#chat .pack-cta { border-color: transparent; background: var(--warm-pop); color: #2B1207; box-shadow: 0 10px 30px rgba(255, 140, 100, .22); }

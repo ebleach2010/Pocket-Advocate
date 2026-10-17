@@ -489,7 +489,9 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     // NEGATIVE CONTROL (run 2026-10-15, v7.51): admin-case.html's stamp left at stat136 made CH7 read FAIL.
     // RE-PINNED 2026-10-16 (v7.54): Eric, "Merge logs": the Log page's filter styles moved the sheet to stat138.
     // NEGATIVE CONTROL (run 2026-10-16, v7.54): admin.html's stamp left at stat137 made CH7 read FAIL.
-    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat138/.test(f(`public/${p}.html`)))
+    // RE-PINNED 2026-10-17 (v7.62): the look audit, the notes toolbar docked under the group row: the sheet is stat139.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.62): admin-dictionary.html's stamp left at stat138 made CH7 read FAIL.
+    && ['admin-availability', 'admin-calendar', 'admin-case', 'admin-chats', 'admin-dictionary', 'admin', 'admin-fund'].every((p) => /admin\.css\?v=stat139/.test(f(`public/${p}.html`)))
     && paidCents(held) === 0 && paidCents(cap) === 90000 + 32500 && paidCents(comp) === 0 && paidCents(tier) === 90000 + 440000 && paidCents(old) === 120000,
     JSON.stringify({ heldLine, bookLine, paid: [paidCents(held), paidCents(cap), paidCents(comp), paidCents(tier), paidCents(old)] }));
 }

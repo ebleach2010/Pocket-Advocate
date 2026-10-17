@@ -133,7 +133,8 @@ async function overrideDx(id, current) {
 
 async function load() {
   const listEl = document.getElementById('list');
-  initPushPrompt(user, document.querySelector('main')).catch(() => {});
+  // Not in the quiet view, where nothing is his to turn on (2026-10-17).
+  if (!asUid) initPushPrompt(user, document.querySelector('main')).catch(() => {});
   let cases = [];
   window.__paStage = 'cases';
   try {
@@ -415,7 +416,9 @@ async function load() {
   }
   for (const sub of subs) {
     if (sub.status !== 'active' || sub.lastMessage?.role !== 'client') continue;
-    loops.push({ href: `/admin-chats.html?sub=${encodeURIComponent(sub.id)}`, name: sub.email || 'A subscriber', label: 'Priority Chat: reply today', tone: 'hot' });
+    // From a team member's shelf it stays their view, read only (audit,
+    // 2026-10-16: the plain link opened a box he could write to their client in).
+    loops.push({ href: `/admin-chats.html?sub=${encodeURIComponent(sub.id)}${asUid ? `&as=${encodeURIComponent(asUid)}` : ''}`, name: sub.name || sub.email || 'A subscriber', label: 'Priority Chat: reply today', tone: 'hot' });
   }
   // One row per case, its reasons joined, in the hottest tone it has. The same
   // name twice in a list this short read as two different people.

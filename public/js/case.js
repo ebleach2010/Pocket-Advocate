@@ -747,19 +747,23 @@ function renderProgress(el, c) {
   // the money arrived, where the case stands, when we speak, and the one
   // button worth pressing today. The timeline, the paperwork note and the
   // session settings are all still here, one line lower, folded.
+  // The pill already says FULL-SERVICE (2026-10-17, the look audit: it read
+  // twice and wrapped): the words beside it finish the name instead.
+  const pillText = chargeLabel(c) || statusWord(c);
+  const kindWords = pillText === 'FULL-SERVICE' ? 'Case Management' : c.fullAccess ? 'Full-Service Case Management' : 'Advocacy Case';
   el.innerHTML = `
     <div class="stack">
     ${pausedNotice(c)}
     ${closedNotice(c)}
     ${chargeNotice(c)}
     <section class="card card-lit stack-tight" data-appt>
-      <p class="eyebrow">
-        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${chargeLabel(c) || statusWord(c)}</span>
-        ${c.fullAccess ? 'Full-Service Case Management' : 'Advocacy Case'}
+      <p class="eyebrow" style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;">
+        <span class="status-pill ${closed ? 'closed' : ''}" data-status-pill>${pillText}</span>
+        <span>${kindWords}</span>
       </p>
       ${start ? `
         <h2 class="appt-when">${mtFmt.format(start)} MST<br>
-        <span class="dim small">${localFmt.format(start)} your time</span></h2>`
+        <span class="dim small" style="display:inline-block;margin-top:.3rem;line-height:1.35;">${localFmt.format(start)} your time</span></h2>`
     : '<h2 class="appt-when">Your case is open<br><span class="dim small">No call is on the books yet.</span></h2>'}
       ${underLine ? `<p class="dim small">${underLine}</p>` : ''}
       ${primaryAction}
@@ -911,8 +915,8 @@ function renderChat(el, c) {
       <h3 style="margin:.1rem 0 .2rem;">🗓 For our next call</h3>
       <p class="dim small" style="margin:0 0 .5rem;">Anything you add here is captured, and we go through the list together on the call, where it gets real attention instead of a rushed reply.</p>
       <ul class="agenda-list" data-agenda-list></ul>
-      ${closed || paused ? '' : `<form data-agenda-form style="display:flex; gap:.4rem; margin-top:.5rem;">
-        <input type="text" maxlength="500" placeholder="Add something for the call…" style="flex:1; min-width:0;">
+      ${closed || paused ? '' : `<form data-agenda-form style="display:flex; flex-wrap:wrap; gap:.4rem; margin-top:.5rem;">
+        <input type="text" maxlength="500" placeholder="Add something for the call…" style="flex:1 1 13rem; min-width:0;">
         <button class="btn quiet" type="submit">Add</button>
       </form>
       <p class="error" data-agenda-err hidden></p>`}
@@ -1061,8 +1065,8 @@ function paintAgenda(box, items) {
   const open = items.filter((i) => !i.done);
   const covered = items.filter((i) => i.done);
   list.innerHTML = [
-    ...open.map((i) => `<li data-item="${esc(i.id)}" style="display:flex; gap:.4rem; align-items:flex-start; margin:.3rem 0; list-style:none;">
-      <span style="flex:1; min-width:0;">• ${esc(i.text)}</span>${
+    ...open.map((i) => `<li data-item="${esc(i.id)}" style="display:flex; flex-wrap:wrap; gap:.4rem; align-items:flex-start; margin:.3rem 0; list-style:none;">
+      <span style="flex:1 1 9rem; min-width:0; overflow-wrap:anywhere;">• ${esc(i.text)}</span>${
       i.role === 'client'
         ? `<button type="button" class="btn quiet tiny" style="flex:none;" data-agenda-remove="${esc(i.id)}">Remove</button>`
         : ''

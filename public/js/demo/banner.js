@@ -26,7 +26,7 @@ export function mountBanner(role) {
     <span class="demo-what"><strong>Demo.</strong>
       <span class="demo-more">Invented case. Nothing saved, charged or sent.</span></span>
     <span class="demo-acts">
-      <a class="btn ghost" href="${role === 'admin' || role === 'advocate' ? '/case.html?demo=1' : '/admin.html?demo=admin'}"
+      <a class="btn ghost" style="display:inline-flex; align-items:center;" href="${role === 'admin' || role === 'advocate' ? '/case.html?demo=1' : '/admin.html?demo=admin'}"
         >${role === 'admin' || role === 'advocate' ? 'Client side' : 'Advocate side'}</a>
       <button type="button" class="btn ghost" data-demo-reset>Start over</button>
     </span>`;

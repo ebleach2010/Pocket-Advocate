@@ -254,7 +254,10 @@ console.log('\n--- B. each case matches what was bought (v7.53) ---');
   //   FAIL  B5 a Full-Service client reads Full-Service, not REPORT DUE, and the agreement says the work replaces the report
   check('B5 a Full-Service client reads Full-Service, not REPORT DUE, and the agreement says the work replaces the report',
     /const statusWord = \(c\) => \(c\.fullAccess && c\.status !== 'closed' \? 'FULL-SERVICE' : STATUS_LABEL\[c\.status\] \|\| c\.status\);/.test(CLIENT)
-    && /\$\{c\.fullAccess \? 'Full-Service Case Management' : 'Advocacy Case'\}/.test(CLIENT)
+    // RE-PINNED 2026-10-17 (v7.62): the look audit, "FULL-SERVICE" read twice beside its pill; the words finish the name instead.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.62): kindWords back to `c.fullAccess ? 'Full-Service Case Management' : 'Advocacy Case'` made B5 read FAIL.
+    && /const kindWords = pillText === 'FULL-SERVICE' \? 'Case Management' : c\.fullAccess \? 'Full-Service Case Management' : 'Advocacy Case';/.test(CLIENT)
+    && /data-status-pill>\$\{pillText\}<\/span>\n\s+<span>\$\{kindWords\}<\/span>/.test(CLIENT)
     && /const stepsOf = \(c\) => \(c\?\.fullAccess && !c\.reportDeliveredAt \? FULL_STEPS : STEPS\);/.test(CLIENT)
     && !/STATUS_LABEL\[c\.status\] \|\| c\.status\}/.test(CLIENT)
     && /<strong>There is no written report with Full-Service: the work itself replaces it\.<\/strong>/.test(TERMS)

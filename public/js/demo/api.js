@@ -16,7 +16,7 @@ import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 // Worker's own rules.
 import { fundDemo } from './fund.js';
 // DEMO MODE (2026-10-16): his practice copy's team, and what its clients ask back.
-import { LIVE_TEAM, LIVE_QUESTIONS } from './live.js';
+import { LIVE_TEAM, LIVE_QUESTIONS, LIVE_CHAT_QUESTIONS, firstRead } from './live.js';
 const LIVE = (() => { try { return sessionStorage.getItem('pa-demo-live') === '1'; } catch { return false; } })();
 
 /**
@@ -2019,7 +2019,14 @@ export function demoApi(role, store) {
       for (const [p, d] of [...store.docs.entries()]) {
         if (!p.startsWith(qaPrefix) || d.status !== 'running') continue;
         if (Date.now() - new Date(d.at || 0).getTime() < 4000) continue;
-        const answer = 'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.';
+        // One of a few answers, picked by the question (2026-10-17): the same
+        // one on every case read as canned.
+        const ANSWERS = [
+          'I would give the clinic until Thursday before chasing it, because the fax went Monday and their intake takes three working days to log anything. If nothing is on the portal by then, I would call the department directly rather than the main line, since that is who actually holds the referral. You have what you need for the call; the next move is theirs.',
+          'The file already answers part of that. What is missing is the date things changed, so I would ask for it on the next call before anyone orders another test. Once that date is down, the order of events tells most of the story.',
+          'I would lead with the record that shows the pattern, not the newest one. Two lines on what has been tried, one on what is still open, and the single question you want answered. A short ask gets a straight answer more often than a long history does.',
+        ];
+        const answer = ANSWERS[[...String(d.question || '')].reduce((t, ch) => t + ch.charCodeAt(0), 0) % ANSWERS.length];
         store.docs.set(p, { ...d, status: 'done', batch: null, answer });
         store.persist?.();
       }
@@ -2074,9 +2081,12 @@ export function demoApi(role, store) {
           ...state, status: 'running', startedAt: new Date(), progressAt: new Date(),
         });
         setTimeout(() => {
+          // A case with no read yet gets a first one (2026-10-17): Update on
+          // a new case used to spin and settle back on "No assessment yet".
           store.docs.set(`cases/${cid}/advisor/state`, {
-            ...state, status: 'idle', updatedAt: new Date(),
+            ...state, ...(state.analysis ? {} : firstRead(store.docs.get(`cases/${cid}`) || {})), status: 'idle', updatedAt: new Date(),
           });
+          store.persist?.();
           // His own case: the read's questions land in his chat, one bubble
           // each, once (2026-09-03). Mirrors askInChat in the Worker.
           const c = store.docs.get(`cases/${cid}`) || {};
@@ -2131,7 +2141,10 @@ export function demoApi(role, store) {
           draftStatus: 'running', draftError: null, draftStartedAt: new Date(), draftProgressAt: new Date(),
           draftPending: rough
             ? `${rough}\n\nI will have the referral chased by Thursday and I will tell you what they say the same day. If anything in that is wrong, tell me and I will fix it before it goes anywhere.`
-            : 'Thanks for sending those through. I have read all three, and the discharge summary says more than anyone told you at the time. I will walk you through it on our call, and I am chasing the referral that was mentioned but never confirmed. Nothing for you to do today.',
+            : cid === DEMO_CASE_ID
+              ? 'Thanks for sending those through. I have read all three, and the discharge summary says more than anyone told you at the time. I will walk you through it on our call, and I am chasing the referral that was mentioned but never confirmed. Nothing for you to do today.'
+              // Every other case its own words (2026-10-17): this one's files are not theirs.
+              : `Thanks for sending that through, ${String(c.clientName || '').split(' ')[0] || 'and thank you'}. I have read everything in your file so far, and I will walk you through what it says on our next call. If anything changes before then, tell me here. Nothing for you to do today.`,
           draftQueuedAt: new Date(),
         });
         store.persist?.();
@@ -2160,6 +2173,8 @@ export function demoApi(role, store) {
         store.docs.set(`cases/${cid}/private/notes/doc`, {
           html: body.html || '', updatedAt: new Date(),
         });
+        // Kept (2026-10-17): it said Saved and was gone after a reload.
+        store.persist?.();
         return ok({ ok: true });
       }
       // The appeal workbench. Without a branch here the buttons answer a bare
@@ -2653,7 +2668,10 @@ export function demoApi(role, store) {
       if (!Number.isFinite(s) || !Number.isFinite(e) || e < s) return fail(400, 'Choose the payroll dates first, the end after the start.');
       const want = new Map((Array.isArray(body.people) ? body.people : []).map((p) => [String(p?.uid || ''), p]));
       const KINDS = ['case', 'full', 'followup', 'chat'];
-      const NAMES = ['Avery Brooks', 'Mina Patel', 'Owen Hughes', 'Ruth Alvarez', 'Theo Grant', 'Lena Novak', 'Caleb Ward', 'Iris Moreno', 'Felix Chen', 'Hana Sato', 'Jonah Reyes', 'Nora Quinn'];
+      // No name on two people's books (2026-10-17): each team member draws from
+      // their own surnames, and the first names turn over within a book.
+      const FIRSTS = ['Avery', 'Mina', 'Owen', 'Ruth', 'Theo', 'Lena', 'Caleb', 'Iris', 'Felix', 'Hana', 'Jonah', 'Nora'];
+      const LASTS = [['Brooks', 'Patel', 'Hughes'], ['Alvarez', 'Grant', 'Novak'], ['Ward', 'Moreno', 'Chen'], ['Sato', 'Reyes', 'Quinn'], ['Lund', 'Okoro', 'Vance']];
       const saved = { ...(store.docs.get('demo/practice') || {}) };
       let total = 0;
       team.forEach((t, ti) => {
@@ -2671,7 +2689,7 @@ export function demoApi(role, store) {
         for (let n = 0; n < clients; n++) {
           const at = new Date(s + ((n + 1) / (clients + 1)) * (e - s + 86_400_000 / 2));
           const id = `practice-${t.uid.replace(/^demo-/, '')}-${n + 1}`;
-          const name = NAMES[(ti * 3 + n) % NAMES.length];
+          const name = `${FIRSTS[(ti * 3 + n) % FIRSTS.length]} ${LASTS[ti % LASTS.length][n % 3]}`;
           const client = `${id}-client`;
           const email = `${name.split(' ')[0].toLowerCase()}.${n + 1}@example.demo`;
           if (kind === 'chat') {
@@ -2909,7 +2927,7 @@ export function demoApi(role, store) {
           };
           const { base } = paidOf(c);
           const bookedAt = c.charge?.capturedAt || c.createdAt;
-          if (base > 0 && inR(bookedAt)) add('booking', 'Advocacy Case', base, bookedAt);
+          if (base > 0 && inR(bookedAt)) add('booking', c.fullAccess ? 'Full-Service month' : 'Advocacy Case', base, bookedAt);
           for (const p of (c.extraPayments || [])) if (!p?.duplicate && Number(p?.amountCents) && inR(p.at)) add(p.kind || 'extra', p.kind === 'tip' ? 'Tip' : p.kind === 'fullaccess' ? 'Full-Service month' : p.kind === 'followup' ? 'Follow-up call' : 'Payment', Number(p.amountCents), p.at);
         }
         // Priority Chat months. The real report asks Stripe for these; in the
@@ -3158,7 +3176,9 @@ export function demoApi(role, store) {
       const client = parent && !parent.self && parent.status !== 'closed' ? (col === 'cases' ? parent.clientUid : id) : '';
       if (client) {
         const asked = [...store.docs.entries()].filter(([k, m]) => k.startsWith(`${col}/${id}/chat/`) && m?.demoAsked).length;
-        const text = LIVE_QUESTIONS[asked % LIVE_QUESTIONS.length];
+        // Priority Chat has no calls (2026-10-17), so its people ask a chat's questions.
+        const list = col === 'subscriptions' ? LIVE_CHAT_QUESTIONS : LIVE_QUESTIONS;
+        const text = list[asked % list.length];
         setTimeout(() => {
           const at = new Date();
           const k = `${col}/${id}/chat/q${at.getTime().toString(36)}`;
@@ -3170,7 +3190,8 @@ export function demoApi(role, store) {
       }
       return ok({ ok: true });
     }
-    if (path === '/api/uploaded' || path === '/api/notify' || path === '/api/push/test') return ok({ ok: true });
+    if (path === '/api/push/test') return ok({ ok: true, devices: 1 });
+    if (path === '/api/uploaded' || path === '/api/notify') return ok({ ok: true });
     if (path === '/api/chat/reply') {
       // His answer to a question in his own chat (2026-09-03). Mirrors
       // handleChatReply: the answer carries the question, the question is

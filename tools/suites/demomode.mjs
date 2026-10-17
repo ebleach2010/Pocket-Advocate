@@ -186,8 +186,12 @@ console.log('\n--- D. the doors ---');
     && /if \(!his\) return notFound\(env, request, url\);/.test(gate) && /'private, no-store'/.test(gate));
   // NEGATIVE CONTROL (run 2026-10-16): the practice panel's div taken out of admin-employer.html made this read
   //   FAIL  D5 the payroll screen mounts the practice team only inside Demo mode
+  // RE-PINNED 2026-10-17 (v7.62): the demo audit, a share changed on Team still read the old one here: the panel
+  // is painted again each time Payroll opens, still only inside Demo mode.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.62): mountLivePractice's Demo mode guard taken out made D5 read FAIL.
   check('D5 the payroll screen mounts the practice team only inside Demo mode',
-    /if \(sessionStorage\.getItem\('pa-demo-live'\) === '1'\) \{\n\s+import\('\.\/demo\/practice\.js'\)/.test(EMP)
+    /function mountLivePractice\(\) \{\n\s+try \{ if \(sessionStorage\.getItem\('pa-demo-live'\) !== '1'\) return; \} catch \{ return;[^\n]*\n[\s\S]{0,120}import\('\.\/demo\/practice\.js'\)/.test(EMP)
+    && /if \(name === 'payroll'\) \{ loadDrafts\(\); mountLivePractice\(\); \}/.test(EMP)
     && /<div class="panel" id="practice" hidden><\/div>/.test(f('public/admin-employer.html')));
   // NEGATIVE CONTROL (run 2026-10-16): a long dash put in live.js's first question made this read
   //   FAIL  D6 no dash in anything a person reads in the copy

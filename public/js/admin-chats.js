@@ -4,12 +4,15 @@
 
 import './admin-ledger.js';
 import { db, collection, getDocs, doc, getDoc } from './firebase.js';
-import { requireAdmin, hydrateNav, staffCasesQuery, staffSubsQuery } from './auth.js';
+import { requireAdmin, hydrateNav, staffCasesQuery, staffSubsQuery, STAFF } from './auth.js';
 import { mountChat } from './chat.js';
 
 hydrateNav();
 const user = await requireAdmin();
 const subUid = new URLSearchParams(location.search).get('sub');
+// A team member's view, from their shelf (2026-10-16): his to read, never to
+// write in, the same as their case pages.
+const asUid = STAFF.role === 'admin' ? (new URLSearchParams(location.search).get('as') || '').replace(/[^\w-]/g, '').slice(0, 64) : '';
 if (user) subUid ? loadThread() : loadInbox();
 
 // ---- subscriber thread view ----
@@ -26,9 +29,11 @@ async function loadThread() {
   }
   const end = sub.currentPeriodEnd?.toDate ? sub.currentPeriodEnd.toDate() : new Date(sub.currentPeriodEnd || 0);
   page.innerHTML = `
-    <p><a href="/admin-chats.html" class="small">← all chats</a></p>
+    ${asUid
+      ? `<div class="quiet-bar" role="status"><span>Seeing what their advocate sees. They cannot tell you are here, and nothing here can be sent.</span> <a class="btn quiet" href="/admin.html?as=${encodeURIComponent(asUid)}">Back to their shelf</a></div>`
+      : '<p><a href="/admin-chats.html" class="small">← all chats</a></p>'}
     <div class="row">
-      <h1 style="margin:0;">${esc(sub.email || subUid)}</h1>
+      <h1 style="margin:0; overflow-wrap:anywhere;">${esc(sub.name || sub.email || subUid)}</h1>
       <span class="status-pill ${end > new Date() ? '' : 'closed'}">SUBSCRIBER · ${(sub.status || '?').toUpperCase()}</span>
     </div>
     <div class="panel" id="chat" style="margin-top:.8rem;"></div>`;
@@ -39,7 +44,10 @@ async function loadThread() {
     myRole: 'admin',
     saveUid: subUid,
     // Eric can always write; the client-side gate is the one that lapses.
-    disabled: false,
+    // In a team member's view, nobody writes.
+    disabled: !!asUid,
+    notice: asUid ? 'Seeing what they see. Nothing you type here is sent.' : '',
+    viewAs: asUid || '',
   });
 }
 
@@ -47,11 +55,23 @@ async function loadThread() {
 async function loadInbox() {
   const page = document.getElementById('page');
   const threads = [];
+  // Who wrote the last word (2026-10-17): "You" only for his own; a team
+  // member's reply carries their first name, and on a team member's inbox a
+  // word from him carries his.
+  const names = new Map();
+  const team = STAFF.role === 'admin'
+    ? user.getIdToken().then((token) => fetch('/api/admin/advocates', {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: '{"action":"list"}',
+    })).then((r) => r.json()).then((out) => {
+      for (const a of out.advocates || []) if (a.uid && !a.owner) names.set(a.uid, String(a.name || a.email || '').trim().split(/\s+/)[0]);
+    }).catch(() => {})
+    : Promise.resolve();
   try {
     // Every thread for him, their own for an advocate (2026-10-15).
     const [cases, subs] = await Promise.all([
       getDocs(staffCasesQuery(user)),
       getDocs(staffSubsQuery(user)),
+      team,
     ]);
     cases.forEach((d) => {
       const c = d.data();
@@ -70,7 +90,7 @@ async function loadInbox() {
       threads.push({
         kind: 'sub',
         href: `/admin-chats.html?sub=${d.id}`,
-        who: s.email || d.id,
+        who: s.name || s.email || d.id,
         badge: `PRIORITY CHAT · ${(s.status || '?').toUpperCase()}`,
         lm: s.lastMessage || null,
       });
@@ -80,6 +100,12 @@ async function loadInbox() {
     return;
   }
 
+  const byLine = (lm) => {
+    if (lm.role !== 'admin') return '';
+    if (!lm.from || lm.from === user.uid) return 'You: ';
+    const n = lm.byName || (STAFF.role === 'admin' ? names.get(lm.from) : 'Eric');
+    return n ? `${esc(n)}: ` : '';
+  };
   threads.sort((a, b) => lmTime(b) - lmTime(a));
   const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 
@@ -96,7 +122,7 @@ async function loadInbox() {
             </span>
           </div>
           <p class="dim small" style="margin:.3rem 0 0;">
-            ${t.lm ? `${t.lm.role === 'admin' ? 'You: ' : ''}${esc(t.lm.text)}${lmTime(t) ? ` · ${fmt.format(lmTime(t))}` : ''}` : 'No messages yet.'}
+            ${t.lm ? `${byLine(t.lm)}${esc(t.lm.text)}${lmTime(t) ? ` · ${fmt.format(lmTime(t))}` : ''}` : 'No messages yet.'}
           </p>
         </a>`).join('') : '<p class="dim">No conversations yet.</p>'}
     </div>`;

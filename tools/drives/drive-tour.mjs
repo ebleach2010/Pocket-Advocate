@@ -60,19 +60,32 @@ for (let k = 0; k < 20; k++) {
   const st = await tourState(page);
   if (!st) break;
   walked.push(st);
+  if (st.title === 'Chat') {
+    st.form = await page.evaluate(() => { const r = document.querySelector('[data-chat] .chat-form')?.getBoundingClientRect(); return r ? { top: Math.round(r.top), bottom: Math.round(r.bottom) } : null; });
+  }
   if (SHOTS && ['Every step, celebrated 🎉', 'Chat', 'Docs: add anything', 'Exit any time'].includes(st.title)) {
     await page.screenshot({ path: `${SHOTS}/tour-2-${st.n.replace(/\s/g, '')}.png` });
   }
   if (st.next === 'Start exploring') break;
 }
 const sections = walked.filter((s) => s.lit);
-const inView = sections.every((s) => s.spot.w > 20 && s.spot.h > 20 && s.spot.left >= 0 && s.spot.left + s.spot.w <= 390 && s.spot.top >= 0 && s.spot.top + s.spot.h <= s.card.top);
+// RE-PINNED 2026-10-17 (v7.62): the look audit, the Chat step's card covered the box it asks for: that one card sits
+// at the top and its ring below it, so a ring is clear of its card either way, and inside the screen.
+// NEGATIVE CONTROL (run 2026-10-17, v7.62): the ring drawn from the screen's top on the Chat step too (`up ? ... : 4` made `4`) made this read
+//   FAIL  Next lights one section at a time clear of the card, opening each tab in turn: Progress, Chat, Docs, Enhance, Saved
+const inView = sections.every((s) => s.spot.w > 20 && s.spot.h > 20 && s.spot.left >= 0 && s.spot.left + s.spot.w <= 390 && s.spot.top >= 0 && s.spot.top + s.spot.h <= 844
+  && (s.spot.top + s.spot.h <= s.card.top || s.spot.top >= s.card.bottom));
 const tabsSeen = [...new Set(walked.map((s) => s.tab))];
 // NEGATIVE CONTROL (run 2026-10-15): the tour's tab switch (`tab.click()`) taken out made this read
 //   FAIL  Next lights one section at a time above the card, opening each tab in turn: Progress, Chat, Docs, Enhance, Saved
-ok('Next lights one section at a time above the card, opening each tab in turn: Progress, Chat, Docs, Enhance, Saved',
+ok('Next lights one section at a time clear of the card, opening each tab in turn: Progress, Chat, Docs, Enhance, Saved',
   sections.length >= 11 && inView && JSON.stringify(tabsSeen) === JSON.stringify(['progress', 'chat', 'docs', 'addons', 'saved']),
-  JSON.stringify({ n: sections.length, tabsSeen, bad: sections.filter((s) => !(s.spot.w > 20 && s.spot.h > 20 && s.spot.top + s.spot.h <= s.card.top)).map((s) => [s.title, s.spot, s.card.top]) }));
+  JSON.stringify({ n: sections.length, tabsSeen, bad: sections.filter((s) => !(s.spot.w > 20 && s.spot.h > 20 && (s.spot.top + s.spot.h <= s.card.top || s.spot.top >= s.card.bottom))).map((s) => [s.title, s.spot, s.card]) }));
+const chatStep = walked.find((s) => s.title === 'Chat');
+// NEGATIVE CONTROL (run 2026-10-17, v7.62): tour.js's Chat step without `top: true` made this read
+//   FAIL  the Chat step leaves the message box on screen, below its card, where it asks you to type
+ok('the Chat step leaves the message box on screen, below its card, where it asks you to type',
+  !!chatStep?.form && chatStep.form.top >= chatStep.card.bottom && chatStep.form.bottom <= 844, JSON.stringify({ card: chatStep?.card, form: chatStep?.form }));
 const cheerStep = walked.find((s) => /celebrated/.test(s.title));
 const exitStep = walked.find((s) => s.title === 'Exit any time');
 const exitBtn = await page.evaluate(() => { const r = document.querySelector('.pv-exit').getBoundingClientRect(); return { top: Math.round(r.top), left: Math.round(r.left) }; });

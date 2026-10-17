@@ -38,9 +38,11 @@ function openPanel(user, isAdmin = false, isContractor = false) {
   const overlay = document.createElement('div');
   overlay.id = 'pa-settings';
   overlay.className = 'settings-overlay';
+  // Done stays at the top while the sheet scrolls (2026-10-17): the sheet runs
+  // to thousands of pixels on a phone, and Done was only at its start.
   overlay.innerHTML = `
     <div class="settings-card">
-      <div class="row"><h3 style="margin:0;">Settings</h3><button class="btn quiet" data-close>Done</button></div>
+      <div class="row" style="position:sticky; top:0; z-index:2; margin:-1.1rem -1.2rem 0; padding:.8rem 1.2rem .6rem; background:inherit; border-radius:16px 16px 0 0;"><h3 style="margin:0;">Settings</h3><button class="btn quiet" data-close>Done</button></div>
       <div class="toggle-row">
         <span><strong>Notifications</strong><br><span class="dim small">New messages, documents &amp; updates</span></span>
         <button class="switch ${notifOn ? 'on' : ''}" data-notif aria-pressed="${notifOn}" aria-label="Toggle notifications"></button>
@@ -92,7 +94,8 @@ function openPanel(user, isAdmin = false, isContractor = false) {
       });
       const out = await res.json();
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
-      resultEl.textContent = `Sent to ${out.devices} device${out.devices === 1 ? '' : 's'}. If nothing arrives in a few seconds, notifications aren't getting through.`;
+      const n = Number(out.devices) || 0;
+      resultEl.textContent = `Sent to ${n} device${n === 1 ? '' : 's'}. If nothing arrives in a few seconds, notifications aren't getting through.`;
     } catch (err) {
       resultEl.textContent = err.message;
     }

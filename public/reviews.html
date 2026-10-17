@@ -32,10 +32,11 @@
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/glowup.css?v=sp9">
 <link rel="stylesheet" href="/css/look.css?v=7">
-<link rel="stylesheet" href="/css/warm.css?v=2">
+<link rel="stylesheet" href="/css/warm.css?v=3">
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
-<body class="landing">
+<!-- No top padding (2026-10-17): .landing is the home's section rule, and on a body it left a strip above the header. -->
+<body class="landing" style="padding-top:0;">
 <header class="bar">
   <div class="bar-inner">
     <a class="brand" href="/">Pocket<span class="spark">Advocate</span></a>

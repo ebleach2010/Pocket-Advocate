@@ -70,8 +70,12 @@ const mid = await page.evaluate(() => [...document.querySelectorAll('.advisor-tu
 ok('two seconds in it is still thinking, not "No answer came back"', /thinking/.test(mid) && !/No answer/.test(mid), mid.slice(0, 80));
 
 console.log('\n--- B. the answer lands on its own, painted by the poll ---');
+// RE-PINNED 2026-10-17 (v7.62): the demo audit, the same answer on every case read as canned: the demo now picks
+// one of three by the question, so any of the three is an answer.
+// NEGATIVE CONTROL (run 2026-10-17, v7.62): api.js's three answers replaced by 'Nothing yet.' made the two checks below read FAIL.
+const ANSWERED = /give the clinic until Thursday|The file already answers part of that|lead with the record that shows the pattern/;
 const late = await until(() => { const r = [...document.querySelectorAll('.advisor-turn')].find((r) => /Where is his timeline/.test(r.textContent || '')); const a = r?.querySelector('.advisor-a')?.textContent || ''; return a && !/thinking/.test(a) ? a : null; }, 30000);
-ok('the answer lands without a tap', !!late && /give the clinic until Thursday/.test(late), (late || '').slice(0, 100));
+ok('the answer lands without a tap', !!late && ANSWERED.test(late), (late || '').slice(0, 100));
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/02-landed.png` });
 const err = await page.evaluate(() => { const e = document.querySelector('[data-err]'); return e && !e.hidden ? e.textContent : ''; });
 ok('no error line for the ask', !/could not read|refused|failed/i.test(err || ''), (err || '').slice(0, 100));
@@ -87,7 +91,7 @@ console.log('\n--- C. a second question keeps the first answer on screen ---');
 await page.fill('[data-ask] [data-q]', 'And is the referral actually in?');
 await page.click('[data-ask] button');
 const both = await until(() => { const rows = [...document.querySelectorAll('.advisor-turn')]; return rows.length >= 2 && /thinking/.test(rows[rows.length - 1].textContent || '') ? rows.length : null; }, 10000);
-ok('the second question sits under the first, thinking, with the first answer still painted', !!both && /give the clinic until Thursday/.test(await page.evaluate(() => document.querySelector('[data-qa]')?.textContent || '')), String(both));
+ok('the second question sits under the first, thinking, with the first answer still painted', !!both && ANSWERED.test(await page.evaluate(() => document.querySelector('[data-qa]')?.textContent || '')), String(both));
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/03-second.png` });
 
 ok('no page errors', errs.length === 0, errs.join(' | ').slice(0, 200));

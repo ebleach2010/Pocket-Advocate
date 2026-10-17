@@ -94,7 +94,9 @@ async function main() {
     box.innerHTML = '<p class="dim">Nobody yet. Everyone who joins the waitlist, sends a question or books lands here.</p>';
     return;
   }
-  box.innerHTML = `<div class="leads-wrap"><table class="leads">
+  // A word that the table runs on (2026-10-17): on a phone the phone and
+  // email columns sit off to the right with nothing to say so.
+  box.innerHTML = `<p class="dim small leads-hint">Swipe the table sideways for every column.</p><div class="leads-wrap"><table class="leads">
     <thead><tr>${SCREEN_ORDER.map((k) => `<th scope="col">${esc(HEAD[k])}</th>`).join('')}</tr></thead>
     <tbody>${leads.map((l) => `<tr>${SCREEN_ORDER.map((k) => CELL[k](l)).join('')}</tr>`).join('')}</tbody></table></div>`;
   btn.disabled = false;

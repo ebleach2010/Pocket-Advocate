@@ -66,6 +66,51 @@ const SAM_DIFFERENTIAL = [
   { name: 'Chronic migraine', pct: 30, why: 'Fifteen or more headache days a month for over three months.', moves: 'Light and sound sensitivity, and nausea on the bad days.' },
 ];
 
+// Priya's and Jordan's own reads (2026-10-17): Priya had none, so Update
+// spun and settled back on nothing, and Jordan wore Dana's joint pain.
+const PRIYA_ANALYSIS = `## Right now
+Episodes of a racing heart, three or four a week, each lasting a few minutes,
+and an October echo read as structurally normal. The episodes start and stop
+suddenly, which narrows things more than the echo does.
+
+## Plain English
+A normal echo says the heart's structure is fine. It says nothing about the
+rhythm during an episode, and that is the open question. Catching one on a
+monitor is the usual next step.
+
+## Worth asking
+- Has anyone offered a two week patch monitor?
+- Do the episodes stop with bearing down or cold water on the face?
+- Any fainting, or near fainting, during one?`;
+
+const PRIYA_DIFFERENTIAL = [
+  { name: 'Supraventricular tachycardia', pct: 45, why: 'Sudden start and sudden stop, a few minutes each.', moves: 'An episode caught on a monitor.' },
+  { name: 'Postural tachycardia', pct: 30, why: 'Worse on standing, with tiredness between episodes.', moves: 'Heart rate lying down and after ten minutes standing.' },
+  { name: 'Inappropriate sinus tachycardia', pct: 25, why: 'A fast resting rate with a normal echo.', moves: 'The resting rate across a whole day.' },
+];
+
+const JORDAN_ANALYSIS = `## Right now
+Numbness in the left arm and blurred vision in episodes since spring, a
+neurology note from 19 May asking for an MRI, and the plan's denial as not
+medically necessary. The first-level appeal is filed and their clock is
+running.
+
+## Plain English
+The neurologist asked for the scan because the episodes have not been
+explained. The denial cites a criterion the note already meets; the appeal
+says so, line by line.
+
+## Worth asking
+- Has the neurologist offered a peer to peer call with the plan?
+- How long does each episode last, and what ends it?
+- Is there a date the records from Valley Neurology are promised by?`;
+
+const JORDAN_DIFFERENTIAL = [
+  { name: 'Migraine with aura', pct: 40, why: 'Episodes of visual blur with numbness that pass.', moves: 'Headache after the episodes, and how long the aura lasts.' },
+  { name: 'Demyelinating disease', pct: 35, why: 'Separate episodes in different parts of the body.', moves: 'The MRI the plan denied.' },
+  { name: 'Cervical radiculopathy', pct: 25, why: 'Arm numbness that can follow neck position.', moves: 'Whether turning the head brings it on.' },
+];
+
 const DANA_CHAT = [
   [12, 'client', "Hi Grace. I've been going in circles for about two years now. Fatigue that doesn't lift, joint pain that moves around, and three doctors who have each told me something different."],
   [12, 'admin', "Thank you for writing all that out. Two years is a long time to carry this on your own. Before our call I'd like to see whatever bloodwork you have, even the old ones."],
@@ -127,6 +172,13 @@ export function seedLive({ set, file }) {
       charge: { state: 'captured', capturedCents: 210000, capturedAt: lastMonth(24) },
     });
     files.set(`cases/${id}/uploads/1760100000000-echo-report-october.pdf`, { name: '1760100000000-echo-report-october.pdf', type: 'application/pdf', size: 198_000, at: days(1).toISOString(), url: '' });
+    docs.set(`cases/${id}/advisor/state`, {
+      ...(docs.get(`cases/${id}/advisor/state`) || {}),
+      analysis: PRIYA_ANALYSIS, differential: PRIYA_DIFFERENTIAL, workingDx: 'Racing heart in episodes, normal echo',
+      status: 'idle', updatedAt: hours(20), diffAt: hours(20), corrections: [], unanswered: [],
+    });
+    // On the calendar (2026-10-17): her call was on the case and missing from the month.
+    docs.set('availability/live-priya', { state: 'booked', start: docs.get(`cases/${id}`).appointment.start, durationMin: 60, caseId: id, advocateId: 'demo-advocate' });
   }
 
   // Jordan, Marcus's: Full-Service, month two.
@@ -137,6 +189,10 @@ export function seedLive({ set, file }) {
       ...docs.get(`cases/${id}`),
       charge: { state: 'captured', capturedCents: 350000, capturedAt: lastMonth(6) },
       extraPayments: [{ kind: 'fullaccess', amountCents: 440000, at: lastMonth(21) }],
+    });
+    docs.set(`cases/${id}/advisor/state`, {
+      ...docs.get(`cases/${id}/advisor/state`),
+      analysis: JORDAN_ANALYSIS, differential: JORDAN_DIFFERENTIAL, workingDx: 'Denied MRI, criteria arguably met',
     });
   }
 
@@ -157,8 +213,10 @@ export function seedLive({ set, file }) {
         { kind: 'followup', amountCents: 32500, at: lastMonth(18) },
         { kind: 'tip', amountCents: 7500, at: lastMonth(19) },
       ],
-      followUp: { at: inDays(2), durationMin: 30, method: 'video' },
+      // `start`, as every page reads it (2026-10-17: under `at` it showed as Dec 31).
+      followUp: { start: inDays(2), durationMin: 30, kind: 'followup', label: 'Follow-up discussion', amountCents: 32500, scheduledAt: days(3), method: 'video' },
     });
+    docs.set('availability/live-dana', { state: 'booked', start: docs.get(`cases/${id}`).followUp.start, durationMin: 30, caseId: id, advocateId: 'demo-grace', kind: 'followup' });
     for (const [p, m] of docs) if (p.startsWith(`cases/${id}/agenda/`) && m.by === JORDAN) docs.set(p, { ...m, by: dana });
     chat(id, dana, 'demo-grace', DANA_CHAT);
     hand(id, 'demo-grace', 'Grace');
@@ -203,14 +261,44 @@ export function seedLive({ set, file }) {
     docs.set(`subscriptions/${sam}/chat/s001`, { from: sam, role: 'client', text: 'Quick one: is it normal to feel worse on the weekends?', ts: hours(5) });
   }
 
+  // Every case with a conversation says so in Chats (2026-10-17): Jordan's and
+  // Priya's read "No messages yet" over a full thread.
+  for (const [p, c] of [...docs]) {
+    if (!/^cases\/[^/]+$/.test(p) || c.lastMessage) continue;
+    const last = [...docs].filter(([k]) => k.startsWith(`${p}/chat/`)).map(([, m]) => m)
+      .sort((a, b) => new Date(b.ts || 0) - new Date(a.ts || 0))[0];
+    if (last) docs.set(p, { ...c, lastMessage: { text: String(last.text || '').slice(0, 120), from: last.from, role: last.role, ts: last.ts, emailed: true } });
+  }
+
   for (const [p, v] of docs) set(p, v);
   for (const [p, v] of files) file(p, v);
+}
+
+/** A first read for a case that has none, in its own name (2026-10-17). */
+export function firstRead(c) {
+  const first = String(c.clientName || '').split(' ')[0] || 'This client';
+  return {
+    analysis: `## Right now\n${first}'s file is new: the intake and whatever has been uploaded so far. Nothing in it contradicts what was said at booking.\n\n## Plain English\nIt is too early for a pattern. The first call is where the history gets its dates, and the records sent after it are what this read will lean on.\n\n## Worth asking\n- When did this start, as close to a date as possible?\n- What has been tried, and what changed after each?\n- Which records are still with a clinic?`,
+    workingDx: 'New case, first read',
+    differential: [],
+    diffAt: new Date(),
+  };
 }
 
 /**
  * What a practice client asks back when he writes to them. Basic, the way a
  * real client's next question usually is; one per message he sends, in turn.
  */
+/** What a Priority Chat subscriber asks back: a chat has no calls (2026-10-17). */
+export const LIVE_CHAT_QUESTIONS = [
+  'Thank you. Is it normal for it to come and go like that?',
+  'Should I be writing these down somewhere?',
+  'Can I send you a photo of the label?',
+  'Is this something to ask my doctor about, or can it wait?',
+  'What should I ask the pharmacist when I pick it up?',
+  'That helps, thank you. Okay if I check in again later this week?',
+];
+
 export const LIVE_QUESTIONS = [
   'Thank you. When is our next call again?',
   'Do you need anything else from me before then?',

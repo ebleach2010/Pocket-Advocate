@@ -33,7 +33,13 @@
 <link rel="stylesheet" href="/css/site.css?v=sp16">
 <link rel="stylesheet" href="/css/glowup.css?v=sp9">
 <link rel="stylesheet" href="/css/look.css?v=7">
-<link rel="stylesheet" href="/css/warm.css?v=2">
+<link rel="stylesheet" href="/css/warm.css?v=3">
+<style>
+  /* THE BOX ON THE SCREEN (audit, 2026-10-16: on an iPhone the message box
+     opened below the bottom edge). The conversation is sized to what is left
+     of the screen under it, so the box always shows; chat-page.js sets it. */
+  body.chat-page .chat-root:not(.chat-full) .chat-log { max-height: var(--fit-h, 45vh); }
+</style>
 <script type="module" src="/js/nav-menu.js"></script>
 </head>
 <body class="chat-page">

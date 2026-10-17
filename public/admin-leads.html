@@ -30,15 +30,17 @@
 })();
 </script>
 <link rel="stylesheet" href="/css/site.css?v=sp16">
-<link rel="stylesheet" href="/css/admin.css?v=stat138">
+<link rel="stylesheet" href="/css/admin.css?v=stat139">
 <link rel="stylesheet" href="/css/look.css?v=7">
-<link rel="stylesheet" href="/css/warm.css?v=2">
+<link rel="stylesheet" href="/css/warm.css?v=3">
 <script type="module" src="/js/nav-menu.js"></script>
 <style>
   /* The Leads tab (2026-10-14). A plain table that scrolls sideways inside its
      own box on a phone, so the page never does. */
   .leads-acts { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: 0 0 1rem; }
   .leads-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  .leads-hint { margin: 0 0 .4rem; }
+  @media (min-width: 1600px) { .leads-hint { display: none; } }
   .leads { width: 100%; border-collapse: collapse; font-size: .88rem; }
   .leads th, .leads td { padding: .55rem .7rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
   .leads th { position: sticky; top: 0; background: var(--panel); color: var(--dim); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }

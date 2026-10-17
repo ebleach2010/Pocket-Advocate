@@ -219,8 +219,12 @@ const theirs = await client.evaluate(() => ({
 if (SHOTS) await client.screenshot({ path: `${SHOTS}/cleanup-4-client-full.png` });
 // NEGATIVE CONTROL (run 2026-10-15, v7.53): case.js's statusWord back to STATUS_LABEL alone made this read
 //   FAIL  their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way
+// RE-PINNED 2026-10-17 (v7.62): the look audit, "FULL-SERVICE" read twice and wrapped: beside its pill the words
+// finish the name, so the card reads FULL-SERVICE Case Management once.
+// NEGATIVE CONTROL (run 2026-10-17, v7.62): case.js's kindWords back to `c.fullAccess ? 'Full-Service Case Management' : 'Advocacy Case'` made this read
+//   FAIL  their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way
 ok('their Full-Service page says Full-Service Case Management, never REPORT DUE or a report on its way',
-  theirs.pill === 'FULL-SERVICE' && /Full-Service Case Management/.test(theirs.eyebrow || '') && !theirs.onItsWay, JSON.stringify(theirs));
+  theirs.pill === 'FULL-SERVICE' && theirs.eyebrow === 'FULL-SERVICE Case Management' && !theirs.onItsWay, JSON.stringify(theirs));
 
 console.log('\n--- E. the doubles cut (v7.54) ---');
 await eric.goto(`${P}/admin-case.html?id=demo-case&demo=admin`, { waitUntil: 'networkidle' });

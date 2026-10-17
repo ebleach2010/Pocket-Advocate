@@ -54,10 +54,23 @@ function brief(p) {
 }
 
 function photo(p) {
-  if (p.hasPhoto) return `<img class="tm-photo" src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}${p.photoV ? `&v=${encodeURIComponent(p.photoV)}` : ''}" alt="" width="56" height="56">`;
   const init = p.name.split(/\s+/).map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase();
+  if (p.hasPhoto) return `<img class="tm-photo" src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}${p.photoV ? `&v=${encodeURIComponent(p.photoV)}` : ''}" alt="" width="56" height="56" data-init="${esc(init)}">`;
   return `<span class="tm-init" aria-hidden="true">${esc(init)}</span>`;
 }
+
+// A photo that will not load becomes their initials (2026-10-17, the look
+// audit: a broken-picture icon on his own card). Caught on the way down, as
+// an image's error never bubbles.
+document.addEventListener('error', (e) => {
+  const img = e.target;
+  if (!img?.matches?.('img.tm-photo')) return;
+  const s = document.createElement('span');
+  s.className = 'tm-init';
+  s.setAttribute('aria-hidden', 'true');
+  s.textContent = img.dataset.init || '';
+  img.replaceWith(s);
+}, true);
 
 function card(p) {
   const pill = p.owner ? '<span class="tm-pill">YOU</span>'
@@ -198,7 +211,7 @@ function showTab(name) {
     b.setAttribute('aria-selected', String(on));
   }
   for (const s of document.querySelectorAll('[data-emp-page]')) s.hidden = s.dataset.empPage !== name;
-  if (name === 'payroll') loadDrafts();
+  if (name === 'payroll') { loadDrafts(); mountLivePractice(); }
   if (name === 'history') loadHistory();
   try { history.replaceState(null, '', name === 'team' ? location.pathname : `${location.pathname}#${name}`); } catch { /* fine */ }
 }
@@ -261,14 +274,17 @@ fillDates();
 // amount of clients and type before I run fake payroll. So from the payroll
 // screen in the suite would be best I assume"). Inside Demo mode only: the
 // practice team's clients, set above the form and paid inside its dates.
-try {
-  if (sessionStorage.getItem('pa-demo-live') === '1') {
-    import('./demo/practice.js').then((m) => m.mountPractice(document.getElementById('practice'), {
-      dates: () => ({ start: form.start.value, end: form.end.value }),
-      onSet: () => load(),
-    })).catch(() => { /* the payroll still runs without it */ });
-  }
-} catch { /* no storage: not in Demo mode */ }
+mountLivePractice();
+// Painted again each time Payroll opens (2026-10-17), so a share changed on
+// the Team tab reads the same here.
+function mountLivePractice() {
+  try { if (sessionStorage.getItem('pa-demo-live') !== '1') return; } catch { return; /* no storage: not in Demo mode */ }
+  const f = document.getElementById('pr-form');
+  import('./demo/practice.js').then((m) => m.mountPractice(document.getElementById('practice'), {
+    dates: () => ({ start: f.start.value, end: f.end.value }),
+    onSet: () => load(),
+  })).catch(() => { /* the payroll still runs without it */ });
+}
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const said = document.getElementById('pr-said');
@@ -355,7 +371,11 @@ function showRun(run) {
   const withSample = Object.fromEntries(['cases', 'salesCents', 'deductionsCents', 'commissionCents', 'tipsCents', 'adjustmentsCents', 'totalCents']
     .map((k) => [k, (Number(t[k]) || 0) + samples.reduce((sum, r) => sum + (Number(r[k]) || 0), 0)]));
   const totalRow = (label, x, cls) => `<tr class="pr-total${cls}"><td>${label}</td><td data-label="Cases">${x.cases || 0}</td><td data-label="Client sales">${money(x.salesCents)}</td><td data-label="Deductions">${x.deductionsCents ? signed(-x.deductionsCents) : money(0)}</td><td data-label="Commission">${money(x.commissionCents)}</td><td data-label="Tips">${money(x.tipsCents)}</td><td data-label="Pay adjustments">${signed(x.adjustmentsCents || 0)}</td><td data-label="Total" class="pr-tot-cell">${signed(x.totalCents || 0)}</td><td class="pr-pay-cell"></td></tr>`;
-  const payCell = (r) => (r.payout?.label ? `${esc(r.payout.label)}<br><span class="dim small">${esc(r.payout.hint || '')}</span>` : '<span class="dim">Not set yet</span>');
+  // The hint alone when it already names the method (2026-10-17): "Zelle to ma…om" under "Zelle" said it twice.
+  const hintSays = (r) => !!r.payout?.hint && r.payout.hint.toLowerCase().startsWith(String(r.payout.label || '').toLowerCase());
+  const payCell = (r) => (r.payout?.label
+    ? (hintSays(r) ? esc(r.payout.hint) : `${esc(r.payout.label)}<br><span class="dim small">${esc(r.payout.hint || '')}</span>`)
+    : '<span class="dim">Not set yet</span>');
   box.innerHTML = `
     <div class="pr-head">
       <h2>${esc(longDay(run.start))} to ${esc(longDay(run.end))} <span class="pr-chip ${paid ? 'done' : 'draft'}">${paid ? 'PAID' : 'DRAFT'}</span>${run.editedAt ? ' <span class="pr-chip">EDITED</span>' : ''}</h2>
@@ -431,8 +451,8 @@ function detailHtml(r, draft) {
   const adj = r.adjustments || [];
   return `
     <table class="pr-lines">
-      ${lines.length ? lines.map((l) => `<tr><td>${esc(shortDay(l.at))}</td><td>${esc(l.client || '')}</td><td>${esc(l.label)}</td><td class="n">${l.kind === 'advisor' ? '' : money(l.cents)}</td><td class="n">${signed(l.payCents)}</td></tr>`).join('') : '<tr><td>No sales, tips or deductions in this period.</td></tr>'}
-      ${adj.map((a) => `<tr><td>${esc(shortDay(a.at))}</td><td colspan="2">${esc(a.type)}${a.note ? `: ${esc(a.note)}` : ''}</td><td></td><td class="n">${signed(a.cents)}${draft ? ` <button type="button" class="btn quiet tiny" data-unadj="${esc(a.id)}">Remove</button>` : ''}</td></tr>`).join('')}
+      ${lines.length ? lines.map((l) => `<tr><td>${esc(shortDay(l.at))}</td><td>${esc(l.client || '')}</td><td>${esc(l.label)}</td><td class="n">${l.kind === 'advisor' ? '' : money(l.cents)}</td><td class="n">${signed(l.payCents)}</td></tr>`).join('') : '<tr class="pr-none"><td>No sales, tips or deductions in this period.</td></tr>'}
+      ${adj.map((a) => `<tr class="pr-adj"><td>${esc(shortDay(a.at))}</td><td colspan="2">${esc(a.type)}${a.note ? `: ${esc(a.note)}` : ''}</td><td></td><td class="n">${signed(a.cents)}${draft ? ` <button type="button" class="btn quiet tiny" data-unadj="${esc(a.id)}">Remove</button>` : ''}</td></tr>`).join('')}
     </table>
     ${r.payout?.details ? `<p style="margin:.6rem 0 0;"><button type="button" class="btn quiet" data-reveal="${esc(r.uid)}">Show how to pay ${esc(r.name)}</button></p>` : ''}`;
 }

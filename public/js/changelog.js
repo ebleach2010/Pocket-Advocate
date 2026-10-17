@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.61';
+export const VERSION = '7.62';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.61';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE THREE AUDITS' ERRORS (Eric, 2026-10-16: "send three agents to look
+    // for errors in the suite, errors in UI, and a third glance at overall
+    // aesthetic"). Admin only; the look's taste calls are his to make.
+    version: '7.62',
+    quiet: true,
+    client: [],
+    admin: [
+      'Payroll names a Full-Service charge Full-Service, and its lines fit your phone.',
+      'A Full-Service case stays FULL-SERVICE after you file something, and Chats says who wrote the last word.',
+      'Fixed on phones: the notes buttons, the first-run card, Settings\' Done, and the client\'s case card.',
+      'In Demo mode every client has their own read, notes are kept, the calendar shows their calls, and signing out leaves it.',
+    ],
+  },
   {
     // DEMO MODE (Eric, 2026-10-16: "There should also be a button at the top
     // called 'demo mode' where you press it and 4 of these clients appear",

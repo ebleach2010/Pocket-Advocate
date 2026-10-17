@@ -194,6 +194,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // mode is, what works in it, and the practice team on its payroll.
   // NEGATIVE CONTROL (run 2026-10-16, v7.61): the worker's BUILD_TAG left at the fakes-off tag made this read
   //   FAIL  R1 both versions read 7.61 with the new tag, the 7.61 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.62): both versions read 7.62 with the audit-fixes tag, and the 7.62 entry says payroll
+  // names Full-Service, a Full-Service case stays so, what was fixed on phones, and what Demo mode keeps.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.62): the worker's BUILD_TAG left at the demo-mode tag made this read
+  //   FAIL  R1 both versions read 7.62 with the new tag, the 7.62 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry762 = (CL.match(/\{\n\s+\/\/ THE THREE AUDITS' ERRORS \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry761 = (CL.match(/\{\n\s+\/\/ DEMO MODE \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry760 = (CL.match(/\{\n\s+\/\/ INVENTED CLIENTS OFF HIS SHELF \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
   const entry759 = (CL.match(/\{\n\s+\/\/ HIS THREE ACTS ON THEIR CASES \(Eric, 2026-10-16[\s\S]*?\n  \},/) || [''])[0];
@@ -261,9 +266,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.61 with the new tag, the 7.61 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.61';/.test(CL) && /const VERSION = '7\.61';/.test(W) && /const BUILD_TAG = 'v2026-10-16-demo-mode';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.61'
+  check('R1 both versions read 7.62 with the new tag, the 7.62 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.62';/.test(CL) && /const VERSION = '7\.62';/.test(W) && /const BUILD_TAG = 'v2026-10-17-audit-fixes';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.62'
+    && /version: '7\.62',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry762)
+    && /Payroll names a Full-Service charge Full-Service, and its lines fit your phone\./.test(entry762) && /In Demo mode every client has their own read/.test(entry762)
+    && !DASH.test(entry762) && !HARD.some((re) => re.test(entry762))
     && /version: '7\.61',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry761)
     && /Demo mode, on Clients: a practice copy with four clients and four team members\./.test(entry761) && /set how many clients each team member has and what kind/.test(entry761)
     && !DASH.test(entry761) && !HARD.some((re) => re.test(entry761))

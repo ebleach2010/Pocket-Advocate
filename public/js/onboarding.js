@@ -126,6 +126,11 @@ function runIntro(user, mount, fullySet, welcome = true) {
   overlay.className = 'intro-overlay';
   overlay.setAttribute('role', 'dialog');
   overlay.setAttribute('aria-modal', 'true');
+  // A short screen scrolls the card instead of cutting it (2026-10-17): its top
+  // and its buttons stay in reach on the smallest iPhone, and the card's own
+  // auto margins still centre it wherever there is room.
+  overlay.style.overflowY = 'auto';
+  overlay.style.alignItems = 'flex-start';
   document.body.appendChild(overlay);
   // Focus goes in and stays in. It said aria-modal and then let Tab walk the
   // page behind it, which for anyone navigating by keyboard is worse than not
@@ -153,7 +158,7 @@ function runIntro(user, mount, fullySet, welcome = true) {
     const s = steps[i];
     const last = i === steps.length - 1;
     overlay.innerHTML = `
-      <div class="intro-card">
+      <div class="intro-card" style="margin:auto 0;">
         <div class="intro-dots">${steps.map((_, k) => `<span class="${k === i ? 'on' : ''}"></span>`).join('')}</div>
         <h2>${s.title}</h2>
         ${s.body}

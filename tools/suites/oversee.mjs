@@ -175,8 +175,11 @@ console.log('\n--- E. the pages ---');
 {
   // NEGATIVE CONTROL (run 2026-10-16): the quiet view's `!/...api\/admin\/oversee$/.test(url)` exception taken out made this read
   //   FAIL  E1 the quiet view lets exactly the oversee route out, and still answers every other write with its one line
+  // RE-PINNED 2026-10-17 (v7.62): the demo audit, the line popped up on opening and on tab switches: it answers
+  // his own tap only, the write still refused either way.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.62): the oversee exception taken out again made E1 read FAIL.
   check('E1 the quiet view lets exactly the oversee route out, and still answers every other write with its one line',
-    /if \(method !== 'GET' && \/\^\(\\\/\|https\?:\\\/\\\/\[\^\/\]\+\\\/\)api\\\/\/\.test\(url\) && !\/\^\(\\\/\|https\?:\\\/\\\/\[\^\/\]\+\\\/\)api\\\/admin\\\/oversee\$\/\.test\(url\)\) \{\n\s+say\(LINE\);/.test(CASE)
+    /if \(method !== 'GET' && \/\^\(\\\/\|https\?:\\\/\\\/\[\^\/\]\+\\\/\)api\\\/\/\.test\(url\) && !\/\^\(\\\/\|https\?:\\\/\\\/\[\^\/\]\+\\\/\)api\\\/admin\\\/oversee\$\/\.test\(url\)\) \{\n\s+if \(Date\.now\(\) - lastAct\.t < 3000 && !lastAct\.nav\) say\(LINE\);/.test(CASE)
     && /messageTools: asUid \? removeMessageTool : null,/.test(CASE) && /\$\{asUid && r\.kind !== 'saved'/.test(CASE)
     && /data-quiet-duty/.test(CASE) && /action: 'crisis', caseId, text/.test(CASE));
   // NEGATIVE CONTROL (run 2026-10-16): chat.js's removed branch writing `data.text` into the bubble made this read

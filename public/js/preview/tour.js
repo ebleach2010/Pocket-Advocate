@@ -23,7 +23,8 @@ const STEPS = [
   { tab: 'progress', at: '[data-hours-card]', title: 'Hours, out in the open', body: 'On Full-Service you see every hour Eric works on the case, and what he is doing right now.' },
   { tab: 'progress', at: '[data-worklog]', title: 'The work log', body: 'Every call, fax and appeal made for the case, with the date and who it was with.' },
   { tab: 'chat', at: '[data-chat-who]', title: 'Eric, in office', body: 'The green pill means Eric is in. Tap the ? any time to see when he answers.' },
-  { tab: 'chat', at: '[data-chat]', title: 'Chat', body: 'Records, scheduling, anything new or urgent with your health. Try it: type a message and tap Send, and see how a reply feels.' },
+  // Its card sits at the top (2026-10-17): at the foot it covered the message box it points to.
+  { tab: 'chat', at: '[data-chat]', top: true, title: 'Chat', body: 'Records, scheduling, anything new or urgent with your health. Try it: type a message and tap Send, and see how a reply feels.' },
   { tab: 'chat', at: '[data-nextcall]', title: 'For the next call', body: 'Questions for the call go on this list, and you go through them together on the call.' },
   { tab: 'docs', at: '[data-drop]', title: 'Docs: add anything', body: 'Labs, imaging, letters. Tap here to add a file. Try one: in the preview it stays in this browser.' },
   { tab: 'docs', at: '[data-files]', title: 'Every file in one place', body: 'Uploads, files from the chat, the call recording and Eric\'s report. Joe adds a couple most days.' },
@@ -51,6 +52,7 @@ const CSS = `
     font: 500 .95rem/1.5 'Manrope', -apple-system, 'Segoe UI', system-ui, sans-serif;
   }
   .pv-tour.center .pv-tour-card { top: 50%; bottom: auto; transform: translateY(-50%); }
+  .pv-tour.top .pv-tour-card { top: calc(var(--pv-hb, 64px) + 8px); bottom: auto; }
   .pv-tour-n { margin: 0 0 .2rem; color: #FFC48A; font-size: .74rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
   .pv-tour-card h2 { margin: 0 0 .35rem; font: 600 1.15rem/1.3 'Sora', 'Manrope', system-ui, sans-serif; letter-spacing: -.01em; color: #FFF5EE; }
   .pv-tour-card p.pv-tour-b { margin: 0 0 .9rem; color: #F2E1D6; }
@@ -126,8 +128,9 @@ function runTour(markSeen) {
     if (target && !target.isConnected) target = document.querySelector(STEPS[i].at);
     if (target && visible(target)) {
       const r = target.getBoundingClientRect();
-      const top = Math.max(r.top - 8, 4);
-      const bottom = Math.min(r.bottom + 8, card.getBoundingClientRect().top - 10);
+      const up = root.classList.contains('top');
+      const top = Math.max(r.top - 8, up ? card.getBoundingClientRect().bottom + 10 : 4);
+      const bottom = Math.min(r.bottom + 8, up ? window.innerHeight - 4 : card.getBoundingClientRect().top - 10);
       const pad = 8;
       spot.style.left = `${Math.max(4, r.left - pad)}px`;
       spot.style.width = `${Math.min(window.innerWidth - 8, r.width + pad * 2)}px`;
@@ -159,7 +162,13 @@ function runTour(markSeen) {
     if (target?.closest('.folder-tabs')) target.scrollIntoView({ block: 'nearest', inline: 'center' });
     root.classList.toggle('center', !target);
     root.classList.toggle('lit', !!target);
-    if (target) {
+    root.classList.toggle('top', !!(target && step.top));
+    root.style.setProperty('--pv-hb', `${headerBottom()}px`);
+    if (target && step.top) {
+      // The foot of the section on screen: for Chat, the box to type in.
+      const r = target.getBoundingClientRect();
+      if (r.bottom > window.innerHeight - 14) window.scrollTo({ top: Math.max(0, window.scrollY + r.bottom - window.innerHeight + 14), behavior: 'auto' });
+    } else if (target) {
       const r = target.getBoundingClientRect();
       const room = window.innerHeight - headerBottom() - card.offsetHeight - 40;
       const fixedTarget = getComputedStyle(target.closest('.pv-strip') || target).position === 'sticky';

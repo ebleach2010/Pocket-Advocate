@@ -363,7 +363,7 @@ function render(el) {
               <div class="chat-head">
                 <h3>${data.self ? 'Your notes' : 'Chat with the client'}</h3>
                 <label class="status-pick">
-                  <span class="dim small">Working on</span>
+                  <span class="dim small" style="white-space:nowrap;">Working on</span>
                   <select data-status-pick aria-label="What you are working on">
                     <option value="">Nothing right now</option>
                   </select>
@@ -1962,7 +1962,9 @@ function refreshHeader() {
   const name = document.querySelector('[data-client]');
   const pill = document.querySelector('[data-status]');
   if (name) name.textContent = c.clientName || c.clientEmail || c.clientUid;
-  if (pill) pill.textContent = c.self ? 'MY OWN CASE' : (c.status || '?').replace('_', ' ').toUpperCase();
+  // Same rule as the first draw (2026-10-17): Full-Service owes no report, so a
+  // refresh after a filing must not flip its pill to AWAITING REPORT.
+  if (pill) pill.textContent = c.self ? 'MY OWN CASE' : c.fullAccess && c.status !== 'closed' ? 'FULL-SERVICE' : (c.status || '?').replace('_', ' ').toUpperCase();
 }
 
 // The working line under the client's name, kept current by the advisor's
@@ -7111,12 +7113,19 @@ function quietView(uid) {
     t._h = setTimeout(() => t.remove(), 2600);
   };
   const LINE = 'Seeing what they see: nothing here can be changed.';
+  // The line answers his own tap only (2026-10-17): the page's own writes on
+  // opening, or after a tab or a fold, are refused without a word.
+  const NAV = '.folder-groups button, .folder-tabs a, .folder-tabs button, .ftab, .fgrp, summary, a[href], [data-expand], .chat-search, .chat-search *, .chat-bottom';
+  let lastAct = { t: 0, nav: true };
+  for (const type of ['pointerdown', 'keydown']) {
+    document.addEventListener(type, (e) => { lastAct = { t: Date.now(), nav: !!e.target.closest?.(NAV) }; }, true);
+  }
   window.fetch = (input, init = {}) => {
     const url = typeof input === 'string' ? input : input?.url || '';
     const method = String(init.method || (typeof input === 'object' && input?.method) || 'GET').toUpperCase();
     // His three acts (2026-10-16) are the one write that leaves.
     if (method !== 'GET' && /^(\/|https?:\/\/[^/]+\/)api\//.test(url) && !/^(\/|https?:\/\/[^/]+\/)api\/admin\/oversee$/.test(url)) {
-      say(LINE);
+      if (Date.now() - lastAct.t < 3000 && !lastAct.nav) say(LINE);
       return Promise.resolve(new Response(JSON.stringify({ error: LINE }), { status: 409, headers: { 'content-type': 'application/json' } }));
     }
     return realFetch(input, init);

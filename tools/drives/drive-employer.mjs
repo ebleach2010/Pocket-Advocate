@@ -129,7 +129,15 @@ await tryStep(() => adm.fill('dialog.tm-sheet [name="bio"]', 'Twelve years in ne
 await tap(adm, 'dialog.tm-sheet[open] button[value="ok"]');
 await tryStep(() => adm.waitForSelector('dialog.tm-sheet', { state: 'detached', timeout: 8000 }));
 await adm.waitForTimeout(800);
-const prof = await adm.evaluate(() => ({ photo: document.querySelector('.tm-card[data-uid="demo-advocate"] .tm-photo')?.getAttribute('src') || '' }));
+// RE-PINNED 2026-10-17 (v7.62): the look audit, a photo that will not load now becomes initials, and the bytes
+// this drive uploads are no real picture: the card shows her initials over a saved photo, and the record says so.
+// NEGATIVE CONTROL (run 2026-10-17, v7.62): the sheet's photo upload taken out again (the `if (file) {` block skipped) made the check below read FAIL.
+const prof = await adm.evaluate(async () => {
+  const card = document.querySelector('.tm-card[data-uid="demo-advocate"]');
+  const team = await fetch('/api/admin/team').then((r) => r.json()).catch(() => ({}));
+  const ana = (team.team || []).find((p) => p.uid === 'demo-advocate') || {};
+  return { photo: card?.querySelector('.tm-photo')?.getAttribute('src') || '', init: card?.querySelector('.tm-init')?.textContent || '', hasPhoto: !!ana.hasPhoto, photoV: ana.photoV || '' };
+});
 await tap(adm, '.tm-card[data-uid="demo-advocate"] [data-profile]');
 await tryStep(() => adm.waitForSelector('dialog.tm-sheet[open]', { timeout: 8000 }));
 const reread = await adm.evaluate(() => ({ bio: document.querySelector('dialog.tm-sheet [name="bio"]')?.value, cred: document.querySelector('dialog.tm-sheet [name="credentials"]')?.value }));
@@ -139,7 +147,7 @@ const hisOwn = await adm.evaluate(() => document.querySelector('.tm-card [data-p
 // NEGATIVE CONTROL (run 2026-10-15, v7.50): the sheet's photo upload taken out (the `if (file) {` block skipped) made this read
 //   FAIL  he uploads a contractor's photo and bio from their card, and they read back; his own card has his
 ok('he uploads a contractor\'s photo and bio from their card, and they read back; his own card has his',
-  /\/api\/advocates\/headshot\?uid=demo-advocate&v=\d+/.test(prof.photo) && reread.bio === 'Twelve years in neurology clinics, now on your side of the table.'
+  prof.hasPhoto && /^\d+$/.test(prof.photoV) && (prof.photo.includes(`uid=demo-advocate&v=${prof.photoV}`) || prof.init === 'AR') && reread.bio === 'Twelve years in neurology clinics, now on your side of the table.'
   && reread.cred === 'RN, BCPA' && hisOwn === 'Your photo and bio', JSON.stringify({ prof, reread, hisOwn }));
 
 console.log('\n--- C. the temporary chat ---');

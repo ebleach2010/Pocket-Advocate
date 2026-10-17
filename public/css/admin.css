@@ -817,9 +817,11 @@ main > p > a.small[href="/admin.html"] {
      keyboard fight over the same strip of screen and the keyboard wins, which
      leaves the buttons stranded under it. Sticky keeps the bar sitting on top
      of the paper wherever he has scrolled to.
-     The offset is the header (3rem) plus the folder tab strip under it; z-index
-     3 keeps it below that strip at 4, per the budget. */
-  position: sticky; top: calc(3rem + 3.3rem); z-index: 3;
+     The offset is the header plus the group row under it, the same sum the
+     group row docks by (2026-10-17: the old 3rem + 3.3rem tucked the buttons
+     under that row, and the whole bar under it with the demo strip); z-index
+     3 keeps it below that row, per the budget. */
+  position: sticky; top: calc(var(--demo-bar-h, 0px) + var(--bar-h, 3rem) + var(--adm-grp-h)); z-index: 3;
   display: flex; flex-wrap: wrap; align-items: center; gap: .3rem;
   padding: .4rem .45rem;
   background: var(--bar); backdrop-filter: blur(8px);
@@ -884,7 +886,7 @@ main > p > a.small[href="/admin.html"] {
 
 @media (max-width: 420px) {
 .notes-paper { --nt-rule: 1.8rem; --nt-gutter: 2.5rem; padding-right: .8rem; }
-.notes-toolbar { top: calc(3rem + 3.1rem); gap: .25rem; padding: .35rem .3rem; }
+.notes-toolbar { gap: .25rem; padding: .35rem .3rem; }
 .notes-tool { padding: 0 .35rem; }
 }
 
@@ -1046,6 +1048,9 @@ main > p > a.small[href="/admin.html"] {
    a button keeps its label on one line by default, so on a phone it ran past
    the right edge and the chat page scrolled sideways. It wraps (2026-09-05). */
 .btn.work-total-btn { white-space: normal; text-align: left; max-width: 100%; }
+/* Wrapped, a pill's ends pinched the second line (2026-10-17): a softer corner
+   holds one line or two. */
+.btn.work-total-btn { border-radius: 16px; }
 .work-total-btn .fixit {
   flex: none; font-size: .72rem; letter-spacing: .04em; color: var(--cyan);
 }
@@ -1703,6 +1708,10 @@ main > p > a.small[href="/admin.html"] {
 :root:not([data-scheme="contrast"]) .drawer .folder-flags { color: #52462F; color: color-mix(in srgb, var(--manila-ink) 78%, var(--manila)); }
 :root:not([data-scheme="contrast"]) .drawer .folder-clock { background: rgba(0, 0, 0, .10); }
 :root:not([data-scheme="contrast"]) .drawer .folder-clock .wk-sw { background: rgba(0, 0, 0, .30); }
+/* A running clock's green on a pale backing (2026-10-17, the look audit: the
+   green on the darker stock read at 3:1, today's share at 2.4:1). */
+:root:not([data-scheme="contrast"]) .drawer .folder-clock.on { background: rgba(255, 255, 255, .55); }
+.drawer .folder-clock .fc-day { opacity: 1; }
 :root:not([data-scheme="contrast"]) .drawer .fld-alert { background: #7A271F; border: 1px solid #52140F; color: #FFFFFF; border-radius: 8px; }
 /* Words that were bright on black, in ink that reads on the stock. */
 :root:not([data-scheme="contrast"]) .drawer .folder-body { --orange: #7A4A00; }

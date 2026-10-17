@@ -106,8 +106,33 @@ async function load() {
         ? 'This conversation is closed. Your history stays here; subscribe to reach me.'
         : t.paused ? 'This case is paused.' : '',
     });
+    // Again as the pill and the case picker above it finish painting.
+    for (const ms of [0, 400, 1200]) setTimeout(fitChat, ms);
   }
   open();
+  window.addEventListener('resize', () => fitChat());
+}
+
+/**
+ * The conversation takes what is left of the screen under it, so the message
+ * box is on the screen when the page opens (audit, 2026-10-16: on an iPhone
+ * it sat below the bottom edge, and the page and the chat scrolled apart).
+ */
+function fitChat() {
+  const root = document.getElementById('chat');
+  const log = root?.querySelector('.chat-log');
+  if (!root || !log) return;
+  const form = root.querySelector('.chat-form, .chat-notice');
+  const top = log.getBoundingClientRect().top + window.scrollY;
+  const room = window.innerHeight - top - (form ? form.offsetHeight : 0) - 16;
+  root.style.setProperty('--fit-h', `${Math.max(180, Math.round(room))}px`);
+  // A small screen still might not hold it all: the page then rests with the
+  // box at the bottom edge, the newest messages just above it.
+  if (form && !fitChat.done && document.readyState === 'complete' && performance.now() > 1000) {
+    fitChat.done = true;
+    const end = form.getBoundingClientRect().bottom;
+    if (end > window.innerHeight) window.scrollBy(0, end - window.innerHeight + 12);
+  }
 }
 
 function tsMs(ts) {

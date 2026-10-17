@@ -306,6 +306,9 @@ export async function hydrateNav() {
       localStorage.removeItem('pa-device-token');
       localStorage.removeItem('pa-admin-device');
       localStorage.removeItem('pa-admin-door');
+      // Signing out leaves Demo mode too (2026-10-17), so the next sign-in on
+      // this tab opens the real shelf.
+      try { sessionStorage.removeItem('pa-demo-live'); } catch { /* no storage */ }
       try { await fetch('/api/admin/session', { method: 'DELETE' }); } catch { /* offline */ }
       await signOut(auth);
       location.href = '/';

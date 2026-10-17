@@ -66,7 +66,8 @@ export function caseLines(cases, start, end, env) {
     const base = { adv: advocateIdOf(c, env), caseId: r.id, client: c.clientName || c.clientEmail || 'Client', sample: !!c.sample };
     const booking = Number(c.paidOverrideCents) || caseBookingCents(c);
     const bookedAt = c.charge?.capturedAt || c.createdAt;
-    if (booking > 0 && inRange(bookedAt, start, end)) lines.push({ ...base, kind: 'booking', label: KIND_LABEL.booking, cents: booking, at: new Date(bookedAt).toISOString() });
+    // A Full-Service case's first charge is its first month (2026-10-17), not an Advocacy Case.
+    if (booking > 0 && inRange(bookedAt, start, end)) lines.push({ ...base, kind: 'booking', label: c.fullAccess ? KIND_LABEL.fullaccess : KIND_LABEL.booking, cents: booking, at: new Date(bookedAt).toISOString() });
     for (const p of (Array.isArray(c.extraPayments) ? c.extraPayments : [])) {
       const cents = Number(p?.amountCents) || 0;
       if (!cents || p?.duplicate || !inRange(p?.at, start, end)) continue;

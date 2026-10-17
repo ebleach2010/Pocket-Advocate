@@ -1970,3 +1970,40 @@ New: demomode.mjs (16 checks, run against the shipped demo files under node);
 drive-demomode. Re-pinned with controls: opencases B2; preview B3;
 drive-preview's chat; release R1.
 
+
+### The three audits' errors (2026-10-17, v7.62)
+
+Eric, after Demo mode shipped: "send three agents to look for errors in the
+suite, errors in UI, and a third glance at overall aesthetic vs what would
+best sell". Their errors, fixed; the look's taste calls (palette, type,
+portrait, motion, the folders) wait for his word and are not in this.
+
+The real site: payroll names a Full-Service case's first charge Full-Service
+month (worker/payroll.js and the demo mirror), and on a phone each line is a
+small card; the case header's refresh keeps the FULL-SERVICE rule after a
+filing; Clients shows one alerts card however often it reloads, and none in a
+quiet view; the quiet view's line answers his own tap only; the notes toolbar
+docks under the group row (admin.css stat139); a team photo that will not load
+becomes initials; the first-run card scrolls on a short screen; the client's
+chat page sizes the conversation so the box shows (chat-page.js fitChat); a
+Priority Chat link from a team member's shelf keeps their read-only view; the
+Chats inbox says You only for his own word and names the rest; signing out
+leaves Demo mode; the services card and the preview's Exit wear the warm look
+(warm.css v3), and the cards' titles and prices share a row; the tour's Chat
+step sits at the top; Settings keeps Done in reach; the client's case card and
+next-call box hold at 320; the running clock reads on the stock; the Leads
+table says it scrolls; About's Call is a full button; Reviews has no strip.
+
+Demo mode: Priya and Jordan read their own cases and a case with no read gets a
+first one on Update (live.js firstRead); private notes are kept; Dana's
+follow-up is under start, and her call and Priya's are on the calendar; every
+thread carries its last word; a Priority Chat subscriber asks a chat's
+questions; no practice name is on two books; prepared replies and answers
+vary; the practice panel repaints when Payroll opens.
+
+New: auditfix.mjs (25 checks, every one controlled); drive-tour's Chat step
+check. Re-pinned with controls: charge CH7; cleanup B5; demomode D5; oversee
+E1; release R1; drive-ask (any of the three answers); drive-cleanup (the
+Full-Service eyebrow reads once); drive-employer (the photo by its saved
+record, the card's initials when the picture will not load); drive-tour (each
+ring clear of its card).

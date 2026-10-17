@@ -76,7 +76,7 @@ export async function initPushPrompt(user, mount) {
       await saveToken(user.uid);
     } catch (err) {
       console.error('push refresh:', err);
-      if (mount) {
+      if (mount && !mount.querySelector('.push-prompt')) {
         const p = document.createElement('div');
         p.className = 'panel push-prompt';
         p.innerHTML = `<p class="dim small" style="margin:0;">Notifications aren’t registering on this device:<br><strong>${String(err && err.message || err)}</strong><br>
@@ -88,6 +88,9 @@ export async function initPushPrompt(user, mount) {
     return;
   }
   if (!mount || localStorage.getItem(DISMISS_KEY)) return;
+  // One card a page (2026-10-17): Clients reloads its list after a Delete, and
+  // each reload used to add another.
+  if (mount.querySelector('.push-prompt')) return;
 
   const panel = document.createElement('div');
   panel.className = 'panel push-prompt';

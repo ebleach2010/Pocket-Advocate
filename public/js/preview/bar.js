@@ -49,6 +49,18 @@ const CSS = `
   @keyframes pv-glow {
     0%, 100% { box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 26px rgba(61, 220, 245, .32); }
     50% { box-shadow: 0 0 0 1px rgba(61, 220, 245, .8), 0 8px 34px rgba(61, 220, 245, .55); }
+  }
+  /* In the warm look, warm (2026-10-17, the look audit: a cyan bubble on the
+     plum page). Blue and purple and High contrast keep the cyan above. */
+  :root:not([data-look="cool"]):not([data-scheme="contrast"]) .pv-exit {
+    background: linear-gradient(110deg, #FFC48A 0%, #FF9E7D 50%, #F59BBF 100%); color: #2B1207;
+    box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .3);
+    animation-name: pv-glow-warm;
+  }
+  :root:not([data-look="cool"]):not([data-scheme="contrast"]) .pv-exit::after { background: #FFC48A; }
+  @keyframes pv-glow-warm {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .3); }
+    50% { box-shadow: 0 0 0 1px rgba(255, 178, 122, .8), 0 8px 34px rgba(255, 140, 100, .5); }
   }`;
 
 export function mountBar(wipe) {
