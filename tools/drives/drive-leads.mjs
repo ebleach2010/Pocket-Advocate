@@ -1,4 +1,4 @@
-// drive-leads.mjs - a lead's messages beside them on Leads, on his phone (v7.68).
+// drive-leads.mjs - a lead's messages beside them on Leads, on his phone (v7.68), and hold to delete or block (v7.69).
 //
 //   PA_PORT=9377 PA_SHOTS=/tmp/shots node tools/drives/drive-leads.mjs
 //
@@ -82,6 +82,88 @@ if (SHOTS) await page.screenshot({ path: `${SHOTS}/leads-c-pushed.png` });
 //   FAIL  a push about her opens Leads on her card with her messages open
 ok('a push about her opens Leads on her card with her messages open',
   !!pushed && pushed.open && pushed.top >= -2 && pushed.top < 200, JSON.stringify(pushed));
+
+// Eric, 2026-10-17: "I should be able to hold to delete/block leads".
+console.log('\n--- D. hold a card to delete or block ---');
+await open();
+const cards = () => page.evaluate(() => [...document.querySelectorAll('.lead-card')].map((c) => c.dataset.email)).catch(() => []);
+const hold = async (email, ms, where = '.lead-name') => {
+  const box = await page.evaluate(([e, w]) => {
+    const el = [...document.querySelectorAll('.lead-card')].find((c) => c.dataset.email === e)?.querySelector(w);
+    if (!el) return null;
+    // Instant: the page scrolls smoothly, and a box measured mid-scroll is pressed where it no longer is.
+    el.scrollIntoView({ block: 'center', behavior: 'instant' });
+    const r = el.getBoundingClientRect();
+    return { x: r.left + Math.min(20, r.width / 2), y: r.top + r.height / 2 };
+  }, [email, where]).catch(() => null);
+  if (!box) return false;
+  await page.mouse.move(box.x, box.y);
+  await page.mouse.down();
+  await page.waitForTimeout(ms);
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  return true;
+};
+const sheet = () => page.evaluate(() => {
+  const m = document.querySelector('.msg-menu-overlay .msg-menu');
+  return m ? { head: m.querySelector('.msg-menu-head')?.textContent.trim() || '', rows: [...m.querySelectorAll('.msg-menu-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()) } : null;
+}).catch(() => null);
+const before = await cards();
+const victim = before.find((e) => e !== 'rosa@example.demo') || '';
+await hold(victim, 120);
+const tapOnly = await sheet();
+await page.keyboard.press('Escape');
+// Her messages open first: a press on her words is a press on words, not on the card under a closed box.
+await tryStep(() => page.click('.lead-card[data-email="rosa@example.demo"] [data-msgs] > summary', { timeout: 3000 }));
+await page.waitForTimeout(300);
+await hold('rosa@example.demo', 900, '.lm.them');
+const onWords = await sheet();
+await page.keyboard.press('Escape');
+await page.waitForTimeout(200);
+await hold(victim, 900);
+const menu = await sheet();
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/leads-d-hold.png` });
+await tryStep(() => page.click('.msg-menu-row[data-act="delete"]', { timeout: 3000 }));
+await page.waitForTimeout(300);
+const askDel = await page.evaluate(() => document.querySelector('dialog.ask-sheet[open] h2')?.textContent || '').catch(() => '');
+await tryStep(() => page.click('dialog.ask-sheet[open] button[value="ok"]', { timeout: 3000 }));
+await page.waitForTimeout(900);
+const afterDel = await cards();
+const countSaid = await page.evaluate(() => document.getElementById('leads-count')?.textContent || '').catch(() => '');
+await open();
+const afterDelReload = await cards();
+// NEGATIVE CONTROL (run 2026-10-17): the page's HOLD_MS made 5000 (a hold never long enough) made this read
+//   FAIL  holding a card's name opens Delete and Block under their name, a tap or a press on their words does not, and Delete asks, then takes them off for good
+ok('holding a card\'s name opens Delete and Block under their name, a tap or a press on their words does not, and Delete asks, then takes them off for good',
+  !!victim && !tapOnly && !onWords && !!menu && menu.rows.some((r) => /Delete from Leads/.test(r)) && menu.rows.some((r) => /^⛔\s*Block$/.test(r))
+  && /^Delete .+\?$/.test(askDel) && !afterDel.includes(victim) && afterDel.length === before.length - 1
+  && countSaid === `${before.length - 1} ${before.length - 1 === 1 ? 'person' : 'people'}` && !afterDelReload.includes(victim),
+  JSON.stringify({ victim, tapOnly, onWords, menu, askDel, before: before.length, after: afterDel.length, countSaid }));
+
+await hold('rosa@example.demo', 900);
+await tryStep(() => page.click('.msg-menu-row[data-act="block"]', { timeout: 3000 }));
+await page.waitForTimeout(300);
+const askBlock = await page.evaluate(() => document.querySelector('dialog.ask-sheet[open] p')?.textContent || '').catch(() => '');
+await tryStep(() => page.click('dialog.ask-sheet[open] button[value="ok"]', { timeout: 3000 }));
+await page.waitForTimeout(900);
+await open();
+const blockedNow = await page.evaluate(() => ({
+  rosa: [...document.querySelectorAll('.lead-card')].some((c) => c.dataset.email === 'rosa@example.demo'),
+  list: document.querySelector('[data-blocked] summary')?.textContent.trim() || '',
+  emails: [...document.querySelectorAll('[data-unblock]')].map((x) => x.dataset.unblock),
+})).catch(() => null);
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/leads-d-blocked.png`, fullPage: true });
+await tryStep(() => page.click('[data-blocked] summary', { timeout: 3000 }));
+await tryStep(() => page.click('[data-unblock="rosa@example.demo"]', { timeout: 3000 }));
+await page.waitForTimeout(900);
+await open();
+const unblocked = await page.evaluate(() => !document.querySelector('[data-blocked]')).catch(() => false);
+// NEGATIVE CONTROL (run 2026-10-17): the page's `paintBlocked();` first call taken out (the list never drawn) made this read
+//   FAIL  Block says what it does, takes her off Leads into a Blocked list that stays after a reload, and Unblock takes her off it
+ok('Block says what it does, takes her off Leads into a Blocked list that stays after a reload, and Unblock takes her off it',
+  /can't send you a question, join the waitlist or book a free call again/.test(askBlock) && !!blockedNow && !blockedNow.rosa
+  && blockedNow.list === 'Blocked (1)' && JSON.stringify(blockedNow.emails) === '["rosa@example.demo"]' && unblocked,
+  JSON.stringify({ askBlock, blockedNow, unblocked }));
 
 ok('no page errors', !errs.length, errs.slice(0, 3).join(' | '));
 console.log(`\n${pass} ok, ${fail} failed`);

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.68';
+export const VERSION = '7.69';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.68';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // HOLD A LEAD TO DELETE OR BLOCK (Eric, 2026-10-17: "I should be able to
+    // hold to delete/block leads"). Admin only.
+    version: '7.69',
+    quiet: true,
+    client: [],
+    admin: [
+      'Hold a card on Leads to delete or block that person. Each asks once more first.',
+      'Delete takes them off Leads with their messages and your replies. A booked case or chat of theirs stays where it is, and if they get in touch again they come back.',
+      'Block does the same, and they can no longer send you a question, join the waitlist or book a free call. Nothing tells them.',
+      'The people you blocked are listed under your leads, each with Unblock.',
+    ],
+  },
   {
     // ADD AN ADVOCATE, PAGE BY PAGE (Eric, 2026-10-17: "When I add an
     // advocate, it should go page by page through everything I asked I could

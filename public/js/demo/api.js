@@ -36,6 +36,8 @@ const LEGACY_TRADE_CATS = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Opti
 const beat = (ms = 320) => new Promise((r) => setTimeout(r, ms));
 /** A lead's conversation key in the demo: steady per email, never the address itself. */
 const demoLeadKey = (email) => { let h = 2166136261; for (const ch of `lead:${email}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0; return `d${h.toString(16)}`; };
+/** Blocked from his Leads (2026-10-17), as leadBlocked in the Worker. */
+const demoBlocked = (store, email) => store.docs.has(`leadBlocks/${demoLeadKey(email)}`);
 
 const ok = (body) => ({
   ok: true,
@@ -513,6 +515,7 @@ export function demoApi(role, store) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return fail(400, 'A working email address, please.');
       if (!/^\+?[\d\s().-]{7,20}$/.test(phone)) return fail(400, 'A valid phone number, please.');
       if (!['chat', 'case', 'full'].includes(body?.package)) return fail(400, 'Pick the package you want.');
+      if (demoBlocked(store, email)) return ok({ ok: true, first });
       await beat(500);
       const key = `waitlist/${email.replace(/[^a-z0-9]/g, '').padEnd(32, '0').slice(0, 32)}`;
       const prior = store.docs.get(key);
@@ -548,6 +551,7 @@ export function demoApi(role, store) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return fail(400, 'A working email address, please. My answer goes there.');
       if (question.length < 2) return fail(400, 'Type your question, please.');
       if (question.length > 2000) return fail(400, 'Keep it under 2000 characters, please.');
+      if (demoBlocked(store, email)) return ok({ ok: true });
       await beat(500);
       store.docs.set(`questions/q-${Date.now()}`, { name, email, question, createdAt: new Date() });
       return ok({ ok: true });
@@ -581,7 +585,7 @@ export function demoApi(role, store) {
         by.set(e, p);
       }
       // Their messages and his replies as one conversation, as the Worker sends them (2026-10-17).
-      const leads = [...by.values()].sort((a, b) => b.last - a.last).map((p) => {
+      const everyone = [...by.values()].sort((a, b) => b.last - a.last).map((p) => {
         const key = demoLeadKey(p.email);
         const th = store.docs.get(`leadThreads/${key}`) || {};
         const replies = (th.replies || []).map((r) => ({ from: 'me', text: r.text, at: new Date(r.at).toISOString() }));
@@ -592,11 +596,33 @@ export function demoApi(role, store) {
           name: p.name, email: p.email, phone: p.phone, interestedIn: p.interests.join('; '), cameThrough: p.sources.join('; '), notes: p.words.join(' | '),
           key, appLink: p.link, unread: newest > Math.max(mine, new Date(th.seenAt || 0).getTime()),
           messages: [...p.messages, ...replies].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0)),
+          hiddenAt: th.hiddenAt || null,
         };
       });
+      // Blocked, or deleted with nothing from them since (2026-10-17).
+      const leads = everyone.filter((l) => !demoBlocked(store, l.email)
+        && !(l.hiddenAt && new Date(l.hiddenAt).getTime() >= new Date(l.lastContact || 0).getTime()))
+        .map(({ hiddenAt, ...l }) => l);
       if (init.method === 'POST') {
         const body = JSON.parse(init.body || '{}');
         const email = String(body.email || '').trim().toLowerCase();
+        const bkey = `leadBlocks/${demoLeadKey(email)}`;
+        if (body.action === 'unblock') {
+          if (!store.docs.has(bkey)) return fail(404, 'That email is not blocked.');
+          store.docs.delete(bkey); store.persist?.();
+          return ok({ ok: true });
+        }
+        if (body.action === 'delete' || body.action === 'block') {
+          if (!everyone.some((l) => l.email === email)) return fail(404, 'That person is not on your Leads.');
+          await beat(300);
+          for (const [k, d] of [...store.docs.entries()]) {
+            if (/^(questions|waitlist)\/[^/]+$/.test(k) && String(d.email || '').trim().toLowerCase() === email) store.docs.delete(k);
+          }
+          store.docs.set(`leadThreads/${demoLeadKey(email)}`, { email, hiddenAt: new Date() });
+          if (body.action === 'block') store.docs.set(bkey, { email, at: new Date() });
+          store.persist?.();
+          return ok({ ok: true });
+        }
         const lead = leads.find((l) => l.email === email);
         if (!lead) return fail(404, 'That person is not on your Leads.');
         const path = `leadThreads/${lead.key}`;
@@ -611,7 +637,9 @@ export function demoApi(role, store) {
         // Demo mode: nothing is sent; the reply is kept so the conversation shows it.
         return ok({ ok: true, reply: { from: 'me', text, at: at.toISOString() } });
       }
-      return ok({ leads, missing: [] });
+      const blocked = [...store.docs.entries()].filter(([k]) => k.startsWith('leadBlocks/'))
+        .map(([, d]) => ({ email: d.email, at: new Date(d.at).toISOString() })).sort((a, b) => new Date(b.at) - new Date(a.at));
+      return ok({ leads, missing: [], blocked });
     }
     if (path === '/api/fit-call' && init.method === 'POST') {
       if (typeof body?.website === 'string' && body.website.trim()) return ok({ ok: true });
@@ -625,6 +653,7 @@ export function demoApi(role, store) {
       if (body.method === 'phone' && !/^\+?[\d\s().-]{7,20}$/.test(phone))
         return fail(400, 'A valid phone number is required for a phone call.');
       if (body.us !== true) return fail(400, 'I can only work with people in the United States and Canada.');
+      if (demoBlocked(store, email)) return ok({ ok: true });
       const key = `availability/${body.slotId || ''}`;
       const slot = store.docs.get(key);
       if (!slot || slot.kind !== 'fit' || slot.state !== 'open')

@@ -13,7 +13,7 @@
 //   GET/POST /api/admin/waitlist   the waitlist: list, mark contacted, remove (admin)
 //   POST   /api/question           the question box: name, email, question, emailed to Eric (public, no account)
 //   GET    /api/admin/leads        everyone who has given their details by any route, one row per person (admin)
-//   POST   /api/admin/leads        reply to a lead by email, or mark their messages read (admin)
+//   POST   /api/admin/leads        reply to a lead by email, mark their messages read, delete, block or unblock them (admin)
 //   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
 //   POST   /api/admin/stats        recompute the figures now (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
@@ -2484,7 +2484,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-add-wizard';
+const BUILD_TAG = 'v2026-10-17-hold-leads';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2492,7 +2492,7 @@ const BUILD_TAG = 'v2026-10-17-add-wizard';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.68';
+const VERSION = '7.69';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9598,6 +9598,8 @@ async function handleFitCall(request, env) {
     return json({ error: 'I can only work with people in the United States and Canada.' }, 400);
   if (typeof body.slotId !== 'string' || !/^[\w-]{1,64}$/.test(body.slotId))
     return json({ error: 'Pick a time.' }, 400);
+  // Blocked from his Leads (2026-10-17): the honeypot's answer, and the slot stays open.
+  if (await leadBlocked(env, email)) return json({ ok: true });
 
   const slot = await getDoc(env, `availability/${body.slotId}`);
   if (!slot || slot.data.kind !== FIT_KIND || slot.data.state !== 'open')
@@ -9786,6 +9788,7 @@ async function handleWaitlist(request, env) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) return json({ error: 'A working email address, please.' }, 400);
   if (!/^\+?[\d\s().-]{7,20}$/.test(phone)) return json({ error: 'A valid phone number, please.' }, 400);
   if (!Object.hasOwn(WAITLIST_PACKAGES, pkg)) return json({ error: 'Pick the package you want.' }, 400);
+  if (await leadBlocked(env, email)) return json({ ok: true, first });
 
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
   const id = [...new Uint8Array(digest)].slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -9890,6 +9893,7 @@ async function handleQuestion(request, env) {
     return json({ error: 'A working email address, please. My answer goes there.' }, 400);
   if (question.length < 2) return json({ error: 'Type your question, please.' }, 400);
   if (question.length > QUESTION_MAX) return json({ error: `Keep it under ${QUESTION_MAX} characters, please.` }, 400);
+  if (await leadBlocked(env, email)) return json({ ok: true });
 
   const now = new Date();
   await patchDoc(env, `questions/${crypto.randomUUID()}`, { name, email, question, createdAt: now }, { mustNotExist: true });
@@ -9992,6 +9996,34 @@ async function leadKey(email) {
 const LEAD_REPLY_MAX = 4000;
 const LEAD_REPLIES_KEPT = 200;
 
+/**
+ * DELETE OR BLOCK (Eric, 2026-10-17: "I should be able to hold to delete/block
+ * leads"). A blocked email gets the honeypot's answer from the question box,
+ * the waitlist and the free call: a cheerful 200, nothing written, nothing
+ * sent to him. Kept in leadBlocks/{leadKey}, under the deny tail. A read that
+ * fails lets them through: this is a spam filter, not a lock.
+ */
+async function leadBlocked(env, email) {
+  return !!(await getDoc(env, `leadBlocks/${await leadKey(email)}`).catch(() => null));
+}
+
+/**
+ * Deleting a lead. Their rows go from the two places that hold nothing but a
+ * lead, the question box and the waitlist, and his replies go with the
+ * thread. A free call, a booked case or a chat subscription is real work with
+ * its own page and stays; the thread keeps only hiddenAt, so Leads leaves
+ * them out until they get in touch again.
+ */
+async function forgetLead(env, email, key) {
+  for (const coll of ['questions', 'waitlist']) {
+    const rows = await listDocs(env, coll, { pageSize: 300, all: true });
+    await Promise.all(rows.filter((r) => String(r.data?.email || '').trim().toLowerCase() === email)
+      .map((r) => deleteDoc(env, `${coll}/${r.id}`)));
+  }
+  await deleteDoc(env, `leadThreads/${key}`);
+  await patchDoc(env, `leadThreads/${key}`, { email, hiddenAt: new Date() });
+}
+
 /** Everyone, from every route, as the Leads tab lists them. */
 async function collectLeads(env) {
   const got = await Promise.allSettled(LEAD_SOURCES.map((s) => listDocs(env, s.coll, { pageSize: 300, all: true })));
@@ -10018,15 +10050,22 @@ async function handleAdminLeads(request, env) {
   const admin = await requireAdmin(request, env);
   if (!admin) return json({ error: 'Not found' }, 404);
   if (request.method === 'GET') {
-    const [{ leads, missing }, threads] = await Promise.all([
+    const [{ leads: everyone, missing }, threads, blocks] = await Promise.all([
       collectLeads(env),
       listDocs(env, 'leadThreads', { pageSize: 300, all: true }).catch(() => []),
+      listDocs(env, 'leadBlocks', { pageSize: 300, all: true }).catch(() => []),
     ]);
     const byKey = new Map(threads.map((r) => [r.id, r.data || {}]));
+    const blockedKeys = new Set(blocks.map((r) => r.id));
     const iso = (v) => { const t = new Date(v || 0).getTime(); return t ? new Date(t).toISOString() : null; };
-    for (const l of leads) {
+    const leads = [];
+    for (const l of everyone) {
       l.key = await leadKey(l.email);
       const th = byKey.get(l.key) || {};
+      // Blocked, or deleted with nothing from them since (2026-10-17).
+      if (blockedKeys.has(l.key)) continue;
+      if (th.hiddenAt && (new Date(th.hiddenAt).getTime() || 0) >= (new Date(l.lastContact || 0).getTime() || 0)) continue;
+      leads.push(l);
       const replies = (Array.isArray(th.replies) ? th.replies : []).map((r) => ({ from: 'me', text: String(r?.text || ''), at: iso(r?.at) })).filter((r) => r.text);
       const newestThem = Math.max(0, ...l.messages.map((m) => new Date(m.at || 0).getTime() || 0));
       const lastMine = Math.max(0, ...replies.map((r) => new Date(r.at || 0).getTime() || 0));
@@ -10034,7 +10073,9 @@ async function handleAdminLeads(request, env) {
       l.unread = newestThem > Math.max(lastMine, seen);
       l.messages = [...l.messages, ...replies].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
     }
-    return json({ leads, missing });
+    const blocked = blocks.map((r) => ({ email: String(r.data?.email || ''), at: iso(r.data?.at) }))
+      .filter((b) => b.email).sort((a, b) => new Date(b.at || 0) - new Date(a.at || 0));
+    return json({ leads, missing, blocked });
   }
   if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
   const body = (await request.json().catch(() => null)) || {};
@@ -10045,6 +10086,19 @@ async function handleAdminLeads(request, env) {
   const now = new Date();
   if (body.action === 'seen') {
     await patchDoc(env, path, { email, seenAt: now }, { mask: ['email', 'seenAt'] });
+    return json({ ok: true });
+  }
+  if (body.action === 'unblock') {
+    if (!(await getDoc(env, `leadBlocks/${key}`))) return json({ error: 'That email is not blocked.' }, 404);
+    await deleteDoc(env, `leadBlocks/${key}`);
+    return json({ ok: true });
+  }
+  if (body.action === 'delete' || body.action === 'block') {
+    // Only someone on his Leads, the same rule as a reply.
+    const { leads } = await collectLeads(env);
+    if (!leads.some((l) => l.email === email)) return json({ error: 'That person is not on your Leads.' }, 404);
+    await forgetLead(env, email, key);
+    if (body.action === 'block') await patchDoc(env, `leadBlocks/${key}`, { email, at: now });
     return json({ ok: true });
   }
   if (body.action !== 'reply') return json({ error: 'Bad request' }, 400);

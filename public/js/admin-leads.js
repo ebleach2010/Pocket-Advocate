@@ -9,8 +9,13 @@
 // says my lead Rosemarie sent me a message but I don't see it ... put it in an
 // expandable chat box or email like container"). Their words open under their
 // name as a conversation, his replies go to their email, and anyone with
-// something new sits at the top.
+// something new sits at the top. Holding a card (2026-10-17: "I should be
+// able to hold to delete/block leads") offers Delete and Block, each asked
+// once more before it happens; the blocked are listed under the cards with
+// Unblock.
 import { requireAdmin, hydrateNav, STAFF } from './auth.js';
+import { openMessageMenu } from './msg-actions.js';
+import { ask } from './sheet.js';
 
 export const COLUMNS = [
   ['firstContact', 'First contact'],
@@ -97,6 +102,51 @@ export function card(l) {
     </article>`;
 }
 
+/** The blocked, each with Unblock, folded under the cards. */
+export function blockedList(blocked) {
+  if (!blocked?.length) return '';
+  return `<details class="lead-blocked" data-blocked><summary>Blocked (${blocked.length})</summary>
+      <p class="dim small">They can't send you a question, join the waitlist or book a free call. Nothing tells them.</p>
+      ${blocked.map((b) => `<div class="lead-blocked-row"><span>${esc(b.email)}</span><button type="button" class="btn quiet" data-unblock="${esc(b.email)}">Unblock</button></div>`).join('')}
+    </details>`;
+}
+
+/**
+ * A held press (or a right-click) on a card, never on its buttons, links or
+ * open messages: those keep their own tap, and his words stay selectable.
+ * A finger that moves is scrolling, not holding. The click that trails a
+ * hold is eaten once, so it does not also open the messages.
+ */
+export const HOLD_MS = 550;
+const HOLD_MOVE = 12;
+function wireHold(el, fire) {
+  let timer = null;
+  let from = null;
+  const cancel = () => { clearTimeout(timer); timer = null; from = null; };
+  const onOwnControl = (e) => !!e.target.closest?.('a, button, textarea, input, .lead-msgs');
+  const fired = () => {
+    const eat = (e) => { e.preventDefault(); e.stopPropagation(); };
+    el.addEventListener('click', eat, { capture: true, once: true });
+    setTimeout(() => el.removeEventListener('click', eat, { capture: true }), 400);
+    fire();
+  };
+  el.addEventListener('pointerdown', (e) => {
+    if (onOwnControl(e)) return;
+    from = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => { timer = null; fired(); }, HOLD_MS);
+  });
+  el.addEventListener('pointermove', (e) => {
+    if (timer && from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > HOLD_MOVE) cancel();
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) el.addEventListener(ev, cancel);
+  el.addEventListener('contextmenu', (e) => {
+    if (onOwnControl(e)) return;
+    e.preventDefault();
+    cancel();
+    fired();
+  });
+}
+
 /** New messages first, everyone else as the Worker sent them (newest contact first). */
 export function ordered(leads) {
   return [...leads.filter((l) => l.unread), ...leads.filter((l) => !l.unread)];
@@ -112,11 +162,13 @@ async function main() {
   const btn = document.getElementById('leads-csv');
   const count = document.getElementById('leads-count');
   let leads = [];
+  let blocked = [];
   try {
     const res = await fetch('/api/admin/leads', { headers: { authorization: `Bearer ${await user.getIdToken()}` } });
     const out = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
     leads = out.leads || [];
+    blocked = out.blocked || [];
     if (out.missing?.length) {
       box.insertAdjacentHTML('beforebegin', `<p class="error small">Could not read: ${esc(out.missing.join(', '))}. Those people are missing from this list and the CSV until it loads again.</p>`);
     }
@@ -124,14 +176,16 @@ async function main() {
     box.innerHTML = `<p class="error small">Couldn't load your leads: ${esc(err.message)}</p>`;
     return;
   }
-  count.textContent = `${leads.length} ${leads.length === 1 ? 'person' : 'people'}`;
-  if (!leads.length) {
-    box.innerHTML = '<p class="dim">Nobody yet. Everyone who joins the waitlist, sends a question or books lands here.</p>';
-    return;
-  }
+  const counted = () => { count.textContent = `${leads.length} ${leads.length === 1 ? 'person' : 'people'}`; };
+  const nobody = '<p class="dim">Nobody yet. Everyone who joins the waitlist, sends a question or books lands here.</p>';
+  counted();
   const list = ordered(leads);
   const fresh = list.filter((l) => l.unread).length;
-  box.innerHTML = `${fresh ? `<p class="lead-new-head">${fresh} new ${fresh === 1 ? 'message' : 'messages'}</p>` : ''}<div class="lead-list">${list.map(card).join('')}</div>`;
+  box.innerHTML = list.length
+    ? `${fresh ? `<p class="lead-new-head">${fresh} new ${fresh === 1 ? 'message' : 'messages'}</p>` : ''}<div class="lead-list">${list.map(card).join('')}</div>`
+    : nobody;
+  const below = document.createElement('div');
+  box.after(below);
   const post = async (body) => {
     const res = await fetch('/api/admin/leads', {
       method: 'POST',
@@ -187,6 +241,57 @@ async function main() {
       send.disabled = false;
     });
   }
+  // Unblock, from the folded list under the cards.
+  const paintBlocked = () => {
+    below.innerHTML = blockedList(blocked);
+    for (const b of below.querySelectorAll('[data-unblock]')) {
+      b.addEventListener('click', async () => {
+        b.disabled = true;
+        try {
+          await post({ action: 'unblock', email: b.dataset.unblock });
+          blocked = blocked.filter((x) => x.email !== b.dataset.unblock);
+          paintBlocked();
+        } catch (x) {
+          b.disabled = false;
+          b.textContent = x.message;
+        }
+      });
+    }
+  };
+  paintBlocked();
+  // Hold a card: Delete or Block, asked once more, then gone from the list.
+  for (const el of box.querySelectorAll('.lead-card')) {
+    wireHold(el, async () => {
+      const lead = leads.find((l) => l.email === el.dataset.email);
+      if (!lead) return;
+      const who = lead.name || lead.email;
+      const pick = await openMessageMenu({
+        heading: who, label: 'Lead actions',
+        extraRows: [{ act: 'delete', emoji: '🗑', label: 'Delete from Leads' }, { act: 'block', emoji: '⛔', label: 'Block' }],
+      });
+      if (pick?.action !== 'delete' && pick?.action !== 'block') return;
+      const block = pick.action === 'block';
+      const sure = await ask(block
+        ? { title: `Block ${who}?`, body: `${lead.email} leaves your Leads, with their messages and your replies. They can't send you a question, join the waitlist or book a free call again, and nothing tells them. You can unblock them under the list.`, okLabel: 'Block', danger: true }
+        : { title: `Delete ${who}?`, body: 'They leave your Leads, with their messages and your replies. A booked case or chat of theirs stays where it is. If they get in touch again, they come back.', okLabel: 'Delete', danger: true });
+      if (!sure) return;
+      try {
+        await post({ action: pick.action, email: lead.email });
+      } catch (x) {
+        el.querySelector('[data-hold-err]')?.remove();
+        el.insertAdjacentHTML('beforeend', `<p class="error small" data-hold-err>${esc(x.message)}</p>`);
+        return;
+      }
+      leads = leads.filter((l) => l !== lead);
+      el.remove();
+      counted();
+      if (!box.querySelector('.lead-card')) box.innerHTML = nobody;
+      if (block) {
+        blocked = [{ email: lead.email, at: new Date().toISOString() }, ...blocked];
+        paintBlocked();
+      }
+    });
+  }
   // A push about a message opens on that person, their messages open (?lead=).
   const want = new URLSearchParams(location.search).get('lead');
   const target = want && [...box.querySelectorAll('.lead-card')].find((el) => el.dataset.lead === want);
@@ -195,7 +300,7 @@ async function main() {
     if (det) det.open = true;
     target.scrollIntoView({ block: 'start' });
   }
-  btn.disabled = false;
+  btn.disabled = !leads.length;
   btn.addEventListener('click', () => {
     const blob = new Blob([toCsv(leads)], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');

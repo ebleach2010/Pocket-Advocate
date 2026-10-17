@@ -46,6 +46,8 @@ const LIFTED = [
   konst('WAITLIST_PACKAGES'), konst('WAITLIST_IP_LIMIT'),
   sfn('str'), sfn('escHtml'), sfn('json'),
   fn('pingAdmins'), fn('waitlistThrottled'), fn('handleWaitlist'), fn('waitlistNotify'), fn('handleAdminWaitlist'),
+  // Blocked from his Leads (2026-10-17, v7.69).
+  fn('leadKey'), fn('leadBlocked'),
 ].join('\n');
 
 // ---- the world it runs in ------------------------------------------------
@@ -73,7 +75,7 @@ const deps = {
   crypto: webcrypto,
 };
 const W = new Function(...Object.keys(deps), `${LIFTED}
-  return { handleWaitlist, handleAdminWaitlist, WAITLIST_PACKAGES, WAITLIST_IP_LIMIT };`)(...Object.values(deps));
+  return { handleWaitlist, handleAdminWaitlist, WAITLIST_PACKAGES, WAITLIST_IP_LIMIT, leadKey };`)(...Object.values(deps));
 
 const env = { ADMIN_EMAIL: 'eric@example.com', PUBLIC_BASE_URL: 'https://example.com' };
 const req = (body, { ip = '1.2.3.4', method = 'POST' } = {}) => ({
@@ -352,6 +354,23 @@ console.log('\n--- D. the wiring ---');
   const sheet = html.slice(html.indexOf('<div class="wl-row">'), html.indexOf('</dialog>'));
   check('D9 no dash anywhere a person reads it',
     !DASH.test(sheet) && !DASH.test(f('public/js/waitlist.js')) && !DASH.test(aw) && !DASH.test(fn('handleWaitlist') + fn('waitlistNotify')));
+}
+
+// ---------------------------------------------------------------------------
+// E. Blocked (Eric, 2026-10-17: "I should be able to hold to delete/block leads")
+// ---------------------------------------------------------------------------
+console.log('\n--- E. blocked ---');
+reset();
+{
+  docs.set(`leadBlocks/${await W.leadKey('riley@example.com')}`, { email: 'riley@example.com', at: '2026-10-17T00:00:00Z' });
+  const r = await join(GOOD);
+  const quiet = r.status === 200 && r.out.ok === true && r.out.first === 'Riley' && !list().length && !emails.length && !pushes.length;
+  const other = await join({ ...GOOD, email: 'sam@example.com' });
+  // NEGATIVE CONTROL (run 2026-10-17): handleWaitlist's `if (await leadBlocked(env, email)) return json({ ok: true, first });` taken out made this read
+  //   FAIL  E1 someone he blocked gets the same thank-you, and nothing is kept or sent to him; anyone else still joins
+  check('E1 someone he blocked gets the same thank-you, and nothing is kept or sent to him; anyone else still joins',
+    quiet && other.status === 200 && list().length === 1 && list()[0].data.email === 'sam@example.com' && emails.length === 1,
+    JSON.stringify({ r, rows: list().length, emails: emails.length }));
 }
 
 const failed = results.filter((r) => !r.pass);

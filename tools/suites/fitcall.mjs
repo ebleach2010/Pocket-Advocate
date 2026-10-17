@@ -92,6 +92,8 @@ const LIFTED = [
   fn('readBookingClosure'), fn('pingAdmins'),
   fn('fitThrottled'), fn('handleFitCall'), fn('fitNotify'), fn('handleAdminFitCalls'),
   fn('handleCreateSlots'),
+  // Blocked from his Leads (2026-10-17, v7.69).
+  fn('leadKey'), fn('leadBlocked'),
 ].join('\n');
 
 // ---- the world it runs in ------------------------------------------------
@@ -139,7 +141,7 @@ const deps = {
 const build = new Function(
   ...Object.keys(deps),
   `${LIFTED}
-   return { handleFitCall, handleAdminFitCalls, handleCreateSlots, fitThrottled,
+   return { handleFitCall, handleAdminFitCalls, handleCreateSlots, fitThrottled, leadKey,
             FIT_KIND, FIT_CALL_MIN, FIT_IP_LIMIT, FIT_NOTE_MAX };`,
 );
 const W = build(...Object.values(deps));
@@ -594,6 +596,22 @@ check('F5 fit.js lists fit slots and only fit slots',
   // NEGATIVE CONTROL (run 2026-09-02): an em dash typed into fit.js's intro made this read
   //   FAIL  F18 not one em or en dash in anything new
   check('F18 not one em or en dash in anything new', fresh.every((s) => !/[–—]/.test(s)));
+}
+
+// ---------------------------------------------------------------------------
+// Eric, 2026-10-17: "I should be able to hold to delete/block leads".
+console.log('\n--- blocked ---');
+reset();
+{
+  docs.set(`leadBlocks/${await W.leadKey('riley@example.com')}`, { data: { email: 'riley@example.com' }, v: 1 });
+  const r = await call(GOOD);
+  const quiet = r.status === 200 && r.out.ok === true && !r.out.leadId && slot('fit-1').state === 'open' && !leads().length && !emails.length && !pushes.length;
+  const other = await call({ ...GOOD, email: 'sam@example.com' });
+  // NEGATIVE CONTROL (run 2026-10-17): handleFitCall's `if (await leadBlocked(env, email)) return json({ ok: true });` taken out made this read
+  //   FAIL  F19 someone he blocked gets the honeypot's quiet 200: no call kept, the time still open, nothing sent; anyone else still books
+  check('F19 someone he blocked gets the honeypot\'s quiet 200: no call kept, the time still open, nothing sent; anyone else still books',
+    quiet && other.status === 200 && !!other.out.leadId && slot('fit-1').state === 'booked' && leads().length === 1,
+    JSON.stringify({ r, other: other.status }));
 }
 
 // ---------------------------------------------------------------------------

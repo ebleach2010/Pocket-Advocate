@@ -65,6 +65,7 @@ const deps = {
     return true;
   },
   queryDocs: async (env, coll, filters) => rows(coll).filter((r) => filters.every(([k, op, v]) => op !== 'EQUAL' || r.data[k] === v)),
+  deleteDoc: async (env, path) => { docs.delete(path); return true; },
   listDocs: async (env, coll) => { if (failing === coll) throw new Error('refused'); return rows(coll); },
   notifyUser: async (env, uid, msg) => { pushes.push({ uid, ...msg }); },
   sendEmail: async (env, msg) => { emails.push(msg); return true; },
@@ -76,6 +77,7 @@ const LIFTED = [
   konst('LEAD_REPLY_MAX'), konst('LEAD_REPLIES_KEPT'),
   sfn('str'), sfn('escHtml'), sfn('json'), sfn('firstName'), sfn('leadRows'), sfn('mergeLeads'),
   fn('pingAdmins'), fn('questionThrottled'), fn('handleQuestion'), fn('leadKey'), fn('collectLeads'), fn('handleAdminLeads'),
+  fn('leadBlocked'), fn('forgetLead'),
 ].join('\n');
 const W = new Function(...Object.keys(deps), `${LIFTED}
   return { handleQuestion, handleAdminLeads, leadKey, QUESTION_MAX };`)(...Object.values(deps));
@@ -392,6 +394,106 @@ reset();
     && /post\(\{ action: 'reply', email: el\.dataset\.email, text \}\)/.test(page) && /post\(\{ action: 'seen', email: el\.dataset\.email \}\)/.test(page)
     && /new URLSearchParams\(location\.search\)\.get\('lead'\)/.test(page) && /href="tel:/.test(page) && /href="mailto:/.test(page)
     && !/<table/.test(page) && !/\.leads-wrap/.test(html) && /\.lm\.them \{/.test(html) && /\.lm\.me \{/.test(html) && !DASH.test(page) && !DASH.test(html),
+    'page shape');
+}
+
+// ---------------------------------------------------------------------------
+// Eric, 2026-10-17: "I should be able to hold to delete/block leads".
+console.log('\n--- E. hold to delete or block (v7.69) ---');
+reset();
+{
+  const t = (d, h = 18) => new Date(`2026-10-${d}T${h}:00:00Z`).toISOString();
+  const seed = async () => {
+    docs.set('questions/q1', { name: 'Rosemarie Vale', email: 'rose@example.com', question: 'Can you help my dad?', createdAt: t('15') });
+    docs.set('questions/q2', { name: 'Rose V', email: 'ROSE@example.com', question: 'Still there?', createdAt: t('16') });
+    docs.set('waitlist/w1', { first: 'Rose', last: 'Vale', email: 'rose@example.com', package: 'case', createdAt: t('10') });
+    docs.set(`leadThreads/${await W.leadKey('rose@example.com')}`, { email: 'rose@example.com', replies: [{ text: 'Yes.', at: t('15', 19) }], seenAt: t('15', 19) });
+    docs.set('questions/q3', { name: 'Sam Lee', email: 'sam@example.com', question: 'Canada?', createdAt: t('11') });
+    docs.set('cases/c1', { clientName: 'Jo Case', clientEmail: 'jo@example.com', clientPhone: '2085550122', createdAt: t('05') });
+    docs.set('questions/q4', { name: 'Jo Case', email: 'jo@example.com', question: 'A question before booking', createdAt: t('04') });
+  };
+  await seed();
+  const post = async (body, ok = true) => { adminOk = ok; const r = await W.handleAdminLeads(req(body), env); adminOk = true; return { status: r.status, out: await r.json() }; };
+  const emailsOf = (g) => (g.out.leads || []).map((l) => l.email).sort().join();
+  const roseKey = await W.leadKey('rose@example.com');
+  emails = [];
+  const del = await post({ action: 'delete', email: ' Rose@Example.com ' });
+  const g1 = await leads();
+  const th = docs.get(`leadThreads/${roseKey}`) || {};
+  // NEGATIVE CONTROL (run 2026-10-17): forgetLead's `await deleteDoc(env, `leadThreads/${key}`);` taken out (his replies kept) made this read
+  //   FAIL  E1 deleting a lead takes their questions and waitlist row whatever the email's case, and his replies with the thread, and they leave Leads; nobody else is touched and nothing is sent
+  check('E1 deleting a lead takes their questions and waitlist row whatever the email\'s case, and his replies with the thread, and they leave Leads; nobody else is touched and nothing is sent',
+    del.status === 200 && !docs.has('questions/q1') && !docs.has('questions/q2') && !docs.has('waitlist/w1')
+    && JSON.stringify(Object.keys(th).sort()) === '["email","hiddenAt"]' && th.email === 'rose@example.com'
+    && emailsOf(g1) === 'jo@example.com,sam@example.com' && docs.has('questions/q3') && emails.length === 0,
+    JSON.stringify({ del, th, left: emailsOf(g1) }));
+
+  const delJo = await post({ action: 'delete', email: 'jo@example.com' });
+  const g2 = await leads();
+  docs.set('questions/q5', { name: 'Jo Case', email: 'jo@example.com', question: 'Back again', createdAt: new Date(Date.now() + 60_000).toISOString() });
+  const g3 = await leads();
+  const jo = (g3.out.leads || []).find((l) => l.email === 'jo@example.com') || {};
+  // NEGATIVE CONTROL (run 2026-10-17): the GET's hiddenAt test (`if (th.hiddenAt && ...) continue;`) taken out made this read
+  //   FAIL  E2 a deleted lead's booked case stays where it is and keeps them off Leads, until they get in touch again
+  check('E2 a deleted lead\'s booked case stays where it is and keeps them off Leads, until they get in touch again',
+    delJo.status === 200 && docs.has('cases/c1') && !docs.has('questions/q4') && emailsOf(g2) === 'sam@example.com'
+    && emailsOf(g3) === 'jo@example.com,sam@example.com' && jo.messages?.length === 1 && jo.messages[0].text === 'Back again',
+    JSON.stringify({ g2: emailsOf(g2), g3: emailsOf(g3), jo: jo.messages }));
+
+  emails = []; pushes = [];
+  const blk = await post({ action: 'block', email: 'sam@example.com' });
+  const samKey = await W.leadKey('sam@example.com');
+  const g4 = await leads();
+  const again = await ask({ name: 'Sam Lee', email: 'Sam@Example.com', question: 'Hello again?', website: '' });
+  const g5 = await leads();
+  // NEGATIVE CONTROL (run 2026-10-17): handleQuestion's `if (await leadBlocked(env, email)) return json({ ok: true });` taken out made this read
+  //   FAIL  E3 blocking takes them off Leads into a blocked list; their next question gets the same quiet thank-you, and nothing is kept or sent to him
+  check('E3 blocking takes them off Leads into a blocked list; their next question gets the same quiet thank-you, and nothing is kept or sent to him',
+    blk.status === 200 && docs.get(`leadBlocks/${samKey}`)?.email === 'sam@example.com' && !docs.has('questions/q3')
+    && !(g4.out.leads || []).some((l) => l.email === 'sam@example.com') && JSON.stringify((g4.out.blocked || []).map((b) => b.email)) === '["sam@example.com"]'
+    && again.status === 200 && again.out.ok === true && !rows('questions').some((r) => r.data.email === 'sam@example.com')
+    && emails.length === 0 && pushes.length === 0 && !(g5.out.leads || []).some((l) => l.email === 'sam@example.com'),
+    JSON.stringify({ blk, g4: g4.out.blocked, again, emails: emails.length, pushes: pushes.length }));
+
+  const unb = await post({ action: 'unblock', email: 'SAM@example.com' });
+  const back = await ask({ name: 'Sam Lee', email: 'sam@example.com', question: 'Now?', website: '' });
+  const g6 = await leads();
+  // NEGATIVE CONTROL (run 2026-10-17): the unblock's deleteDoc taken out (`await void 0;`) made this read
+  //   FAIL  E4 unblocking lets them write again, and they come back on Leads
+  check('E4 unblocking lets them write again, and they come back on Leads',
+    unb.status === 200 && !docs.has(`leadBlocks/${samKey}`) && back.status === 200 && emails.length === 1 && (g6.out.blocked || []).length === 0
+    && (g6.out.leads || []).some((l) => l.email === 'sam@example.com'),
+    JSON.stringify({ unb, g6: g6.out.blocked }));
+
+  const before = JSON.stringify([...docs.entries()]);
+  const stranger = await post({ action: 'delete', email: 'nobody@example.com' });
+  const strangerBlock = await post({ action: 'block', email: 'nobody@example.com' });
+  const notBlocked = await post({ action: 'unblock', email: 'jo@example.com' });
+  const notHim = await post({ action: 'delete', email: 'jo@example.com' }, false);
+  const notHimBlock = await post({ action: 'block', email: 'jo@example.com' }, false);
+  // NEGATIVE CONTROL (run 2026-10-17): the delete's lead lookup turned to `leads.some(() => true)` (anyone at all) made this read
+  //   FAIL  E5 only someone on his Leads can be deleted or blocked, only the blocked unblocked, and only by him; a refusal changes nothing
+  check('E5 only someone on his Leads can be deleted or blocked, only the blocked unblocked, and only by him; a refusal changes nothing',
+    stranger.status === 404 && strangerBlock.status === 404 && notBlocked.status === 404 && notHim.status === 404 && notHimBlock.status === 404
+    && JSON.stringify([...docs.entries()]) === before,
+    JSON.stringify({ stranger: stranger.status, strangerBlock: strangerBlock.status, notBlocked: notBlocked.status, notHim: notHim.status }));
+
+  const page = f('public/js/admin-leads.js');
+  const html = f('public/admin-leads.html');
+  const demo = f('public/js/demo/api.js');
+  const store = f('public/js/demo/store.js');
+  // NEGATIVE CONTROL (run 2026-10-17): the page's `el.addEventListener('contextmenu', (e) => {` hold fallback taken out made this read
+  //   FAIL  E6 on the page a held card (or a right-click) offers Delete and Block, asks once more, says what each does, and lists the blocked with Unblock; the demo mirrors it and keeps the list out of a client's view
+  check('E6 on the page a held card (or a right-click) offers Delete and Block, asks once more, says what each does, and lists the blocked with Unblock; the demo mirrors it and keeps the list out of a client\'s view',
+    /export const HOLD_MS = 550;/.test(page) && /el\.addEventListener\('pointerdown'/.test(page) && /el\.addEventListener\('contextmenu', \(e\) => \{/.test(page)
+    && /closest\?\.\('a, button, textarea, input, \.lead-msgs'\)/.test(page)
+    && /\{ act: 'delete', emoji: '🗑', label: 'Delete from Leads' \}, \{ act: 'block', emoji: '⛔', label: 'Block' \}/.test(page)
+    && /okLabel: 'Block', danger: true/.test(page) && /okLabel: 'Delete', danger: true/.test(page)
+    && /post\(\{ action: pick\.action, email: lead\.email \}\)/.test(page) && /post\(\{ action: 'unblock', email: b\.dataset\.unblock \}\)/.test(page)
+    && /data-unblock=/.test(page) && /Hold a card to delete or block them\./.test(html) && /-webkit-touch-callout: none;/.test(html)
+    && /body\.action === 'delete' \|\| body\.action === 'block'/.test(demo) && /body\.action === 'unblock'/.test(demo)
+    && (demo.match(/if \(demoBlocked\(store, email\)\) return ok\(/g) || []).length === 3 && /\/\^leadBlocks\\\/\//.test(store)
+    && !DASH.test(page) && !DASH.test(html) && !DASH.test(fn('forgetLead') + fn('leadBlocked')),
     'page shape');
 }
 

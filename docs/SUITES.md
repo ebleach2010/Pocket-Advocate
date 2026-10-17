@@ -2242,3 +2242,27 @@ controlled, plus no page errors). Re-pinned with controls: steps A1, A4, A5;
 cleanup D1; tighten T3, T4; release R1; drive-advocates' add, drive-steps'
 add-on rows, drive-employer's photo and bio (all through the wizard now). The
 advocates.mjs harness carries the new helpers.
+
+### Hold a lead to delete or block (2026-10-17, v7.69)
+
+Eric: "I should be able to hold to delete/block leads"
+
+- admin-leads.js: a held press (550ms) or a right-click on a card, never on
+  its buttons, links or open messages, opens the same sheet as a held chat
+  message with Delete from Leads and Block under their name; each asks once
+  more (sheet.js ask) and says what it does. A finger that moves is a scroll.
+  The blocked are listed under the cards, folded, each with Unblock.
+- worker/index.js handleAdminLeads POST: `delete` and `block` only for
+  someone on his Leads (the reply's rule); forgetLead takes their rows from
+  questions/ and waitlist/ (whatever the email's case) and his replies with
+  leadThreads/{key}, which keeps only hiddenAt. A free call, a booked case or
+  a chat subscription stays; GET leaves the person out until something of
+  theirs is newer than hiddenAt. `block` also writes leadBlocks/{key} (deny
+  tail); `unblock` deletes it. GET returns `blocked`.
+- leadBlocked: the question box, the waitlist and the free call answer a
+  blocked email with the honeypot's quiet 200, writing and sending nothing
+  (the free call's slot stays open). A failed read lets them through.
+- Demo: api.js mirrors all of it; store.js keeps leadBlocks/ from client pages.
+
+New, every one controlled: leads.mjs E1 to E6; waitlist.mjs E1; fitcall.mjs
+F19; drive-leads D (2). Re-pinned with a control: release R1.

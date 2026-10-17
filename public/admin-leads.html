@@ -63,6 +63,12 @@
   .lead-reply { display: grid; gap: .5rem; }
   .lead-reply textarea { width: 100%; min-height: 5.5rem; resize: vertical; font: inherit; }
   .lead-reply .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  /* Hold a card to delete or block (2026-10-17): the press must not select the name or pop the phone's own menu. */
+  .lead-card { -webkit-touch-callout: none; }
+  .lead-top, .lead-meta { -webkit-user-select: none; user-select: none; }
+  .lead-blocked { margin-top: 1.2rem; border-top: 1px solid var(--line); padding-top: .3rem; }
+  .lead-blocked > summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; color: var(--dim); }
+  .lead-blocked-row { display: flex; align-items: center; justify-content: space-between; gap: .6rem; padding: .35rem 0; overflow-wrap: anywhere; }
   @media (prefers-reduced-motion: reduce) { .lead-msgs > summary::after { transition: none; } }
 </style>
 </head>
@@ -86,7 +92,7 @@
        simple exportable csv that goes row by row for each potential
        client."). Built from /api/admin/leads; the CSV is made right here. -->
   <h1>Leads</h1>
-  <p class="dim small">Everyone who has given you their details: the waitlist, the question box, free calls, booked cases and chat. One card per person, new messages first. Tap Messages to read and reply.</p>
+  <p class="dim small">Everyone who has given you their details: the waitlist, the question box, free calls, booked cases and chat. One card per person, new messages first. Tap Messages to read and reply. Hold a card to delete or block them.</p>
   <div class="leads-acts">
     <button type="button" class="btn glow" id="leads-csv" disabled>Download CSV</button>
     <span class="dim small" id="leads-count"></span>
