@@ -733,8 +733,10 @@ Date.now = realNow;
   // review-hours line are unchanged; the two state notes are the new words.
   check('C51c the pacing sentence and the hours notes are the shipped words',
     /I pace this work to be as\s+efficient as possible with your hours: nothing is padded, and no time\s+is wasted\./.test(CASEJS)
-    && /Beyond the included hours the work carries on at no extra charge\./.test(CASEJS)
-    && /We are getting close to the included hours\. Past them the work carries on at no extra charge\./.test(CASEJS)
+    // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": the month's hours are a ceiling, not a target.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.63): the close note back to "the included hours" made C51c read FAIL.
+    && /Beyond those hours the work carries on at no extra charge\./.test(CASEJS)
+    && /We are getting close to your month's \$\{includedH\} hours\. Past them the work carries on at no extra charge\./.test(CASEJS)
     && /is not counted here/.test(CASEJS));
 }
 
@@ -750,9 +752,11 @@ Date.now = realNow;
   // past-20 sentence made C51d read FAIL; dropping `if (!stamped) return;`
   // from the Worker hook made C51e read FAIL. Both restored.
   check('C51d the card says delivered, then done with a check, then beyond at no extra charge',
-    /`Included hours: \$\{doneH\} of \$\{includedH\} delivered\.`/.test(CASEJS)
+    // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": so far, of up to 20, then all 20 delivered.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.63): the first line back to `Included hours: ... delivered.` made C51d read FAIL.
+    /`Hours so far: \$\{doneH\} of up to \$\{includedH\}\.`/.test(CASEJS)
     && /beyond what your month includes, at no extra charge\.`/.test(CASEJS)
-    && /hours included in your month are delivered\. ✓ Work continues\.`/.test(CASEJS)
+    && /`All \$\{includedH\} hours of your month are delivered\. ✓ Work continues\.`/.test(CASEJS)
     && /const used = banked;/.test(CASEJS));
   const hook = (W.match(/async function markIncludedHours\([\s\S]*?\n\}/) || [''])[0];
   check('C51e the Worker marks the month once on a clock-out: stamp first, one notice, one milestone',
@@ -761,7 +765,9 @@ Date.now = realNow;
     && /mask: \['work\.includedDoneAt'\]/.test(hook)
     && /if \(!stamped\) return;/.test(hook)
     && /kindLabel: 'Included hours delivered'/.test(hook)
-    && /has delivered the \$\{hours\} hours included in your month\. Work continues\./.test(hook));
+    // RE-PINNED 2026-10-17 (v7.63): the notice says all 20 hours of the month.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.63): the notice back to "the ${hours} hours included in your month" made C51e read FAIL.
+    && /has delivered all \$\{hours\} hours of your month\. Work continues\./.test(hook));
 }
 
 // ---- C52: the cron watchdog ------------------------------------------------

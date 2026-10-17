@@ -524,14 +524,14 @@ function hoursCard(c) {
   const pct = Math.min(100, Math.round((used / (includedH * 3600)) * 100));
   // The three sentences, Eric's choices (2026-09-01).
   const span = state !== 'limit'
-    ? `Included hours: ${doneH} of ${includedH} delivered.`
+    ? `Hours so far: ${doneH} of up to ${includedH}.`
     : doneH > includedH
       ? `${doneH} hours: ${doneH - includedH} beyond what your month includes, at no extra charge.`
-      : `The ${includedH} hours included in your month are delivered. ✓ Work continues.`;
+      : `All ${includedH} hours of your month are delivered. ✓ Work continues.`;
   const note = state === 'limit'
-    ? 'Beyond the included hours the work carries on at no extra charge. If a month ever needs a great deal more, we talk first, exactly as your agreement says.'
+    ? 'Beyond those hours the work carries on at no extra charge. If a month ever needs a great deal more, we talk first, exactly as your agreement says.'
     : state === 'close'
-      ? 'We are getting close to the included hours. Past them the work carries on at no extra charge.'
+      ? `We are getting close to your month's ${includedH} hours. Past them the work carries on at no extra charge.`
       : '';
   return `
     <section class="card hours-card${state === 'ok' ? '' : ` is-${state}`}" data-hours-card>
@@ -539,7 +539,7 @@ function hoursCard(c) {
       <p class="hours-line"><strong style="color:var(--ink);">${fmt(used)}</strong> used${
   w.startedAt ? ` <span style="color:var(--cyan);">· ${doingText(w)}</span>` : ''
 }</p>
-      <div class="hours-meter" role="img" aria-label="${fmt(used)} of the ${includedH} included advocacy hours delivered"><span style="width:${pct}%;"></span></div>
+      <div class="hours-meter" role="img" aria-label="${fmt(used)} of up to ${includedH} advocacy hours delivered"><span style="width:${pct}%;"></span></div>
       <p class="dim small" style="margin:0;">${span}</p>
       ${note ? `<p class="small hours-note" style="margin:.4rem 0 0;"><strong>${note}</strong></p>` : ''}
       <p class="dim small" style="margin:.4rem 0 0;">I pace this work to be as
@@ -1654,6 +1654,7 @@ function livePendingExtend(c) {
   return p;
 }
 function extendOffer(c) {
+  if (c.fullAccess && c.status === 'closed' && c.monthEndedAt) return monthAsk(c);
   if (!c.fullAccess || c.status === 'closed') return '';
   const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
   const pending = livePendingExtend(c);
@@ -1699,7 +1700,103 @@ function extendOffer(c) {
       <p class="error" data-extend-error hidden></p>
     </div>`;
 }
+// ANOTHER MONTH, ASKED FOR (Eric, 2026-10-17: "If they pass closing, under
+// [Case Enhancements] there's a shining upgrade for an additional month
+// request. This goes to the advocate he accepts or declines."). Only on a case
+// its month closed; their advocate answers, and nothing is charged unless they
+// say yes.
+function monthAsk(c) {
+  monthAskStyle();
+  const adv = advFirstHtml(c);
+  const req = c.extendRequest;
+  const pending = livePendingExtend(c);
+  if (req?.state === 'approved' && pending) return `
+    <div class="followup-offer month-ask" data-month-ask="approved">
+      <h3>Good news: ${adv} said yes.</h3>
+      <p>Start your next month and your case opens again, picking up where you left off.</p>
+      <p><a class="btn glow" href="${esc(pending.url)}">Start my next month</a></p>
+    </div>`;
+  if (req?.state === 'pending') return `
+    <div class="followup-offer month-ask" data-month-ask="pending">
+      <h3>Your request is with ${adv}.</h3>
+      <p>Nothing is charged unless they say yes. You will hear either way.</p>
+      <p><button type="button" class="btn quiet" data-month-withdraw>Withdraw my request</button></p>
+      <p class="error" data-month-error hidden></p>
+    </div>`;
+  if (req?.state === 'declined') return `
+    <div class="followup-offer" data-month-ask="declined">
+      <h3>${adv} answered your request</h3>
+      ${req.declineReason ? `<p>&ldquo;${esc(req.declineReason)}&rdquo;</p>` : ''}
+      <p>Nothing was charged.</p>
+      <p><button type="button" class="btn quiet" data-ask-again>Ask again</button></p>
+    </div>`;
+  return `
+    <div class="followup-offer month-ask" data-month-ask="offer">
+      <h3>Want another month?</h3>
+      <p>Your month of Full-Service has ended. Ask ${adv} for another: the same work and the same file,
+        picking up where you left off. Nothing is charged unless they say yes.</p>
+      <p><button type="button" class="btn glow" data-request-month>Request another month</button></p>
+      <p class="error" data-month-error hidden></p>
+    </div>`;
+}
+/** The shine, once: a warm edge and a slow sweep, still for anyone who asked for less motion. */
+function monthAskStyle() {
+  if (document.getElementById('pa-month-ask')) return;
+  const st = document.createElement('style');
+  st.id = 'pa-month-ask';
+  st.textContent = `
+    .followup-offer.month-ask { position: relative; overflow: hidden; border: 1.5px solid transparent;
+      background: linear-gradient(var(--sur-lit, var(--panel)), var(--sur-lit, var(--panel))) padding-box,
+        var(--warm-pop, linear-gradient(110deg, var(--cyan), var(--magenta))) border-box; }
+    .followup-offer.month-ask::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+      background: linear-gradient(105deg, transparent 40%, rgba(255, 255, 255, .16) 50%, transparent 60%) no-repeat;
+      background-size: 250% 100%; background-position: 130% 0; }
+    @media (prefers-reduced-motion: no-preference) {
+      .followup-offer.month-ask::after { animation: pa-month-shine 4.5s ease-in-out infinite; }
+    }
+    @keyframes pa-month-shine { 0%, 55% { background-position: 130% 0; } 100% { background-position: -30% 0; } }`;
+  document.head.appendChild(st);
+}
+async function postMonthAsk(c, body) {
+  const idToken = await user.getIdToken();
+  const res = await fetch('/api/extend-request', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ caseId: c.id, ...body }),
+  });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(out.error || `That did not go through (${res.status}).`);
+  return out;
+}
+
 function wireExtendOffer(el, c) {
+  const paint = (next) => { el.innerHTML = extendOffer(next); wireExtendOffer(el, next); addAboutButton(el, 'extension'); };
+  const asking = el.querySelector('[data-request-month]');
+  if (asking) asking.addEventListener('click', async () => {
+    asking.disabled = true;
+    try {
+      const out = await postMonthAsk(c, {});
+      if (out.url) { location.href = out.url; return; }
+      paint({ ...c, extendRequest: { state: 'pending', at: out.at || new Date().toISOString() } });
+    } catch (e) {
+      const err = el.querySelector('[data-month-error]');
+      if (err) { err.textContent = e.message; err.hidden = false; }
+      asking.disabled = false;
+    }
+  });
+  const withdraw = el.querySelector('[data-month-withdraw]');
+  if (withdraw) withdraw.addEventListener('click', async () => {
+    withdraw.disabled = true;
+    try {
+      await postMonthAsk(c, { action: 'withdraw' });
+      paint({ ...c, extendRequest: null });
+    } catch (e) {
+      const err = el.querySelector('[data-month-error]');
+      if (err) { err.textContent = e.message; err.hidden = false; }
+      withdraw.disabled = false;
+    }
+  });
+  if (c.status === 'closed') el.querySelector('[data-ask-again]')?.addEventListener('click', () => paint({ ...c, extendRequest: null }));
   const again = el.querySelector('[data-extend-again]');
   if (again) again.addEventListener('click', () => {
     // Clearing the return flag is what un-blocks a second purchase; without
@@ -1797,7 +1894,7 @@ function renderAddons(el, c) {
 }
 
 /** The buttons that start a new purchase. */
-const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again]';
+const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again],[data-request-month]';
 /**
  * While sales are closed, empties a card that is only an offer and takes the
  * "buy again" button off a finished one. True when something is left to show.

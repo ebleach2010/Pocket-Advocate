@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.62';
+export const VERSION = '7.63';
 
 /**
  * Newest first.
@@ -51,6 +51,22 @@ export const VERSION = '7.62';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE END OF A MONTH, AND ITS PACE (Eric, 2026-10-17: "Close, with a heads
+    // up. If they pass closing, under [Case Enhancements] there's a shining
+    // upgrade for an additional month request." Then "Pacing flags" and
+    // "Yes, 'up to 20 hours'"). Admin only.
+    version: '7.63',
+    quiet: true,
+    client: [],
+    admin: [
+      'Three days before a Full-Service month ends, the client and their advocate are told. When it ends, the case closes on its own and the file stays theirs.',
+      'After that the client can ask for another month. Their advocate approves it or says why not, and paying opens the case again. All of it stays off while sales are off.',
+      'A Full-Service case is flagged on the shelf after a week with no work logged or no update to the client, or when most of the month\'s hours go in its first week.',
+      'Clients now read up to 20 hours a month.',
+      'The app icon is the PA tile again. To see it on your phone, delete the app from your Home Screen and add it back.',
+    ],
+  },
   {
     // THE THREE AUDITS' ERRORS (Eric, 2026-10-16: "send three agents to look
     // for errors in the suite, errors in UI, and a third glance at overall

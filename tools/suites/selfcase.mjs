@@ -777,7 +777,9 @@ check('S35 his answer goes through the Worker with the question on it, stamps th
   && replyDoc.data.replyTo === 'q1' && replyDoc.data.quote === 'What time did it start?'
   && replyDoc.data.text === 'About 6am, right hand only.'
   && !!stamp && (stamp.opts?.mask || []).join(',') === 'answeredAt,answerId' && stamp.data.answerId === rp1.obj.id
-  && !!shelf && (shelf.opts?.mask || []).join(',') === 'lastMessage' && shelf.data.lastMessage.emailed === true
+  // RE-PINNED 2026-10-17 (v7.63): Eric chose "Pacing flags": the shelf line also stamps their last word to the client.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.63): the reply's `staffMsgAt: now` left out of the write made S35 read FAIL.
+  && !!shelf && (shelf.opts?.mask || []).join(',') === 'lastMessage,staffMsgAt' && shelf.data.lastMessage.emailed === true && !!shelf.data.staffMsgAt
   && RP1.refreshed.length === 0
   && rp2.code === 404 && RP2.written.length === 0
   && rp3.code === 409 && RP3.written.length === 0

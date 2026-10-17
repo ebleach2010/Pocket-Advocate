@@ -11,6 +11,7 @@ import {
 import { unseenBadges } from './seen.js';
 import { mountOfficeControl } from './admin-hours.js';
 import { mountFitCalls } from './admin-fit.js';
+import { pacingFlags } from './admin-pacing.js';
 import { mountWaitlist } from './admin-waitlist.js';
 import { mountPersonal } from './admin-personal.js';
 import { mountInvites, leadFormHtml, wireLeadForm } from './admin-invites.js';
@@ -375,6 +376,7 @@ async function load() {
       flags: `<span class="folder-note">${detail}${
         c.needsReschedule ? '<strong class="fld-alert">NEEDS RESCHEDULE</strong>' : ''
       }${checkInDue(c) ? ' <strong class="fld-alert">CHECK-IN DUE</strong>' : ''
+      }${pacingFlags(c).length ? ' <strong class="fld-alert">CHECK THE PACE</strong>' : ''
       }${c.pendingTelehealth?.state === 'requested' ? ' <strong class="fld-alert">TELEHEALTH, CONFIRM</strong>' : ''
       }${c.family ? ` <strong class="fld-family">FAMILY · FREE${c.familyRelation ? `, ${esc(c.familyRelation)}` : ''}</strong>` : ''
       }${c.sample ? ' <strong class="fld-family">SAMPLE · NOT A REAL CLIENT</strong>' : ''
@@ -400,6 +402,8 @@ async function load() {
     const href = caseHref(c.id);
     if (c.needsReschedule) loops.push({ href, name, label: 'Needs rescheduling', tone: 'hot' });
     if (checkInDue(c)) loops.push({ href, name, label: 'Check-in due', tone: 'hot' });
+    // The pace of a Full-Service month (2026-10-17): admin-pacing.js.
+    for (const f of pacingFlags(c)) loops.push({ href, name, label: f.label, tone: 'warm' });
     if (c.pendingTelehealth?.state === 'requested')
       loops.push({ href, name, label: 'Telehealth to confirm', tone: 'hot' });
     // The call has happened and nothing says so (2026-10-15): the report
@@ -413,6 +417,11 @@ async function load() {
       if (days < 0) loops.push({ href, name, label: `Report overdue ${-days}d`, tone: 'hot' });
       else if (days <= 3) loops.push({ href, name, label: `Report due in ${days}d`, tone: 'warm' });
     }
+  }
+  // Another month asked for after one ended (2026-10-17): the case is closed,
+  // so it sits with the former ones, and the ask comes up here.
+  for (const c of former) {
+    if (c.extendRequest?.state === 'pending') loops.push({ href: caseHref(c.id), name: c.clientName || c.clientEmail || c.clientUid, label: 'Asking for another month', tone: 'hot' });
   }
   for (const sub of subs) {
     if (sub.status !== 'active' || sub.lastMessage?.role !== 'client') continue;

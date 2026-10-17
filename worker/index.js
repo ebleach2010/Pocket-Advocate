@@ -83,6 +83,7 @@ import { handleAdvocates, isStaffLogin, advocateLogin } from './advocates.js';
 import { handleEmployer } from './employer.js';
 // Joe Bloe and the sample contractor, taken off his real shelf once (2026-10-16).
 import { retireSamples } from './retire.js';
+import { sweepFullServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
 // The security rules, published by the Worker when what it carries changes.
@@ -759,6 +760,9 @@ const FIT_PAGE = /^\/fit(\.html)?\/?$/;
 const SALES_ROUTES = new Set([
   '/api/checkout', '/api/chat-unlock', '/api/upgrade',
   '/api/followup', '/api/extend', '/api/telehealth',
+  // Another month asked for after one ended (2026-10-17): off while sales are,
+  // on Eric's word ("No, keep it off").
+  '/api/extend-request',
 ]);
 // 24/7 Priority Chat has its own switch (Eric, 2026-10-14: "Unlock priority
 // chat"), so it can be open while everything above stays shut.
@@ -1190,6 +1194,14 @@ export default {
         return await handleFollowUpCheckout(request, env);
       if (url.pathname === '/api/extend' && request.method === 'POST')
         return await handleExtendCheckout(request, env);
+      // The end of a Full-Service month (2026-10-17): worker/monthend.js.
+      if (url.pathname === '/api/extend-request' && request.method === 'POST')
+        return await handleExtendRequest(request, env, { requireUser, json, pingCase, monthCentsFor: async (data) => (await ratesForCase(env, data)).fullCents });
+      if (url.pathname === '/api/admin/extend-request' && request.method === 'POST')
+        return await handleExtendDecision(request, env, {
+          requireStaff, staffSees, json, notifyUser, stripePost, lineItems: extendLineItems,
+          capacity: fullAccessCapacity, contractorOf, confirm: confirmExtensionPurchase, baseUrl: env.PUBLIC_BASE_URL,
+        });
       if (url.pathname === '/api/telehealth' && request.method === 'POST')
         return await handleTelehealthRequest(request, env);
       if (url.pathname === '/api/admin/telehealth' && request.method === 'POST')
@@ -1700,6 +1712,13 @@ export default {
     if (minute % 15 === 11) ctx.waitUntil(releaseRules(env).catch((err) => console.warn('rules release:', err.message || err)));
     // Demo mode replaces them (Eric, 2026-10-16: "Remove both"): Joe Bloe and
     // the sample contractor go once. A read on its minute until it has run.
+    // The end of each Full-Service month: the heads-up three days out, and the
+    // close (2026-10-17). Its own minute, like the others.
+    if (minute % 15 === 3) {
+      ctx.waitUntil(sweepFullServiceMonths(env, {
+        windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: SALES_OPEN, baseUrl: env.PUBLIC_BASE_URL,
+      }).catch((err) => console.warn('month sweep:', err.message || err)));
+    }
     if (minute % 15 === 13) ctx.waitUntil(retireSamples(env).catch((err) => console.warn('retire samples:', err.message || err)));
 
     // NOTHING SPENDS ON ITS OWN (Eric, 2026-09-25: "Park pr 420. No scans
@@ -2447,7 +2466,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-audit-fixes';
+const BUILD_TAG = 'v2026-10-17-month-end';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2455,7 +2474,7 @@ const BUILD_TAG = 'v2026-10-17-audit-fixes';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.62';
+const VERSION = '7.63';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4338,6 +4357,10 @@ async function handleNotify(request, env, ctx) {
       link: adminLink,
     });
   } else if (isAdmin) {
+    // The last word from the advocate's side, for the pacing flags (2026-10-17).
+    if (kind === 'case') {
+      ctx.waitUntil(patchDoc(env, `cases/${id}`, { staffMsgAt: new Date() }, { mask: ['staffMsgAt'] }).catch(() => {}));
+    }
     // Eric wrote. His side is folded in at his next tap (2026-09-13).
     await notifyUser(env, clientUid, {
       title: 'Pocket Advocate',
@@ -5496,6 +5519,9 @@ async function handleClinicCalls(request, env, url) {
       // hisWallClock for the 7:31 AM bug this closes.
       at: at ? (hisWallClock(at) || new Date(at)) : null, notes: '', createdAt: new Date(),
     }, { mustNotExist: true });
+    // When work was last logged, for the pacing flags (2026-10-17). A time, and
+    // nothing of what was done.
+    await patchDoc(env, `cases/${id}`, { work: { loggedAt: new Date() } }, { mask: ['work.loggedAt'] }).catch(() => {});
 
     // THE STATUS LINE, and only on this branch. Logging work is new work;
     // editing an entry's notes further down is not, and says nothing at all.
@@ -6048,14 +6074,14 @@ async function markIncludedHours(env, caseId, c, bankedSeconds, tierMark) {
   if (!stamped) return;
   const hours = months * FULL_INCLUDED_HOURS;
   await patchDoc(env, `cases/${caseId}/private/milestones/items/${crypto.randomUUID()}`, {
-    what: `The ${hours} hours included in the month are delivered. Work continues.`,
+    what: `All ${hours} hours of the month are delivered. Work continues.`,
     kind: 'included', kindLabel: 'Included hours delivered', kindColor: 'green',
     at: now, createdAt: now,
   }, { mustNotExist: true }).catch(() => {});
   if (c.clientUid) {
     await notifyUser(env, c.clientUid, {
       title: 'Pocket Advocate',
-      body: `${await caseAdvocateFirst(env, c)} has delivered the ${hours} hours included in your month. Work continues.`,
+      body: `${await caseAdvocateFirst(env, c)} has delivered all ${hours} hours of your month. Work continues.`,
       link: `/case.html?id=${caseId}`,
     }).catch(() => {});
   }
@@ -6866,7 +6892,8 @@ async function handleChatReply(request, env, ctx) {
     { mask: ['answeredAt', 'answerId'] }).catch(() => {});
   await patchDoc(env, `cases/${id}`, {
     lastMessage: { text: text.slice(0, 120), from: admin.uid, role: 'admin', ts: now, emailed: true },
-  }, { mask: ['lastMessage'] }).catch(() => {});
+    staffMsgAt: now,
+  }, { mask: ['lastMessage', 'staffMsgAt'] }).catch(() => {});
   return json({ ok: true, id: replyId });
 }
 
@@ -7661,11 +7688,16 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
   const payments = Array.isArray(c.data.extraPayments) ? c.data.extraPayments : [];
   // Stripe retries webhooks; the same session must never stack twice.
   if (payments.some((x) => x.sessionId === session.id)) return;
-  const amountCents = session.amount_total || FULL_EXTEND[30];
+  // What was paid, zero included: a month given at no charge records nothing.
+  const amountCents = Number.isFinite(Number(session.amount_total)) ? Number(session.amount_total) : FULL_EXTEND[30];
+  // A month asked for after the case closed reopens it (2026-10-17), and only
+  // the one its advocate said yes to.
+  const reopening = session.metadata?.reopen === '1' && c.data.fullAccess && c.data.status === 'closed'
+    && c.data.extendRequest?.state === 'approved';
 
   // Money moved into a case that cannot take the days: written down and
   // flagged for a hand refund, exactly like the sibling confirmers.
-  if (!c.data.fullAccess || c.data.status === 'closed') {
+  if (!c.data.fullAccess || (c.data.status === 'closed' && !reopening)) {
     payments.push({ kind: 'extend', amountCents, sessionId: session.id, at: now, duplicate: true });
     const okDup = await patchDoc(env, `cases/${caseId}`, { extraPayments: payments },
       { mask: ['extraPayments'], ifUpdateTime: c.updateTime });
@@ -7699,9 +7731,16 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
     fullAccessRateCents: (Number(c.data.fullAccessRateCents) || 0) + amountCents,
     pendingExtend: null,
     extraPayments: payments,
+    // Where this month's hours start, for the pacing flags (2026-10-17).
+    work: { monthStartSeconds: Math.max(0, Number(c.data.work?.seconds) || 0) },
+    ...(reopening ? {
+      status: c.data.closedFromStatus || 'confirmed', closedAt: null, closedBy: null, closedReason: null,
+      extendRequest: { ...c.data.extendRequest, state: 'started', startedAt: now }, monthNotice: null,
+    } : {}),
   }, {
     mask: ['fullAccessExtraDays', 'fullAccessMonths', 'fullAccessRateCents',
-      'pendingExtend', 'extraPayments'],
+      'pendingExtend', 'extraPayments', 'work.monthStartSeconds',
+      ...(reopening ? ['status', 'closedAt', 'closedBy', 'closedReason', 'extendRequest', 'monthNotice'] : [])],
     ifUpdateTime: c.updateTime,
   });
   // Lost the lock: re-run from the top; the sessionId dedup makes it idempotent.
@@ -7711,8 +7750,8 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
   if (c.data.clientEmail) {
     await sendEmail(env, {
       to: c.data.clientEmail,
-      subject: 'Thirty more days on your case',
-      html: `<p>Your coordination window now runs through <strong>${end ? MT_FMT.format(end) : 'the extended date'} MST</strong>.</p>
+      subject: reopening ? 'Your case is open again' : 'Thirty more days on your case',
+      html: `<p>${reopening ? 'Your case is open again. ' : ''}Your coordination window now runs through <strong>${end ? MT_FMT.format(end) : 'the extended date'} MST</strong>.</p>
         <p>Nothing else changes: same case, same file, same rhythm.</p>
         <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
     }).catch(() => { /* the purchase still stands if the mail fails */ });

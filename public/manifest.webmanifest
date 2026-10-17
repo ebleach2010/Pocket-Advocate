@@ -1,7 +1,7 @@
 {
   "name": "Pocket Advocate",
   "short_name": "Pocket Advocate",
-  "description": "Independent patient advocacy \u2014 your case, your documents, your chat with me.",
+  "description": "Independent patient advocacy: your case, your documents, your chat with me.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -9,28 +9,28 @@
   "theme_color": "#0A0A0C",
   "icons": [
     {
-      "src": "/icon-180.png",
+      "src": "/img/pa-icon-180.png",
       "sizes": "180x180",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/img/logo-192.png",
+      "src": "/img/pa-icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/img/logo-512-flat.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/img/logo-512.png",
+      "src": "/img/pa-icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
+    },
+    {
+      "src": "/img/pa-icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

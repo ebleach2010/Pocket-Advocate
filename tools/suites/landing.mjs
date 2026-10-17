@@ -125,7 +125,9 @@ check('A6 the price section: his line, the reframe, his three card sentences, th
       && s.includes('Independent advocates typically bill $100 to $300 an hour against a retainer that runs down. Every price here is written out before you pay, and the work behind each one is spelled out.')
       // RE-PINNED 2026-10-15 (v7.40): Eric, "Make the advocacy case two weeks to deliver and update that timeframe anywhere else it's noted". His sentence, with the new timeframe.
       && s.includes('One flat price for 5-6 hours of research and reporting: our full case overview call, my review of every record you share, and a written report within 14 days.')
-      && s.includes('Everything in a case, then I deal with the system myself, a month at a time. <span data-hours="full">20</span> included hours.')
+      // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": the month's hours are a ceiling, not a target.
+      // NEGATIVE CONTROL (run 2026-10-17, v7.63): index.html back to "<span data-hours=\"full\">20</span> included hours." made A6 read FAIL.
+      && s.includes('Everything in a case, then I deal with the system myself, a month at a time. Up to <span data-hours="full">20</span> hours.')
       && s.includes('A private chat line to me from your phone for questions, updates, photos, and records. Cancel anytime.');
   })());
 // RE-PINNED 2026-10-15 (v7.38): Eric, "There are just some redundant areas that are abysmally placed and confusing like this one. Send three agents to tighten things up". The home's Straight answers screen sat beside

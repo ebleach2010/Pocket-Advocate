@@ -240,7 +240,9 @@ ck('scope note: a month at a time, hours-based, and appeals never counted as ite
    /<strong>30 days per month you take<\/strong>/.test(TT)
    && !/Two insurance appeal letters/i.test(TT)
    // "up to 20-22" became "20 included" on 2026-09-02 (cap-and-raise).
-   && /20 included hours of comprehensive advocacy/.test(TT)
+   // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": the month's hours are a ceiling, not a target.
+   // NEGATIVE CONTROL (run 2026-10-17, v7.63): tier-terms.js back to "20 included hours" made this read FAIL.
+   && /up to 20 hours of comprehensive advocacy/.test(TT)
    && /priority access maintained throughout the month/.test(TT)
    && /\$175 to \$225 an hour/.test(TT)
    && /Appeals are not counted as items/.test(TT)

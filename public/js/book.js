@@ -768,7 +768,7 @@ function renderPayment() {
           these are available from the Case Enhancements tab on your case page
           whenever you want them:</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Full-Service Case Management</strong><br>
-          I take over the legwork, a month at a time: 20 included hours of
+          I take over the legwork, a month at a time: up to 20 hours of
           comprehensive advocacy each 30-day service period, with priority
           access throughout. Check-in calls at least twice a month, calls to
           your clinics and insurer on your behalf, your telehealth visits

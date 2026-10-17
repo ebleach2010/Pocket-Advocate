@@ -373,7 +373,11 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
   // NEGATIVE CONTROL (run 2026-10-15, v7.38): the sheet's title changed to 'First month?' made this read
   //   FAIL  CH6 Full-Service approval takes the amount he typed (the quoted month by default), refuses a bad one, opens the month at no charge with no link when it is zero through the same landing a paid link has, sends the link for any other figure, the card asks for the figure and carries it on both posts, and the demo honours it
   && /title: 'First month, in dollars', body: `They were quoted \$/.test(ADMC)
-  && (ADMC.match(/body: JSON\.stringify\(\{ caseId, decision, reason, amountCents/g) || []).length === 2
+  // RE-PINNED 2026-10-17 (v7.63): the card for another month after one ended posts the same shape, so the two are
+  // counted inside the Full-Service card's own handler.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.63): the cap override's post dropping `amountCents` made CH6 read FAIL.
+  && (ADMC.slice(ADMC.indexOf("pane.querySelectorAll('[data-full-request]')"), ADMC.indexOf('// Another month, asked for after one ended'))
+    .match(/body: JSON\.stringify\(\{ caseId, decision, reason, amountCents/g) || []).length === 2
   && /const asked = body\.amountCents === undefined \|\| body\.amountCents === null \? null : Number\(body\.amountCents\);/.test(DEMO)
   && /const amount = asked === null \? \(Number\(req\.firstMonthCents\) \|\| 0\) : asked;/.test(DEMO));
 

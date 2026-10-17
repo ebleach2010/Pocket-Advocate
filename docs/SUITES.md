@@ -2007,3 +2007,43 @@ E1; release R1; drive-ask (any of the three answers); drive-cleanup (the
 Full-Service eyebrow reads once); drive-employer (the photo by its saved
 record, the card's initials when the picture will not load); drive-tour (each
 ring clear of its card).
+
+### The end of a Full-Service month, its pace, up to 20 hours (2026-10-17, v7.63)
+
+Eric, asked what happens when a month of Full-Service runs out: "Close, with a
+heads up. If they pass closing, under [Case Enhancements] there's a shining
+upgrade for an additional month request. This goes to the advocate he accepts
+or declines. All case requests get accepted or declined by the advocate they
+choose." While sales are off: "No, keep it off". Asked how to keep a contractor
+from doing a week and stopping: "Pacing flags", and "Yes, 'up to 20 hours'".
+
+worker/monthend.js, from the cron at minute%15===3: three days before a
+month's end the client is told (push and mail, the words for sales on or off)
+and so is their advocate, once an end date (monthNotice); at the end the case
+closes on schedule (closedFromStatus, monthEndedAt), waiting on a filed,
+undecided appeal or a month in checkout, never on a held case, his own or a
+delivered one. Then POST /api/extend-request (a SALES_ROUTE) asks the case's
+own advocate, at the case's own month price; POST /api/admin/extend-request
+answers: a reason on a no, a link (or no charge) on a yes, their Full-Service
+limit asked about. Paying reopens only an approved month
+(confirmExtensionPurchase, metadata reopen). case.js shows the shining ask in
+four states and hides it with sales off; the advocate's card and Needs
+attention carry it; the demo mirrors both routes.
+
+admin-pacing.js: a Full-Service case is flagged after a week with no work
+logged (the clock, or a work log entry: work.loggedAt), no word to the client
+(staffMsgAt, stamped by /api/notify and the chat reply), or most of the
+month's hours in its first week (from work.monthStartSeconds on a later
+month). On the folder, under Needs attention and on the case.
+
+Clients read "up to 20 hours" everywhere the month's hours are named.
+
+The app icon is the PA tile again (Eric: "Pocket advocate icon reverted to old
+one. I want the icon to be the PA one"): /img/pa-icon-*.png on every page's
+apple-touch-icon and icon links, in the manifest (a maskable 512 among them),
+and at /apple-touch-icon.png. New addresses, so a phone fetches it fresh.
+
+New: monthend.mjs (22 checks, every one controlled); drive-monthend (7, six
+controlled); cancelsearch D5 (controlled). Re-pinned with controls: pricing H1;
+landing A6; defects scope note; worklog L18, L39, L42, L67; clock C51c, C51d,
+C51e; tighten T3; charge CH6; selfcase S35; hardening F2; release R1.

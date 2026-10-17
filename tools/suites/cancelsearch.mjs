@@ -24,6 +24,7 @@ import { findHits, snippet, MIN_QUERY } from '../../public/js/chat-search.js';
 const __REPO = __j(__d(__f(import.meta.url)), '..', '..');
 const SRC = readFileSync(__j(__REPO, 'worker/index.js'), 'utf8');
 const f = (p) => readFileSync(__j(__REPO, p), 'utf8');
+const DASH = new RegExp('[\\u2013\\u2014]');
 
 const results = [];
 function check(name, cond, detail = '') {
@@ -264,6 +265,19 @@ console.log('\n--- D. the look audit\'s fixes ---');
   //   FAIL  D4 the installed app opens black too
   const MAN = JSON.parse(f('public/manifest.webmanifest'));
   check('D4 the installed app opens black too', MAN.background_color === '#0A0A0C' && MAN.theme_color === '#0A0A0C');
+  // Eric, 2026-10-17, with a screenshot of it: "Pocket advocate icon reverted to old one. I want the icon to be the PA
+  // one". The PA tile is the Home Screen icon, the tab icon and every icon the manifest names, each the size it says.
+  const pngSize = (p) => { const b = readFileSync(__j(__REPO, p)); return b.toString('ascii', 12, 16) === 'IHDR' ? `${b.readUInt32BE(16)}x${b.readUInt32BE(20)}` : ''; };
+  const iconPages = readdirSync(__j(__REPO, 'public')).filter((n) => n.endsWith('.html') && /rel="apple-touch-icon"/.test(f(`public/${n}`)));
+  const oldIcon = iconPages.filter((n) => { const h = f(`public/${n}`); return !h.includes('<link rel="apple-touch-icon" href="/img/pa-icon-180.png">') || !h.includes('<link rel="icon" type="image/png" sizes="192x192" href="/img/pa-icon-192.png">'); });
+  const named = (MAN.icons || []).map((i) => `${i.src}|${i.sizes}|${i.purpose}|${pngSize(`public${i.src}`)}`);
+  // NEGATIVE CONTROL (run 2026-10-17): index.html's apple-touch-icon put back to /icon-180.png made this read
+  //   FAIL  D5 the app icon is the PA one: on the Home Screen, in the tab and in the manifest, each image the size it says
+  check('D5 the app icon is the PA one: on the Home Screen, in the tab and in the manifest, each image the size it says',
+    iconPages.length >= 30 && !oldIcon.length
+    && named.join(',') === '/img/pa-icon-180.png|180x180|any|180x180,/img/pa-icon-192.png|192x192|any|192x192,/img/pa-icon-512.png|512x512|any|512x512,/img/pa-icon-512-maskable.png|512x512|maskable|512x512'
+    && pngSize('public/apple-touch-icon.png') === '180x180' && !DASH.test(MAN.description),
+    JSON.stringify({ oldIcon, named }));
 }
 
 const failed = results.filter((r) => !r.pass);

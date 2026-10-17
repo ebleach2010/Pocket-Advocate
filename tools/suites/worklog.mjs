@@ -339,7 +339,9 @@ ck('L17 his own panel no longer counts what he promised not to count',
 ck('L18 and the agreement still says he does not meter them item by item',
   /I do not meter them call by call/.test(TIER)
   // "up to 20-22" became "20 included" on 2026-09-02 (cap-and-raise).
-  && /20 included hours of comprehensive advocacy/.test(TIER)
+  // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": the month's hours are a ceiling, not a target.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.63): tier-terms.js back to "20 included hours" made L18 read FAIL.
+  && /up to 20 hours of comprehensive advocacy/.test(TIER)
   && !/you will never be told you have used them up/.test(TIER));
 
 // ---- L19-L23: the records release, parked, and the promise kept ----------
@@ -774,8 +776,12 @@ const own = harness({ self: true, clientUid: 'client1', status: 'open' });
 const ownReply = await own.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'Neurology, for myself' });
 // NEGATIVE CONTROL (run 2026-09-03): `c.self` dropped from workLogNotice's silence made this read
 //   FAIL  L67 his own case is told nothing, and the entry still lands  -- 1 sent, 1 written
+// RE-PINNED 2026-10-17 (v7.63): Eric chose "Pacing flags": an entry also stamps when work was last logged on the
+// case (work.loggedAt), so these count the entries written, not every write.
+// NEGATIVE CONTROL (run 2026-10-17, v7.63): the entry's own write taken out of `add` made L67, L39 and L42 read FAIL.
+const entries = (h) => h.written.filter((w) => /\/private\/clinicCalls\/items\//.test(w.path)).length;
 ck('L67 his own case is told nothing, and the entry still lands',
-  ownReply.obj.ok === true && own.notified.length === 0 && own.written.length === 1,
+  ownReply.obj.ok === true && own.notified.length === 0 && entries(own) === 1,
   `${own.notified.length} sent, ${own.written.length} written`);
 
 // NOBODY TO TELL, AND A CASE THAT IS OVER. Both are silence, and both still
@@ -790,7 +796,8 @@ await closed.post({ caseId: 'c1', action: 'add', kind: 'call', clinic: 'X' });
 //   -- no client 1 sent, closed case 1 sent
 ck('L39 a case with nobody on it and a closed case are both told nothing',
   noClient.notified.length === 0 && closed.notified.length === 0
-  && noClient.written.length === 1 && closed.written.length === 1,
+  // RE-PINNED 2026-10-17 (v7.63): counted as entries, beside the work.loggedAt stamp (see L67).
+  && entries(noClient) === 1 && entries(closed) === 1,
   `no client ${noClient.notified.length} sent, closed case ${closed.notified.length} sent`);
 
 // THE GUARD AGAINST A FUNCTION THAT NEVER SPEAKS. Everything above would also
@@ -861,7 +868,8 @@ try {
   const b2 = harness({ ...OPEN_CASE });
   b2.ctl.boom = true;
   const r = await b2.post({ caseId: 'c1', action: 'add', kind: 'appeal', clinic: 'X' });
-  saveSurvived = r.obj.ok === true && b2.written.length === 1 ? 'ok' : 'the entry was not saved';
+  // RE-PINNED 2026-10-17 (v7.63): counted as entries, beside the work.loggedAt stamp (see L67).
+  saveSurvived = r.obj.ok === true && entries(b2) === 1 ? 'ok' : 'the entry was not saved';
 } catch (e) { saveSurvived = `the route threw: ${e}`; }
 ck('L42 and a phone that cannot be reached never fails his save',
   saveSurvived === 'ok', saveSurvived);

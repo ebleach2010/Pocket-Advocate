@@ -5,6 +5,7 @@
 // onSnapshot and the advisor's poll survive every action on this page.
 
 import './admin-ledger.js';
+import { pacingFlags } from './admin-pacing.js';
 import {
   db, storage, doc, getDoc, collection, getDocs, query, where,
   ref, uploadBytesResumable, listAll, getDownloadURL, getMetadata, deleteObject,
@@ -718,6 +719,8 @@ function render(el) {
     if (days < 0) loops.push(['hot', `Report overdue ${-days}d`]);
   }
   if (c.hold?.pausedAt) loops.push(['warm', 'Case paused']);
+  // The pace of a Full-Service month (2026-10-17): admin-pacing.js.
+  for (const f of pacingFlags(c)) loops.push(['warm', f.label]);
   // A family member's case (2026-09-03): free, and said so where he looks.
   if (c.family) loops.push(['family', `Family, free${c.familyRelation ? `: ${c.familyRelation}` : ''}`]);
   const loopRow = loops.length && c.status !== 'closed'
@@ -2442,6 +2445,18 @@ function paintOverview(pane) {
       <button class="btn quiet" data-full-request="decline">Can't take it</button>
       <p class="error" data-full-request-error hidden></p>
     </div>` : ''}
+    ${c.extendRequest?.state === 'pending' && c.status === 'closed' ? `
+    <div class="panel" data-month-request style="border-color:var(--cyan); box-shadow:var(--glow-c);">
+      <h3 style="margin:0 0 .3rem; color:var(--cyan);">Another month: your call</h3>
+      <p class="small" style="margin:0 0 .2rem;">Their month of Full-Service ended and they are asking
+        for another, quoted <strong>$${((Number(c.extendRequest.monthCents) || 0) / 100).toLocaleString()}</strong>.</p>
+      <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged. Approving sends them a
+        link to pay, at that price or any you type (0 opens it at no charge), and paying opens the
+        case again with thirty days. Declining asks for your reason, which they read word for word.</p>
+      <button class="btn" data-month-request="approve">Approve: send the link</button>
+      <button class="btn quiet" data-month-request="decline">Can't take it</button>
+      <p class="error" data-month-request-error hidden></p>
+    </div>` : ''}
     ${c.pendingTelehealth?.state === 'requested' ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
       <h3 style="margin:0 0 .3rem; color:var(--orange);">Telehealth appointment: they want you there</h3>
@@ -2891,6 +2906,49 @@ function paintOverview(pane) {
         b.disabled = false;
       }
     }));
+  // Another month, asked for after one ended (2026-10-17): the same answer as
+  // the Full-Service request above, through worker/monthend.js.
+  pane.querySelectorAll('[data-month-request]').forEach((b) => b.tagName === 'BUTTON' && b.addEventListener('click', async () => {
+    const decision = b.dataset.monthRequest;
+    const errEl = pane.querySelector('[data-month-request-error]');
+    let reason = '';
+    let amountCents;
+    if (decision === 'decline') {
+      reason = ((await ask({ title: 'Why can\'t you take another month?', body: 'They read this word for word.', okLabel: 'Decline', danger: true, input: { value: '' } })) || '').trim();
+      if (!reason) return;
+    } else {
+      const quoted = Number(c.extendRequest?.monthCents) || 0;
+      const typed = await ask({ title: 'The month, in dollars', body: `They were quoted $${dollars(quoted)}; change it to anything, or 0 to open the month at no charge.`, okLabel: 'Continue', input: { value: dollars(quoted).replace(/,/g, ''), type: 'text' } });
+      if (typed === null) return;
+      const n = Math.round(Number(String(typed).replace(/[^0-9.]/g, '')) * 100);
+      if (!Number.isInteger(n) || n < 0) { alert('A number of dollars, zero or more.'); return; }
+      amountCents = n;
+    }
+    b.disabled = true;
+    if (errEl) errEl.hidden = true;
+    const send = async (overrideCap) => {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/extend-request', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, decision, reason, amountCents, ...(overrideCap ? { overrideCap: true } : {}) }),
+      });
+      return { res, out: await res.json().catch(() => ({})) };
+    };
+    try {
+      let { res, out } = await send(false);
+      if (res.status === 409 && out.error === 'full-booked') {
+        const carrying = out.max ? `${out.open} of ${out.max}` : `${out.open}, with no limit set`;
+        if (!confirm(`You already carry ${carrying}. Take this one anyway?`)) { b.disabled = false; return; }
+        ({ res, out } = await send(true));
+      }
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message; errEl.hidden = false; }
+      b.disabled = false;
+    }
+  }));
   wireHoldAndClose(pane);
 }
 

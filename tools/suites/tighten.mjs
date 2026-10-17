@@ -80,7 +80,7 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   const host = (html) => {
     const h = { innerHTML: html };
     h.querySelector = (sel) => {
-      if (sel === SELLING) return /data-(th-request|buy-extend|buy-followup|buy-upgrade|ask-again)\b/.test(h.innerHTML) ? {} : null;
+      if (sel === SELLING) return /data-(th-request|buy-extend|buy-followup|buy-upgrade|ask-again|request-month)\b/.test(h.innerHTML) ? {} : null;
       if (sel === '[data-th-upcoming]') {
         const m = h.innerHTML.match(/<p[^>]*data-th-upcoming[\s\S]*?<\/p>/);
         return m ? { outerHTML: m[0] } : null;
@@ -100,11 +100,15 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   const done = host('<div class="followup-offer is-done"><h3>Another month is on your case.</h3><p><button type="button" class="btn quiet" data-extend-again>Add another month</button></p></div>');
   const open = host('<div><button data-buy-upgrade>Ask me to take this case</button></div>');
   const r = [keep(offer), keep(visit), keep(pending), keep(done), keep(open, true)];
+  const month = host('<div class="followup-offer month-ask"><h3>Want another month?</h3><button data-request-month>Request another month</button></div>');
+  const monthKept = keep(month);
   // NEGATIVE CONTROL (run 2026-10-15): the kept-appointment branch in keepCard replaced with `host.innerHTML = ''` made this read
   //   FAIL  T3 while sales are closed an offer card empties, a confirmed appointment and a request under way stay, a finished month loses its buy-again button, and an open shop changes nothing
+  // RE-PINNED 2026-10-17 (v7.63): Eric, "No, keep it off": the ask for another month after one ended is an offer too.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.63): `[data-request-month]` taken out of SELLING made this read FAIL.
   check('T3 while sales are closed an offer card empties, a confirmed appointment and a request under way stay, a finished month loses its buy-again button, and an open shop changes nothing',
-    /^\[data-th-request\],\[data-buy-extend\],\[data-buy-followup\],\[data-buy-upgrade\],\[data-ask-again\]$/.test(SELLING)
-    && r.join() === 'false,true,true,true,true'
+    /^\[data-th-request\],\[data-buy-extend\],\[data-buy-followup\],\[data-buy-upgrade\],\[data-ask-again\],\[data-request-month\]$/.test(SELLING)
+    && r.join() === 'false,true,true,true,true' && monthKept === false && month.innerHTML === ''
     && offer.innerHTML === ''
     && /Appointment advocacy/.test(visit.innerHTML) && /Confirmed: Tue, Oct 20/.test(visit.innerHTML) && !/data-th-request/.test(visit.innerHTML)
     && /Withdraw my request/.test(pending.innerHTML)

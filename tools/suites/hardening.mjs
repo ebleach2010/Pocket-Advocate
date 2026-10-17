@@ -259,9 +259,11 @@ console.log('\n--- F. a contractor\'s own cases ---');
   const names = [await fn({ ADMIN_UID: 'eric' }, { advocateId: 'ana' }), await fn({ ADMIN_UID: 'eric' }, {}), await fn({ ADMIN_UID: 'eric' }, { advocateId: 'gone' })];
   // NEGATIVE CONTROL (run 2026-10-16): the pause push put back to `Eric has paused your case: ${note}` made this read
   //   FAIL  F2 a contractor's client reads their own advocate's name: the pause and hours pushes, the chat header and its doing line, the paused card, the follow-up note, the printed record, the saved shelf, the chat page's face and name
+  // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": the hours push says all 20 hours of the month, by their name still.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.63): the hours push put back to `Eric has delivered all ${hours} hours of your month.` made F2 read FAIL.
   check('F2 a contractor\'s client reads their own advocate\'s name: the pause and hours pushes, the chat header and its doing line, the paused card, the follow-up note, the printed record, the saved shelf, the chat page\'s face and name',
     JSON.stringify(names) === JSON.stringify(['Ana', 'Eric', 'Your advocate'])
-    && /`\$\{await caseAdvocateFirst\(env, doc\.data\)\} has paused your case: \$\{note\}`/.test(W) && /`\$\{await caseAdvocateFirst\(env, c\)\} has delivered the \$\{hours\} hours/.test(W)
+    && /`\$\{await caseAdvocateFirst\(env, doc\.data\)\} has paused your case: \$\{note\}`/.test(W) && /`\$\{await caseAdvocateFirst\(env, c\)\} has delivered all \$\{hours\} hours/.test(W)
     && !/Eric has paused your case|Eric has delivered the/.test(W)
     && (CASE.match(/\$\{advFirstHtml\(c\)\}/g) || []).length >= 4
     && !/Eric, your advocate|From Eric:|>Eric is \$\{|Eric will promptly/.test(CASE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, ''))

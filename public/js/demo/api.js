@@ -1343,6 +1343,62 @@ export function demoApi(role, store) {
       store.fire?.(key);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&extended=1&demo=1` });
     }
+    // ANOTHER MONTH, ASKED FOR AFTER ONE ENDED (2026-10-17), as
+    // worker/monthend.js answers it. There is no Stripe here, so a yes lands
+    // where paying would have: the case open again, thirty days from today.
+    if (path === '/api/extend-request') {
+      const key = `cases/${body.caseId || ''}`;
+      const c = store.docs.get(key);
+      if (!c) return fail(404, 'Not found');
+      if (!c.fullAccess || c.status !== 'closed' || !c.monthEndedAt) return fail(409, 'Another month can be asked for once a month of Full-Service has ended.');
+      const req = c.extendRequest;
+      if (body.action === 'withdraw') {
+        if (req?.state !== 'pending') return fail(409, 'There is no request to withdraw.');
+        store.docs.set(key, { ...c, extendRequest: null });
+        store.persist?.(); store.fire?.(key);
+        return ok({ ok: true, withdrawn: true });
+      }
+      if (req?.state === 'pending') return ok({ ok: true, state: 'pending', at: req.at });
+      const next = { state: 'pending', at: new Date(), monthCents: 440000, decidedAt: null, declineReason: '' };
+      store.docs.set(key, { ...c, extendRequest: next });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, state: 'pending', at: next.at });
+    }
+    if (path === '/api/admin/extend-request') {
+      const key = `cases/${body.caseId || ''}`;
+      const c = store.docs.get(key);
+      const req = c?.extendRequest;
+      if (!c || req?.state !== 'pending' || c.status !== 'closed') return fail(409, 'There is no request waiting.');
+      if (body.decision === 'decline') {
+        const reason = String(body.reason || '').trim();
+        if (!reason) return fail(400, 'Write the reason. The client reads it word for word.');
+        store.docs.set(key, { ...c, extendRequest: { ...req, state: 'declined', decidedAt: new Date(), declineReason: reason } });
+        store.persist?.(); store.fire?.(key);
+        return ok({ ok: true, state: 'declined' });
+      }
+      if (body.decision !== 'approve') return fail(400, 'Bad request');
+      const asked = body.amountCents === undefined || body.amountCents === null ? null : Number(body.amountCents);
+      if (asked !== null && (!Number.isInteger(asked) || asked < 0)) return fail(400, 'The amount has to be a whole number of cents, zero or more, under $20,000.');
+      const cents = asked === null ? (Number(req.monthCents) || 0) : asked;
+      const DAY = 86_400_000;
+      const end0 = new Date(c.fullAccessAt || Date.now()).getTime() + (30 + (Number(c.fullAccessExtraDays) || 0)) * DAY;
+      const lapsed = Math.max(0, Math.ceil((Date.now() - end0) / DAY));
+      const now = new Date();
+      store.docs.set(key, {
+        ...c,
+        status: c.closedFromStatus || 'confirmed', closedAt: null, closedBy: null, closedReason: null, monthNotice: null,
+        fullAccessExtraDays: (Number(c.fullAccessExtraDays) || 0) + lapsed + 30,
+        fullAccessMonths: (Number(c.fullAccessMonths) || 1) + 1,
+        fullAccessRateCents: (Number(c.fullAccessRateCents) || 0) + cents,
+        extendRequest: { ...req, state: 'started', decidedAt: now, startedAt: now },
+        work: { ...(c.work || {}), monthStartSeconds: Math.max(0, Number(c.work?.seconds) || 0) },
+        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), {
+          kind: 'extend', amountCents: cents, sessionId: `cs_demo_month_${now.getTime()}`, at: now, days: 30,
+        }],
+      });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, state: 'started', cents });
+    }
     // SCHEDULE A CASE FROM A LEAD (2026-10-15): the Worker's five routes, on
     // the store, with its refusals in its words. The confirm writes the case
     // the way the webhook does for an invitation: confirmed and paid at once,
