@@ -72,7 +72,22 @@ const CSS = `
     .pv-tour-card { animation: pv-tour-in .25s ease-out; }
   }
   @keyframes pv-tour-in { from { opacity: 0; transform: translateY(8px); } }
-  .pv-tour.center .pv-tour-card { animation: none; }`;
+  .pv-tour.center .pv-tour-card { animation: none; }
+  /* Blue and green (2026-10-17: the look past the home): the same card in the cyan to violet. */
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-shade { background: rgba(4, 6, 10, .74); }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour.lit .pv-tour-shade { background: transparent; }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-spot { box-shadow: 0 0 0 9999px rgba(4, 6, 10, .74), 0 0 0 2px #3DDCF5, 0 0 24px 4px rgba(61, 220, 245, .45); }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-card {
+    background: linear-gradient(#14161C, #14161C) padding-box, linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%) border-box;
+    color: #F2F5FA; box-shadow: 0 24px 70px rgba(0, 0, 0, .6);
+  }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-n { color: #3DDCF5; }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-card h2 { color: #F2F5FA; }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-card p.pv-tour-b { color: #CDD3DE; }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-next { background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%); color: #04161C; }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) :is(.pv-tour-back, .pv-tour-skip) { border-color: rgba(200, 225, 255, .25); color: #CDD3DE; }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-dots i { background: rgba(200, 225, 255, .25); }
+  :root[data-look="cool"]:not([data-scheme="contrast"]) .pv-tour-dots i.on { background: #3DDCF5; }`;
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const visible = (el) => !!el && el.isConnected && el.getClientRects().length > 0 && getComputedStyle(el).visibility !== 'hidden';

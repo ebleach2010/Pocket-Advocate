@@ -175,7 +175,9 @@ console.log('\n--- C. the look ---');
   check('C1 every package page wears the home\'s look: black, its type, the ringed hero and the bubble\'s gradient on its words',
     PAGES.every((p) => {
       const h = f(`public/${p.file}.html`);
-      return /<html lang="en" data-default-scheme="calm">/.test(h) && /landing\.css\?v=b9/.test(h) // RE-PINNED 2026-10-15 (v7.42): b9, the stats tab out and the Preview bubble in. // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): the chat page's what-to-expect note moved the sheet to b7.
+      // RE-PINNED 2026-10-17 (v7.76): b10, the ring turning as a layer.
+      // NEGATIVE CONTROL (run 2026-10-17, v7.76): full-service.html's stamp put back to b9 made C1 read FAIL.
+      return /<html lang="en" data-default-scheme="calm">/.test(h) && /landing\.css\?v=b10/.test(h) // RE-PINNED 2026-10-15 (v7.42): b9, the stats tab out and the Preview bubble in. // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): the chat page's what-to-expect note moved the sheet to b7.
         && /<section class="pkg-hero opt-gold">/.test(h);
     })
     && /body\.landing \.pkg-tag,\s*body\.landing \.pkg-price \{[\s\S]*?linear-gradient\(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%\)/.test(css));

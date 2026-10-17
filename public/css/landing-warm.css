@@ -87,11 +87,18 @@
 :root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold {
   box-shadow: 0 0 0 1px rgba(255, 178, 122, .55), 0 8px 26px rgba(255, 140, 100, .32);
 }
-:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold::before,
+/* The line in the warm pop; the turning spot (landing.css) is the same white. */
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold { background: var(--warm-pop); }
 :root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .opt-gold::after {
   background:
-    conic-gradient(from var(--pa-ring), transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg),
-    var(--warm-pop);
+    linear-gradient(180deg, rgba(255, 178, 122, .12), rgba(255, 178, 122, .02) 58%),
+    var(--sur-base);
+}
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-hero.opt-gold { background: var(--warm-pop); }
+:root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-hero.opt-gold::after {
+  background:
+    linear-gradient(160deg, rgba(255, 178, 122, .14), rgba(245, 155, 191, .07) 55%, transparent 80%),
+    var(--sur-base);
 }
 :root:not([data-scheme="contrast"]):not([data-look="cool"]) body.landing .pkg-callout {
   background: linear-gradient(var(--sur-base), var(--sur-base)) padding-box, var(--warm-pop) border-box;

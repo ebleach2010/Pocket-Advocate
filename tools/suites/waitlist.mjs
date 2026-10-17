@@ -334,7 +334,9 @@ console.log('\n--- D. the wiring ---');
     && /@keyframes wl-shine/.test(block)
     && (block.match(/animation:/g) || []).length === 3
     && /@media \(prefers-reduced-motion: no-preference\) \{\n(  body\.landing [^\n]*animation:[^\n]*\n){3}\}/.test(block)
-    && /landing\.css\?v=b9/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.42): b9. // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): b7. // RE-PINNED 2026-10-15 (v7.37): b6
+    // RE-PINNED 2026-10-17 (v7.76): b10, the ring turning as a layer. NEGATIVE CONTROL (run 2026-10-17, v7.76): index.html's
+    // stamp put back to b9 made D7 read FAIL.
+    && /landing\.css\?v=b10/.test(f('public/index.html'))); // RE-PINNED 2026-10-15 (v7.42): b9. // RE-PINNED 2026-10-15 (v7.40): b8. // RE-PINNED 2026-10-15 (v7.38): b7. // RE-PINNED 2026-10-15 (v7.37): b6
 }
 {
   const a = f('public/js/admin.js');

@@ -241,11 +241,24 @@ console.log('\n--- E. warm everywhere, blue and purple in Settings (v7.57) ---')
   const warm = { look: document.documentElement.dataset.look, stored: store.get('pa-look'), meta: meta.content, now: T.currentAppearance() };
   T.applyAppearance('contrast');
   const contrast = { scheme: document.documentElement.dataset.scheme, meta: meta.content, now: T.currentAppearance() };
+  // The home and the service pages keep warm until a device chooses (v7.75 and on: Blue and green past the home).
+  store.delete('pa-look');
+  globalThis.location = { pathname: '/' };
+  const home = T.currentLook();
+  globalThis.location = { pathname: '/full-service.html' };
+  const svcPage = T.currentLook();
+  globalThis.location = { pathname: '/case.html' };
+  const casePage = T.currentLook();
+  delete globalThis.location;
   const SET = f('public/js/settings.js');
   // NEGATIVE CONTROL (run 2026-10-16, v7.57): applyAppearance's `document.documentElement.dataset.look = 'cool'` taken out made this read
   //   FAIL  E1 warm is the look unless this device chooses Blue and purple in Settings: the choice is kept, takes effect at once and paints the bar; High contrast still outranks both
   check('E1 warm is the look unless this device chooses Blue and purple in Settings: the choice is kept, takes effect at once and paints the bar; High contrast still outranks both',
-    first === 'warm' && cool.look === 'cool' && cool.stored === 'cool' && cool.scheme === 'calm' && cool.meta === '#0A0A0C' && cool.now === 'cool'
+    // RE-PINNED 2026-10-17 (v7.76): Eric, "Change the standard color for clients and advocates past the main page to
+    // green/blue that's in settings ... Landing page is untouched." Past the home the look starts Blue and green; the home
+    // and the service pages start warm; a device's choice still wins.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.76): currentLook's `? 'warm' : 'cool'` made `? 'warm' : 'warm'` made E1 read FAIL.
+    first === 'cool' && home === 'warm' && svcPage === 'warm' && casePage === 'cool' && cool.look === 'cool' && cool.stored === 'cool' && cool.scheme === 'calm' && cool.meta === '#0A0A0C' && cool.now === 'cool'
     && warm.look === undefined && warm.stored === 'warm' && warm.meta === '#1E1519' && warm.now === 'warm'
     && contrast.scheme === 'contrast' && contrast.meta === '#000000' && contrast.now === 'contrast'
     // RE-PINNED 2026-10-17 (v7.64): Settings offers the color wheel and Black (Eric: "allow it to be adjusted via a
@@ -256,8 +269,8 @@ console.log('\n--- E. warm everywhere, blue and purple in Settings (v7.57) ---')
     // swatches again (Eric: "Have it be either the blue/green from before or this warm look, or just black on white").
     // NEGATIVE CONTROL (run 2026-10-17, v7.66): Blue and green taken out of APPEARANCES in theme.js made E1 read FAIL.
     && /applyAppearance\(b\.dataset\.scheme\);/.test(SET) && /const scheme = currentAppearance\(\);/.test(SET)
-    && T.APPEARANCES.map((x) => x.label).join('|') === 'Warm|Blue and green|Black',
-    JSON.stringify({ first, cool, warm, contrast }));
+    && T.APPEARANCES.map((x) => x.label).join('|') === 'Blue and green|Warm|Black',
+    JSON.stringify({ first, home, svcPage, casePage, cool, warm, contrast }));
   const R = rules(WARM);
   const has = (sel, re) => R.some(([s2, body]) => s2 === `${W} ${sel}` && re.test(body));
   const EMPL = f('public/admin-employer.html');

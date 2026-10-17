@@ -108,7 +108,9 @@ console.log('\n--- B. the pages ---');
     // NEGATIVE CONTROL (run 2026-10-17, v7.64): the address put back to ?v=2 made B2 read FAIL.
     // RE-PINNED 2026-10-17 (v7.66): ?v=4, since the wheel's block is gone and the raised buttons' plum fill is in.
     // NEGATIVE CONTROL (run 2026-10-17, v7.66): the address put back to ?v=3 made B2 read FAIL.
-    && /\.on\('link\[rel="stylesheet"\]\[href\^="\/css\/landing\.css"\]', \{\n\s+element\(el\) \{ el\.after\('<link rel="stylesheet" href="\/css\/landing-warm\.css\?v=4">', \{ html: true \}\); \},/.test(warm)
+    // RE-PINNED 2026-10-17 (v7.76): ?v=5, since the ring is drawn as a line under a fill now, and the hero keeps its wash.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.76): the address put back to ?v=4 made B2 read FAIL.
+    && /\.on\('link\[rel="stylesheet"\]\[href\^="\/css\/landing\.css"\]', \{\n\s+element\(el\) \{ el\.after\('<link rel="stylesheet" href="\/css\/landing-warm\.css\?v=5">', \{ html: true \}\); \},/.test(warm)
     && /return warmLook\(env, await env\.ASSETS\.fetch\(request\)\);\n  \},/.test(W),
     warm.slice(0, 200));
   const pages = readdirSync(j(ROOT, 'public')).filter((n) => n.endsWith('.html'));

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.75';
+export const VERSION = '7.76';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.75';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // BLUE AND GREEN, SMOOTH, NO SIDEWAYS (Eric, 2026-10-17: "The app is
+    // having some hitching when scrolling in areas, and the landing page has
+    // side scroll", and "Change the standard color for clients and advocates
+    // past the main page to green/blue that's in settings"). Admin only.
+    version: '7.76',
+    quiet: true,
+    client: [],
+    admin: [
+      'Past the home, the app opens in Blue and green for clients and advocates, the preview included. The home and the three service pages are unchanged.',
+      'A phone that picked Warm in Settings before keeps it. Pick Blue and green once in Settings to switch.',
+      'Scrolling is smoother: glows and shines hold still while a page scrolls and move again when it stops, and the chat card\'s ring takes far less drawing work.',
+      'The home no longer runs sideways on smaller phones: the card links wrap instead of running past the edge.',
+    ],
+  },
   {
     // THEIR MONTHLY SERVICES (Eric, 2026-10-17, on a monthly one: "Like
     // Full-Service"). Admin only.

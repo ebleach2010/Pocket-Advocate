@@ -3,22 +3,24 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<meta name="theme-color" content="#1E1519">
+<meta name="theme-color" content="#0A0A0C">
 <title>Not here · Pocket Advocate</title>
 <script>
 // Black, like every page; somebody who chose High contrast keeps it.
 (function () {
+  // Blue and green past the home (Eric, 2026-10-17: "Change the standard
+  // color for clients and advocates past the main page to green/blue that's
+  // in settings"). Set first, so it stands even when storage is blocked;
+  // Warm is the choice in Settings now.
+  document.documentElement.dataset.look = 'cool';
   try {
     var s = localStorage.getItem('pa-scheme') === 'contrast' ? 'contrast' : 'calm';
     document.documentElement.dataset.scheme = s;
-    // Warm is the look everywhere; blue and purple is a choice in Settings
-    // (Eric, 2026-10-16: "Warm gradient we have going on should be default
-    // everywhere, with the blue/purple being in settings").
-    var cool = localStorage.getItem('pa-look') === 'cool';
-    if (cool) document.documentElement.dataset.look = 'cool';
+    var cool = localStorage.getItem('pa-look') !== 'warm';
+    if (!cool) delete document.documentElement.dataset.look;
     var m = document.querySelector('meta[name="theme-color"]');
     if (m) m.setAttribute('content', s === 'contrast' ? '#000000' : cool ? '#0A0A0C' : '#1E1519');
-  } catch (e) { /* storage blocked: the shipped default is already correct */ }
+  } catch (e) { /* storage blocked: Blue and green stands */ }
 })();
 </script>
 <!-- Every miss gets this page (2026-10-15). It used to be an empty answer,

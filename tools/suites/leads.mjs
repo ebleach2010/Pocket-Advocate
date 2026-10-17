@@ -301,9 +301,16 @@ console.log('\n--- C. the home ---');
   const bubble = (css.match(/body\.landing \.wl-bubble \{[\s\S]*?\n\}/) || [''])[0];
   const grad = (bubble.match(/background: (linear-gradient\([^;]+\));/) || [])[1];
   check('C4 the chat card is first and ringed in the waitlist bubble\'s own gradient, a bright spot easing round it on the bubble\'s beat, still for anyone who asked for less motion',
-    !!grad && css.includes(`conic-gradient(from var(--pa-ring), transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg),\n    ${grad};`)
-    && /@property --pa-ring \{/.test(css) && /@keyframes pa-ring \{ to \{ --pa-ring: 360deg; \} \}/.test(css)
-    && /@media \(prefers-reduced-motion: no-preference\) \{\s*body\.landing \.opt-gold::before,\s*body\.landing \.opt-gold::after \{ animation: pa-ring 3\.6s ease-in-out infinite; \}/.test(css)
+    // RE-PINNED 2026-10-17 (v7.76): Eric, "The app is having some hitching when scrolling". The ring was a conic gradient
+    // on a registered angle with a blurred copy, painted again every frame; now the gradient is the card's own ground,
+    // the fill sits over it inset by the line, and the spot is a layer that turns (rotate), on the same beat.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.76): the spot's `animation: pa-ring 3.6s ease-in-out infinite;` taken out made C4 read FAIL.
+    !!grad && css.includes(`overflow: hidden;\n  /* No border: the line is drawn inside the edge`)
+    && css.includes(`border-width: 0;\n  background: ${grad};`)
+    && css.includes('background: conic-gradient(transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg);')
+    && /:root:not\(\[data-scheme="contrast"\]\) body\.landing \.opt-gold::after \{\n\s+content: "";\n\s+position: absolute;\n\s+inset: 2\.5px;/.test(css)
+    && /@keyframes pa-ring \{ to \{ rotate: 360deg; \} \}/.test(css) && !/@property --pa-ring/.test(css)
+    && /@media \(prefers-reduced-motion: no-preference\) \{\s*:root:not\(\[data-scheme="contrast"\]\) body\.landing \.opt-gold::before \{ animation: pa-ring 3\.6s ease-in-out infinite; \}/.test(css)
     && /body\.landing \.wl-bubble::before \{ animation: wl-shine 3\.6s ease-in-out infinite; \}/.test(css)
     && idx.indexOf('opt-gold') < idx.indexOf('Advocacy Case</h3>'));
 }

@@ -49,7 +49,7 @@ export function applyScheme(id) {
   document.dispatchEvent(new CustomEvent('pa-scheme-set', { detail: { id } }));
 }
 
-/** The theme-color a scheme deserves, for anything repainting the meta: the warm ground unless this device chose Blue and purple. */
+/** The theme-color a scheme deserves, for anything repainting the meta: the look this page is in. */
 export function schemeThemeColor(id) {
   if (id === 'contrast') return THEME_COLOR.contrast;
   return currentLook() === 'cool' ? THEME_COLOR.calm : WARM_COLOR;
@@ -60,11 +60,24 @@ export function schemeThemeColor(id) {
 // this device chose Blue and purple. The head snippet on every page sets
 // data-look="cool" from pa-look before anything paints, and warm.css (and
 // landing-warm.css) stand down for it; High contrast outranks both.
+//
+// BLUE AND GREEN PAST THE HOME (Eric, 2026-10-17: "Change the standard color
+// for clients and advocates past the main page to green/blue that's in
+// settings. This includes the preview in the main page. Landing page is
+// untouched"). The public pages (the home and the three service pages,
+// under his Warm public pages switch) stay warm unless this device
+// chose Blue and green; every other page is Blue and green unless it chose
+// Warm. The head snippet on each page does the same before it paints.
 const LOOK_KEY = 'pa-look';
 const WARM_COLOR = '#1E1519';
+const PUBLIC_PAGES = /^\/(index\.html|advocacy-case\.html|full-service\.html|priority-chat\.html)?$/;
 
 export function currentLook() {
-  try { return localStorage.getItem(LOOK_KEY) === 'cool' ? 'cool' : 'warm'; } catch { return 'warm'; }
+  try {
+    const v = localStorage.getItem(LOOK_KEY);
+    if (v === 'cool' || v === 'warm') return v;
+  } catch { /* storage blocked: the page's own default */ }
+  return PUBLIC_PAGES.test(globalThis.location?.pathname || '') ? 'warm' : 'cool';
 }
 
 /**
@@ -75,8 +88,8 @@ export function currentLook() {
  * background white text for simplicity and those with eye sensitivity").
  */
 export const APPEARANCES = [
-  { id: 'warm', label: 'Warm', blurb: 'Plum, peach and rose. The standard look.' },
-  { id: 'cool', label: 'Blue and green', blurb: 'Black, with the cyan glow.' },
+  { id: 'cool', label: 'Blue and green', blurb: 'Black, with the cyan glow. The standard look.' },
+  { id: 'warm', label: 'Warm', blurb: 'Plum, peach and rose.' },
   { id: 'contrast', label: 'Black', blurb: 'Black background, white text. Easiest on sensitive eyes.' },
 ];
 

@@ -2494,3 +2494,34 @@ Eric, on a monthly one: "Like Full-Service".
 New: services.mjs S10 to S14; drive-services H (3 checks, 12 in all), every
 check controlled. Re-pinned with controls: services S1, S5, S6, S9, monthend C2
 and D1, release R1.
+
+### Blue and green, smooth, no sideways (2026-10-17, v7.76)
+
+Eric: "The app is having some hitching when scrolling in areas, and the
+landing page has side scroll", and "Change the standard color for clients
+and advocates past the main page to green/blue that's in settings. This
+includes the preview in the main page. Landing page is untouched."
+
+- The look: every page but the home and the three service pages sets
+  data-look="cool" first in its head snippet and stands down only for a
+  stored Warm; theme.js currentLook answers Warm on those four pages and
+  Blue and green elsewhere unless a device chose. Settings lists Blue and
+  green first. The preview tour's card has a Blue and green version.
+- Smooth: measured with Chrome traces while scrolling at 390px. The gold
+  ring was a conic gradient on a registered angle plus a blurred copy,
+  repainted every frame (about 1.1s of drawing in every 2s); it is now the
+  card's own gradient under an inset fill, with the spot a turning layer.
+  smooth.js (loaded on every page by nav-menu.js) pauses every animation
+  on html.pa-scrolling while the page or a panel scrolls, 180ms after the
+  last scroll event: the shelf went from 755 repaints to 23 in a scroll,
+  a case page from 481 to 19. landing.css b10, landing-warm.css v5.
+- Sideways: the home's card rows (Start chatting, What is included) wrap
+  instead of running past the card (they did at 375px), and body > main
+  clips anything that still would.
+- Left for later: the client pages' fixed background gradient costs
+  repaints while scrolling in Chrome; iPhone Safari ignores fixed
+  backgrounds, so it does not reach his phone.
+
+New: smooth.mjs M1 to M3; drive-smooth (4), every check controlled.
+Re-pinned with controls: warm E1, cancelsearch C1 and C3, hue H5, H6 and H7,
+leads C4, landing B9, packages C1, landingwarm B2, waitlist D7, release R1.

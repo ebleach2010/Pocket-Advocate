@@ -13,6 +13,9 @@
 // The same elements are used either way - they are restyled, not cloned - so
 // every listener that was attached to a link still works.
 
+// The pages' moving light holds still while they scroll (2026-10-17).
+import './smooth.js';
+
 let barInner = null;
 let tabs = null;
 let acts = null;

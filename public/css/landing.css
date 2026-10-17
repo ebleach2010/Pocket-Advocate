@@ -406,45 +406,61 @@ body.landing .wl-done .btn { justify-self: start; margin-top: .4rem; }
    on the bubble's 3.6s ease-in-out beat, and the card breathes the
    bubble's glow. The angle is a registered property so it can animate;
    where it cannot, the ring is still there, just still. */
-@property --pa-ring {
-  syntax: '<angle>';
-  inherits: false;
-  initial-value: 0deg;
-}
+/* SMOOTH ON A PHONE (Eric, 2026-10-17: "The app is having some hitching
+   when scrolling"). The spot used to ride a registered angle inside a
+   conic-gradient, with a blurred copy behind, so the whole card was painted
+   again on every frame: measured, about a second of drawing work in every
+   two. Now the line's gradient is the card's own ground and the fill sits
+   over it, inset by the line's width, so only the line shows; the spot is a
+   layer under the fill that turns, and turning is the graphics chip's work,
+   not a repaint. Same line, same spot, same 3.6s ease in and out. */
 :root:not([data-scheme="contrast"]) body.landing .opt-gold {
   position: relative;
   isolation: isolate;
-  border-color: transparent;
+  overflow: hidden;
+  /* No border: the line is drawn inside the edge, so the clip is the card's own edge and the spot runs the line's full width. */
+  border-width: 0;
+  background: linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
   box-shadow: 0 0 0 1px rgba(61, 220, 245, .55), 0 8px 26px rgba(61, 220, 245, .32);
 }
-body.landing .opt-gold::before,
-body.landing .opt-gold::after {
+/* The spot: a square twice as wide as the card, centred on it, so it covers
+   every corner while it turns; the card's rounded edge clips it. */
+:root:not([data-scheme="contrast"]) body.landing .opt-gold::before {
   content: "";
   position: absolute;
-  inset: -1px;
+  left: 50%;
+  top: 50%;
   z-index: -1;
-  padding: 2.5px;
-  border-radius: inherit;
-  background:
-    conic-gradient(from var(--pa-ring), transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg),
-    linear-gradient(110deg, #3DDCF5 0%, #9BEBFA 48%, #B9A6FF 100%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
+  width: 160%;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background: conic-gradient(transparent 0deg 300deg, rgba(255, 255, 255, .55) 322deg, #FFFFFF 338deg, rgba(255, 255, 255, .55) 350deg, transparent 360deg);
   pointer-events: none;
 }
-/* The line itself rides above the card's own fill, or the fill hides it;
-   it is only ever the edge, so nothing inside is covered. */
-body.landing .opt-gold::before { z-index: 1; }
-/* The same ring again, blurred and behind: the shine around the line. */
-body.landing .opt-gold::after { inset: -3px; padding: 5px; filter: blur(7px); opacity: .85; }
+/* The card's fill, over the spot, leaving the 2.5px line around it. */
+:root:not([data-scheme="contrast"]) body.landing .opt-gold::after {
+  content: "";
+  position: absolute;
+  inset: 2.5px;
+  z-index: -1;
+  border-radius: calc(var(--r-3) - 2.5px);
+  /* The open card's own wash (.opt-live), now on the fill. */
+  background:
+    linear-gradient(180deg, rgba(61, 220, 245, .11), rgba(61, 220, 245, .02) 58%),
+    var(--sur-base);
+  pointer-events: none;
+}
+/* The package pages' hero wears the same ring over its own wash. */
+:root:not([data-scheme="contrast"]) body.landing .pkg-hero.opt-gold::after {
+  background:
+    linear-gradient(160deg, rgba(61, 220, 245, .12), rgba(185, 166, 255, .06) 55%, transparent 80%),
+    var(--sur-base);
+}
 @media (prefers-reduced-motion: no-preference) {
-  body.landing .opt-gold::before,
-  body.landing .opt-gold::after { animation: pa-ring 3.6s ease-in-out infinite; }
+  :root:not([data-scheme="contrast"]) body.landing .opt-gold::before { animation: pa-ring 3.6s ease-in-out infinite; }
   :root:not([data-scheme="contrast"]) body.landing .opt-gold { animation: wl-glow 3.6s ease-in-out infinite; }
 }
-@keyframes pa-ring { to { --pa-ring: 360deg; } }
+@keyframes pa-ring { to { rotate: 360deg; } }
 
 /* ---- the home, one screen (Eric: "Reorient everything so everything on the
    main page fits without scrolling"). The hero and the three options are
@@ -475,8 +491,13 @@ body.landing .opt h3 { font-size: 1.12rem; }
 body.landing .opt-ic { width: 1.6rem; height: 1.6rem; }
 body.landing .opt h3 { gap: .45rem; }
 body.landing .opt .svc-line { font-size: .84rem; line-height: 1.38; }
-body.landing .opt-acts { flex-wrap: nowrap; margin-top: .2rem; gap: .9rem; }
-body.landing .opt-live .opt-go { flex: 0 0 auto; width: auto; min-height: 44px; padding: .55rem 1.3rem; }
+/* NO SIDEWAYS SCROLL (Eric, 2026-10-17: "the landing page has side scroll"):
+   the row wraps rather than letting "What is included" run past the card,
+   and the page body clips anything that still would. A phone's browser lets
+   the whole page pan sideways when one line runs past its edge. */
+body.landing .opt-acts { flex-wrap: wrap; margin-top: .2rem; gap: .3rem .7rem; }
+body.landing > main { overflow-x: clip; }
+body.landing .opt-live .opt-go { flex: 0 0 auto; width: auto; min-height: 44px; padding: .55rem 1.15rem; }
 body.landing .opt-live .opt-more { white-space: nowrap; }
 /* The open card: the name and the price on one line. */
 body.landing .opt-live {

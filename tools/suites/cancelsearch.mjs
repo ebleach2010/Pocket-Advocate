@@ -195,8 +195,17 @@ console.log('\n--- C. one look ---');
     const ok = look >= 0 && (landing >= 0 ? warm === -1 && look === landing - 1 && landing === links.length - 1 : warm === look + 1 && warm === links.length - 1)
       && /<html lang="en" data-default-scheme="calm">/.test(h)
       && /localStorage\.getItem\('pa-scheme'\) === 'contrast' \? 'contrast' : 'calm';/.test(h)
-      && /var cool = localStorage\.getItem\('pa-look'\) === 'cool';\n\s+if \(cool\) document\.documentElement\.dataset\.look = 'cool';/.test(h)
-      && /<meta name="theme-color" content="#1E1519">/.test(h);
+      // RE-PINNED 2026-10-17 (v7.76): Eric, "Change the standard color for clients and advocates past the main page to
+      // green/blue that's in settings ... Landing page is untouched." The public pages (landing.css) read the look as
+      // before, warm unless chosen; every other page sets Blue and green first and stands down only for a chosen Warm.
+      // NEGATIVE CONTROL (run 2026-10-17, v7.76): case.html's `var cool = localStorage.getItem('pa-look') !== 'warm';` made
+      // `=== 'cool'` made C1 read FAIL.
+      && (landing >= 0
+        ? /var cool = localStorage\.getItem\('pa-look'\) === 'cool';\n\s+if \(cool\) document\.documentElement\.dataset\.look = 'cool';/.test(h)
+          && /<meta name="theme-color" content="#1E1519">/.test(h)
+        : /document\.documentElement\.dataset\.look = 'cool';\n\s+try \{/.test(h)
+          && /var cool = localStorage\.getItem\('pa-look'\) !== 'warm';\n\s+if \(!cool\) delete document\.documentElement\.dataset\.look;/.test(h)
+          && /<meta name="theme-color" content="#0A0A0C">/.test(h));
     if (!ok) bad.push(`${n}:${links.join('/')}`);
   }
   // NEGATIVE CONTROL (run 2026-10-15): look.css's link taken off chat.html made this read
@@ -231,8 +240,12 @@ console.log('\n--- C. one look ---');
   // schemes underneath are still the look and High contrast, the look still the default.
   // NEGATIVE CONTROL (run 2026-10-17, v7.66): Daylight put into APPEARANCES made C3 read FAIL.
   check('C3 the scheme picker offers the look and High contrast, nothing else, and the look is the default',
-    (THEME.match(/\{ id: '(\w+)'/g) || []).join() === "{ id: 'calm',{ id: 'contrast',{ id: 'warm',{ id: 'cool',{ id: 'contrast'" && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(THEME)
-    && /return localStorage\.getItem\(LOOK_KEY\) === 'cool' \? 'cool' : 'warm';/.test(THEME));
+    // RE-PINNED 2026-10-17 (v7.76): Blue and green is offered first, as the standard look past the home, and the default
+    // follows the page (theme.js PUBLIC_PAGES).
+    // NEGATIVE CONTROL (run 2026-10-17, v7.76): the PUBLIC_PAGES test made to always answer 'cool' made C3 read FAIL.
+    (THEME.match(/\{ id: '(\w+)'/g) || []).join() === "{ id: 'calm',{ id: 'contrast',{ id: 'cool',{ id: 'warm',{ id: 'contrast'" && /export function defaultScheme\(\) \{\s*return 'calm';\s*\}/.test(THEME)
+    && /return PUBLIC_PAGES\.test\(globalThis\.location\?\.pathname \|\| ''\) \? 'warm' : 'cool';/.test(THEME)
+    && /const PUBLIC_PAGES = \/\^\\\/\(index\\\.html\|advocacy-case\\\.html\|full-service\\\.html\|priority-chat\\\.html\)\?\$\/;/.test(THEME));
 }
 
 // ---------------------------------------------------------------------------

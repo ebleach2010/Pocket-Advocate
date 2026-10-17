@@ -97,10 +97,14 @@ console.log('\n--- the sheets ---');
 console.log('\n--- before paint ---');
 {
   const pages = readdirSync(join(ROOT, 'public')).filter((n) => n.endsWith('.html'));
-  const withLook = pages.filter((n) => /if \(cool\) document\.documentElement\.dataset\.look = 'cool';/.test(f(`public/${n}`)));
+  // RE-PINNED 2026-10-17 (v7.76): past the home a page sets Blue and green first and stands down for a chosen Warm; the
+  // public pages read it as before. Either snippet counts, each in its own words.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.76): case.html's `if (!cool) delete document.documentElement.dataset.look;` taken out made H5 read FAIL.
+  const SNIP2 = /document\.documentElement\.dataset\.look = 'cool';\n\s+try \{\n[\s\S]*?var cool = localStorage\.getItem\('pa-look'\) !== 'warm';\n\s+if \(!cool\) delete document\.documentElement\.dataset\.look;\n\s+var m = document\.querySelector/;
+  const withLook = pages.filter((n) => /if \(cool\) document\.documentElement\.dataset\.look = 'cool';|var cool = localStorage\.getItem\('pa-look'\)/.test(f(`public/${n}`)));
   const hued = pages.filter((n) => /pa-hue|data-hue|dataset\.hue/.test(f(`public/${n}`)));
   const SNIP = /var cool = localStorage\.getItem\('pa-look'\) === 'cool';\n\s+if \(cool\) document\.documentElement\.dataset\.look = 'cool';\n\s+var m = document\.querySelector/;
-  const bad = withLook.filter((n) => !SNIP.test(f(`public/${n}`)));
+  const bad = withLook.filter((n) => !SNIP.test(f(`public/${n}`)) && !SNIP2.test(f(`public/${n}`)));
   // NEGATIVE CONTROL (run 2026-10-17, v7.66): the v7.64 hue line (`var hue = parseInt(localStorage.getItem('pa-hue'), 10);`) put back into index.html's snippet made this read
   //   FAIL  H5 every page with the look sets it before paint, and no page sets a hue
   check('H5 every page with the look sets it before paint, and no page sets a hue',
@@ -130,7 +134,10 @@ console.log('\n--- theme.js and Settings ---');
   // NEGATIVE CONTROL (run 2026-10-17, v7.66): applyAppearance's `else delete document.documentElement.dataset.look;` taken out made this read
   //   FAIL  H6 each look is kept and takes effect at once, Black takes over and leaving it brings the look back, and an old wheel colour is ignored
   check('H6 each look is kept and takes effect at once, Black takes over and leaving it brings the look back, and an old wheel colour is ignored',
-    first.app === 'warm' && first.hue === undefined && first.prop === undefined && !('applyHue' in T) && !('currentHue' in T)
+    // RE-PINNED 2026-10-17 (v7.76): past the home a device that has chosen nothing is in Blue and green (the harness has no
+    // address, so it reads as a page past the home); warm.mjs E1 runs the home and a service page.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.76): currentLook's fallback made `'warm'` for every page made H6 read FAIL.
+    first.app === 'cool' && first.hue === undefined && first.prop === undefined && !('applyHue' in T) && !('currentHue' in T)
     && cool.look === 'cool' && cool.stored === 'cool' && cool.scheme === 'calm' && cool.app === 'cool' && cool.meta === '#0A0A0C'
     && black.scheme === 'contrast' && black.app === 'contrast' && black.meta === '#000000'
     && warm.look === undefined && warm.stored === 'warm' && warm.scheme === 'calm' && warm.app === 'warm' && warm.meta === '#1E1519'
@@ -143,7 +150,9 @@ console.log('\n--- theme.js and Settings ---');
   // NEGATIVE CONTROL (run 2026-10-17, v7.66): Blue and green taken out of APPEARANCES in theme.js made this read
   //   FAIL  H7 Settings offers Warm, Blue and green and Black as three swatches, Black is black background and white text, and there is no wheel
   check('H7 Settings offers Warm, Blue and green and Black as three swatches, Black is black background and white text, and there is no wheel',
-    ids.join('|') === 'warm:Warm|cool:Blue and green|contrast:Black'
+    // RE-PINNED 2026-10-17 (v7.76): Blue and green is offered first, as the standard look past the home.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.76): APPEARANCES put back to Warm first made H7 read FAIL.
+    ids.join('|') === 'cool:Blue and green|warm:Warm|contrast:Black'
     && /Black background, white text\. Easiest on sensitive eyes\./.test(T.APPEARANCES[2].blurb)
     && /APPEARANCES\.map\(\(x\) => `/.test(sheet) && /class="scheme-swatch/.test(sheet) && /applyAppearance\(b\.dataset\.scheme\);/.test(SET)
     && !/hue|wheel|slider|Blue and purple|High contrast/i.test(sheet) && !/applyHue|turnFor|WARM_HUE/.test(SET),
