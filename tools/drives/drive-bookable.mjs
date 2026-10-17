@@ -118,7 +118,11 @@ ok('her link shows her name and her times on his phone, no request box, no MST l
 console.log('\n--- C. a booking takes the hours around it ---');
 // The third day's one o'clock on her clock: four hours either side stay inside her eight to eight.
 const ones = first.times.filter((t) => boiseHour(t) === 13 && boiseMin(t) === 0);
-const T = ones[1] || ones[0] || '';
+// RE-PINNED 2026-10-17 (v7.81): a one o'clock whose four hours either side were open before the booking. Her demo
+// case's call is seeded five days from now, so on some evenings the third day's one o'clock sat within its buffer and
+// the check read a seeded call as this booking reaching too far.
+const near = (t, h) => new Date(Date.parse(t) + h * 3600_000).toISOString();
+const T = ones.find((t) => first.times.includes(near(t, -4)) && first.times.includes(near(t, 4))) || ones[1] || ones[0] || '';
 const booked = await checkout({ advocate: ANA, start: T, method: 'video', phone: '+1 555 555 5555', acks: ACKS });
 const after3 = await herCalendar();
 const H = 3600_000;
