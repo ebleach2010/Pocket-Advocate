@@ -256,7 +256,10 @@ console.log('\n--- from chat ---');
     // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" The chat page offers each
     // way up only while his switch for it is on, and the panel only while one is.
     // NEGATIVE CONTROL (run 2026-10-17, v7.72): the step=full link's `${sales.full ? ` made `${true ? ` made B2 read FAIL.
-    && /if \(renewing\(sub\) && !sub\.stepUpCaseId\) loadSales\(\)\.then\(\(\) => \(sales\.case \|\| sales\.full\) && paintStepUp\(/.test(SUB)
+    // RE-PINNED 2026-10-17 (v7.73): a contractor's own chat line takes no step up yet (the Worker's chatStepUp says so too).
+    // NEGATIVE CONTROL (run 2026-10-17, v7.73): chatStepUp's contractor refusal taken out of worker/stepup.js made B2 read FAIL.
+    && /if \(renewing\(sub\) && !sub\.stepUpCaseId && !theirs\) loadSales\(\)\.then\(\(\) => \(sales\.case \|\| sales\.full\) && paintStepUp\(/.test(SUB)
+    && /if \(sub\.data\.advocateId && sub\.data\.advocateId !== env\.ADMIN_UID\) return null;/.test(f('worker/stepup.js'))
     && /\$\{sales\.case \? `<a class="btn glow" href="\/book\.html\?step=case"/.test(SUB) && /\$\{sales\.full \? `<a class="btn \$\{sales\.case \? 'quiet' : 'glow'\}" href="\/book\.html\?step=full"/.test(SUB));
 }
 

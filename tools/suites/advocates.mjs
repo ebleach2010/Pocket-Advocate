@@ -557,7 +557,11 @@ console.log('\n--- F. whose ---');
   // NEGATIVE CONTROL (run 2026-10-15): the new slot's `advocateId: admin.uid,` taken out made this read
   //   FAIL  F4 a chat line keeps its advocate through every activation, and a new hour on a calendar says whose
   check('F4 a chat line keeps its advocate through every activation, and a new hour on a calendar says whose',
-    /advocateId: \(typeof session\.metadata\.advocateId === 'string'[\s\S]{0,200}\|\| advocateIdOf\(existing\?\.data, env\),/.test(lift(W, 'async function activateSubscription(env, session) {'))
+    // RE-PINNED 2026-10-17 (v7.73): Priority Chat per contractor. The line's advocate is worked out once, before the write, and the
+    // write carries it; the same rule, the checkout's advocate, else the one it had, else his.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.73): activateSubscription's `|| advocateIdOf(existing?.data, env)` taken out made F4 read FAIL.
+    /const line = \(typeof session\.metadata\.advocateId === 'string'[\s\S]{0,200}\|\| advocateIdOf\(existing\?\.data, env\);/.test(lift(W, 'async function activateSubscription(env, session) {'))
+    && /advocateId: line,/.test(lift(W, 'async function activateSubscription(env, session) {'))
     && /advocateId: admin\.uid,/.test(lift(W, 'async function handleCreateSlots(request, env) {'))
     && /adminCreated: true, advocateId: advocateIdOf\(c, env\) \}/.test(lift(W, 'async function handleAdminSchedule(request, env) {')));
 }

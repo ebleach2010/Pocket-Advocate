@@ -115,8 +115,10 @@ export function teamSummary({ advocates, cases, subs, subCents, adminUid }) {
     if (!p) continue;
     p.chatLines += 1;
     p.kinds['Priority Chat'] = (p.kinds['Priority Chat'] || 0) + 1;
-    p.paidCents += subCents;
-    p.proposedCents += Math.round(subCents * p.commissionPct / 100);
+    // The line's own month (2026-10-17: a contractor's chat is at their price); older lines are his price.
+    const month = Number(s.data.priceCents) > 0 ? Number(s.data.priceCents) : subCents;
+    p.paidCents += month;
+    p.proposedCents += Math.round(month * p.commissionPct / 100);
   }
   return [...people.values()]
     .filter((p) => p.active || p.owner)

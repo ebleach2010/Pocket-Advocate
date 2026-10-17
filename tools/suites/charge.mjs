@@ -210,7 +210,9 @@ const day = 86_400_000;
 
 // ---- CH3: the hold on the checkouts, the webhook's held branch, the case ----
 {
-  const subBlock = (W.match(/mode: 'subscription',[\s\S]{0,900}?\}\);/) || [''])[0];
+  // RE-PINNED 2026-10-17 (v7.73): the subscription session names its advocate and price now, so it runs longer; the window widens.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.73): `payment_intent_data: HOLD_INTENT,` added to the subscription session made CH3 read FAIL.
+  const subBlock = (W.match(/mode: 'subscription',[\s\S]{0,1400}?\}\);/) || [''])[0];
   const held = lift(W, 'async function onHeldSession(env, session) {');
   const runHeld = async (pi, kind = '') => {
     const calls = [];

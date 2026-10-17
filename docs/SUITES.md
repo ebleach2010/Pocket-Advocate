@@ -2388,3 +2388,36 @@ New: sales A3c, D1 to D5, B5; drive-switches (14). Re-pinned with
 controls: sales A1, A2, A3, A3b, A5, B2; tighten T1, T4, U7, V2 (and the
 T3 lift); packages B3; monthend C1; invites E1; steps N1, A3, A5, B2;
 selfcase S17 (and its control); uploads U16's harness; release R1.
+
+### Priority Chat per contractor (2026-10-17, v7.73)
+
+Eric, on the chat tier: "Yes, per contractor", at their price, switched on
+by him in Employer mode.
+
+- worker/staffsettings.js: offers.chat (off until he turns it on, his to
+  switch) and subCents among their prices (STAFF_RATE_KEYS), so it lays over
+  his through mergeRates and they can set it in their own settings. Their
+  settings answer chatPath once it is on.
+- worker/index.js: /api/subscribe takes { advocate, quotedCents }: someone
+  active, not him, with chat on; their price; a moved price is a 409 with
+  the new one; the session names them and carries advocateId and
+  priceCents. ONE ADVOCATE PER CHAT HISTORY: a client whose subscription
+  doc names another advocate is refused, because the thread, its files and
+  notes live on that one doc. Activation keeps the line's advocate and
+  month (priceCents), raises his chat price only for his own new lines, and
+  the welcome mail names them. /api/rates answers chatOffered.
+- worker/employer.js: each line counts at its own month toward pay.
+- worker/stepup.js: a contractor's line takes no step up yet.
+- Pages: subscribe.html?advocate= names them, quotes their price, shows his
+  chat terms word for word with their name where his say me, my or I and
+  their price for his (Eric: "Simply replace 'me' with the advocate's
+  name"; waivers.js itself unchanged), and sends their price; the chat page and the subscription page name them, show
+  their photo and door sign; their booking page offers the line (also when
+  their calendar is closed); their settings show its link; Employer mode
+  has a Priority Chat row with a price on What they offer.
+- Demo mode mirrors it.
+- The business-wide chat switch (v7.72) still governs every line.
+
+New: chatline.mjs K1 to K7; drive-chatline (7), every check controlled.
+Re-pinned with controls: advocates F4, charge CH3 (wider window), maintenance
+M24 (wider windows), staffsettings A1 and C1, steps B2, release R1.

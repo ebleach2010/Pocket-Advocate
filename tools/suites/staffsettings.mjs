@@ -58,7 +58,7 @@ function world() {
     return true;
   };
   const SS = new Function('getDoc', 'patchDoc', 'advocateIdOf',
-    `${strip(f('worker/staffsettings.js'))}\nreturn { settingsFrom, contractorOf, contractorSettings, mergeRates, cleanSettingsChange, handleStaffSettings, STAFF_RATE_KEYS };`)(
+    `${strip(f('worker/staffsettings.js'))}\nreturn { settingsFrom, offersFrom, contractorOf, contractorSettings, mergeRates, cleanSettingsChange, handleStaffSettings, STAFF_RATE_KEYS };`)(
     getDoc, patchDoc, STAFF.advocateIdOf);
   return { docs, writes, SS };
 }
@@ -102,16 +102,24 @@ console.log('\n--- A. what a change may ask for ---');
     SS.cleanSettingsChange({ fullCap: 100 }),
     SS.cleanSettingsChange({ fullCap: '3' }),
     SS.cleanSettingsChange({}),
-    SS.cleanSettingsChange({ rates: { subCents: 100000 } }),
+    // RE-PINNED 2026-10-17 (v7.73): their chat line's month is one of their prices now (Priority Chat per contractor), so the
+    // "nothing else" probe is a price that is his alone, the warning line.
+    SS.cleanSettingsChange({ rates: { floorCents: 100000 } }),
   ];
+  const chat = SS.cleanSettingsChange({ rates: { subCents: 6500 } });
+  const chatOn = SS.cleanSettingsChange({ offers: { chat: true } }, { admin: true });
+  const chatTheirs = SS.cleanSettingsChange({ offers: { chat: true } });
   // NEGATIVE CONTROL (run 2026-10-15): cleanSettingsChange letting a price under 50 cents through made this read
   //   FAIL  A1 a change is checked before it is kept: in, out or the office hours; a line of text, cleaned; prices from $0.50 to $20,000 in whole cents, or cleared; a limit from 0 to 99; nothing else, and nothing at all is refused
   check('A1 a change is checked before it is kept: in, out or the office hours; a line of text, cleaned; prices from $0.50 to $20,000 in whole cents, or cleared; a limit from 0 to 99; nothing else, and nothing at all is refused',
     !ok.error && ok.patch['settings.office.manual'] === 'out' && ok.patch['settings.office.responseTime'] === 'Within a day'
     && ok.patch['settings.rates.caseCents'] === 180000 && ok.patch['settings.rates.fullCents'] === null && ok.patch['settings.fullCap'] === 3
     && JSON.stringify(ok.mask) === JSON.stringify(['settings.office.manual', 'settings.office.responseTime', 'settings.rates.caseCents', 'settings.rates.fullCents', 'settings.fullCap'])
-    && bad.every((b) => !!b.error),
-    JSON.stringify({ ok, bad: bad.map((b) => b.error || 'LET THROUGH') }));
+    && bad.every((b) => !!b.error)
+    // NEGATIVE CONTROL (run 2026-10-17, v7.73): 'subCents' taken out of STAFF_RATE_KEYS made A1 read FAIL.
+    && chat.patch?.['settings.rates.subCents'] === 6500 && chatOn.patch?.['settings.offers.chat'] === true && !!chatTheirs.error
+    && JSON.stringify(SS.offersFrom({})) === '{"case":true,"full":true,"chat":false}',
+    JSON.stringify({ ok, bad: bad.map((b) => b.error || 'LET THROUGH'), chat, chatOn, chatTheirs }));
   const read = SS.settingsFrom({ settings: { office: { manual: 'sideways', responseTime: 7 }, rates: { caseCents: 40, addonCents: 30000, fullCents: '440000', subCents: 9 }, fullCap: 2.5 } });
   // NEGATIVE CONTROL (run 2026-10-15): settingsFrom keeping any positive number as a price made this read
   //   FAIL  A2 a stored record is read as strictly as a change: junk reads as unset, never as a price or a limit
@@ -165,13 +173,15 @@ console.log('\n--- C. whose settings a case reads ---');
     ben: await S.contractorSettings(ENV, 'adv-b'),
   };
   const whose = [S.contractorOf({}, ENV), S.contractorOf({ advocateId: ERIC }, ENV), S.contractorOf({ advocateId: 'adv-b' }, ENV)];
-  const merged = S.mergeRates({ caseCents: 210000, addonCents: 32500, fullCents: 440000, subCents: 5000 }, { rates: { caseCents: 150000, subCents: 1 } });
+  // RE-PINNED 2026-10-17 (v7.73): their chat line's month lays over his too; his warning line never does.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.73): mergeRates laying every key over his made C1 read FAIL.
+  const merged = S.mergeRates({ caseCents: 210000, addonCents: 32500, fullCents: 440000, subCents: 5000, floorCents: 7500 }, { rates: { caseCents: 150000, subCents: 6500, floorCents: 1 } });
   // NEGATIVE CONTROL (run 2026-10-15): contractorSettings answering for a turned-off record made this read
   //   FAIL  C1 a case with no advocate, or his, reads his settings; an active contractor's reads theirs; a turned-off, unknown or malformed one reads his; only their three prices lay over his
-  check('C1 a case with no advocate, or his, reads his settings; an active contractor\'s reads theirs; a turned-off, unknown or malformed one reads his; only their three prices lay over his',
+  check('C1 a case with no advocate, or his, reads his settings; an active contractor\'s reads theirs; a turned-off, unknown or malformed one reads his; only their four prices lay over his',
     got.his === null && got.none === null && got.off === null && got.ghost === null && got.bad === null && got.ben?.rates.caseCents === 150000
     && JSON.stringify(whose) === JSON.stringify(['', '', 'adv-b'])
-    && merged.caseCents === 150000 && merged.subCents === 5000 && merged.addonCents === 32500,
+    && merged.caseCents === 150000 && merged.subCents === 6500 && merged.addonCents === 32500 && merged.floorCents === 7500,
     JSON.stringify({ got, whose, merged }));
 }
 

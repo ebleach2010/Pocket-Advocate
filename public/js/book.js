@@ -104,6 +104,28 @@ const ADVOCATE = (() => {
 })();
 /** Their first name once their times have loaded. */
 const advFirst = () => String(state.advocate?.name || '').split(/\s+/)[0] || 'Your advocate';
+// Their prices and what they offer, asked once (2026-10-17: their own chat line too).
+let advRatesP = null;
+const advRates = () => (advRatesP ||= fetch(`/api/rates?advocate=${encodeURIComponent(ADVOCATE)}`).then((r) => (r.ok ? r.json() : null)).catch(() => null));
+
+/**
+ * Their own chat line, once he has turned it on (Eric, 2026-10-17: Priority
+ * Chat "Yes, per contractor"): offered above their times, or on its own when
+ * they take no bookings right now.
+ */
+async function addChatLink(el) {
+  const r = await advRates();
+  if (!r?.chatOffered || el.querySelector('[data-adv-chat]')) return;
+  // Their name, from their times when those came back, else asked for (a closed calendar does not carry it).
+  const name = state.advocate?.name || await fetch(`/api/advocates/name?uid=${encodeURIComponent(ADVOCATE)}`)
+    .then((x) => (x.ok ? x.json() : null)).then((d) => String(d?.name || '').trim()).catch(() => '');
+  if (el.querySelector('[data-adv-chat]')) return;
+  const first = String(name || '').split(/\s+/)[0];
+  const who = first ? ` with ${esc(first)}` : '';
+  const price = Number(r.subCents) > 0 ? `, $${money(Number(r.subCents))} a month` : '';
+  el.querySelector('#days')?.insertAdjacentHTML('beforebegin',
+    `<p class="small" data-adv-chat><a href="/subscribe.html?advocate=${encodeURIComponent(ADVOCATE)}">Or start a 24/7 Priority Chat line${who}${price}</a></p>`);
+}
 
 init();
 
@@ -113,7 +135,7 @@ async function init() {
   // compiled-in fallback in place, which is the right price at deploy time and
   // is re-checked by the Worker before a card is ever charged.
   // A contractor's calendar quotes their price, not his.
-  (ADVOCATE ? fetch(`/api/rates?advocate=${encodeURIComponent(ADVOCATE)}`).then((r) => (r.ok ? r.json() : null)) : rates()).then((r) => {
+  (ADVOCATE ? advRates() : rates()).then((r) => {
     if (r && Number(r.caseCents) > 0) caseCents = Number(r.caseCents);
   }).catch(() => {});
   drawRail(); // step 1 shows active even while the sign-in card is up
@@ -464,9 +486,11 @@ async function renderAdvocateTimes(el, zone) {
   } catch (err) {
     daysEl.innerHTML = `<p class="muted" data-adv-closed>${esc(err.message)}</p>`;
     stripUnwiredStep1(el, { keepIntro: false });
+    addChatLink(el).catch(() => {});
     return;
   }
   state.advocate = { name: String(got.name || '') };
+  addChatLink(el).catch(() => {});
   el.querySelector('#time-intro').innerHTML = `<span class="adv-who" data-adv-who><img src="/api/advocates/headshot?uid=${encodeURIComponent(ADVOCATE)}" alt="" width="44" height="44" onerror="this.remove()"><span>With <strong>${esc(state.advocate.name || 'your advocate')}</strong>.</span></span>
     All times are shown in <strong>your</strong> time zone (${esc(zone.replace(/_/g, ' '))}). Appointments must be at least 72 hours out.`;
   const slots = (Array.isArray(got.times) ? got.times : [])

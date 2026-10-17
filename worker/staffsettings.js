@@ -30,7 +30,8 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const minutes = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 // The same ceiling his own price editor has.
 export const STAFF_RATE_MAX_CENTS = 2_000_000;
-export const STAFF_RATE_KEYS = ['caseCents', 'addonCents', 'fullCents'];
+// Their own chat line's month too (2026-10-17: Priority Chat per contractor, at their price).
+export const STAFF_RATE_KEYS = ['caseCents', 'addonCents', 'fullCents', 'subCents'];
 const LINE_MAX = 160;
 
 // THE BUFFER (Eric, 2026-10-17: "A scheduled time automatically blocks off 3
@@ -110,10 +111,12 @@ export function cleanHours(input) {
 
 /**
  * What they offer (Eric, 2026-10-17: "everything I asked I could toggle on or
- * off"). His to switch, never theirs. Not set is on, the way it always was.
+ * off"). His to switch, never theirs. Not set is on, the way it always was;
+ * their own Priority Chat line (2026-10-17: "Yes, per contractor") is new, so
+ * it is off until he turns it on.
  */
 export function offersFrom(o) {
-  return { case: o?.case !== false, full: o?.full !== false };
+  return { case: o?.case !== false, full: o?.full !== false, chat: o?.chat === true };
 }
 
 /**
@@ -192,7 +195,7 @@ export function cleanSettingsChange(body, { admin = false } = {}) {
   }
   if (body?.offers !== undefined) {
     if (!admin) return { error: 'What you offer is set by Eric.' };
-    for (const k of ['case', 'full']) {
+    for (const k of ['case', 'full', 'chat']) {
       if (body.offers?.[k] === undefined) continue;
       patch[`settings.offers.${k}`] = body.offers[k] === true;
       mask.push(`settings.offers.${k}`);
@@ -247,6 +250,8 @@ export async function handleStaffSettings(request, env, h) {
     offers: mine.offers,
     // Their hours are bookable (2026-10-17): the link their clients book from, and the buffer he set around each paid appointment.
     bookingPath: `/book.html?advocate=${encodeURIComponent(staff.uid)}`,
+    // Their own chat line's link, once he has turned it on (2026-10-17).
+    chatPath: mine.offers.chat ? `/subscribe.html?advocate=${encodeURIComponent(staff.uid)}` : null,
     bufferHours: bufferHoursOf(rec?.data),
   });
 }

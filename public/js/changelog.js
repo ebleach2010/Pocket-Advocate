@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.72';
+export const VERSION = '7.73';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.72';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THEIR OWN CHAT LINE (Eric, 2026-10-17, on Priority Chat per contractor:
+    // "Yes, per contractor"). Admin only.
+    version: '7.73',
+    quiet: true,
+    client: [],
+    admin: [
+      'Each team member can have their own 24/7 Priority Chat line, at their own price. It is off until you turn it on, on What they offer in Employer mode.',
+      'Once it is on, their booking page offers it, and the chat is with them, by name and photo.',
+      'A client\'s chat history stays with the advocate it was with: they cannot move it to someone else.',
+      'Their chat lines count toward their pay at their own price. Stepping up from chat is still on your lines only.',
+    ],
+  },
   {
     // A SWITCH FOR EACH SERVICE (Eric, 2026-10-17: "My services are off. How
     // do I toggle them back on in app?"). Admin only.

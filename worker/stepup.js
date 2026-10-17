@@ -25,6 +25,9 @@ export async function chatStepUp(env, uid) {
   if (!uid) return null;
   const sub = await getDoc(env, `subscriptions/${uid}`).catch(() => null);
   if (!sub || !renewingSub(sub.data) || sub.data.stepUpCaseId) return null;
+  // His lines only (2026-10-17): a contractor's own chat line would step up to
+  // their case, at their price, on their calendar, which this does not price.
+  if (sub.data.advocateId && sub.data.advocateId !== env.ADMIN_UID) return null;
   return { creditCents: CHAT_STEP_CREDIT_CENTS, subscriptionId: sub.data.subscriptionId || null };
 }
 

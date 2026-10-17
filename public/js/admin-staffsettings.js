@@ -16,6 +16,7 @@ const PRICES = [
   ['caseCents', 'Advocacy Case, $', 'What your invitations start at.'],
   ['addonCents', 'Follow-up session, $', 'For clients who book with you from now on.'],
   ['fullCents', 'Full-Service Case Management, $ a month', 'What your clients are quoted to upgrade.'],
+  ['subCents', '24/7 Priority Chat, $ a month', 'Your own chat line, once Eric turns it on for you.'],
 ];
 
 export function staffSettingsHtml() {
@@ -50,6 +51,7 @@ export function staffSettingsHtml() {
     <p class="dim small" data-ssh-buffer style="margin:.45rem 0 0;"></p>
     <p class="small" data-ssh-link hidden style="margin:.45rem 0 0; overflow-wrap:anywhere;">Your booking link: <a data-ssh-href target="_blank" rel="noopener"></a>
       <button class="btn tiny" type="button" data-ssh-copy style="min-height:44px;">Copy</button></p>
+    <p class="small" data-ssh-chat hidden style="margin:.45rem 0 0; overflow-wrap:anywhere;">Your chat line: <a data-ssh-chat-href target="_blank" rel="noopener"></a></p>
 
     <h4 style="margin:1.2rem 0 .1rem;">Your prices</h4>
     <p class="dim small" style="margin:0 0 .5rem;">For your own clients, live the
@@ -126,6 +128,13 @@ export function wireStaffSettings(overlay, user) {
       a.href = s.bookingPath;
       a.textContent = url;
       q('[data-ssh-link]').hidden = false;
+    }
+    // Their own chat line (2026-10-17), once Eric has turned it on for them.
+    if (s.chatPath) {
+      const a = q('[data-ssh-chat-href]');
+      a.href = s.chatPath;
+      a.textContent = `${location.origin}${s.chatPath}`;
+      q('[data-ssh-chat]').hidden = false;
     }
     line.value = s.office?.responseTime || '';
     line.disabled = false;

@@ -670,6 +670,8 @@ async function handleRates(env, url) {
     // permanently on its fallback text, which is a spot that looks plumbed and
     // is not. Caught by curling /api/rates instead of trusting the edit.
     teleCents: TELEHEALTH_PRICE_CENTS,
+    // Whether this advocate's own chat line can be bought (2026-10-17): his always, a contractor's once he turns it on.
+    chatOffered: own ? own.offers.chat === true : !url?.searchParams.get('advocate') || url.searchParams.get('advocate') === env.ADMIN_UID,
     // The hours a Full-Service month includes, from the one constant, so a
     // page that states the number never has it typed in (2026-09-02).
     fullHours: FULL_INCLUDED_HOURS,
@@ -2541,7 +2543,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-switches';
+const BUILD_TAG = 'v2026-10-17-their-chat';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2549,7 +2551,7 @@ const BUILD_TAG = 'v2026-10-17-switches';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.72';
+const VERSION = '7.73';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3787,23 +3789,47 @@ async function handleMakePrivate(request, env) {
   return json({ ok: true, choice: 'private' });
 }
 
-// ---- POST /api/subscribe ----  Body: { termsAckAt } (form 5 acknowledgment)
+// ---- POST /api/subscribe ----  Body: { termsAckAt, advocate?, quotedCents? } (form 5 acknowledgment)
+//
+// A CONTRACTOR'S OWN LINE (Eric, 2026-10-17: Priority Chat "Yes, per
+// contractor", at their price, switched on by him): `advocate` names them. It
+// must be someone active who is not him and whose chat he has turned on, and
+// the price is theirs. Without it, the line is his, at his price.
 async function handleSubscribe(request, env) {
   const user = await requireUser(request, env);
   if (!user) return json({ error: 'Sign in to subscribe.' }, 401);
   const identity = await requireAdultProfile(env, user.uid);
   if (identity.error) return json({ error: identity.error }, identity.code);
-  const { termsAckAt } = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => ({}));
+  const { termsAckAt } = body || {};
   if (typeof termsAckAt !== 'number')
     return json({ error: 'Please read and acknowledge the subscription terms first.' }, 400);
+
+  const asked = typeof body.advocate === 'string' && body.advocate && body.advocate !== env.ADMIN_UID ? body.advocate : '';
+  const target = asked || env.ADMIN_UID;
+  // The live rate, not the constant: the chat price climbs with every new
+  // client, and the page quoted whatever /api/rates said when it loaded.
+  const subRate = await readRates(env);
+  let priceCents = subRate.subCents;
+  let first = '';
+  if (asked) {
+    const own = /^[\w-]{1,64}$/.test(asked) ? await contractorSettings(env, asked).catch(() => null) : null;
+    if (!own || !own.offers.chat) return json({ error: 'That chat line is not open.' }, 404);
+    priceCents = mergeRates(subRate, own).subCents;
+    first = firstName((await getDoc(env, `advocates/${asked}`).catch(() => null))?.data?.name) || 'your advocate';
+  }
+  if (body.quotedCents !== undefined && Number(body.quotedCents) !== priceCents)
+    return json({ error: 'The price changed since the page loaded. Here is the price now.', priceCents, rateChanged: true }, 409);
 
   const existing = await getDoc(env, `subscriptions/${user.uid}`);
   if (existing && new Date(existing.data.currentPeriodEnd || 0) > new Date())
     return json({ error: 'You already have an active subscription.' }, 409);
+  // ONE ADVOCATE PER CHAT HISTORY (2026-10-17). The thread, its files and its
+  // notes live on this one document and go wherever its advocate does, so a
+  // lapsed line is never handed to someone else.
+  if (existing && advocateIdOf(existing.data, env) !== target)
+    return json({ error: 'Your earlier chat line was with another advocate, and that history stays private to them, so a line with someone else cannot start on this account yet. Ask through the Contact page and it will be sorted out.' }, 409);
 
-  // The live rate, not the constant: the chat price climbs with every new
-  // client, and the page quoted whatever /api/rates said when it loaded.
-  const subRate = await readRates(env);
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'subscription',
     customer_email: identity.email || user.email || undefined,
@@ -3812,19 +3838,19 @@ async function handleSubscribe(request, env) {
         quantity: 1,
         price_data: {
           currency: 'usd',
-          unit_amount: subRate.subCents,
+          unit_amount: priceCents,
           recurring: { interval: 'month' },
           product_data: {
             name: '24/7 Priority Chat',
-            description: 'Anytime chat with me, your advocate',
+            description: asked ? `Anytime chat with ${first}, your advocate` : 'Anytime chat with me, your advocate',
           },
         },
       },
     ],
     success_url: `${env.PUBLIC_BASE_URL}/subscription.html?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${env.PUBLIC_BASE_URL}/subscribe.html?canceled=1`,
-    metadata: { uid: user.uid, email: identity.email || user.email || '', termsAckAt: String(termsAckAt) },
-    subscription_data: { metadata: { uid: user.uid } },
+    cancel_url: `${env.PUBLIC_BASE_URL}/subscribe.html?${asked ? `advocate=${encodeURIComponent(asked)}&` : ''}canceled=1`,
+    metadata: { uid: user.uid, email: identity.email || user.email || '', termsAckAt: String(termsAckAt), advocateId: target, priceCents: String(priceCents) },
+    subscription_data: { metadata: { uid: user.uid, advocateId: target } },
   });
   return json({ url: session.url });
 }
@@ -3943,12 +3969,16 @@ async function activateSubscription(env, session) {
   // Stripe retry; the subscription activates when the read can be made.
   if (existing === READ_FAILED) throw readFailedError('The subscription could not be read; Stripe will retry.');
   const email = await resolveClientEmail(env, uid, session.metadata.email, session);
+  const line = (typeof session.metadata.advocateId === 'string' && /^[\w-]{1,64}$/.test(session.metadata.advocateId)
+    && session.metadata.advocateId) || advocateIdOf(existing?.data, env);
+  const theirs = contractorOf({ advocateId: line }, env);
   await patchDoc(env, `subscriptions/${uid}`, {
     // Whose chat line this is (2026-10-15): the advocate the checkout named,
     // else the one it already had, else his. This write replaces the whole
     // document, so the field is carried on every activation.
-    advocateId: (typeof session.metadata.advocateId === 'string' && /^[\w-]{1,64}$/.test(session.metadata.advocateId)
-      && session.metadata.advocateId) || advocateIdOf(existing?.data, env),
+    advocateId: line,
+    // What this line costs a month (2026-10-17): a contractor's is their own price.
+    priceCents: Number(session.metadata.priceCents) > 0 ? Number(session.metadata.priceCents) : (session.amount_total || null),
     stripeCustomerId: session.customer || null,
     subscriptionId: session.subscription || null,
     status: 'active',
@@ -3963,16 +3993,19 @@ async function activateSubscription(env, session) {
   // The marker makes a webhook replay count zero times: Stripe re-delivers
   // completed sessions, and by the second delivery the doc above exists, but
   // two deliveries racing each other would both have seen it missing.
-  if (!existing && session.id) {
+  // His price climbs with his own new clients; a contractor's line is on their own price, which only they change.
+  if (!existing && session.id && !theirs) {
     const first = await patchDoc(env, `rateEvents/${session.id}`, { uid, at: now },
       { mustNotExist: true }).catch(() => false);
     if (first) await raiseSubRate(env).catch((err) => console.warn('sub rate raise:', err.message || err));
   }
+  const who = theirs ? firstName((await getDoc(env, `advocates/${theirs}`).catch(() => null))?.data?.name) || 'your advocate' : '';
   await sendEmail(env, {
     to: email,
     subject: 'Your 24/7 Priority Chat is live',
-    html: `<p>Your chat line to me is open. I reply when I'm available — response
-      timing is never guaranteed, exactly as the terms you accepted say.</p>
+    html: `<p>${theirs ? `Your chat line to ${escHtml(who)} is open. They reply when they are available, exactly as the terms you accepted say.`
+      : `Your chat line to me is open. I reply when I'm available, and response
+      timing is never guaranteed, exactly as the terms you accepted say.`}</p>
       <p><a href="${env.PUBLIC_BASE_URL}/subscription.html">Open your chat</a></p>
       ${homeScreenTips(env.PUBLIC_BASE_URL)}`,
   });

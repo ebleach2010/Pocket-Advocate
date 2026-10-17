@@ -55,6 +55,8 @@ async function load() {
         key: 'sub',
         label: '24/7 Priority Chat',
         parentPath: ['subscriptions', user.uid],
+        // A contractor's own line (2026-10-17) names them and shows their door sign.
+        advocateId: s.advocateId || '',
         closed: !(end > new Date()),
         ts: s.lastMessage?.ts ? tsMs(s.lastMessage.ts) : 0,
       });

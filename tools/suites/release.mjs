@@ -234,6 +234,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // a switch in settings, what off means, and that extras go with their service.
   // NEGATIVE CONTROL (run 2026-10-17, v7.72): changelog.js's VERSION left at '7.71' made this read
   //   FAIL  R1 both versions read 7.72 with the new tag, the 7.72 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.73): both versions read 7.73 with the their-chat tag, and the 7.73 entry says each team member
+  // can have their own chat line at their price, off until he turns it on, and that a history stays with its advocate.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.73): the worker's VERSION left at '7.72' made this read
+  //   FAIL  R1 both versions read 7.73 with the new tag, the 7.73 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry773 = (CL.match(/\{\n\s+\/\/ THEIR OWN CHAT LINE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry772 = (CL.match(/\{\n\s+\/\/ A SWITCH FOR EACH SERVICE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry771 = (CL.match(/\{\n\s+\/\/ EVERY SERVICE OPEN \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry770 = (CL.match(/\{\n\s+\/\/ BOOKABLE HOURS AND A BUFFER \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
@@ -316,9 +321,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.72 with the new tag, the 7.72 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.72';/.test(CL) && /const VERSION = '7\.72';/.test(W) && /const BUILD_TAG = 'v2026-10-17-switches';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.72'
+  check('R1 both versions read 7.73 with the new tag, the 7.73 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.73';/.test(CL) && /const VERSION = '7\.73';/.test(W) && /const BUILD_TAG = 'v2026-10-17-their-chat';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.73'
+    && /version: '7\.73',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry773)
+    && /their own 24\/7 Priority Chat line, at their own price/.test(entry773) && /stays with the advocate it was with/.test(entry773)
+    && !DASH.test(entry773) && !HARD.some((re) => re.test(entry773))
     && /version: '7\.72',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry772)
     && /Settings has a switch for each service/.test(entry772) && /Extras go with their service/.test(entry772)
     && !DASH.test(entry772) && !HARD.some((re) => re.test(entry772))

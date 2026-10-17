@@ -165,7 +165,9 @@ check('M23 the notice neuters only the case\'s links and carries a live Start ch
   const DEMO = readFileSync(`${ROOT}/public/js/demo/api.js`, 'utf8');
   check('M24 the demo\'s chat sign-up lands where the live one does, on the chat, with the subscription open',
     /success_url: `\$\{env\.PUBLIC_BASE_URL\}\/subscription\.html\?session_id=\{CHECKOUT_SESSION_ID\}`/.test(SRC)
-    && /if \(path === '\/api\/subscribe'\) \{[\s\S]{0,700}store\.docs\.set\(`subscriptions\/\$\{uid\}`, \{[\s\S]{0,120}status: 'active'[\s\S]{0,400}return ok\(\{ ok: true, url: `\/subscription\.html\?session_id=cs_demo_sub&demo=\$\{role\}` \}\);/.test(DEMO));
+    // RE-PINNED 2026-10-17 (v7.73): the demo checks a contractor's own chat line before it opens one, so the windows widen.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.73): the demo's subscribe URL put back to `/return.html?session_id=demo&demo=${role}` made M24 read FAIL.
+    && /if \(path === '\/api\/subscribe'\) \{[\s\S]{0,1600}store\.docs\.set\(`subscriptions\/\$\{uid\}`, \{[\s\S]{0,120}status: 'active'[\s\S]{0,700}return ok\(\{ ok: true, url: `\/subscription\.html\?session_id=cs_demo_sub&demo=\$\{role\}` \}\);/.test(DEMO));
 }
 
 // Someone signed in with no case and no chat yet, who opens the Chat tab, is sent to start chatting, not to

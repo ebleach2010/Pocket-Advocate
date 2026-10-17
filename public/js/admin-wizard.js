@@ -149,8 +149,9 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
   const set = theirs?.settings || {};
   const st = {
     name: a.name || '', email: a.email || '', password: '',
-    offers: { case: set.offers?.case !== false, full: set.offers?.full !== false },
-    rates: { caseCents: set.rates?.caseCents ?? null, addonCents: set.rates?.addonCents ?? null, fullCents: set.rates?.fullCents ?? null },
+    // Their own chat line (2026-10-17) is off until he turns it on.
+    offers: { case: set.offers?.case !== false, full: set.offers?.full !== false, chat: set.offers?.chat === true },
+    rates: { caseCents: set.rates?.caseCents ?? null, addonCents: set.rates?.addonCents ?? null, fullCents: set.rates?.fullCents ?? null, subCents: set.rates?.subCents ?? null },
     fullCap: set.fullCap ?? 0,
     addons: theirs?.addons || {},
     custom: (theirs?.addons?.custom || []).map((x) => ({ ...x })),
@@ -192,7 +193,12 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
         <div class="wz-row wz-sub"><span class="dim small">Full-Service clients at once (0 is no limit)</span>
           <input class="ask-input wz-num" type="number" min="0" max="99" step="1" data-cap value="${esc(st.fullCap)}" aria-label="Full-Service clients at once"></div>
       </div>
-      <p class="dim small" style="margin:0;">Turned off, nobody can buy it from them. Priority Chat stays yours.</p>`,
+      <div class="wz-box">
+        <div class="wz-row"><label><input type="checkbox" data-offer="chat"${st.offers.chat ? ' checked' : ''}> 24/7 Priority Chat, a month</label>
+          <label class="wz-money">$<input class="ask-input" inputmode="decimal" data-rate="subCents" value="${esc(dollars(st.rates.subCents))}" placeholder="${esc(dollars(mine.subCents))}" aria-label="Priority Chat month price, dollars"></label></div>
+        <div class="wz-row wz-sub"><span class="dim small">Their own chat line, with their name and photo. Clients start it from their booking page.</span></div>
+      </div>
+      <p class="dim small" style="margin:0;">Turned off, nobody can buy it from them.</p>`,
     addons: () => `
       ${addonFields(st.addons)}
       <div class="wz-box" data-customs>
@@ -261,7 +267,8 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
     if (id === 'offer') {
       const p = (k) => money(st.rates[k] ?? mine[k]);
       return [st.offers.case ? `Advocacy Case ${p('caseCents')}, follow-up ${p('addonCents')}` : 'No Advocacy Cases',
-        st.offers.full ? `Full-Service ${p('fullCents')} a month${st.fullCap ? `, ${st.fullCap} at once` : ''}` : 'No Full-Service'].join('. ');
+        st.offers.full ? `Full-Service ${p('fullCents')} a month${st.fullCap ? `, ${st.fullCap} at once` : ''}` : 'No Full-Service',
+        st.offers.chat ? `Priority Chat ${p('subCents')} a month` : 'No chat line'].join('. ');
     }
     if (id === 'addons') {
       const on = [];
@@ -304,8 +311,8 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       if (!editing && st.password.length < 10) return 'A first password of at least 10 characters.';
     }
     if (id === 'offer') {
-      for (const k of ['case', 'full']) st.offers[k] = !!q(`[data-offer="${k}"]`)?.checked;
-      for (const [k, label] of [['caseCents', 'Advocacy Case'], ['addonCents', 'Follow-up call'], ['fullCents', 'Full-Service']]) {
+      for (const k of ['case', 'full', 'chat']) st.offers[k] = !!q(`[data-offer="${k}"]`)?.checked;
+      for (const [k, label] of [['caseCents', 'Advocacy Case'], ['addonCents', 'Follow-up call'], ['fullCents', 'Full-Service'], ['subCents', 'Priority Chat']]) {
         const got = cents(q(`[data-rate="${k}"]`)?.value, label);
         if (got.error) return got.error;
         st.rates[k] = got.value;

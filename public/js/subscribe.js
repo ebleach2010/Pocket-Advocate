@@ -20,26 +20,49 @@ const money = (cents) => (cents / 100).toLocaleString('en-US',
 
 hydrateNav();
 
+// A CONTRACTOR'S OWN LINE (Eric, 2026-10-17: Priority Chat "Yes, per
+// contractor"): ?advocate=<uid> buys their chat line, at their price, once he
+// has turned it on for them. Without it, the line is his.
+const ADVOCATE = (() => { const v = new URLSearchParams(location.search).get('advocate') || ''; return /^[\w-]{1,64}$/.test(v) ? v : ''; })();
+const esc = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+
 let subCents = SUB_PRICE_CENTS;
 // Full-Service's included hours, for the comparison Eric asked for (2026-10-15).
 let fullHours = 20;
+let offered = true;
+let advName = '';
 try {
-  const r = await rates();
+  const r = ADVOCATE
+    ? await fetch(`/api/rates?advocate=${encodeURIComponent(ADVOCATE)}`).then((x) => (x.ok ? x.json() : null))
+    : await rates();
   if (Number(r?.subCents) > 0) subCents = Number(r.subCents);
   if (Number(r?.fullHours) > 0) fullHours = Number(r.fullHours);
-} catch { /* the seed stands */ }
+  if (ADVOCATE) offered = r?.chatOffered === true;
+} catch { if (ADVOCATE) offered = false; /* his seed stands; theirs is not offered without an answer */ }
+if (ADVOCATE) {
+  advName = await fetch(`/api/advocates/name?uid=${encodeURIComponent(ADVOCATE)}`)
+    .then((x) => (x.ok ? x.json() : null)).then((d) => String(d?.name || '').trim()).catch(() => '');
+  if (!advName) offered = false;
+}
+const advFirst = advName.split(/\s+/)[0] || '';
 
-// The pitch is visible before sign-in; every displayed price is the live one.
-document.getElementById('pitch').innerHTML = `
-  <p class="price-line"><strong>$${money(subCents)}</strong> a month. Cancel anytime; your chat history stays available.</p>
-  <p><strong>The honest deal:</strong> you are guaranteed same day turnaround for at least one message. At $${money(subCents)} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which gives up to ${fullHours} hours of work, so expect priority, not in-depth case work.</p>`;
-
+const pitch = document.getElementById('pitch');
 const flow = document.getElementById('flow');
+if (!offered) {
+  pitch.innerHTML = `<p class="price-line"><strong>${advFirst ? `${esc(advFirst)}'s chat line` : 'This chat line'} is not open right now.</strong></p>
+    <p><a class="btn" href="/">See what is offered</a></p>`;
+  flow.innerHTML = '';
+} else {
+  // The pitch is visible before sign-in; every displayed price is the live one.
+  pitch.innerHTML = `
+    <p class="price-line"><strong>$${money(subCents)}</strong> a month${advFirst ? `, with ${esc(advFirst)}` : ''}. Cancel anytime; your chat history stays available.</p>
+    <p><strong>The honest deal:</strong> you are guaranteed same day turnaround for at least one message. At $${money(subCents)} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which gives up to ${fullHours} hours of work, so expect priority, not in-depth case work.</p>`;
 
-let user = await currentUser();
-if (!user) user = await ensureSignedIn(flow, { returnTo: '/subscribe.html' });
-await ensureProfile(user);
-await init();
+  let user = await currentUser();
+  if (!user) user = await ensureSignedIn(flow, { returnTo: ADVOCATE ? `/subscribe.html?advocate=${encodeURIComponent(ADVOCATE)}` : '/subscribe.html' });
+  await ensureProfile(user);
+  await init(user);
+}
 
 // First sign-in creates users/{uid} with role 'client', replicating the
 // ensureProfile step requireUser used to run for this page (rules enforce
@@ -56,7 +79,7 @@ async function ensureProfile(u) {
   }
 }
 
-async function init() {
+async function init(user) {
   // Already subscribed? Straight to the chat.
   try {
     const snapshot = await getDoc(doc(db, 'subscriptions', user.uid));
@@ -75,17 +98,32 @@ async function init() {
     err.hidden = false;
   }
   await ensureFullProfile(user, flow);
-  renderTerms();
+  renderTerms(user);
 }
 
-function renderTerms() {
+/**
+ * His chat terms, word for word, with their name where his say "me" (Eric,
+ * 2026-10-17: "Simply replace 'me' with the advocate's name"), and their
+ * price where his say his. Only on a contractor's own line; waivers.js
+ * itself is unchanged.
+ */
+function termsFor(body, name, cents) {
+  const first = String(name).split(/\s+/)[0] || String(name);
+  return body
+    .replace('an always-open chat line to me, with my live online status visible. I reply on my own time, when I am available.',
+      `an always-open chat line to ${esc(name)}, with ${esc(first)}'s live online status visible. ${esc(first)} replies on their own time, when they are available.`)
+    .replace('nothing I write is a diagnosis', `nothing ${esc(first)} writes is a diagnosis`)
+    .replace('$50 per month through Stripe', `$${money(cents)} per month through Stripe`);
+}
+
+function renderTerms(user) {
   flow.innerHTML = `
     <details class="agreement" data-id="${SUBSCRIPTION_TERMS.id}">
       <summary>
         <span class="agreement-title">The terms, in plain words</span>
         <span class="agreement-plain">The important part: same day turnaround for at least one message, and priority, not in-depth case work. Please read the terms before you subscribe.</span>
       </summary>
-      <div class="agreement-body">${SUBSCRIPTION_TERMS.body}</div>
+      <div class="agreement-body"${advName ? ' data-terms-theirs' : ''}>${advName ? termsFor(SUBSCRIPTION_TERMS.body, advName, subCents) : SUBSCRIPTION_TERMS.body}</div>
       <label class="agreement-check"><input type="checkbox" id="terms-ok" disabled> I have read and accept these terms</label>
     </details>
     <div class="actions">
@@ -121,9 +159,14 @@ function renderTerms() {
       const res = await fetch('/api/subscribe', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ termsAckAt: Date.now() }),
+        body: JSON.stringify({ termsAckAt: Date.now(), ...(ADVOCATE ? { advocate: ADVOCATE, quotedCents: subCents } : {}) }),
       });
       const data = await res.json();
+      // Their price moved since the page loaded: show the new one and let them choose again.
+      if (res.status === 409 && data.rateChanged && Number(data.priceCents) > 0) {
+        subCents = Number(data.priceCents);
+        go.textContent = `Subscribe, $${money(subCents)}/mo`;
+      }
       if (!res.ok) throw new Error(data.error || `Failed (${res.status})`);
       location.href = data.url;
     } catch (err) {

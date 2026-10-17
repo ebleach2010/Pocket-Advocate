@@ -174,7 +174,7 @@ export function demoApi(role, store) {
     const next = { ...prev };
     if (s.rates) {
       next.rates = { ...(prev.rates || {}) };
-      for (const k of ['caseCents', 'addonCents', 'fullCents']) {
+      for (const k of ['caseCents', 'addonCents', 'fullCents', 'subCents']) {
         if (s.rates[k] === undefined) continue;
         if (s.rates[k] === null) { delete next.rates[k]; continue; }
         const v = Number(s.rates[k]);
@@ -183,7 +183,7 @@ export function demoApi(role, store) {
       }
     }
     if (s.fullCap !== undefined) { if (s.fullCap !== null && !(Number.isInteger(s.fullCap) && s.fullCap >= 0 && s.fullCap <= 99)) return { error: 'A number from 0 (no limit) to 99.' }; next.fullCap = s.fullCap; }
-    if (s.offers) next.offers = { case: s.offers.case !== false, full: s.offers.full !== false };
+    if (s.offers) next.offers = { case: s.offers.case !== false, full: s.offers.full !== false, chat: s.offers.chat === true };
     if (s.hours !== undefined) next.hours = s.hours;
     if (s.office) next.office = { ...(prev.office || {}), ...(s.office.responseTime !== undefined ? { responseTime: s.office.responseTime || null } : {}) };
     return { value: next };
@@ -332,8 +332,11 @@ export function demoApi(role, store) {
       if (path === '/api/rates') {
         // A contractor's own prices over his, as the Worker does (2026-10-15).
         const own = demoContractor(q.get('advocate'));
-        for (const k of ['caseCents', 'addonCents', 'fullCents']) if (Number(own?.settings?.rates?.[k]) > 0) now[k] = own.settings.rates[k];
-        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20, addons: demoAddons(q.get('advocate')) });
+        for (const k of ['caseCents', 'addonCents', 'fullCents', 'subCents']) if (Number(own?.settings?.rates?.[k]) > 0) now[k] = own.settings.rates[k];
+        // Their own chat line, once he has turned it on (2026-10-17).
+        const askedFor = q.get('advocate');
+        const chatOffered = own ? own.settings?.offers?.chat === true : !askedFor || askedFor === 'demo-admin';
+        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20, addons: demoAddons(q.get('advocate')), chatOffered });
       }
       const want = { ...now };
       for (const k of Object.keys(SEEDS)) if (body && body[k] !== undefined) want[k] = Number(body[k]);
@@ -1933,8 +1936,17 @@ export function demoApi(role, store) {
       if (path === '/api/subscribe') {
         const uid = me;
         const now = Date.now();
+        // A contractor's own line (2026-10-17), as the Worker checks it.
+        const adv = typeof body?.advocate === 'string' && body.advocate && body.advocate !== 'demo-admin' ? body.advocate : '';
+        const theirs = adv ? demoContractor(adv) : null;
+        if (adv && theirs?.settings?.offers?.chat !== true) return fail(404, 'That chat line is not open.');
+        const prev = store.docs.get(`subscriptions/${uid}`);
+        if (prev && (prev.advocateId || 'demo-admin') !== (adv || 'demo-admin'))
+          return fail(409, 'Your earlier chat line was with another advocate, and that history stays private to them, so a line with someone else cannot start on this account yet. Ask through the Contact page and it will be sorted out.');
+        const std = { subCents: 5000, ...(store.docs.get('config/rates') || {}) };
         store.docs.set(`subscriptions/${uid}`, {
           uid, status: 'active', termsAckAt: body?.termsAckAt || now,
+          advocateId: adv || 'demo-admin', priceCents: Number(theirs?.settings?.rates?.subCents) > 0 ? theirs.settings.rates.subCents : std.subCents,
           createdAt: new Date(now), currentPeriodEnd: new Date(now + 30 * 86_400_000), stripeCustomerId: 'cus_demo',
         });
         store.persist?.();
@@ -3180,7 +3192,7 @@ export function demoApi(role, store) {
           set.office.manual = body.office.manual;
         }
         if (body.office?.responseTime !== undefined) set.office.responseTime = String(body.office.responseTime ?? '').trim().slice(0, 160) || null;
-        for (const k of ['caseCents', 'addonCents', 'fullCents']) {
+        for (const k of ['caseCents', 'addonCents', 'fullCents', 'subCents']) {
           const v = body.rates?.[k];
           if (v === undefined) continue;
           if (v !== null && !(Number.isInteger(v) && v >= 50 && v <= 2_000_000)) return fail(400, 'A price from $0.50 to $20,000.');
@@ -3225,8 +3237,9 @@ export function demoApi(role, store) {
       return ok({
         office: { inOffice: manual ? manual === 'in' : scheduled, scheduled, manual, responseTime: set.office.responseTime || null },
         rates, standard: { caseCents: std.caseCents, addonCents: std.addonCents, fullCents: std.fullCents }, fullCap: set.fullCap,
-        hours: set.hours || null, tz: rec.tz || 'America/Boise', offers: { case: set.offers?.case !== false, full: set.offers?.full !== false },
+        hours: set.hours || null, tz: rec.tz || 'America/Boise', offers: { case: set.offers?.case !== false, full: set.offers?.full !== false, chat: set.offers?.chat === true },
         bookingPath: `/book.html?advocate=${encodeURIComponent(me)}`, bufferHours: demoBuffer(rec),
+        chatPath: set.offers?.chat === true ? `/subscribe.html?advocate=${encodeURIComponent(me)}` : null,
       });
     }
     if (path === '/api/staff/payout') {
@@ -3418,7 +3431,7 @@ export function demoApi(role, store) {
         const s = a.settings || {};
         return ok({
           advocate: advView(uid, a), addons: demoAddons(uid),
-          settings: { rates: s.rates || {}, fullCap: s.fullCap ?? null, offers: { case: s.offers?.case !== false, full: s.offers?.full !== false }, hours: s.hours || null, office: { responseTime: s.office?.responseTime || null } },
+          settings: { rates: s.rates || {}, fullCap: s.fullCap ?? null, offers: { case: s.offers?.case !== false, full: s.offers?.full !== false, chat: s.offers?.chat === true }, hours: s.hours || null, office: { responseTime: s.office?.responseTime || null } },
           bufferHours: demoBuffer(a),
           payout: p?.method ? { method: p.method, label: PAY_METHODS[p.method] || '', hint: p.hint || '' } : null,
           methods: PAY_METHODS, zones: ZONES, specialties: SPECIALTIES,

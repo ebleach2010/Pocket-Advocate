@@ -5,10 +5,10 @@
 import { db, doc, getDoc } from './firebase.js';
 import { paintRates } from './rates.js';
 import { requireUser, hydrateNav, renewing } from './auth.js';
-import { mountChat, watchPresence, advocatePhoto } from './chat.js';
+import { mountChat, watchPresence, advocatePhoto, advocateFirstName } from './chat.js';
 import { initPushPrompt } from './push.js';
 import { initSetupGuide } from './onboarding.js';
-import { officeCueHtml, officeLineHtml } from './office.js';
+import { officeCueHtml, officeLineHtml, officeFor } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
 import { wireHelp } from './help.js';
@@ -57,9 +57,14 @@ async function load() {
   // NO DEFAULT. Nothing about how long a reply takes appears unless a line has
   // been written, and nothing here invents one.
 
+  // Whose line this is (2026-10-17: Priority Chat per contractor): their name, photo and door sign; his reads as before.
+  const first = await advocateFirstName(sub.advocateId);
+  const theirs = first !== 'Eric';
+  officeFor(sub.advocateId || '');
+  const safeFirst = first.replace(/[&<>"']/g, '');
   page.innerHTML = `
     <div class="row">
-      <h1 style="margin:0;">Your chat with me</h1>
+      <h1 style="margin:0;">${theirs ? `Your chat with ${safeFirst}` : 'Your chat with me'}</h1>
       <span class="status-pill ${active ? '' : 'closed'}">${active ? 'ACTIVE' : 'ENDED'}</span>
     </div>
     <p class="office-row" style="margin-top:.4rem;">${officeCueHtml()}${officeLineHtml()}</p>
@@ -86,7 +91,7 @@ async function load() {
 
   watchPresence(page);
   wireHelp(page);
-  if (renewing(sub) && !sub.stepUpCaseId) loadSales().then(() => (sales.case || sales.full) && paintStepUp(page.querySelector('[data-step-up]'))).catch(() => {});
+  if (renewing(sub) && !sub.stepUpCaseId && !theirs) loadSales().then(() => (sales.case || sales.full) && paintStepUp(page.querySelector('[data-step-up]'))).catch(() => {});
   // The first-run guide (Home Screen, notifications), the same one a case
   // client gets, at the foot of the page. It asks about notifications itself,
   // so the push prompt here only refreshes the token quietly.
@@ -101,8 +106,8 @@ async function load() {
     user,
     myRole: 'client',
     saveUid: user.uid,
-    otherAvatar: advocatePhoto(''),
-    otherName: 'Eric',
+    otherAvatar: advocatePhoto(theirs ? sub.advocateId : ''),
+    otherName: first,
     dayLines: true,
     disabled: !active,
     notice: 'Chat is paused. Your subscription has ended. Resubscribe any time; your history stays.',
