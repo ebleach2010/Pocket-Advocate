@@ -276,7 +276,7 @@ console.log('\n--- F. a contractor\'s own cases ---');
 console.log('\n--- U. the screens ---');
 {
   const recC = AUTHORITY.recordsAuthorisation({ clientName: 'Priya Shah', advocateName: 'Ana Rivera', scopes: ['discuss'] });
-  const recE = AUTHORITY.recordsAuthorisation({ clientName: 'Jo', advocateName: 'Eric Bleach', scopes: ['discuss'] });
+  const recE = AUTHORITY.recordsAuthorisation({ clientName: 'Jo', advocateName: 'Eric Leach', scopes: ['discuss'] });
   const scopeC = AUTHORITY.scopeOfWork({ clientName: 'Priya Shah', advocateName: 'Ana Rivera', contactOk: true });
   const scopeE = AUTHORITY.scopeOfWork({ clientName: 'Jo', contactOk: true });
   // NEGATIVE CONTROL (run 2026-10-16): the records form's `${pron(o, 'him', 'them')}` made `him` made this read

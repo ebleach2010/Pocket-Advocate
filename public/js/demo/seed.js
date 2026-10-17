@@ -187,7 +187,7 @@ This appeal is filed within the plan's own filing window from the date of the
 adverse determination. A written response is requested within the timeframe
 the plan's documents require.
 
-Eric Bleach
+Eric Leach
 Patient advocate, authorised representative
 Pocket Advocate
 
@@ -421,6 +421,13 @@ export function seed({ set, file }) {
     },
   });
 
+  // A lead's message from the question box (2026-10-17), so Leads shows a
+  // conversation to open and answer: her words were once off the side of his screen.
+  set('questions/demo-q-rosa', {
+    name: 'Rosa Lind', email: 'rosa@example.demo', createdAt: inDays(-0.2),
+    question: 'Hi Eric, my mother has had dizzy spells for a year and every specialist sends us to another one. Can you help us find out what is going on? Is the Advocacy Case right for that?',
+  });
+
   for (const [ago, role, text] of FULL_CHAT) {
     const id = `f${String(++i).padStart(3, '0')}`;
     set(`cases/${FULL_ID}/chat/${id}`, {
@@ -596,7 +603,7 @@ export function seed({ set, file }) {
   // (?demo=advocate) signs in as her and sees her case alone; his demo sees
   // hers on his shelf beside his own. Invented, like everything here.
   set(`advocates/${ADMIN}`, {
-    uid: ADMIN, name: 'Eric Bleach', email: 'you@pocketadvocate.demo', active: true, owner: true,
+    uid: ADMIN, name: 'Eric Leach', email: 'you@pocketadvocate.demo', active: true, owner: true,
     commissionPct: 100, payroll: false, primarySpecialty: 'Neurology',
     specialties: ['Neurology', 'Complex / Undiagnosed Cases'], credentials: 'Patient advocate',
     bio: '', headshotPath: null, acceptingNew: true, advisor: { optedIn: true, enabled: true },

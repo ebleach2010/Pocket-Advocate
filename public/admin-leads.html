@@ -35,20 +35,35 @@
 <link rel="stylesheet" href="/css/warm.css?v=5">
 <script type="module" src="/js/nav-menu.js"></script>
 <style>
-  /* The Leads tab (2026-10-14). A plain table that scrolls sideways inside its
-     own box on a phone, so the page never does. */
+  /* The Leads tab (2026-10-14). One card per person (2026-10-17): the table ran
+     off the side of his phone and took a lead's message with it ("It says my
+     lead Rosemarie sent me a message but I don't see it"). Their words open
+     under their name as a conversation, with a reply that goes to their email. */
   .leads-acts { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; margin: 0 0 1rem; }
-  .leads-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
-  .leads-hint { margin: 0 0 .4rem; }
-  @media (min-width: 1600px) { .leads-hint { display: none; } }
-  .leads { width: 100%; border-collapse: collapse; font-size: .88rem; }
-  .leads th, .leads td { padding: .55rem .7rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
-  .leads th { position: sticky; top: 0; background: var(--panel); color: var(--dim); font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
-  .leads td { color: var(--ink); white-space: nowrap; }
-  .leads td.w { white-space: normal; }
-  .leads td.n { white-space: nowrap; font-variant-numeric: tabular-nums; }
-  .leads td.w { min-width: 16rem; color: var(--dim); }
-  .leads tr:last-child td { border-bottom: 0; }
+  .lead-list { display: grid; gap: .8rem; }
+  .lead-new-head { margin: .2rem 0 .1rem; color: var(--cyan); font-size: .74rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+  .lead-card { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); padding: .9rem 1rem; min-width: 0; }
+  .lead-card.is-new { border-color: color-mix(in srgb, var(--cyan) 55%, transparent); }
+  .lead-top { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .lead-name { margin: 0; font-size: 1.05rem; overflow-wrap: anywhere; }
+  .lead-pill { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .lead-pill.new { background: color-mix(in srgb, var(--cyan) 16%, transparent); color: var(--cyan); border: 1px solid color-mix(in srgb, var(--cyan) 45%, transparent); }
+  .lead-meta { margin: .3rem 0 .7rem; color: var(--dim); font-size: .86rem; overflow-wrap: anywhere; }
+  .lead-acts { display: flex; gap: .5rem; flex-wrap: wrap; }
+  .lead-msgs { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .3rem; }
+  .lead-msgs > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: .45rem; min-height: 44px; font-weight: 700; color: var(--ink); }
+  .lead-msgs > summary::-webkit-details-marker { display: none; }
+  .lead-msgs > summary::after { content: "\203A"; margin-left: auto; font-size: 1.3rem; line-height: 1; color: var(--dim); transition: transform .15s ease; }
+  .lead-msgs[open] > summary::after { transform: rotate(90deg); }
+  .lead-thread { display: grid; gap: .55rem; margin: .3rem 0 .8rem; }
+  .lm { max-width: 88%; padding: .6rem .75rem; border-radius: 14px; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+  .lm.them { justify-self: start; background: color-mix(in srgb, var(--ink) 6%, transparent); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .lm.me { justify-self: end; background: color-mix(in srgb, var(--cyan) 14%, transparent); border: 1px solid color-mix(in srgb, var(--cyan) 40%, transparent); border-bottom-right-radius: 4px; }
+  .lm-when { display: block; margin-top: .3rem; font-size: .72rem; color: var(--dim); white-space: normal; }
+  .lead-reply { display: grid; gap: .5rem; }
+  .lead-reply textarea { width: 100%; min-height: 5.5rem; resize: vertical; font: inherit; }
+  .lead-reply .row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+  @media (prefers-reduced-motion: reduce) { .lead-msgs > summary::after { transition: none; } }
 </style>
 </head>
 <body>
@@ -71,7 +86,7 @@
        simple exportable csv that goes row by row for each potential
        client."). Built from /api/admin/leads; the CSV is made right here. -->
   <h1>Leads</h1>
-  <p class="dim small">Everyone who has given you their details: the waitlist, the question box, free calls, booked cases and chat. One row per person, newest first.</p>
+  <p class="dim small">Everyone who has given you their details: the waitlist, the question box, free calls, booked cases and chat. One card per person, new messages first. Tap Messages to read and reply.</p>
   <div class="leads-acts">
     <button type="button" class="btn glow" id="leads-csv" disabled>Download CSV</button>
     <span class="dim small" id="leads-count"></span>

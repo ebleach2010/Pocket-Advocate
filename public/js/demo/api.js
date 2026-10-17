@@ -34,6 +34,8 @@ const FILING_CATEGORIES = ['report', 'callsummary', 'visitfollowup',
 // kept off every glossary as the Worker keeps them off.
 const LEGACY_TRADE_CATS = ['Setup', 'Indicator', 'Level', 'Order', 'Risk', 'Options', 'Market', 'Instrument'];
 const beat = (ms = 320) => new Promise((r) => setTimeout(r, ms));
+/** A lead's conversation key in the demo: steady per email, never the address itself. */
+const demoLeadKey = (email) => { let h = 2166136261; for (const ch of `lead:${email}`) h = Math.imul(h ^ ch.charCodeAt(0), 16777619) >>> 0; return `d${h.toString(16)}`; };
 
 const ok = (body) => ({
   ok: true,
@@ -505,26 +507,54 @@ export function demoApi(role, store) {
         if (coll === 'waitlist') rows.push({ when: d.createdAt, name: `${d.first} ${d.last}`, email: d.email, phone: d.phone, interest: names[d.package], words: '', source: 'Waitlist' });
         else if (coll === 'questions') rows.push({ when: d.createdAt, name: d.name, email: d.email, phone: '', interest: '', words: d.question, source: 'Question' });
         else if (coll === 'leads') rows.push({ when: d.createdAt, name: d.name, email: d.email, phone: d.phone, interest: 'Free call', words: d.note, source: 'Free call' });
-        else if (coll === 'cases' && d.clientEmail && !d.self && !d.showcase) rows.push({ when: d.createdAt, name: d.clientName, email: d.clientEmail, phone: d.clientPhone, interest: d.fullAccess ? names.full : names.case, words: '', source: 'Booked a case' });
-        else if (coll === 'subscriptions' && d.email) rows.push({ when: d.startedAt, name: '', email: d.email, phone: '', interest: names.chat, words: '', source: 'Priority Chat' });
+        else if (coll === 'cases' && d.clientEmail && !d.self && !d.showcase) rows.push({ when: d.createdAt, name: d.clientName, email: d.clientEmail, phone: d.clientPhone, interest: d.fullAccess ? names.full : names.case, words: '', source: 'Booked a case', link: `/admin-case.html?id=${k.split('/')[1]}&page=chat` });
+        else if (coll === 'subscriptions' && d.email) rows.push({ when: d.startedAt, name: '', email: d.email, phone: '', interest: names.chat, words: '', source: 'Priority Chat', link: `/admin-chats.html?sub=${k.split('/')[1]}` });
       }
       const by = new Map();
       for (const r of rows) {
         const e = String(r.email).toLowerCase();
         const t = new Date(r.when || 0).getTime() || 0;
-        const p = by.get(e) || { email: e, name: '', phone: '', first: t, last: t, sources: [], interests: [], words: [] };
+        const p = by.get(e) || { email: e, name: '', phone: '', first: t, last: t, sources: [], interests: [], words: [], messages: [], link: '' };
         if (r.name && (!p.name || t >= p.last)) p.name = r.name;
         if (r.phone && (!p.phone || t >= p.last)) p.phone = r.phone;
         p.first = Math.min(p.first || t, t || p.first); p.last = Math.max(p.last, t);
         if (!p.sources.includes(r.source)) p.sources.push(r.source);
         if (r.interest && !p.interests.includes(r.interest)) p.interests.push(r.interest);
-        if (r.words) p.words.push(r.words);
+        if (r.words) { p.words.push(r.words); p.messages.push({ from: 'them', text: String(r.words), at: t ? new Date(t).toISOString() : null, via: r.source }); }
+        if (r.link && !p.link) p.link = r.link;
         by.set(e, p);
       }
-      const leads = [...by.values()].sort((a, b) => b.last - a.last).map((p) => ({
-        firstContact: p.first ? new Date(p.first).toISOString() : null, lastContact: p.last ? new Date(p.last).toISOString() : null,
-        name: p.name, email: p.email, phone: p.phone, interestedIn: p.interests.join('; '), cameThrough: p.sources.join('; '), notes: p.words.join(' | '),
-      }));
+      // Their messages and his replies as one conversation, as the Worker sends them (2026-10-17).
+      const leads = [...by.values()].sort((a, b) => b.last - a.last).map((p) => {
+        const key = demoLeadKey(p.email);
+        const th = store.docs.get(`leadThreads/${key}`) || {};
+        const replies = (th.replies || []).map((r) => ({ from: 'me', text: r.text, at: new Date(r.at).toISOString() }));
+        const newest = Math.max(0, ...p.messages.map((m) => new Date(m.at || 0).getTime()));
+        const mine = Math.max(0, ...replies.map((r) => new Date(r.at).getTime()));
+        return {
+          firstContact: p.first ? new Date(p.first).toISOString() : null, lastContact: p.last ? new Date(p.last).toISOString() : null,
+          name: p.name, email: p.email, phone: p.phone, interestedIn: p.interests.join('; '), cameThrough: p.sources.join('; '), notes: p.words.join(' | '),
+          key, appLink: p.link, unread: newest > Math.max(mine, new Date(th.seenAt || 0).getTime()),
+          messages: [...p.messages, ...replies].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0)),
+        };
+      });
+      if (init.method === 'POST') {
+        const body = JSON.parse(init.body || '{}');
+        const email = String(body.email || '').trim().toLowerCase();
+        const lead = leads.find((l) => l.email === email);
+        if (!lead) return fail(404, 'That person is not on your Leads.');
+        const path = `leadThreads/${lead.key}`;
+        const th = store.docs.get(path) || { email, replies: [] };
+        if (body.action === 'seen') { store.docs.set(path, { ...th, seenAt: new Date() }); store.persist?.(); return ok({ ok: true }); }
+        const text = String(body.text || '').trim();
+        if (!text) return fail(400, 'Type your reply first.');
+        await beat(400);
+        const at = new Date();
+        store.docs.set(path, { ...th, replies: [...(th.replies || []), { text, at }], seenAt: at });
+        store.persist?.();
+        // Demo mode: nothing is sent; the reply is kept so the conversation shows it.
+        return ok({ ok: true, reply: { from: 'me', text, at: at.toISOString() } });
+      }
       return ok({ leads, missing: [] });
     }
     if (path === '/api/fit-call' && init.method === 'POST') {
@@ -747,7 +777,7 @@ export function demoApi(role, store) {
         }
         const newest = sources[0]?.[1];
         if (!who.name && newest) who = { name: newest.clientName, dob: newest.clientDob || null, phone: newest.clientPhone || null, address: newest.clientAddress || null };
-        if (!who.name) who.name = 'Eric Bleach';
+        if (!who.name) who.name = 'Eric Leach';
       }
       const key = own.length ? `${base}-${own.length + 1}` : base;
       const id = key.slice(6);

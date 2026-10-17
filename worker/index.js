@@ -13,6 +13,7 @@
 //   GET/POST /api/admin/waitlist   the waitlist: list, mark contacted, remove (admin)
 //   POST   /api/question           the question box: name, email, question, emailed to Eric (public, no account)
 //   GET    /api/admin/leads        everyone who has given their details by any route, one row per person (admin)
+//   POST   /api/admin/leads        reply to a lead by email, or mark their messages read (admin)
 //   GET    /api/stats              By the numbers: aggregate figures, public, cached an hour
 //   POST   /api/admin/stats        recompute the figures now (admin)
 //   GET/POST/DELETE /api/admin/personal   Personal Uploads: list, add, remove (admin, Worker-only prefix)
@@ -2482,7 +2483,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-raised';
+const BUILD_TAG = 'v2026-10-17-leads-chat';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2490,7 +2491,7 @@ const BUILD_TAG = 'v2026-10-17-raised';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.66';
+const VERSION = '7.67';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9889,7 +9890,9 @@ async function handleQuestion(request, env) {
 
   const now = new Date();
   await patchDoc(env, `questions/${crypto.randomUUID()}`, { name, email, question, createdAt: now }, { mustNotExist: true });
-  await pingAdmins(env, `${firstName(name) || 'Someone'} asked a question. It is in your email.`, '/admin-leads.html');
+  // Named, and opening their card with the message open on it (Eric, 2026-10-17: "It says my lead
+  // Rosemarie sent me a message but I don't see it", the words were off the side of the table).
+  await pingAdmins(env, `${firstName(name) || 'Someone'} sent you a message. It is on Leads.`, `/admin-leads.html?lead=${await leadKey(email)}`);
   if (env.ADMIN_EMAIL) {
     await sendEmail(env, {
       to: env.ADMIN_EMAIL,
@@ -9926,19 +9929,19 @@ const LEAD_SOURCES = [
   { coll: 'subscriptions', label: 'Priority Chat' },
 ];
 
-/** One source's rows, as { when, name, email, phone, interest, words, source }. */
+/** One source's rows, as { when, name, email, phone, interest, words, source, link }. */
 function leadRows(coll, label, rows) {
   const pkg = (k) => WAITLIST_PACKAGES[k] || '';
   const out = [];
-  for (const { data: d } of rows) {
+  for (const { id, data: d } of rows) {
     let r = null;
     if (coll === 'waitlist') r = { when: d.createdAt, name: `${d.first || ''} ${d.last || ''}`.trim(), email: d.email, phone: d.phone, interest: pkg(d.package), words: '' };
     else if (coll === 'questions') r = { when: d.createdAt, name: d.name, email: d.email, phone: '', interest: '', words: d.question };
     else if (coll === 'leads') r = { when: d.createdAt, name: d.name, email: d.email, phone: d.phone, interest: 'Free call', words: d.note };
     else if (coll === 'cases') {
       if (d.self || d.showcase || !d.clientEmail) continue;
-      r = { when: d.createdAt, name: d.clientName, email: d.clientEmail, phone: d.clientPhone, interest: d.fullAccess ? WAITLIST_PACKAGES.full : WAITLIST_PACKAGES.case, words: '' };
-    } else if (coll === 'subscriptions') r = { when: d.startedAt, name: '', email: d.email, phone: '', interest: WAITLIST_PACKAGES.chat, words: '' };
+      r = { when: d.createdAt, name: d.clientName, email: d.clientEmail, phone: d.clientPhone, interest: d.fullAccess ? WAITLIST_PACKAGES.full : WAITLIST_PACKAGES.case, words: '', link: id ? `/admin-case.html?id=${id}&page=chat` : '' };
+    } else if (coll === 'subscriptions') r = { when: d.startedAt, name: '', email: d.email, phone: '', interest: WAITLIST_PACKAGES.chat, words: '', link: id ? `/admin-chats.html?sub=${id}` : '' };
     if (r && r.email) out.push({ ...r, email: String(r.email).trim().toLowerCase(), source: label });
   }
   return out;
@@ -9950,14 +9953,19 @@ function mergeLeads(rows) {
   const add = (set, v) => { if (v && !set.includes(v)) set.push(v); };
   for (const r of rows) {
     const t = new Date(r.when || 0).getTime() || 0;
-    const p = by.get(r.email) || { email: r.email, name: '', phone: '', first: t, last: t, sources: [], interests: [], words: [] };
+    const p = by.get(r.email) || { email: r.email, name: '', phone: '', first: t, last: t, sources: [], interests: [], words: [], messages: [], link: '' };
     if (r.name && (!p.name || t >= p.last)) p.name = String(r.name).trim();
     if (r.phone && (!p.phone || t >= p.last)) p.phone = String(r.phone).trim();
     p.first = Math.min(p.first || t, t || p.first);
     p.last = Math.max(p.last, t);
     add(p.sources, r.source);
     add(p.interests, r.interest);
-    if (r.words) p.words.push(String(r.words).trim());
+    if (r.words) {
+      p.words.push(String(r.words).trim());
+      // Their words as a conversation (2026-10-17), each with when and how it came.
+      p.messages.push({ from: 'them', text: String(r.words).trim(), at: t ? new Date(t).toISOString() : null, via: r.source });
+    }
+    if (r.link && !p.link) p.link = r.link;
     by.set(r.email, p);
   }
   return [...by.values()]
@@ -9967,13 +9975,22 @@ function mergeLeads(rows) {
       lastContact: p.last ? new Date(p.last).toISOString() : null,
       name: p.name, email: p.email, phone: p.phone,
       interestedIn: p.interests.join('; '), cameThrough: p.sources.join('; '), notes: p.words.join(' | '),
+      messages: p.messages.sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0)),
+      appLink: p.link,
     }));
 }
 
-async function handleAdminLeads(request, env) {
-  const admin = await requireAdmin(request, env);
-  if (!admin) return json({ error: 'Not found' }, 404);
-  if (request.method !== 'GET') return json({ error: 'Not found' }, 404);
+/** A lead's conversation key: their email, hashed, so no address is a document name. */
+async function leadKey(email) {
+  const raw = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`lead:${String(email || '').trim().toLowerCase()}`));
+  return [...new Uint8Array(raw)].map((b) => b.toString(16).padStart(2, '0')).join('').slice(0, 32);
+}
+
+const LEAD_REPLY_MAX = 4000;
+const LEAD_REPLIES_KEPT = 200;
+
+/** Everyone, from every route, as the Leads tab lists them. */
+async function collectLeads(env) {
   const got = await Promise.allSettled(LEAD_SOURCES.map((s) => listDocs(env, s.coll, { pageSize: 300, all: true })));
   const rows = [];
   const missing = [];
@@ -9982,7 +9999,75 @@ async function handleAdminLeads(request, env) {
     if (g.status === 'fulfilled') rows.push(...leadRows(coll, label, g.value || []));
     else missing.push(label);
   });
-  return json({ leads: mergeLeads(rows), missing });
+  return { leads: mergeLeads(rows), missing };
+}
+
+/**
+ * THEIR MESSAGES, BESIDE THEM (Eric, 2026-10-17: "lead messages should appear
+ * next to the lead in an expandable chat", then "put it in an expandable chat
+ * box or email like container"). Each lead carries their words as a thread,
+ * his replies in it, and whether something of theirs is newer than his last
+ * reply or his last look. A reply goes to their email, Reply-To his own, so
+ * their answer lands in his inbox; it is kept in leadThreads/{key}, under the
+ * deny tail like every other Worker-only collection.
+ */
+async function handleAdminLeads(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'GET') {
+    const [{ leads, missing }, threads] = await Promise.all([
+      collectLeads(env),
+      listDocs(env, 'leadThreads', { pageSize: 300, all: true }).catch(() => []),
+    ]);
+    const byKey = new Map(threads.map((r) => [r.id, r.data || {}]));
+    const iso = (v) => { const t = new Date(v || 0).getTime(); return t ? new Date(t).toISOString() : null; };
+    for (const l of leads) {
+      l.key = await leadKey(l.email);
+      const th = byKey.get(l.key) || {};
+      const replies = (Array.isArray(th.replies) ? th.replies : []).map((r) => ({ from: 'me', text: String(r?.text || ''), at: iso(r?.at) })).filter((r) => r.text);
+      const newestThem = Math.max(0, ...l.messages.map((m) => new Date(m.at || 0).getTime() || 0));
+      const lastMine = Math.max(0, ...replies.map((r) => new Date(r.at || 0).getTime() || 0));
+      const seen = new Date(th.seenAt || 0).getTime() || 0;
+      l.unread = newestThem > Math.max(lastMine, seen);
+      l.messages = [...l.messages, ...replies].sort((a, b) => new Date(a.at || 0) - new Date(b.at || 0));
+    }
+    return json({ leads, missing });
+  }
+  if (request.method !== 'POST') return json({ error: 'Not found' }, 404);
+  const body = (await request.json().catch(() => null)) || {};
+  const email = str(body.email, 200).toLowerCase();
+  if (!email) return json({ error: 'Whose messages?' }, 400);
+  const key = await leadKey(email);
+  const path = `leadThreads/${key}`;
+  const now = new Date();
+  if (body.action === 'seen') {
+    await patchDoc(env, path, { email, seenAt: now }, { mask: ['email', 'seenAt'] });
+    return json({ ok: true });
+  }
+  if (body.action !== 'reply') return json({ error: 'Bad request' }, 400);
+  const text = typeof body.text === 'string' ? body.text.replace(/\r\n?/g, '\n').trim() : '';
+  if (!text) return json({ error: 'Type your reply first.' }, 400);
+  if (text.length > LEAD_REPLY_MAX) return json({ error: `Keep it under ${LEAD_REPLY_MAX} characters.` }, 400);
+  // Only to someone on his Leads: the reply box is never a way to email anyone at all.
+  const { leads } = await collectLeads(env);
+  const lead = leads.find((l) => l.email === email);
+  if (!lead) return json({ error: 'That person is not on your Leads.' }, 404);
+  const theirs = lead.messages.filter((m) => m.from === 'them').pop();
+  const sent = await sendEmail(env, {
+    to: email,
+    replyTo: env.ADMIN_EMAIL || undefined,
+    subject: 'Eric replied to your message',
+    html: `<p>Hi ${escHtml(firstName(lead.name) || 'there')},</p>
+      <p>${escHtml(text).replace(/\n/g, '<br>')}</p>
+      <p>Eric<br>Pocket Advocate</p>
+      ${theirs ? `<hr><p style="color:#666">You wrote:<br>${escHtml(theirs.text).replace(/\n/g, '<br>')}</p>` : ''}
+      <p style="color:#666">Reply to this email and it comes straight to me.</p>`,
+  }).catch(() => false);
+  if (!sent) return json({ error: 'The email did not send. Try again in a minute.' }, 502);
+  const cur = await getDoc(env, path).catch(() => null);
+  const replies = [...(Array.isArray(cur?.data?.replies) ? cur.data.replies : []), { text, at: now }].slice(-LEAD_REPLIES_KEPT);
+  await patchDoc(env, path, { email, replies, seenAt: now }, { mask: ['email', 'replies', 'seenAt'] });
+  return json({ ok: true, reply: { from: 'me', text, at: now.toISOString() } });
 }
 
 /**

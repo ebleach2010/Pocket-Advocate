@@ -240,13 +240,41 @@ console.log('\n--- C. the sample contractor ---');
   w2.docs.set(`advocates/${ERIC}`, { ...w2.docs.get(`advocates/${ERIC}`), name: 'Eric B' });
   w2.docs.set(`users/${ERIC}`, { role: 'admin', name: 'Gg Gg' });
   const kept = (await call(w2, 'emp', ERIC, '/api/admin/team')).out;
+  // RE-PINNED 2026-10-17 (v7.67): his name is Eric Leach ("my name is Eric Leach. Not Eric Bleach"); the wrong name
+  // the first fix wrote is put right the same way, on his card, his record and his profile.
+  const w3 = world();
+  seedPeople(w3);
+  w3.docs.set(`advocates/${ERIC}`, { ...w3.docs.get(`advocates/${ERIC}`), name: 'Eric Bleach' });
+  w3.docs.set(`users/${ERIC}`, { role: 'admin', name: 'Eric Bleach', email: 'e@x.test' });
+  const righted = (await call(w3, 'emp', ERIC, '/api/admin/team')).out;
   // NEGATIVE CONTROL (run 2026-10-16): teamRoute's name fix (`/^\s*gg\s+gg\s*$/i.test(String(mine.data.name || ''))`) made `false` made this read
   //   FAIL  C4 his test name "Gg Gg" becomes Eric Bleach on his card, his record and his profile, once; a name he chose is never touched
-  check('C4 his test name "Gg Gg" becomes Eric Bleach on his card, his record and his profile, once; a name he chose is never touched',
-    fixed.team[0].uid === ERIC && fixed.team[0].name === 'Eric Bleach' && w.docs.get(`advocates/${ERIC}`).name === 'Eric Bleach'
-    && w.docs.get(`users/${ERIC}`).name === 'Eric Bleach' && w.docs.get(`users/${ERIC}`).email === 'e@x.test'
+  // NEGATIVE CONTROL (run 2026-10-17, v7.67): `|eric\s+bleach` taken out of WRONG_NAME made this read
+  //   FAIL  C4 his test name "Gg Gg", and the wrong Eric Bleach, become Eric Leach on his card, his record and his profile, once; a name he chose is never touched
+  check('C4 his test name "Gg Gg", and the wrong Eric Bleach, become Eric Leach on his card, his record and his profile, once; a name he chose is never touched',
+    fixed.team[0].uid === ERIC && fixed.team[0].name === 'Eric Leach' && w.docs.get(`advocates/${ERIC}`).name === 'Eric Leach'
+    && w.docs.get(`users/${ERIC}`).name === 'Eric Leach' && w.docs.get(`users/${ERIC}`).email === 'e@x.test'
+    && righted.team[0].name === 'Eric Leach' && w3.docs.get(`advocates/${ERIC}`).name === 'Eric Leach' && w3.docs.get(`users/${ERIC}`).name === 'Eric Leach'
     && kept.team[0].name === 'Eric B' && w2.docs.get(`advocates/${ERIC}`).name === 'Eric B' && w2.docs.get(`users/${ERIC}`).name === 'Gg Gg',
-    JSON.stringify({ card: fixed.team[0]?.name, kept: kept.team[0]?.name }));
+    JSON.stringify({ card: fixed.team[0]?.name, righted: righted.team[0]?.name, kept: kept.team[0]?.name }));
+}
+
+{
+  // Eric, 2026-10-17: "my name is Eric Leach. Not Eric Bleach". Every place the app writes his name, on a page, a
+  // form a client signs, the demo or the Worker, says Eric Leach; the old name is only recognised, on a form made
+  // before the fix, so that form is still his.
+  const { readdirSync, statSync } = await import('node:fs');
+  const walk = (dir) => readdirSync(j(ROOT, dir)).flatMap((n) => { const p = `${dir}/${n}`; return statSync(j(ROOT, p)).isDirectory() ? walk(p) : /\.(js|html|css|json|webmanifest)$/.test(n) ? [p] : []; });
+  const files = [...walk('public'), ...walk('worker')];
+  const wrong = files.flatMap((p) => f(p).split('\n').map((l, i) => [p, i + 1, l]).filter(([, , l]) => /Eric Bleach/.test(l)
+    && !/^\s*\/\//.test(l) && !/o\.advocateName === 'Eric Leach' \|\| o\.advocateName === 'Eric Bleach'/.test(l)));
+  const AUTH = f('public/js/authority.js');
+  // NEGATIVE CONTROL (run 2026-10-17, v7.67): the appointment form's `I appoint ${o.advocateName || 'Eric Leach'}` put back to Eric Bleach made this read
+  //   FAIL  C5 his name is Eric Leach wherever the app writes it: no page, signed form, demo or Worker line says Eric Bleach, and a form made with the old name is still his
+  check('C5 his name is Eric Leach wherever the app writes it: no page, signed form, demo or Worker line says Eric Bleach, and a form made with the old name is still his',
+    files.length > 100 && !wrong.length && (AUTH.match(/\$\{o\.advocateName \|\| 'Eric Leach'\}/g) || []).length === 3
+    && /const isHis = \(o\) => !o\.advocateName \|\| o\.advocateName === 'Eric Leach' \|\| o\.advocateName === 'Eric Bleach';/.test(AUTH),
+    JSON.stringify(wrong.slice(0, 3).map(([p, n]) => `${p}:${n}`)));
 }
 
 console.log('\n--- D. payroll ---');

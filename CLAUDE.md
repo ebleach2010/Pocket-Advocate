@@ -4,6 +4,9 @@ Eric (ebleach2010) is the owner: a professional patient advocate, not a
 developer, usually on an iPhone. He merges by saying so; follow his words
 over any convention here.
 
+His name is **Eric Leach** (2026-10-17: "my name is Eric Leach. Not Eric
+Bleach"). The email handle misled earlier work into "Bleach"; never write it.
+
 ## Push modes (Eric, 2026-08-21 — his commands, verbatim)
 
 Every push to main that changes the product is a version. Bump `VERSION` in

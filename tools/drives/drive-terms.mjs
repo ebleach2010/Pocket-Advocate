@@ -164,7 +164,7 @@ await page.click('[data-add-open]');
 await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="self:firstName"]', 'Eric');
-await page.fill('[data-of="self:lastName"]', 'Bleach');
+await page.fill('[data-of="self:lastName"]', 'Leach');
 await page.click('[data-open-go="self"]');
 await page.waitForURL((u) => /admin-case(\.html)?\?id=/.test(u.toString()), { timeout: 15000 });
 await settle(page, 2000);

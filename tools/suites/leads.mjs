@@ -73,11 +73,12 @@ const deps = {
 };
 const LIFTED = [
   konst('WAITLIST_PACKAGES'), konst('QUESTION_MAX'), konst('QUESTION_IP_LIMIT'), konst('LEAD_SOURCES'),
+  konst('LEAD_REPLY_MAX'), konst('LEAD_REPLIES_KEPT'),
   sfn('str'), sfn('escHtml'), sfn('json'), sfn('firstName'), sfn('leadRows'), sfn('mergeLeads'),
-  fn('pingAdmins'), fn('questionThrottled'), fn('handleQuestion'), fn('handleAdminLeads'),
+  fn('pingAdmins'), fn('questionThrottled'), fn('handleQuestion'), fn('leadKey'), fn('collectLeads'), fn('handleAdminLeads'),
 ].join('\n');
 const W = new Function(...Object.keys(deps), `${LIFTED}
-  return { handleQuestion, handleAdminLeads, QUESTION_MAX };`)(...Object.values(deps));
+  return { handleQuestion, handleAdminLeads, leadKey, QUESTION_MAX };`)(...Object.values(deps));
 const env = { ADMIN_EMAIL: 'eric@example.com', PUBLIC_BASE_URL: 'https://example.com' };
 const req = (body, { ip = '1.2.3.4', method = 'POST' } = {}) => ({
   method, json: async () => body, headers: { get: (k) => (k === 'cf-connecting-ip' ? ip : null) },
@@ -107,8 +108,13 @@ reset();
     JSON.stringify({ e, q }));
   // NEGATIVE CONTROL (run 2026-10-14): the pingAdmins line in handleQuestion switched off made this read
   //   FAIL  A2 and a push to his phone that points at Leads
-  check('A2 and a push to his phone that points at Leads',
-    pushes.length === 1 && pushes[0].uid === 'eric' && /Riley asked a question\./.test(pushes[0].body) && pushes[0].link === '/admin-leads.html');
+  // RE-PINNED 2026-10-17 (v7.68): the push says they sent him a message and opens their card on Leads, their
+  // message open (Eric: "It says my lead Rosemarie sent me a message but I don't see it").
+  // NEGATIVE CONTROL (run 2026-10-17, v7.68): the push's link put back to a bare '/admin-leads.html' made A2 read FAIL.
+  const rileyKey = await W.leadKey('riley@example.com');
+  check('A2 and a push to his phone that says they sent a message and opens their card on Leads',
+    pushes.length === 1 && pushes[0].uid === 'eric' && /^Riley sent you a message\. It is on Leads\.$/.test(pushes[0].body)
+    && pushes[0].link === `/admin-leads.html?lead=${rileyKey}` && /^[0-9a-f]{32}$/.test(rileyKey));
 }
 reset();
 {
@@ -239,9 +245,10 @@ reset();
   const html = f('public/admin-leads.html');
   // NEGATIVE CONTROL (run 2026-10-14): the Download CSV button taken off admin-leads.html made this read
   //   FAIL  B7 the Leads tab has its table, its Download CSV button and its module, and every admin page's nav carries it after Clients
+  // RE-PINNED 2026-10-17 (v7.68): the table is a list of cards now (D6 checks them); the name says list.
   const navs = ['admin', 'admin-calendar', 'admin-chats', 'admin-availability', 'admin-dictionary', 'admin-case', 'admin-fund', 'admin-leads']
     .every((n) => /<a href="\/admin\.html"( class="active")?>Clients<\/a>\s*<a href="\/admin-leads\.html"( class="active")?>Leads<\/a>/.test(f(`public/${n}.html`)));
-  check('B7 the Leads tab has its table, its Download CSV button and its module, and every admin page\'s nav carries it after Clients',
+  check('B7 the Leads tab has its list, its Download CSV button and its module, and every admin page\'s nav carries it after Clients',
     /<button type="button" class="btn glow" id="leads-csv" disabled>Download CSV<\/button>/.test(html)
     && /<script type="module" src="\/js\/admin-leads\.js"><\/script>/.test(html) && navs
     && /fetch\('\/api\/admin\/leads'/.test(page) && /a\.download = `pocket-advocate-leads-\$\{day\(/.test(page));
@@ -294,6 +301,98 @@ console.log('\n--- C. the home ---');
     && /@media \(prefers-reduced-motion: no-preference\) \{\s*body\.landing \.opt-gold::before,\s*body\.landing \.opt-gold::after \{ animation: pa-ring 3\.6s ease-in-out infinite; \}/.test(css)
     && /body\.landing \.wl-bubble::before \{ animation: wl-shine 3\.6s ease-in-out infinite; \}/.test(css)
     && idx.indexOf('opt-gold') < idx.indexOf('Advocacy Case</h3>'));
+}
+
+// ---------------------------------------------------------------------------
+// Eric, 2026-10-17: "It says my lead Rosemarie sent me a message but I don't see it. I think lead messages should
+// appear next to the lead in an expandable chat", then "Ah, it's off screen. Please put it in an expandable chat box
+// or email like container."
+console.log('\n--- D. their messages, beside them (v7.68) ---');
+reset();
+{
+  const t = (d, h = 18) => new Date(`2026-10-${d}T${h}:00:00Z`).toISOString();
+  docs.set('questions/q1', { name: 'Rosemarie Vale', email: 'Rose@Example.com', question: 'Can you help my dad?\nHe has POTS.', createdAt: t('15') });
+  docs.set('questions/q0', { name: 'Rosemarie Vale', email: 'rose@example.com', question: 'Are you taking clients?', createdAt: t('12') });
+  docs.set('leads/l1', { name: 'Pat Old', email: 'pat@example.com', phone: '208-555-0111', note: 'Long story', createdAt: t('01') });
+  docs.set('subscriptions/u9', { email: 'pat@example.com', startedAt: t('02') });
+  docs.set('waitlist/w1', { first: 'Wren', last: 'Q', email: 'wren@example.com', package: 'case', createdAt: t('03') });
+  const roseKey = await W.leadKey('rose@example.com');
+  docs.set(`leadThreads/${roseKey}`, { email: 'rose@example.com', replies: [{ text: 'Yes, I am.', at: t('13') }] });
+  const g1 = await leads();
+  const by = (L, e) => (L.leads || []).find((x) => x.email === e) || {};
+  const rose = by(g1.out, 'rose@example.com');
+  const pat = by(g1.out, 'pat@example.com');
+  const wren = by(g1.out, 'wren@example.com');
+  // NEGATIVE CONTROL (run 2026-10-17): mergeLeads's `p.messages.push(...)` taken out made this read
+  //   FAIL  D1 each lead carries their words as a conversation, dated and saying how each came, his replies in it, new when theirs is newest, and a way to their chat in the app
+  check('D1 each lead carries their words as a conversation, dated and saying how each came, his replies in it, new when theirs is newest, and a way to their chat in the app',
+    g1.status === 200 && rose.key === roseKey && rose.unread === true
+    && JSON.stringify(rose.messages.map((m) => [m.from, m.text, m.at, m.via || ''])) === JSON.stringify([
+      ['them', 'Are you taking clients?', t('12'), 'Question'], ['me', 'Yes, I am.', t('13'), ''], ['them', 'Can you help my dad?\nHe has POTS.', t('15'), 'Question']])
+    && pat.messages.length === 1 && pat.messages[0].via === 'Free call' && pat.appLink === '/admin-chats.html?sub=u9' && pat.unread === true
+    && wren.messages.length === 0 && wren.unread === false
+    && (rose.notes === 'Can you help my dad?\nHe has POTS. | Are you taking clients?' || rose.notes === 'Are you taking clients? | Can you help my dad?\nHe has POTS.'),
+    JSON.stringify({ rose, pat: { appLink: pat.appLink, unread: pat.unread }, wren: { unread: wren.unread } }));
+
+  const post = async (body, ok = true) => { adminOk = ok; const r = await W.handleAdminLeads(req(body), env); adminOk = true; return { status: r.status, out: await r.json() }; };
+  emails = [];
+  const sent = await post({ action: 'reply', email: ' Rose@Example.com ', text: 'Yes.\nBook a <b>free</b> call.' });
+  const e = emails[0] || {};
+  const th = docs.get(`leadThreads/${roseKey}`) || {};
+  const g2 = await leads();
+  const rose2 = by(g2.out, 'rose@example.com');
+  // NEGATIVE CONTROL (run 2026-10-17): the reply's `replyTo: env.ADMIN_EMAIL || undefined,` taken out made this read
+  //   FAIL  D2 a reply goes to their email from him, Reply-To his own, his words escaped with their lines, their last message quoted; it is kept, shown in the conversation, and marks it read
+  check('D2 a reply goes to their email from him, Reply-To his own, his words escaped with their lines, their last message quoted; it is kept, shown in the conversation, and marks it read',
+    sent.status === 200 && sent.out.reply?.from === 'me' && emails.length === 1 && e.to === 'rose@example.com' && e.replyTo === 'eric@example.com'
+    && e.subject === 'Eric replied to your message' && /<p>Hi Rosemarie,<\/p>/.test(e.html) && /Yes\.<br>Book a &lt;b&gt;free&lt;\/b&gt; call\./.test(e.html)
+    && /You wrote:<br>Can you help my dad\?<br>He has POTS\./.test(e.html) && th.replies?.length === 2 && th.replies[1].text === 'Yes.\nBook a <b>free</b> call.' && th.seenAt
+    && rose2.unread === false && rose2.messages.at(-1).from === 'me' && rose2.messages.at(-1).text === 'Yes.\nBook a <b>free</b> call.',
+    JSON.stringify({ sent, e, th }));
+
+  emails = [];
+  const stranger = await post({ action: 'reply', email: 'nobody@example.com', text: 'Hi' });
+  const empty = await post({ action: 'reply', email: 'rose@example.com', text: '   ' });
+  const long = await post({ action: 'reply', email: 'rose@example.com', text: 'x'.repeat(4001) });
+  const notHim = await post({ action: 'reply', email: 'rose@example.com', text: 'Hi' }, false);
+  const before = (docs.get(`leadThreads/${roseKey}`) || {}).replies.length;
+  // A failed send: nothing kept, said so.
+  const failingSend = new Function(...Object.keys({ ...deps, sendEmail: 0 }), `${LIFTED}
+    return { handleAdminLeads };`)(...Object.values({ ...deps, sendEmail: async () => false }));
+  const failed1 = await failingSend.handleAdminLeads(req({ action: 'reply', email: 'rose@example.com', text: 'Hi' }), env);
+  const after = (docs.get(`leadThreads/${roseKey}`) || {}).replies.length;
+  // NEGATIVE CONTROL (run 2026-10-17): the reply's lead lookup given `|| leads[0]` (any address answered as the first lead) made this read
+  //   FAIL  D3 the reply box never emails anyone who is not on his Leads, refuses an empty or overlong reply, is his alone, and keeps nothing when the email does not send
+  check('D3 the reply box never emails anyone who is not on his Leads, refuses an empty or overlong reply, is his alone, and keeps nothing when the email does not send',
+    stranger.status === 404 && empty.status === 400 && long.status === 400 && notHim.status === 404 && emails.length === 0
+    && failed1.status === 502 && before === after,
+    JSON.stringify({ stranger: stranger.status, empty: empty.status, long: long.status, notHim: notHim.status, failed: failed1.status, before, after, emails: emails.length }));
+
+  const patKey = await W.leadKey('pat@example.com');
+  const seen = await post({ action: 'seen', email: 'pat@example.com' });
+  const g3 = await leads();
+  // NEGATIVE CONTROL (run 2026-10-17): the seen action's patchDoc taken out (`await void 0;`) made this read
+  //   FAIL  D4 opening their messages marks them read, and sends nothing
+  check('D4 opening their messages marks them read, and sends nothing',
+    seen.status === 200 && docs.get(`leadThreads/${patKey}`)?.seenAt && by(g3.out, 'pat@example.com').unread === false && emails.length === 0);
+
+  // NEGATIVE CONTROL (run 2026-10-17): leadKey's `.toLowerCase()` taken out made this read
+  //   FAIL  D5 a conversation's key is the email hashed, the same whatever its case, and never the address itself
+  check('D5 a conversation\'s key is the email hashed, the same whatever its case, and never the address itself',
+    roseKey === await W.leadKey(' ROSE@example.com') && roseKey !== patKey && /^[0-9a-f]{32}$/.test(roseKey)
+    && ![...docs.keys()].some((k) => k.startsWith('leadThreads/') && /@/.test(k)));
+
+  const page = f('public/js/admin-leads.js');
+  const html = f('public/admin-leads.html');
+  // NEGATIVE CONTROL (run 2026-10-17): the card's `${l.unread ? ' open' : ''}` taken out made this read
+  //   FAIL  D6 on his phone each lead is a card: who and how to reach them, their messages in a conversation that opens, open when new and new ones first, a reply box, and a push opens straight on them
+  check('D6 on his phone each lead is a card: who and how to reach them, their messages in a conversation that opens, open when new and new ones first, a reply box, and a push opens straight on them',
+    /<details class="lead-msgs" data-msgs\$\{l\.unread \? ' open' : ''\}>/.test(page) && /<form class="lead-reply" data-reply>/.test(page)
+    && /return \[\.\.\.leads\.filter\(\(l\) => l\.unread\), \.\.\.leads\.filter\(\(l\) => !l\.unread\)\];/.test(page)
+    && /post\(\{ action: 'reply', email: el\.dataset\.email, text \}\)/.test(page) && /post\(\{ action: 'seen', email: el\.dataset\.email \}\)/.test(page)
+    && /new URLSearchParams\(location\.search\)\.get\('lead'\)/.test(page) && /href="tel:/.test(page) && /href="mailto:/.test(page)
+    && !/<table/.test(page) && !/\.leads-wrap/.test(html) && /\.lm\.them \{/.test(html) && /\.lm\.me \{/.test(html) && !DASH.test(page) && !DASH.test(html),
+    'page shape');
 }
 
 const failed = results.filter((r) => !r.pass);

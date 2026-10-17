@@ -210,6 +210,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // gone, the three looks, and the raised buttons.
   // NEGATIVE CONTROL (run 2026-10-17, v7.66): the worker's BUILD_TAG left at the step-ups tag made this read
   //   FAIL  R1 both versions read 7.66 with the new tag, the 7.66 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.67): both versions read 7.67 with the leads-chat tag, and the 7.67 entry says his
+  // name and the lead conversations.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.67): changelog.js's VERSION left at '7.66' made this read
+  //   FAIL  R1 both versions read 7.67 with the new tag, the 7.67 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry767 = (CL.match(/\{\n\s+\/\/ HIS NAME, AND A LEAD'S MESSAGES BESIDE THEM \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry766 = (CL.match(/\{\n\s+\/\/ THREE LOOKS, RAISED BUTTONS \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry765 = (CL.match(/\{\n\s+\/\/ EVERY STEP UP AN ENHANCEMENT \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-17 (v7.64): both versions read 7.64 with the color-wheel tag, and the 7.64 entry says what the
@@ -286,9 +291,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.66 with the new tag, the 7.66 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.66';/.test(CL) && /const VERSION = '7\.66';/.test(W) && /const BUILD_TAG = 'v2026-10-17-raised';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.66'
+  check('R1 both versions read 7.67 with the new tag, the 7.67 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.67';/.test(CL) && /const VERSION = '7\.67';/.test(W) && /const BUILD_TAG = 'v2026-10-17-leads-chat';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.67'
+    && /version: '7\.67',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry767)
+    && /Your name is Eric Leach everywhere/.test(entry767) && /Their messages open under their name like a chat/.test(entry767)
+    && !DASH.test(entry767) && !HARD.some((re) => re.test(entry767))
     && /version: '7\.66',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry766)
     && /The color wheel is gone\. Settings offers three looks: Warm, Blue and green, and Black/.test(entry766) && /Buttons stand off the page now/.test(entry766)
     && !DASH.test(entry766) && !HARD.some((re) => re.test(entry766))
@@ -479,7 +487,7 @@ const harness = () => {
   const H = harness();
   // An old desk document still in the database is just his own case to the engine now.
   H.store.set('cases/desk', { self: true, trade: true, clientName: 'PR 420' });
-  H.store.set('cases/mine', { self: true, clientName: 'Eric Bleach' });
+  H.store.set('cases/mine', { self: true, clientName: 'Eric Leach' });
   H.store.set('cases/client', { clientName: 'Jane' });
   const seen = (id) => H.api.withCasePolicy({}, 'case', id, async () => H.api.turnPolicy.getStore());
   const desk = await seen('desk');

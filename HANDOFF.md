@@ -64,7 +64,7 @@ The live prices are stored in Firestore (`config/rates`) and served by `/api/rat
 
 ### Eric, the person
 
-**Eric Bleach** owns the business and is currently its only advocate. He is a professional patient advocate with five years of experience, a former ophthalmology surgical coordinator and personal trainer, and he survived autoimmune encephalitis after a three-year illness.
+**Eric Leach** owns the business and is currently its only advocate. He is a professional patient advocate with five years of experience, a former ophthalmology surgical coordinator and personal trainer, and he survived autoimmune encephalitis after a three-year illness.
 
 He is disabled: he has post-exertional crashes, autoimmune encephalitis relapses and periods of cognitive impairment. He is **currently out of remission and in chemotherapy**, and he has given instructions from a hospital bed in the middle of a relapse. His closed-sales notice read: "Services will be available again once I can cognitively perform to the standard necessary for advocacy."
 

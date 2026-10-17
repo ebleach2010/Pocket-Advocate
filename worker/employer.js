@@ -264,14 +264,17 @@ async function teamRoute(request, env, url, h) {
     ]);
     // HIS NAME (Eric, 2026-10-16: "Why is my name gg gg here"). His record
     // took the name on his profile the day the team began, a test entry, and
-    // his profile still had it. Both are put right once, to the name his
-    // cases already carry; he can change it any time under Your photo and bio.
+    // his profile still had it. Both are put right once; he can change it any
+    // time under Your photo and bio. And the name put there was wrong
+    // (2026-10-17: "my name is Eric Leach. Not Eric Bleach"), so that one is
+    // put right the same way.
+    const WRONG_NAME = /^\s*(gg\s+gg|eric\s+bleach)\s*$/i;
     const mine = advocates.find((a) => a.id === env.ADMIN_UID);
-    if (mine?.data && /^\s*gg\s+gg\s*$/i.test(String(mine.data.name || ''))) {
-      mine.data.name = 'Eric Bleach';
-      await patchDoc(env, `advocates/${env.ADMIN_UID}`, { name: 'Eric Bleach' }, { mask: ['name'] }).catch(() => {});
+    if (mine?.data && WRONG_NAME.test(String(mine.data.name || ''))) {
+      mine.data.name = 'Eric Leach';
+      await patchDoc(env, `advocates/${env.ADMIN_UID}`, { name: 'Eric Leach' }, { mask: ['name'] }).catch(() => {});
       const prof = await getDoc(env, `users/${env.ADMIN_UID}`).catch(() => null);
-      if (prof && /^\s*gg\s+gg\s*$/i.test(String(prof.data?.name || ''))) await patchDoc(env, `users/${env.ADMIN_UID}`, { name: 'Eric Bleach' }, { mask: ['name'] }).catch(() => {});
+      if (prof && WRONG_NAME.test(String(prof.data?.name || ''))) await patchDoc(env, `users/${env.ADMIN_UID}`, { name: 'Eric Leach' }, { mask: ['name'] }).catch(() => {});
     }
     // HER CLIENTS, PUT BACK (2026-10-16). His screenshot showed Maya with "No
     // clients right now": her three invented cases were gone while she stayed

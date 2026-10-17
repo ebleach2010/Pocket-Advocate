@@ -340,11 +340,17 @@ console.log('\n--- W. Eric\'s side ---');
   const screen = new Function(`${(LEADS.match(/export const SCREEN_ORDER = \[[^\]]*\];/) || [''])[0].replace('export ', '')}; return SCREEN_ORDER;`)();
   // NEGATIVE CONTROL (run 2026-10-15): SCREEN_ORDER put back date-first made this read
   //   FAIL  W5 on a phone the Leads table leads with the person and how to reach them, every column still there, and the CSV keeps its own order
-  check('W5 on a phone the Leads table leads with the person and how to reach them, every column still there, and the CSV keeps its own order',
+  // RE-PINNED 2026-10-17 (v7.68): each lead is a card (the table ran off his phone and took a lead's message with it):
+  // the card opens on their name, then what they want, then the buttons to call and email, then their messages.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.68): the card's lead-acts row moved below its messages made W5 read FAIL.
+  const cardSrc = (LEADS.match(/export function card\(l\) \{[\s\S]*?\n\}/) || [''])[0];
+  const tpl = cardSrc.slice(cardSrc.indexOf('return `<article'));
+  check('W5 on a phone each lead is a card that opens on the person and how to reach them, every column still in the CSV in its own order',
     screen.join() === 'name,interestedIn,phone,email,cameThrough,firstContact,lastContact,notes'
     && [...screen].sort().join() === cols.map(([k]) => k).sort().join()
     && cols[0][0] === 'firstContact' && /const lines = \[COLUMNS\.map/.test(LEADS)
-    && /<thead><tr>\$\{SCREEN_ORDER\.map/.test(LEADS) && /\$\{SCREEN_ORDER\.map\(\(k\) => CELL\[k\]\(l\)\)/.test(LEADS),
+    && tpl.indexOf('lead-name') > 0 && tpl.indexOf('lead-name') < tpl.indexOf('lead-meta') && tpl.indexOf('lead-meta') < tpl.indexOf('lead-acts')
+    && tpl.indexOf('lead-acts') < tpl.indexOf('${convo}') && /const tel = l\.phone/.test(cardSrc),
     JSON.stringify(screen));
 }
 

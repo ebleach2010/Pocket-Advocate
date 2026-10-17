@@ -67,7 +67,7 @@ ok('the door unfolds the form', await page.evaluate(() => document.querySelector
 const btnColor = await purple(page, '[data-open-go="self"]');
 ok('and the button that opens it is the purple', !!btnColor && btnColor.color === hex2rgb(btnColor.want), btnColor ? `${btnColor.color} vs ${btnColor.want}` : '');
 await page.fill('[data-of="self:firstName"]', 'Eric');
-await page.fill('[data-of="self:lastName"]', 'Bleach');
+await page.fill('[data-of="self:lastName"]', 'Leach');
 await page.fill('[data-of="self:dob"]', '1985-02-03');
 await page.fill('[data-of="self:phone"]', '+1 208 555 0100');
 await page.fill('[data-of="self:address"]', '12 Elm St, Boise, ID 83702');
@@ -101,19 +101,19 @@ const ov = await page.evaluate(() => ({
   close: !!document.querySelector('[data-self-close]'),
 }));
 ok('the overview says what this case is and carries no call, payment or report furniture', /Nobody is on the other end/.test(ov.note) && ov.noCall && ov.who.includes('WHO') && ov.close, ov.who.join(','));
-ok('and it carries the details he typed', /Eric Bleach/.test(ov.whoText) && /1985-02-03/.test(ov.whoText) && ov.tel === 'tel:+12085550100', `${ov.whoText} | ${ov.tel}`);
+ok('and it carries the details he typed', /Eric Leach/.test(ov.whoText) && /1985-02-03/.test(ov.whoText) && ov.tel === 'tel:+12085550100', `${ov.whoText} | ${ov.tel}`);
 // The Edit beside the name: a case opened under the wrong name (his was
 // "Gg Gg", off a test profile) is corrected in place.
 await page.click('[data-self-edit]');
 await page.waitForTimeout(300);
-await page.fill('[data-self-in="name"]', 'Eric J. Bleach');
+await page.fill('[data-self-in="name"]', 'Eric J. Leach');
 await page.click('[data-self-save]');
 await settle(page, 2500);
 const renamed = await page.evaluate(() => ({
   head: (document.querySelector('[data-client]')?.textContent || '').trim(),
   who: (() => { const k = [...document.querySelectorAll('.fact-k')].find((x) => x.textContent.trim() === 'WHO'); return (k?.nextElementSibling?.textContent || '').replace(/\s+/g, ' ').trim(); })(),
 }));
-ok('Edit beside the name corrects it in place, masthead and card alike', renamed.head === 'Eric J. Bleach' && /Eric J\. Bleach/.test(renamed.who), `${renamed.head} | ${renamed.who.slice(0, 40)}`);
+ok('Edit beside the name corrects it in place, masthead and card alike', renamed.head === 'Eric J. Leach' && /Eric J\. Leach/.test(renamed.who), `${renamed.head} | ${renamed.who.slice(0, 40)}`);
 if (SHOTS) await page.screenshot({ path: `${SHOTS}/02-case-overview.png` });
 
 console.log('\n--- C. the chat is his own notes ---');
@@ -255,7 +255,7 @@ await page.click('[data-add-open]');
 await page.click('[data-open-door="family"]');
 await page.waitForTimeout(300);
 await page.fill('[data-of="family:firstName"]', 'Ann');
-await page.fill('[data-of="family:lastName"]', 'Bleach');
+await page.fill('[data-of="family:lastName"]', 'Leach');
 // An address that already belongs to a client here is refused once, with a
 // button to confirm it really is them (audit, 2026-09-03). The demo's client
 // owns jordan@example.demo; typing it must not open a case straight away.
@@ -284,7 +284,7 @@ const famHead = await page.evaluate(() => ({
   chip: [...document.querySelectorAll('.loop-chip')].map((x) => x.textContent.trim()).find((t) => /Family, free/.test(t)) || '',
   selfHead: /\bself\b/.test(document.querySelector('.case-head')?.className || ''),
 }));
-ok('their case opens as an ordinary case with the family chip', famHead.name === 'Ann Bleach' && famHead.pill === 'CONFIRMED' && /Family, free: my mother/.test(famHead.chip) && !famHead.selfHead, `${famHead.name} / ${famHead.pill} / ${famHead.chip}`);
+ok('their case opens as an ordinary case with the family chip', famHead.name === 'Ann Leach' && famHead.pill === 'CONFIRMED' && /Family, free: my mother/.test(famHead.chip) && !famHead.selfHead, `${famHead.name} / ${famHead.pill} / ${famHead.chip}`);
 await page.evaluate(() => { document.querySelector('[data-group="case"]')?.click(); document.querySelector('[data-page="chat"]')?.click(); });
 await settle(page, 800);
 const famRate = await page.evaluate(() => document.querySelector('[data-work-rate]')?.hidden);

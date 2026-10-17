@@ -3390,7 +3390,7 @@ async function printAuthority(c, item) {
   const o = {
     ...item,
     clientName: c.clientName, clientDob: c.clientDob,
-    advocateName: (await advocateNameFor(c.advocateId)) || 'Eric Bleach',
+    advocateName: (await advocateNameFor(c.advocateId)) || 'Eric Leach',
   };
   const text = (AUTHORITY_KINDS[item.kind]?.build || recordsAuthorisation)(o);
   const win = window.open('', '_blank');

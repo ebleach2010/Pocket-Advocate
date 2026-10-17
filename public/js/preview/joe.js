@@ -262,14 +262,14 @@ export function docsFor(now) {
         '# What I am asking for',
         'Approval of fluorescein angiography of both eyes on an expedited basis, within 72 hours, under the expedited appeal provision of your notice. The MRI report, the eye clinic note and the audiogram are attached.', '',
         'Please direct any question to me at the number on file for this case. Joe Bloe has signed below.', '',
-        'Eric Bleach, patient advocate, on behalf of Joe Bloe', '',
+        'Eric Leach, patient advocate, on behalf of Joe Bloe', '',
         'Signed: ____________________   Joe Bloe',
       ],
     },
     {
       name: 'case-report.pdf', folder: 'report', days: -6,
       lines: [
-        '# Case report for Joe Bloe', `${d(-6)}    Prepared by Eric Bleach, patient advocate`, '',
+        '# Case report for Joe Bloe', `${d(-6)}    Prepared by Eric Leach, patient advocate`, '',
         '# The short version',
         'Five months of new headaches, four episodes of a missing patch in the right eye, a new hearing loss in the left ear, and one episode of confusion. Two clinicians have called this migraine and stress. The tests already done say otherwise: the MRI shows lesions in the middle of the corpus callosum, the eye examination found a small blocked artery branch, and the audiogram found a low tone hearing loss on one side. Nobody has put the three together. Put together they point at a rare, treatable condition of the small arteries, and the next test (fluorescein angiography) is the one that settles it.', '',
         '# Timeline',

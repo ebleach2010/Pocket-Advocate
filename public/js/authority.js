@@ -85,7 +85,9 @@ export const SENSITIVE_CATEGORIES = [
  * a records release read "Ana Rivera... communicate with him"). His own
  * forms keep his words exactly.
  */
-const isHis = (o) => !o.advocateName || o.advocateName === 'Eric Bleach';
+// His name is Eric Leach (2026-10-17: "my name is Eric Leach. Not Eric Bleach"); a form made before then may
+// still carry the wrong one, and is still his.
+const isHis = (o) => !o.advocateName || o.advocateName === 'Eric Leach' || o.advocateName === 'Eric Bleach';
 const pron = (o, his, theirs) => (isHis(o) ? his : theirs);
 
 export const COMMUNICATION_SCOPES = [
@@ -203,7 +205,7 @@ ${field(o, o.clinicName, '(clinic)')}
 ${field(o, o.clinicAddress, '', 46)}
 
 RECEIVING PERSON
-${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
+${o.advocateName || 'Eric Leach'}, patient advocate, Pocket Advocate.
 
 WHAT I AUTHORISE MY ADVOCATE TO DO
 I have involved the person named above in my care. I authorise each item
@@ -271,7 +273,7 @@ Date of birth: ${field(o, o.clientDob, '(date of birth)', 24)}
 Member or policy ID: ${field(o, o.memberId, '(member ID)', 32)}
 Plan: ${field(o, o.planName, '(plan or insurer)')}
 
-I appoint ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate,
+I appoint ${o.advocateName || 'Eric Leach'}, patient advocate, Pocket Advocate,
 as my authorised representative in connection with claims and appeals under my
 health plan.
 
@@ -324,7 +326,7 @@ export function scopeOfWork(o = {}) {
 HANDS-OFF CASE MANAGEMENT
 
 Client: ${field(o, o.clientName, '(name)')}
-Advocate: ${o.advocateName || 'Eric Bleach'}, patient advocate, Pocket Advocate.
+Advocate: ${o.advocateName || 'Eric Leach'}, patient advocate, Pocket Advocate.
 
 This is the agreement your case runs on. It says what I do, what I need
 from you, and where the work stops.

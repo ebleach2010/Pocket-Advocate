@@ -100,7 +100,7 @@ ${caseEffortLine}
 };
 
 const H = harness();
-H.store.set('cases/mine', { self: true, clientName: 'Eric Bleach' });
+H.store.set('cases/mine', { self: true, clientName: 'Eric Leach' });
 H.store.set('cases/theirs', { clientName: 'Dana Reyes' });
 const build = () => H.api.turnRequest({ system: 'SYS', messages: [], effort: 'medium', maxTokens: 1000 });
 const plain = build();
@@ -247,7 +247,7 @@ const pullSrc = lift(WORKER, 'async function pullFromOf(env, body) {');
 const createSrc = lift(WORKER, 'async function createSelfCase(env, admin, who, sources = []) {');
 const carriedSrc = lift(WORKER, 'function carriedDxOf(sources) {');
 const nextSrc = lift(WORKER, 'async function handleSelfCaseNext(request, env) {');
-const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin' }, cases = {}, body = {}, users = {} } = {}) => {
+const runRoute = ({ admin = true, profile = { name: 'Eric Leach', role: 'admin' }, cases = {}, body = {}, users = {} } = {}) => {
   const written = [];
   const mails = [];
   const deleted = [];
@@ -293,7 +293,7 @@ const runRoute = ({ admin = true, profile = { name: 'Eric Bleach', role: 'admin'
     written, mails, deleted, store,
   };
 };
-const R1 = runRoute({ body: { firstName: ' Eric ', lastName: 'Bleach', dob: '1985-02-03', phone: '+1 208 555 0100', address: ' 12 Elm St, Boise, ID 83702 ' } });
+const R1 = runRoute({ body: { firstName: ' Eric ', lastName: 'Leach', dob: '1985-02-03', phone: '+1 208 555 0100', address: ' 12 Elm St, Boise, ID 83702 ' } });
 const made = await R1.post();
 const doc = R1.written.find((w) => w.path === 'cases/mine-1');
 // NEGATIVE CONTROL (run 2026-09-03): the route writing `clientUid: admin.uid` made this read
@@ -301,7 +301,7 @@ const doc = R1.written.find((w) => w.path === 'cases/mine-1');
 check('S13 the route makes one case shaped like every other, with self on, nobody on the other end, and the details he typed',
   !!routeSrc && !!personSrc && made.code === 200 && made.obj.ok === true && made.obj.id === 'mine-1' && made.obj.created === true
   && !!doc && doc.data.self === true && doc.data.clientUid === null && doc.data.clientEmail === null
-  && doc.data.clientName === 'Eric Bleach' && doc.data.clientDob === '1985-02-03'
+  && doc.data.clientName === 'Eric Leach' && doc.data.clientDob === '1985-02-03'
   && doc.data.clientPhone === '+1 208 555 0100' && doc.data.clientAddress === '12 Elm St, Boise, ID 83702'
   && doc.data.status === 'confirmed' && doc.data.fullAccess === true
   && doc.data.appointment === null && doc.data.reportDueAt === null && doc.data.caseRateCents === 0
@@ -309,7 +309,7 @@ check('S13 the route makes one case shaped like every other, with self on, nobod
   && !!doc.data.bookingEmailSentAt
   && R1.written.some((w) => w.path === 'users/eric' && w.data.selfCaseId === 'mine-1'),
   JSON.stringify(doc?.data || made).slice(0, 220));
-const R2 = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'confirmed' } } });
+const R2 = runRoute({ profile: { name: 'Eric Leach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'confirmed' } } });
 const again = await R2.post();
 // Re-pinned 2026-09-05 (Eric: "I would like to open more than one case for
 // myself, in sequence"): a second call used to hand back the open case and
@@ -317,7 +317,7 @@ const again = await R2.post();
 // left exactly as it was.
 // NEGATIVE CONTROL (run 2026-09-05): the route answering with the profile's selfCaseId and created:false made this read
 //   FAIL  S14 a second call opens a second case beside the open one and leaves the open one alone; a closed one is left closed and a new one made
-const R3 = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'closed' } } });
+const R3 = runRoute({ profile: { name: 'Eric Leach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': { self: true, status: 'closed' } } });
 const afterClose = await R3.post();
 check('S14 a second call opens a second case beside the open one and leaves the open one alone; a closed one is left closed and a new one made',
   again.code === 200 && again.obj.id === 'mine-1' && again.obj.created === true
@@ -476,11 +476,11 @@ const badPhone = await R7.post();
 // NEGATIVE CONTROL (run 2026-09-03): the date-of-birth rule in personFields neutered (`if (false) return`) made this read
 //   FAIL  S22 a blank form falls back to the profile's name; a date of birth or a phone that is not one is refused with nothing written
 check('S22 a blank form falls back to the profile\'s name; a date of birth or a phone that is not one is refused with nothing written',
-  blank.code === 200 && blankDoc?.data.clientName === 'Eric Bleach' && blankDoc?.data.clientDob === null
+  blank.code === 200 && blankDoc?.data.clientName === 'Eric Leach' && blankDoc?.data.clientDob === null
   && badDob.code === 400 && R6.written.length === 0 && badPhone.code === 400 && R7.written.length === 0,
   `${blank.code}/${blankDoc?.data.clientName} ${badDob.code} ${badPhone.code}`);
 
-const F1 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: ' Ann@Example.com ', relation: 'my mother', dob: '1950-01-02', phone: '208 555 0199', address: '9 Oak St, Boise, ID 83702' } });
+const F1 = runRoute({ body: { firstName: 'Ann', lastName: 'Leach', email: ' Ann@Example.com ', relation: 'my mother', dob: '1950-01-02', phone: '208 555 0199', address: '9 Oak St, Boise, ID 83702' } });
 const fam = await F1.family();
 const famDoc = F1.written.find((w) => w.path === 'cases/mine-1');
 // NEGATIVE CONTROL (run 2026-09-03): the family route writing `caseRateCents: 120000` made this read
@@ -489,7 +489,7 @@ check('S23 a family case is an ordinary case, free, chat open from the first day
   !!familySrc && fam.code === 200 && fam.obj.ok === true && fam.obj.id === 'mine-1' && fam.obj.claimed === false
   && !!famDoc && famDoc.data.family === true && famDoc.data.familyRelation === 'my mother'
   && famDoc.data.clientUid === null && famDoc.data.clientEmail === 'ann@example.com'
-  && famDoc.data.clientName === 'Ann Bleach' && famDoc.data.clientDob === '1950-01-02'
+  && famDoc.data.clientName === 'Ann Leach' && famDoc.data.clientDob === '1950-01-02'
   && famDoc.data.clientPhone === '208 555 0199' && famDoc.data.clientAddress === '9 Oak St, Boise, ID 83702'
   && famDoc.data.self !== true && famDoc.data.status === 'confirmed' && famDoc.data.appointment === null
   && famDoc.data.caseRateCents === 0 && famDoc.data.addonRateCents === 0 && famDoc.data.stripe === null
@@ -499,11 +499,11 @@ check('S23 a family case is an ordinary case, free, chat open from the first day
   && /signin\.html/.test(F1.mails[0].html) && /no charge/.test(F1.mails[0].html) && /Hi Ann/.test(F1.mails[0].html)
   && !F1.written.some((w) => w.path.startsWith('users/')),
   JSON.stringify(famDoc?.data || fam).slice(0, 220));
-const F2 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'ann@example.com' }, users: { 'ann@example.com': 'u-ann' } });
+const F2 = runRoute({ body: { firstName: 'Ann', lastName: 'Leach', email: 'ann@example.com' }, users: { 'ann@example.com': 'u-ann' } });
 const famKnown = await F2.family();
-const F3 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'not an email' } });
+const F3 = runRoute({ body: { firstName: 'Ann', lastName: 'Leach', email: 'not an email' } });
 const famBad = await F3.family();
-const F4 = runRoute({ admin: false, body: { firstName: 'Ann', lastName: 'Bleach', email: 'ann@example.com' } });
+const F4 = runRoute({ admin: false, body: { firstName: 'Ann', lastName: 'Leach', email: 'ann@example.com' } });
 let famStranger = null;
 try { famStranger = await F4.family(); } catch (e) { famStranger = { code: 500, obj: { threw: e.message } }; }
 // NEGATIVE CONTROL (run 2026-09-03): the account look-up replaced with `const uid = null` made this read
@@ -574,9 +574,9 @@ const runUpdate = (caseData, body) => {
   `)(deps);
   return { post: () => fn({ json: async () => ({ caseId: 'c1', action: 'details', ...body }) }, {}), written };
 };
-const D1 = runUpdate({ self: true, clientName: 'Gg Gg' }, { name: ' Eric  Bleach ', dob: '1985-02-03', phone: '+1 208 555 0100', address: '12 Elm St' });
+const D1 = runUpdate({ self: true, clientName: 'Gg Gg' }, { name: ' Eric  Leach ', dob: '1985-02-03', phone: '+1 208 555 0100', address: '12 Elm St' });
 const d1 = await D1.post();
-const D2 = runUpdate({ family: true, clientName: 'Ann' }, { name: 'Ann Bleach', dob: '' });
+const D2 = runUpdate({ family: true, clientName: 'Ann' }, { name: 'Ann Leach', dob: '' });
 const d2 = await D2.post();
 const D3 = runUpdate({ clientUid: 'client1', clientName: 'Dana Reyes' }, { name: 'Somebody Else' });
 const d3 = await D3.post();
@@ -588,10 +588,10 @@ check('S27 the details edit rewrites the four fields on his own case and a famil
   !!updateSrc && d1.code === 200 && d1.obj.ok === true
   && D1.written.length === 1 && D1.written[0].path === 'cases/c1'
   && Object.keys(D1.written[0].data).sort().join(',') === 'clientAddress,clientDob,clientName,clientPhone'
-  && D1.written[0].data.clientName === 'Eric Bleach' && D1.written[0].data.clientDob === '1985-02-03'
+  && D1.written[0].data.clientName === 'Eric Leach' && D1.written[0].data.clientDob === '1985-02-03'
   && D1.written[0].data.clientPhone === '+1 208 555 0100' && D1.written[0].data.clientAddress === '12 Elm St'
   && (D1.written[0].opts?.mask || []).slice().sort().join(',') === 'clientAddress,clientDob,clientName,clientPhone'
-  && d2.code === 200 && D2.written[0]?.data.clientName === 'Ann Bleach' && D2.written[0]?.data.clientDob === null
+  && d2.code === 200 && D2.written[0]?.data.clientName === 'Ann Leach' && D2.written[0]?.data.clientDob === null
   && d3.code === 409 && D3.written.length === 0
   && d4.code === 400 && D4.written.length === 0,
   `${d1.code} ${d2.code} ${d3.code} ${d4.code} ${JSON.stringify(D1.written[0]?.data)}`);
@@ -985,9 +985,9 @@ check('S46 nothing on his own case writes to a client: no Prepare a response, no
   && /\$\{turnPolicy\.getStore\(\)\?\.self\n\s+\? `You are writing an insurance appeal letter for Eric to file for HIMSELF\./.test(ADV)
   && /No pitch this call/.test(ADV));
 
-const F5 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'jordan@example.com' }, users: { 'jordan@example.com': 'u-jordan' }, cases: { theirs: { clientUid: 'u-jordan', status: 'confirmed' } } });
+const F5 = runRoute({ body: { firstName: 'Ann', lastName: 'Leach', email: 'jordan@example.com' }, users: { 'jordan@example.com': 'u-jordan' }, cases: { theirs: { clientUid: 'u-jordan', status: 'confirmed' } } });
 let f5; try { f5 = await F5.family(); } catch (e) { f5 = { code: 500, obj: { threw: e.message } }; }
-const F6 = runRoute({ body: { firstName: 'Ann', lastName: 'Bleach', email: 'jordan@example.com', confirmExisting: true }, users: { 'jordan@example.com': 'u-jordan' }, cases: { theirs: { clientUid: 'u-jordan', status: 'confirmed' } } });
+const F6 = runRoute({ body: { firstName: 'Ann', lastName: 'Leach', email: 'jordan@example.com', confirmExisting: true }, users: { 'jordan@example.com': 'u-jordan' }, cases: { theirs: { clientUid: 'u-jordan', status: 'confirmed' } } });
 let f6; try { f6 = await F6.family(); } catch (e) { f6 = { code: 500, obj: { threw: e.message } }; }
 // NEGATIVE CONTROL (run 2026-09-03): the family route's existing-address refusal replaced with `if (false) {` made this read
 //   FAIL  S47 a typed address that already owns a case here is refused once, opens on his confirmation, and the form offers the one button  -- 200/{"ok":t...
@@ -1252,25 +1252,25 @@ check('S56 his own read carries two more machine-read lists under the differenti
 // other personal cases]"
 {
   const src = {
-    self: true, status: 'confirmed', clientName: 'Eric Bleach', clientDob: '1985-02-03',
+    self: true, status: 'confirmed', clientName: 'Eric Leach', clientDob: '1985-02-03',
     clientPhone: '+1 208 555 0100', clientAddress: '12 Elm St, Boise, ID 83702', createdAt: '2026-08-01T00:00:00Z',
     confirmedDx: { name: 'First thing', pct: 60, at: '2026-08-20T00:00:00Z' },
     carriedDx: [{ name: 'Older thing', pct: 40, at: '2026-06-01T00:00:00Z', fromCase: 'mine-9' }],
   };
-  const R = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' },
+  const R = runRoute({ profile: { name: 'Eric Leach', role: 'admin', selfCaseId: 'mine-0' },
     cases: { 'mine-0': src, other: { self: false, status: 'confirmed' } }, body: { pullFrom: ['mine-0'] } });
   const made = await R.post();
   const c = R.written.find((w) => w.path === 'cases/mine-1');
   const st = R.written.find((w) => w.path === 'cases/mine-1/advisor/state');
   const q = R.written.find((w) => w.path === 'advisorQueue/handover_case_mine-1');
-  const bad = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { other: { self: false, status: 'confirmed' } }, body: { firstName: 'Eric', pullFrom: ['other'] } });
+  const bad = runRoute({ profile: { name: 'Eric Leach', role: 'admin' }, cases: { other: { self: false, status: 'confirmed' } }, body: { firstName: 'Eric', pullFrom: ['other'] } });
   const refused = await bad.post();
   // NEGATIVE CONTROL (run 2026-09-05): the handover row's write dropped from createSelfCase made this read
   //   FAIL  S59 the door opens a new case from the personal cases he ticked: his details from the newest, every confirmed diagnosis carried oldest first, the state seeded, the handover queued, and a case that is not his refuses the call
   check('S59 the door opens a new case from the personal cases he ticked: his details from the newest, every confirmed diagnosis carried oldest first, the state seeded, the handover queued, and a case that is not his refuses the call',
     !!pullSrc && !!createSrc && !!carriedSrc && made.code === 200 && made.obj.id === 'mine-1' && made.obj.created === true
     && JSON.stringify(made.obj.pulledFrom) === '["mine-0"]'
-    && !!c && c.data.self === true && c.data.clientName === 'Eric Bleach' && c.data.clientDob === '1985-02-03'
+    && !!c && c.data.self === true && c.data.clientName === 'Eric Leach' && c.data.clientDob === '1985-02-03'
     && c.data.clientPhone === '+1 208 555 0100' && c.data.clientAddress === '12 Elm St, Boise, ID 83702'
     && JSON.stringify(c.data.priorCases) === '["mine-0"]'
     && c.data.carriedDx.length === 2 && c.data.carriedDx[0].name === 'Older thing' && c.data.carriedDx[1].name === 'First thing'
@@ -1281,21 +1281,21 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && refused.code === 400 && /not one of your own/.test(refused.obj.error) && !bad.written.some((w) => w.path.startsWith('cases/')),
     JSON.stringify({ made: made.obj, refused: refused.obj, carried: c?.data.carriedDx }).slice(0, 300));
 
-  const open = { self: true, status: 'confirmed', clientName: 'Eric Bleach', clientDob: '1985-02-03', createdAt: '2026-08-01T00:00:00Z', hold: { totalMs: 5 } };
-  const N = runRoute({ profile: { name: 'Eric Bleach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0' } });
+  const open = { self: true, status: 'confirmed', clientName: 'Eric Leach', clientDob: '1985-02-03', createdAt: '2026-08-01T00:00:00Z', hold: { totalMs: 5 } };
+  const N = runRoute({ profile: { name: 'Eric Leach', role: 'admin', selfCaseId: 'mine-0' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0' } });
   N.store.set('cases/mine-0/advisor/state', { differential: [{ name: 'Autoimmune encephalitis', pct: 55 }, { name: 'Other', pct: 20 }] });
   const out = await N.next();
   const oldW = N.written.filter((w) => w.path === 'cases/mine-0');
   const closed = oldW.find((w) => w.data.status === 'closed');
   const newC = N.written.find((w) => w.path === 'cases/mine-1');
-  const T = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0', confirmedDx: '  Something   he typed ' } });
+  const T = runRoute({ profile: { name: 'Eric Leach', role: 'admin' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0', confirmedDx: '  Something   he typed ' } });
   T.store.set('cases/mine-0/advisor/state', { differential: [{ name: 'Autoimmune encephalitis', pct: 55 }] });
   const typed = await T.next();
-  const C = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': { ...open, status: 'closed' } }, body: { caseId: 'mine-0' } });
+  const C = runRoute({ profile: { name: 'Eric Leach', role: 'admin' }, cases: { 'mine-0': { ...open, status: 'closed' } }, body: { caseId: 'mine-0' } });
   const already = await C.next();
-  const X = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': { ...open, self: false } }, body: { caseId: 'mine-0' } });
+  const X = runRoute({ profile: { name: 'Eric Leach', role: 'admin' }, cases: { 'mine-0': { ...open, self: false } }, body: { caseId: 'mine-0' } });
   const notHis = await X.next();
-  const E = runRoute({ profile: { name: 'Eric Bleach', role: 'admin' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0' } });
+  const E = runRoute({ profile: { name: 'Eric Leach', role: 'admin' }, cases: { 'mine-0': open }, body: { caseId: 'mine-0' } });
   const noDx = await E.next();
   // NEGATIVE CONTROL (run 2026-09-05): `closedReason: 'Continued in the next case.'` blanked made this read
   //   FAIL  S60 closing into the next confirms the top of the list (or the name he typed, at no number), closes with the reason, opens the next case carrying it, links the two, and refuses a closed case, a case that is not his, and a case with nothing to confirm
@@ -1307,7 +1307,7 @@ check('S56 his own read carries two more machine-read lists under the differenti
     && N.deleted.includes('advisorQueue/case_mine-0')
     && !!newC && newC.data.carriedDx.length === 1 && newC.data.carriedDx[0].name === 'Autoimmune encephalitis'
     && newC.data.carriedDx[0].pct === 55 && newC.data.carriedDx[0].fromCase === 'mine-0'
-    && JSON.stringify(newC.data.priorCases) === '["mine-0"]' && newC.data.clientName === 'Eric Bleach'
+    && JSON.stringify(newC.data.priorCases) === '["mine-0"]' && newC.data.clientName === 'Eric Leach'
     && oldW.some((w) => w.data.continuedIn === 'mine-1')
     && N.written.some((w) => w.path === 'advisorQueue/handover_case_mine-1')
     && typed.code === 200 && typed.obj.confirmedDx.name === 'Something he typed' && typed.obj.confirmedDx.pct === null

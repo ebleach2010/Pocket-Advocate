@@ -54,7 +54,7 @@ await page.click('[data-open-door="self"]');
 await page.waitForTimeout(300);
 ok('and with no earlier case there is nothing to pull from', !(await page.$('[data-open-form="self"] .pull-from')));
 await page.fill('[data-of="self:firstName"]', 'Eric');
-await page.fill('[data-of="self:lastName"]', 'Bleach');
+await page.fill('[data-of="self:lastName"]', 'Leach');
 await page.fill('[data-of="self:dob"]', '1985-02-03');
 await page.click('[data-open-go="self"]');
 await page.waitForURL(/admin-case(\.html)?\?id=/, { timeout: 15000 });
@@ -144,7 +144,7 @@ const third = await until(() => {
   const who = [...document.querySelectorAll('.fact-k')].find((k) => k.textContent.trim() === 'WHO');
   return c ? { carried: (c.textContent || '').replace(/\s+/g, ' ').trim(), who: (who?.nextElementSibling?.textContent || '').replace(/\s+/g, ' ').trim() } : null;
 });
-ok('it carries the confirmed diagnosis and his name from the case it pulled from', !!third && /Autoimmune encephalitis, relapse/.test(third.carried) && /Eric Bleach/.test(third.who), JSON.stringify(third));
+ok('it carries the confirmed diagnosis and his name from the case it pulled from', !!third && /Autoimmune encephalitis, relapse/.test(third.carried) && /Eric Leach/.test(third.who), JSON.stringify(third));
 const third2 = await until(() => { const d = document.querySelector('details.handover'); return d ? (d.querySelector('summary')?.textContent || '').replace(/\s+/g, ' ').trim() : null; }, 80, 500);
 ok('and its brief arrives from the first case', /From the case opened/.test(third2 || ''), third2);
 

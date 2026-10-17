@@ -5164,7 +5164,7 @@ function authorityDocTitle(kind) {
 function authorityDocHtml(item) {
   const o = {
     ...item,
-    clientName: data.clientName, clientDob: data.clientDob, advocateName: caseAdvocateName || 'Eric Bleach',
+    clientName: data.clientName, clientDob: data.clientDob, advocateName: caseAdvocateName || 'Eric Leach',
   };
   const text = item.kind === 'records' ? recordsAuthorisation(o)
     : item.kind === 'scope' ? scopeOfWork(o) : representativeDesignation(o);

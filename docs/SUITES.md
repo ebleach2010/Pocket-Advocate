@@ -2167,3 +2167,34 @@ back empty). Re-pinned with controls: hue H1 to H8 (now: the wheel gone,
 the three looks); drive-hue sections A and B (the three looks in the wheel's
 place); warm A4, E1, E2; landingwarm B2, B3; auditfix A10; cancelsearch C3;
 opencases A1; drive-cleanup's look check and its team card control; release R1.
+
+### His name, and a lead's messages beside them (2026-10-17, v7.67)
+
+Eric: "Also my name is Eric Leach. Not Eric Bleach." And: "It says my lead
+'Rosemarie' sent me a message but I don't see it. I think lead messages
+should appear next to the lead in an expandable chat", then "Ah, it's off
+screen. Please put it in an expandable chat box or email like container."
+
+- His name: every place the app wrote "Eric Bleach" (the forms a client
+  signs, the case and admin fallbacks, the demo, the preview, the changelog)
+  says Eric Leach. employer.js's one-time name fix now also puts the wrong
+  "Eric Bleach" right on his card, his record and his profile. A form made
+  before the fix still reads as his (authority.js isHis). CLAUDE.md and
+  HANDOFF.md say his name.
+- Leads is one card per person (the table ran off his phone, and the
+  question's words with it). A card opens on who they are and how to reach
+  them; their words (question box, free call note) open under it as a
+  conversation in a details box, open when new and new ones first; a reply
+  box sends his answer to their email (Reply-To his own, their last message
+  quoted) and keeps it in leadThreads/{key}, key the hashed email. Opening
+  their messages, or three seconds with them open on screen, marks them read.
+  The question box's push says who sent a message and opens ?lead=<key>.
+  POST /api/admin/leads: reply (only to someone on his Leads; refuses empty or
+  over 4,000 characters; nothing kept if the email does not send) and seen.
+  The demo mirrors both and seeds Rosa Lind's question.
+
+New: employer C5; leads D1 to D6; drive-leads (3, every one controlled, plus
+no page errors). Re-pinned with controls: employer C4; cleanup A2; advocates E2
+(fixture name); leads A2, B7; tighten W5; release R1. His name in every test
+fixture (selfcase, worklog, release, hardening, copy-deck, drive-selfcase,
+drive-selfchain, drive-terms, drive-delete) is Eric Leach.

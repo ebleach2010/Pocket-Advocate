@@ -594,7 +594,7 @@ ck('L32 the notification lifts out of the shipped Worker, words and all',
 
 /** The route, running, with everything it touches stubbed. `ctl.boom` makes a
  *  send throw, which is how the ordering of send-then-stamp is proved. */
-const harness = (caseData, adminData = { name: 'Eric Bleach', role: 'admin' }) => {
+const harness = (caseData, adminData = { name: 'Eric Leach', role: 'admin' }) => {
   const notified = [];
   const written = [];
   const store = new Map();
@@ -953,7 +953,7 @@ ck('L44b no em or en dash in the new client copy',
     noName.every((x) => x === 'Your advocate'),
     `no name gave ${JSON.stringify(noName.find((x) => x !== 'Your advocate'))}`);
 
-  const named = advocateName({ data: { name: 'Eric Bleach' } });
+  const named = advocateName({ data: { name: 'Eric Leach' } });
   ck('L45b and his real first name is still used when he has one',
     named === 'Eric', `named profile gave ${JSON.stringify(named)}`);
 

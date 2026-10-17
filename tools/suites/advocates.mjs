@@ -500,7 +500,8 @@ console.log('\n--- E. the stamp ---');
     return { fn, db, writes };
   };
   const seed = {
-    [`users/${ERIC}`]: { name: 'Eric Bleach', role: 'admin' },
+    // RE-PINNED 2026-10-17 (v7.67): his name in the fixture is his real one, Eric Leach.
+    [`users/${ERIC}`]: { name: 'Eric Leach', role: 'admin' },
     'cases/c1': { clientUid: 'u1' }, 'cases/c2': { clientUid: 'u2', advocateId: 'adv-a' }, 'subscriptions/u3': { status: 'active' },
     'invites/i1': { state: 'sent' }, 'availability/s1': { state: 'open' }, 'availability/s2': { state: 'open', advocateId: 'adv-a' }, 'waitlist/w1': { email: 'w@x.test' },
   };
@@ -513,7 +514,7 @@ console.log('\n--- E. the stamp ---');
   // NEGATIVE CONTROL (run 2026-10-15): the stamp's filter taken out, so every document is stamped, made this read
   //   FAIL  E2 Eric becomes advocate number one, owner, on no commission and off the payroll; everything without an advocate becomes his and nothing else moves
   check('E2 Eric becomes advocate number one, owner, on no commission and off the payroll; everything without an advocate becomes his and nothing else moves',
-    me?.owner === true && me.active === true && me.commissionPct === 100 && me.payroll === false && me.name === 'Eric Bleach' && me.email === 'eric@x.test'
+    me?.owner === true && me.active === true && me.commissionPct === 100 && me.payroll === false && me.name === 'Eric Leach' && me.email === 'eric@x.test'
     && stamped && kept && masked && m.db.get('migrations/advocates-2026-10-15')?.finishedAt,
     JSON.stringify({ me, stamped, kept, masked }));
   const before = m.writes.length;

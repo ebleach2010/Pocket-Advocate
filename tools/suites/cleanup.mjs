@@ -101,13 +101,15 @@ console.log('\n--- A. what was wrong today (v7.52) ---');
   const CLIENT = f('public/js/case.js');
   // NEGATIVE CONTROL (run 2026-10-15, v7.52): publicName answering for a turned-off advocate (`d?.active === true && d.owner` made `d?.owner`) made this read
   //   FAIL  A2 a form from a contractor's case names them, on both sides and on all three forms; his name his, and nobody else's is told
+  // RE-PINNED 2026-10-17 (v7.67): his name on his forms is Eric Leach ("my name is Eric Leach. Not Eric Bleach").
+  // NEGATIVE CONTROL (run 2026-10-17, v7.67): admin-case.js's fallback put back to the old name made A2 read FAIL.
   check('A2 a form from a contractor\'s case names them, on both sides and on all three forms; his name his, and nobody else\'s is told',
     named.ana.name === 'Ana Rivera' && named.off.name === null && named.eric.name === null && named.nobody.name === null && named.bad.name === null
-    && /Advocate: Ana Rivera, patient advocate/.test(scope) && /Advocate: Eric Bleach, patient advocate/.test(scopeHis)
+    && /Advocate: Ana Rivera, patient advocate/.test(scope) && /Advocate: Eric Leach, patient advocate/.test(scopeHis)
     && /if \(p === '\/api\/advocates\/name' && request\.method === 'GET'\) return publicName\(request, env, url, h\);/.test(ADV)
-    && /advocateName: caseAdvocateName \|\| 'Eric Bleach',/.test(CASE) && /fetch\(`\/api\/advocates\/name\?uid=\$\{encodeURIComponent\(data\.advocateId\)\}`\)/.test(CASE)
-    && /advocateName: \(await advocateNameFor\(c\.advocateId\)\) \|\| 'Eric Bleach',/.test(CLIENT) && /advocateName: advName \|\| undefined,/.test(CLIENT)
-    && !/'Eric Bleach'/.test(CASE.replace(/caseAdvocateName \|\| 'Eric Bleach'/, '')),
+    && /advocateName: caseAdvocateName \|\| 'Eric Leach',/.test(CASE) && /fetch\(`\/api\/advocates\/name\?uid=\$\{encodeURIComponent\(data\.advocateId\)\}`\)/.test(CASE)
+    && /advocateName: \(await advocateNameFor\(c\.advocateId\)\) \|\| 'Eric Leach',/.test(CLIENT) && /advocateName: advName \|\| undefined,/.test(CLIENT)
+    && !/'Eric Leach'/.test(CASE.replace(/caseAdvocateName \|\| 'Eric Leach'/, '')),
     JSON.stringify(named));
 
   // A3: the report comes after the call, and the clock starts once.

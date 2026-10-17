@@ -252,7 +252,7 @@ const CASE_AGREEMENTS = await (async () => {
   } catch { /* keep the deck alive */ }
   try {
     const A = await import(`${R}/public/js/authority.js`);
-    const o = { clientName: '[CLIENT NAME]', clientDob: '[DOB]', advocateName: 'Eric Bleach', blank: true };
+    const o = { clientName: '[CLIENT NAME]', clientDob: '[DOB]', advocateName: 'Eric Leach', blank: true };
     out.push({ title: 'Scope of work agreement (the document itself)',
       body: A.scopeOfWork({ clientName: '[CLIENT NAME]', blank: true }),
       where: 'public/js/authority.js',
