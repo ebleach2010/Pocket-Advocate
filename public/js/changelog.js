@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.80';
+export const VERSION = '7.81';
 
 /**
  * Newest first.
@@ -51,6 +51,16 @@ export const VERSION = '7.80';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // TABS ON TIME (Eric, 2026-10-17: "The app is having some hitching when
+    // scrolling in areas", a slip found after 7.76). Admin only.
+    version: '7.81',
+    quiet: true,
+    client: [],
+    admin: [
+      'While a page scrolls, only the looping glows hold still now. A tab\'s slide used to freeze part way when the tap scrolled the page, and the page sat shifted to the side for a moment on smaller phones.',
+    ],
+  },
   {
     // THE QUESTION, SCOPED (Eric, 2026-10-17: "There is absolutely no reason
     // for it to read the entirety of the case every time unless prompted").

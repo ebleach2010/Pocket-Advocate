@@ -64,8 +64,11 @@ console.log('\n--- B. his shelf holds its light still while it scrolls ---');
   const after = await page.evaluate(() => ({ cls: document.documentElement.classList.contains('pa-scrolling'), state: [...document.getAnimations()].map((a) => a.playState) }));
   // NEGATIVE CONTROL (run 2026-10-17): nav-menu.js's `import './smooth.js';` taken out made this read
   //   FAIL  while his shelf scrolls its glows and shine hold still and almost nothing is drawn again; a moment after, they move again
+  // RE-PINNED 2026-10-17 (v7.81): only what loops is held; a move that played once reads finished, never running.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.81): smooth.js's `held.forEach((a) => a.pause());` taken out made this read
+  //   FAIL  while his shelf scrolls its glows and shine hold still and almost nothing is drawn again; a moment after, they move again
   ok('while his shelf scrolls its glows and shine hold still and almost nothing is drawn again; a moment after, they move again',
-    during.length === 4 && during.every((d) => d.cls && d.state.length > 0 && d.state.every((s) => s === 'paused'))
+    during.length === 4 && during.every((d) => d.cls && d.state.some((s) => s === 'paused') && !d.state.includes('running'))
     && paints < 150 && !after.cls && after.state.some((s) => s === 'running'),
     JSON.stringify({ during: during.map((d) => [d.cls, d.state.join('|')]), paints, after: [after.cls, after.state.join('|')] }));
   await ctx.close();

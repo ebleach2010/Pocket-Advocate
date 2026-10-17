@@ -2625,3 +2625,17 @@ reason for it to read the entirety of the case every time unless prompted."
 
 New: askscope.mjs Q1 to Q3; drive-askscope (4), every check controlled.
 Re-pinned with controls: askflight AF1 and AF4, release R1.
+
+### Tabs on time (2026-10-17, v7.81)
+
+Found by drive-nosideways after 7.76: smooth.js held every animation while a
+page scrolled, and a tap on a tab scrolls the page, so the tab's slide froze
+part way and the page sat shifted past the screen's edge for a moment.
+
+- public/js/smooth.js: holds only the animations that loop (getAnimations,
+  iterations Infinity) and plays them again 180ms after the scroll; a move
+  that plays once finishes on time. A browser without getAnimations keeps
+  the old hold-everything rule.
+
+Re-pinned with controls: smooth M1 (only what loops), drive-smooth's shelf
+check (nothing running, something paused), release R1.

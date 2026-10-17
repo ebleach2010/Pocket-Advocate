@@ -28,7 +28,12 @@ function check(name, cond, detail = '') {
   const listeners = [];
   const timers = new Map(); let tid = 0;
   const head = []; const byId = new Map();
+  // RE-PINNED 2026-10-17 (v7.81): only the animations that loop hold still; a move that plays once (a tab's slide)
+  // finishes on time. Stand-ins: a looping glow, a tab's one-time slide, and one already paused.
+  const anim = (iterations, playState = 'running') => ({ playState, effect: { getTiming: () => ({ iterations }) }, paused: 0, played: 0, pause() { this.paused += 1; this.playState = 'paused'; }, play() { this.played += 1; this.playState = 'running'; } });
+  const glow = anim(Infinity); const slide = anim(1); const resting = anim(Infinity, 'paused');
   globalThis.document = {
+    getAnimations: () => [glow, slide, resting],
     documentElement: { classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) } },
     getElementById: (id) => byId.get(id) || null,
     createElement: () => ({ id: '', textContent: '' }),
@@ -40,21 +45,27 @@ function check(name, cond, detail = '') {
   await import(pathToFileURL(join(ROOT, 'public/js/smooth.js')).href);
   const scroll = listeners.find((l) => l.type === 'scroll');
   scroll?.fn(); const afterFirst = classes.has('pa-scrolling');
+  const heldOnce = glow.paused === 1 && slide.paused === 0 && resting.paused === 0;
   scroll?.fn(); const pending = timers.size;
+  const heldStill = glow.paused === 1;
   const last = [...timers.values()].pop();
   last?.fn(); const afterStop = classes.has('pa-scrolling');
+  const backOn = glow.played === 1 && slide.played === 0 && resting.played === 0;
   const pages = readdirSync(join(ROOT, 'public')).filter((n) => n.endsWith('.html') && n !== 'fund.html');
   const NAV = f('public/js/nav-menu.js');
   // NEGATIVE CONTROL (run 2026-10-17): smooth.js's `capture: true` made `capture: false` made this read
   //   FAIL  M1 the moving light holds still while a page scrolls: paused on the first scroll, the page's or a panel's, and moving again 180ms after the last, on every page
-  check('M1 the moving light holds still while a page scrolls: paused on the first scroll, the page\'s or a panel\'s, and moving again 180ms after the last, on every page',
-    head[0]?.id === 'pa-smooth' && head[0].textContent === 'html.pa-scrolling *, html.pa-scrolling *::before, html.pa-scrolling *::after { animation-play-state: paused !important; }'
+  // NEGATIVE CONTROL (run 2026-10-17, v7.81): `loops`'s `&& a.effect?.getTiming?.().iterations === Infinity` taken out (a tab's slide held too) made this read
+  //   FAIL  M1 the moving light holds still while a page scrolls: only what loops, paused on the first scroll, the page's or a panel's, and moving again 180ms after the last, on every page; a tab's slide plays through
+  check('M1 the moving light holds still while a page scrolls: only what loops, paused on the first scroll, the page\'s or a panel\'s, and moving again 180ms after the last, on every page; a tab\'s slide plays through',
+    head[0]?.id === 'pa-smooth' && head[0].textContent === ''
+    && /: 'html\.pa-scrolling \*, html\.pa-scrolling \*::before, html\.pa-scrolling \*::after \{ animation-play-state: paused !important; \}';/.test(f('public/js/smooth.js'))
     && scroll?.opts?.passive === true && scroll.opts.capture === true
-    && afterFirst && pending === 1 && last?.ms === 180 && !afterStop
+    && afterFirst && heldOnce && heldStill && pending === 1 && last?.ms === 180 && !afterStop && backOn
     && /^\/\/ The pages' moving light holds still while they scroll \(2026-10-17\)\.\nimport '\.\/smooth\.js';$/m.test(NAV)
     && pages.every((n) => /<script type="module" src="\/js\/nav-menu\.js"><\/script>/.test(f(`public/${n}`)))
     && !DASH.test(f('public/js/smooth.js')),
-    JSON.stringify({ afterFirst, pending, ms: last?.ms, afterStop, opts: scroll?.opts }));
+    JSON.stringify({ afterFirst, heldOnce, backOn, pending, ms: last?.ms, afterStop, opts: scroll?.opts, glow: [glow.paused, glow.played], slide: [slide.paused, slide.played] }));
 }
 
 // ---- M2 ------------------------------------------------------------------------------------------------------------
