@@ -2599,3 +2599,29 @@ landed read "Couldn't send". A real failure left no trace.
 
 New: chatsend.mjs M1 to M3, every check controlled. Re-pinned with a
 control: release R1; the tour drive's chat look check (Blue and green).
+
+### The question, scoped (2026-10-17, v7.80)
+
+Eric: "a toggle of some sort that has the advisor read your question against
+the case as of today, the past week, or all time. As well as 'search the
+chat' 'search uploads'. In as compact as possible. Possibly a press and hold
+that opens a wheel ... It should also store general memory that it's already
+scraped and only search things it's uncertain about. There is absolutely no
+reason for it to read the entirety of the case every time unless prompted."
+
+- worker/ask-scope.js (new): cleanScope (memory by default; a time searches
+  the chat; a source alone searches all of it), sinceMs (today from his
+  midnight), windowRows (memory reads only what came after the last read),
+  windowFiles, scopeWords.
+- worker/advisor.js runQuestion: reads its window, a your_memory block (what
+  the reads hold: the chat through a date, the files by name), MEMORY_NOTE
+  (name the search that would settle what it lacks), files only when Search
+  uploads is on. finishQuestion no longer calls markPending: an answer no
+  longer buys a max-effort read (one question bought three on the 17th).
+- The route keeps the scope on the question's row; the resend carries it.
+- public/js/advisor.js: the chip beside the box (after Ask in the markup,
+  shown first), the wheel on a tap or a hold on Ask, back to Memory after
+  each question, and "Searched ..." under a wider one. Demo mirrors it.
+
+New: askscope.mjs Q1 to Q3; drive-askscope (4), every check controlled.
+Re-pinned with controls: askflight AF1 and AF4, release R1.

@@ -2606,9 +2606,16 @@ export function demoApi(role, store) {
         const question = String(body.question || '').trim();
         if (!question) return fail(400, 'Ask something, up to 2000 characters.');
         const qid = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+        // What it searches (2026-10-17, v7.80), by the Worker's cleanScope rule.
+        const sc = body.scope || {};
+        let time = ['memory', 'today', 'week', 'all'].includes(sc.time) ? sc.time : 'memory';
+        let chat = sc.chat === true; const uploads = sc.uploads === true;
+        if (time !== 'memory' && !chat && !uploads) chat = true;
+        if (time === 'memory' && (chat || uploads)) time = 'all';
+        if (time === 'memory') chat = false;
         store.docs.set(`cases/${cid}/advisor/state/qa/${qid}`, {
           question, answer: null, status: 'running', at: new Date(), progressAt: new Date(),
-          batch: { batchId: 'demo-batch', submittedAt: new Date() },
+          batch: { batchId: 'demo-batch', submittedAt: new Date() }, scope: { time, chat, uploads },
           ...(body.attachment?.name ? { file: body.attachment.name } : {}),
         });
         store.persist?.();

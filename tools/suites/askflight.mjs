@@ -76,7 +76,10 @@ check('AF1 a question is built and submitted to the batch, never carried streame
   && /ev: 'ask-submit', kind, self, ms: Date\.now\(\) - t0/.test(runQuestion)
   && /const askQueuePath = \(kind, id, qaId\) => `advisorQueue\/ask_\$\{kind\}_\$\{id\}_\$\{qaId\}`;/.test(ADV)
   && (ADV.match(/tools: actionTools\(\)/g) || []).length === 1
-  && /return keepaliveRun\(ctx, runQuestion\(env, kind, id, qaId, question, attachment\), \{ raw: true \}\);/.test(W),
+  // RE-PINNED 2026-10-17 (v7.80): the route hands runQuestion what the question searches (ask-scope.js cleanScope).
+  // NEGATIVE CONTROL (run 2026-10-17, v7.80): the route's `runQuestion(env, kind, id, qaId, question, attachment, scope)` made `..., attachment)` made this read
+  //   FAIL  AF1 a question is built and submitted to the batch, never carried streamed inside the invocation, ...
+  && /return keepaliveRun\(ctx, runQuestion\(env, kind, id, qaId, question, attachment, scope\), \{ raw: true \}\);/.test(W),
   `slab ${runQuestion.length} chars`);
 
 // ---- AF2: the verdict on one poll, every branch -------------------------------
@@ -137,7 +140,12 @@ check('AF3 three pollers and one finish: the drain looks at an ask marker under 
 // ---- AF4: the finish, its failure line, the one resend ------------------------
 // NEGATIVE CONTROL (run 2026-09-07): finishQuestion's `cleaned = await applyForgotten(env, cleaned);` line removed made this read
 //   FAIL  AF4 the finish reads the landed message as the live path did: ...
-check('AF4 the finish reads the landed message as the live path did: the tool_use blocks written down and never run, the answer through extractText, the harvest with his question and the answer as material and the file as a document, mastered and forgotten, the override filed or kept to his own case, the proposal parked after the answer, the stale flag; a failure writes the Couldn\'t answer line with the batch cleared; and a refused stronger model is stamped and the question sent once more, never twice',
+// RE-PINNED 2026-10-17 (v7.80): Eric, "There is absolutely no reason for it to read the entirety of the case every time
+// unless prompted." The answer no longer flags the assessment stale (that bought a max-effort read after every
+// question), and the one resend carries what the question searched.
+// NEGATIVE CONTROL (run 2026-10-17, v7.80): `await markPending(env, kind, id).catch(() => {});` put back after the parked proposal made this read
+//   FAIL  AF4 the finish reads the landed message as the live path did: ...
+check('AF4 the finish reads the landed message as the live path did: the tool_use blocks written down and never run, the answer through extractText, the harvest with his question and the answer as material and the file as a document, mastered and forgotten, the override filed or kept to his own case, the proposal parked after the answer, and no read bought after it; a failure writes the Couldn\'t answer line with the batch cleared; and a refused stronger model is stamped and the question sent once more, never twice',
   finishQuestion.length > 1500
   && /collectActs\(message, acts\);\n\s+const answer = extractText\(message\);/.test(finishQuestion)
   && /material: personMaterial\(rows, qa, \[question, answer\]\),\n\s+docNames: attachment\?\.name \? \[attachment\.name\] : \[\],/.test(finishQuestion)
@@ -146,11 +154,12 @@ check('AF4 the finish reads the landed message as the live path did: the tool_us
   // Re-pinned 2026-09-22 (v5.0): the row carries `doc`, the document the desk filed (null off the desk), in the mask.
   // RE-PINNED 2026-10-04 (v7.21): PR 420 is deleted and nothing files a document from an answer, so
   // `doc` is always null; it stays in the mask so a link an old desk answer left is cleared on a resend.
-  && /answer: cleaned, status: 'done', override, batch: null, doc: null,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);\n\s+await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)[\s\S]*?await parkAct\(env, kind, id, acts\)[\s\S]*?await markPending\(env, kind, id\)/.test(finishQuestion)
+  && /answer: cleaned, status: 'done', override, batch: null, doc: null,\n\s+\}, \{ mask: \['answer', 'status', 'override', 'batch', 'doc'\] \}\);\n\s+await diagLog\(env, \{ ev: 'ask-end', ok: true, kind, ms: Date\.now\(\) - t0 \}\)[\s\S]*?await parkAct\(env, kind, id, acts\)/.test(finishQuestion)
+  && !/await markPending\(/.test(finishQuestion)
   && /answer: `Couldn't answer: \$\{friendly\(err\)\}`, status: 'error', batch: null,/.test(finishQuestion)
   && /if \(flight\.model && !row\.data\.resent\n\s+&& modelRefused\(\{ status: 400, message: String\(next\.why \|\| ''\) \}, \{ model: flight\.model \}\)\) \{/.test(pollAsk)
   && /await patchDoc\(env, path, \{ batch: null, resent: true \}, \{ mask: \['batch', 'resent'\] \}\)/.test(pollAsk)
-  && /await withCasePolicy\(env, kind, id, \(\) => runQuestion\(env, kind, id, qaId, String\(row\.data\.question \|\| ''\), row\.data\.fileRef \|\| null\)\);/.test(pollAsk)
+  && /await withCasePolicy\(env, kind, id, \(\) => runQuestion\(env, kind, id, qaId, String\(row\.data\.question \|\| ''\), row\.data\.fileRef \|\| null, row\.data\.scope \|\| null\)\);/.test(pollAsk)
   && /if \(next\.cancel\) \{\n\s+try \{ await client\(env\)\.messages\.batches\.cancel\(flight\.batchId\); \}/.test(pollAsk)
   && /qa: qa\.map\(\(\{ data: \{ fileRef, \.\.\.rest \} \}\) => \{ void fileRef; return rest; \}\),/.test(W),
   `finish ${finishQuestion.length} chars, poll ${pollAsk.length} chars`);

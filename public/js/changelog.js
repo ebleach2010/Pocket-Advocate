@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.79';
+export const VERSION = '7.80';
 
 /**
  * Newest first.
@@ -51,6 +51,20 @@ export const VERSION = '7.79';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THE QUESTION, SCOPED (Eric, 2026-10-17: "There is absolutely no reason
+    // for it to read the entirety of the case every time unless prompted").
+    // Admin only.
+    version: '7.80',
+    quiet: true,
+    client: [],
+    admin: [
+      'A question on a case now reads what it already holds, plus anything new since the last Update, and nothing more unless you widen it.',
+      'The chip beside the question box sets that: Today, Past week or All time, with Search chat or Search uploads. Tap it, or hold Ask, for the wheel. It goes back to Memory after each question.',
+      'An answer no longer starts another full read by itself afterwards. One question used to buy up to three. The discussion is folded in when you tap Update.',
+      'When an answer needs something it does not have, it says which search would settle it instead of guessing.',
+    ],
+  },
   {
     // SENT IS SENT (Eric, 2026-10-17: "My client is having issues sending me
     // messages"). Admin only.

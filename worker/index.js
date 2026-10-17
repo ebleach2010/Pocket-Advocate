@@ -89,6 +89,8 @@ import { retireSamples } from './retire.js';
 import { sweepFullServiceMonths, sweepServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
 // Past the month's 20 hours (2026-10-17, v7.78): the client's three choices and the advocate's bill.
 import { handleHoursChoice, handleBillHours, confirmHoursPurchase, clearHoursCheckout } from './hours.js';
+// What an Advisor question reads (2026-10-17, v7.80).
+import { cleanScope } from './ask-scope.js';
 import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddons } from './addons.js';
 import { servicesOf, serviceOf, sellable, serviceWindowEnd } from './services.js';
 import { caseDay } from '../public/js/service-day.js';
@@ -2585,7 +2587,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-sent-is-sent';
+const BUILD_TAG = 'v2026-10-17-ask-scope';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2593,7 +2595,7 @@ const BUILD_TAG = 'v2026-10-17-sent-is-sent';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.79';
+const VERSION = '7.80';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -9468,16 +9470,19 @@ async function handleAdvisorAction({ request, env, ctx, user, profile, body, kin
       };
       if (!attachment.url) return json({ error: 'Bad file reference' }, 400);
     }
+    // What this question searches (2026-10-17, v7.80): its memory unless he
+    // widened it, kept on the row so the answer says what it read.
+    const scope = cleanScope(body?.scope);
     const qaId = crypto.randomUUID();
     await patchDoc(env, `${parent}/${id}/advisor/state/qa/${qaId}`, {
-      question, answer: null, status: 'running', at: new Date(),
+      question, answer: null, status: 'running', at: new Date(), scope,
       ...(attachment ? { file: attachment.name } : {}),
     });
     // runQuestion builds the turn and submits it to the batch (2026-09-07);
     // it is back in seconds, and the answer is collected by the polls. The
     // keepalive stays only so a slow attachment fetch cannot hit a gateway
     // clock on the way to the submit.
-    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question, attachment), { raw: true });
+    return keepaliveRun(ctx, runQuestion(env, kind, id, qaId, question, attachment, scope), { raw: true });
   }
 
   return json({ error: 'Unknown action' }, 400);

@@ -35,6 +35,8 @@ import { getDoc, patchDoc, listDocs, deleteDoc, tryGet, READ_FAILED, readFailedE
 // worker/advisor-acts.js for why that is structural rather than a promise.
 import { validateAction, actionTools, money } from './advisor-acts.js';
 import { listIntake, listShelf, mediaFetch } from './storage.js';
+// What a question reads (2026-10-17, v7.80): its memory, unless he widens it.
+import { cleanScope, windowRows, windowFiles, scopeWords } from './ask-scope.js';
 // The trade desk (PR 420) is gone (Eric, 2026-10-04: "Delete the trading
 // desk folder and contents in code. I won't be using it."). Its dictionary
 // categories are kept by name only, so the trading terms it saved never
@@ -1010,10 +1012,10 @@ export function stripDashes(t) {
  * its opening pleasantries. Attachment-only messages count: a shared lab
  * photo IS a message, and the advisor can now read the file itself.
  */
-async function recentMessages(env, kind, id) {
+async function recentMessages(env, kind, id, size = MAX_MESSAGES) {
   const parent = kind === 'case' ? 'cases' : 'subscriptions';
   const rows = await listDocs(env, `${parent}/${id}/chat`, {
-    pageSize: MAX_MESSAGES, orderBy: 'ts desc',
+    pageSize: size, orderBy: 'ts desc',
   });
   return rows.reverse().filter((r) => r.data.text || r.data.attachment);
 }
@@ -5039,7 +5041,43 @@ async function parkAct(env, kind, id, raws) {
  * own state poll) and read by finishQuestion below. Nothing in this Worker
  * holds a clock against the model any more.
  */
-export async function runQuestion(env, kind, id, qaId, question, attachment = null) {
+/** A question that searches the whole chat may read this many messages. */
+const MAX_SCOPED_MESSAGES = 400;
+
+/**
+ * Memory, said out loud (2026-10-17, v7.80): a question answers from what the
+ * reads already hold and searches only what he asked it to. When the answer
+ * turns on something outside that, it says which search would settle it
+ * rather than guessing, and never asks for the whole case to be read again.
+ */
+const MEMORY_NOTE = `
+
+What you have for this question: your memory (your current assessment, this
+discussion with Eric, the work log) plus exactly what he chose to search,
+named in the message. Everything older is in your assessment; trust it and do
+not ask for the whole case to be read again. If the answer turns on something
+you do not have (older messages, a file you never read, a detail your
+assessment does not hold), do not guess: say so in one line and name the
+search that would settle it, in his words: Today, Past week or All time, with
+Search chat or Search uploads.`;
+
+/** What the reads already hold, by name: the files read and how far the chat was read. */
+function memoryNote(state, scope) {
+  const files = (Array.isArray(state?.readFiles) ? state.readFiles : [])
+    .map((k) => String(k).split('/').pop().replace(/^\d{10,}-/, '').replace(/^(inline|unreadable):/, '').replace(/:\d+$/, ''))
+    .filter(Boolean);
+  const unique = [...new Set(files)];
+  const t = state?.analyzedThroughTs;
+  const through = t ? new Date(typeof t.toDate === 'function' ? t.toDate() : t) : null;
+  const read = through && Number.isFinite(through.getTime()) ? through.toISOString().slice(0, 10) : '';
+  return `\n<your_memory>\nThis question searches: ${scopeWords(scope)}.${
+    read ? ` Your reads have covered the chat through ${read}.` : ' Nothing has been read on a full pass yet.'
+  }${unique.length ? ` Files you have already read: ${unique.slice(0, 40).join('; ')}${unique.length > 40 ? `; and ${unique.length - 40} more` : ''}.` : ''}${
+    scope.time === 'memory' ? ' The transcript below holds only the messages since your last read.' : ''
+  }\n</your_memory>\n`;
+}
+
+export async function runQuestion(env, kind, id, qaId, question, attachment = null, scopeIn = null) {
   // Nested under the state DOC, not beside it: Firestore paths alternate
   // collection/document, so `…/advisor/qa/{qaId}` is not a valid document path
   // (it broke in production with an instant 400). `…/advisor/state/qa/{qaId}`
@@ -5055,8 +5093,9 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
   const t0 = Date.now();
   await diagLog(env, { ev: 'ask-start', kind, self }).catch(() => {});
   try {
-    const [rows, state, knowledge, style, qa, econ, worklog] = await Promise.all([
-      recentMessages(env, kind, id),
+    const scope = cleanScope(scopeIn);
+    const [allRows, state, knowledge, style, qa, econ, worklog] = await Promise.all([
+      recentMessages(env, kind, id, scope.chat && scope.time !== 'today' ? MAX_SCOPED_MESSAGES : MAX_MESSAGES),
       getDoc(env, statePath(kind, id)),
       loadKnowledge(env),
       loadStyle(env),
@@ -5067,9 +5106,23 @@ export async function runQuestion(env, kind, id, qaId, question, attachment = nu
       loadEconomics(env, kind, id),
       loadWorkLog(env, kind, id),
     ]);
+    // RE-PINNED 2026-10-17 (v7.80): the transcript is what this question
+    // searches, not the last 150 messages every time (ask-scope.js).
+    const rows = windowRows(allRows, scope, state?.data.analyzedThroughTs);
     const chat = transcript(rows);
     let fileBlocks = [];
     let fileNote = '';
+    // Search uploads: the case's files inside the window, read again because
+    // he asked (the reads' memory of them may not hold the detail he wants).
+    if (scope.uploads && !attachment) {
+      const listed = await listIntake(env, kind, id).catch(() => []);
+      const shared = allRows.filter((r) => r.data?.attachment?.url).map((r) => ({ ...r.data.attachment, at: r.data.ts }));
+      const media = await selectedMediaBlocks(env, windowFiles([...listed, ...shared], scope), kind, id, []);
+      fileBlocks = media.blocks;
+      fileNote = media.included.length
+        ? `\nYou are searching these files for this question; they follow this message, in order: ${media.included.join('; ')}. Answer from what you actually see in them, and say plainly when a value is not legible.${media.queued.length || media.skipped.length ? ` Not read this time: ${[...media.queued, ...media.skipped].join('; ')}.` : ''}`
+        : '\nHe asked to search the uploads, and there are none in that time to read.';
+    }
     if (attachment) {
       const out = await attachmentBlock(env, attachment, kind, id)
         .catch((err) => ({ skip: `fetch failed (${String(err.message || err).slice(0, 120)})` }));
@@ -5143,13 +5196,13 @@ ${SELF_NOTE}` },
       // Learned material on its own block, after the cached one, so the
       // glossary growing or the profile updating never busts the cache on
       // the standing instructions above.
-      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}` || ' ' }],
+      { type: 'text', text: `${knowledgeNote(knowledge)}${self ? priorCasesNote(state?.data) : ''}${self ? '' : stanceNote(style)}${registerNote(style)}${override ? OVERRIDE_NOTE : ''}${AUTHORITY_NOTE}${MEMORY_NOTE}` || ' ' }],
       messages: [{
         role: 'user',
         content: [
           {
             type: 'text',
-            text: `<transcript>\n${chat || '(no messages yet)'}\n</transcript>\n${
+            text: `${memoryNote(state?.data, scope)}<transcript>\n${chat || (scope.time === 'memory' ? '(nothing new since your last read)' : '(no messages in that time)')}\n</transcript>\n${
               state?.data.analysis ? `\n<your_current_assessment>\n${state.data.analysis}\n</your_current_assessment>\n` : ''
             }${
               state?.data.draft ? `\n<your_current_draft>\nA reply you drafted for Eric to send, not yet sent. He may be asking about it.\n${state.data.draft}\n</your_current_draft>\n` : ''
@@ -5240,11 +5293,12 @@ async function finishQuestion(env, kind, id, qaId, flight, message) {
     await parkAct(env, kind, id, acts).catch((err) => {
       console.warn('advisor act:', err.message || err);
     });
-    // A settled exchange is new case material now that analyses read the
-    // discussion, so flag the assessment stale. markPending's own floor keeps
-    // a burst of questions from buying a max-effort analysis per question; the
-    // cron picks the flag up, and the next pass folds the discussion in.
-    await markPending(env, kind, id).catch(() => {});
+    // RE-PINNED 2026-10-17 (v7.80): an answer no longer flags the assessment
+    // stale. It used to, and the minute's drain then bought a max-effort read
+    // nobody asked for after every question (one question at 1pm on the 17th
+    // bought three, one of them a full read). Eric: "There is absolutely no
+    // reason for it to read the entirety of the case every time unless
+    // prompted." The discussion is folded in the next time he taps Update.
   } catch (err) {
     console.error('advisor question:', err.stack || err);
     await patchDoc(env, path, {
@@ -5336,7 +5390,7 @@ export async function pollAskFlight(env, kind, id, qaId, { minAgeMs = 15_000 } =
     await diagLog(env, { ev: 'self-model-fallback', at: 'result', kind, id, why: String(next.why || '').slice(0, 200) });
     await setState(env, kind, id, { modelRefusedAt: new Date(), modelRefusedId: flight.model }).catch(() => {});
     await patchDoc(env, path, { batch: null, resent: true }, { mask: ['batch', 'resent'] }).catch(() => {});
-    await withCasePolicy(env, kind, id, () => runQuestion(env, kind, id, qaId, String(row.data.question || ''), row.data.fileRef || null));
+    await withCasePolicy(env, kind, id, () => runQuestion(env, kind, id, qaId, String(row.data.question || ''), row.data.fileRef || null, row.data.scope || null));
     return true;
   }
   await patchDoc(env, path, {

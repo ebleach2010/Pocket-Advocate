@@ -263,6 +263,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // that went through never reads as failed and a real failure is written down.
   // NEGATIVE CONTROL (run 2026-10-17, v7.79): the worker's BUILD_TAG left at the past-hours tag made this read
   //   FAIL  R1 both versions read 7.79 with the new tag, the 7.79 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.80): both versions read 7.80 with the ask-scope tag, and the 7.80 entry says a question
+  // reads what it holds unless widened, the chip and the wheel, and no read after an answer.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.80): changelog.js's VERSION left at '7.79' made this read
+  //   FAIL  R1 both versions read 7.80 with the new tag, the 7.80 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry780 = (CL.match(/\{\n\s+\/\/ THE QUESTION, SCOPED \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry779 = (CL.match(/\{\n\s+\/\/ SENT IS SENT \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry778 = (CL.match(/\{\n\s+\/\/ PAST THE MONTH'S 20 HOURS \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry777 = (CL.match(/\{\n\s+\/\/ THE DAY OF THE SERVICE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
@@ -352,9 +357,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.79 with the new tag, the 7.79 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.79';/.test(CL) && /const VERSION = '7\.79';/.test(W) && /const BUILD_TAG = 'v2026-10-17-sent-is-sent';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.79'
+  check('R1 both versions read 7.80 with the new tag, the 7.80 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.80';/.test(CL) && /const VERSION = '7\.80';/.test(W) && /const BUILD_TAG = 'v2026-10-17-ask-scope';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.80'
+    && /version: '7\.80',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry780)
+    && /Today, Past week or All time, with Search chat or Search uploads/.test(entry780) && /no longer starts another full read/.test(entry780)
+    && !DASH.test(entry780) && !HARD.some((re) => re.test(entry780))
     && /version: '7\.79',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry779)
     && /no longer tells the sender "Couldn\\'t send"/.test(entry779) && /never the words/.test(entry779)
     && !DASH.test(entry779) && !HARD.some((re) => re.test(entry779))

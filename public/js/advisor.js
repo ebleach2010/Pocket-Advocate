@@ -145,6 +145,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
         <form class="advisor-ask" data-ask>
           <textarea data-q rows="1" maxlength="2000" placeholder="Ask your advisor…"></textarea>
           <button class="btn quiet" type="submit">Ask</button>
+          <button type="button" class="ask-scope" data-scope aria-haspopup="true" title="What this question searches. Hold Ask for the wheel.">Memory</button>
         </form>
       </div>
       <p class="error" data-err hidden></p>
@@ -499,6 +500,13 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     return !!at && Date.now() - at > QA_LONG_MS;
   };
 
+  /** What a question searched, under it, when it was wider than memory (2026-10-17). */
+  function scopeLine(sc) {
+    if (!sc || !sc.time || sc.time === 'memory') return '';
+    const when = sc.time === 'today' ? 'today' : sc.time === 'week' ? 'the past week' : 'all time';
+    const what = [sc.chat ? 'chat' : '', sc.uploads ? 'uploads' : ''].filter(Boolean).join(' and ');
+    return ` <span class="dim small" data-scope-line>Searched ${esc(what)}, ${esc(when)}</span>`;
+  }
   function renderQa(qa) {
     // Once the server row for the just-asked question exists, drop the local
     // pending copy.
@@ -507,7 +515,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     // first three, put back into the order a conversation reads in.
     const rows = qa.slice(0, 3).slice().reverse().map((q) => `
       <div class="advisor-turn">
-        <p class="advisor-q">${esc(q.question)}${q.file ? ` <span class="dim small">📎 ${esc(q.file)}</span>` : ''}</p>
+        <p class="advisor-q">${esc(q.question)}${q.file ? ` <span class="dim small">📎 ${esc(q.file)}</span>` : ''}${scopeLine(q.scope)}</p>
         <div class="advisor-a">${q.status === 'running' && qaStalled(q)
           ? '<span class="dim">No answer came back. Ask it again.</span>'
           : q.status === 'running'
@@ -1072,7 +1080,7 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
   });
 
   const askForm = el('[data-ask]');
-  const askBtn = askForm.querySelector('button');
+  const askBtn = askForm.querySelector('button[type="submit"]');
   qBox.addEventListener('input', () => {
     qBox.style.height = 'auto';
     qBox.style.height = `${qBox.scrollHeight}px`;
@@ -1095,11 +1103,14 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     renderQa(lastQa);
     const out = await post({
       action: 'ask', question,
-      ...(attachment ? { attachment } : {}),
+      ...(attachment ? { attachment } : { scope: { ...askScope } }),
     });
     asking = false;
     askBtn.disabled = false;
     askBtn.textContent = 'Ask';
+    // Back to memory after each question: a wider search costs more, so it is
+    // chosen each time and never left on by accident.
+    if (out) setScope({ time: 'memory', chat: false, uploads: false });
     if (!out) {
       // post() already showed the error; drop the pending row.
       localQ = null;
@@ -1121,8 +1132,136 @@ export function mountAdvisor({ container, kind, id, user, onSend, draftContainer
     if (!ok) qBox.value = question; // give the question back
   }
   askBtn.type = 'button';
-  askBtn.addEventListener('click', doAsk);
+  askBtn.addEventListener('click', (e) => {
+    // The release that ends a hold on Ask picks from the wheel; it is not a question.
+    if (wheelHeld) { wheelHeld = false; e.preventDefault(); return; }
+    doAsk();
+  });
   askForm.addEventListener('submit', (e) => { e.preventDefault(); doAsk(); });
+
+  // WHAT A QUESTION SEARCHES (Eric, 2026-10-17: "a toggle of some sort that
+  // has the advisor read your question against the case as of today, the past
+  // week, or all time. As well as 'search the chat' 'search uploads'. In as
+  // compact as possible. Possibly a press and hold that opens a wheel like
+  // counterstrike"). The chip beside the box says what the next question
+  // searches; a tap on it, or holding Ask, opens the wheel. Memory is the
+  // standing choice: what the reads already hold, plus anything new.
+  const scopeBtn = el('[data-scope]');
+  let askScope = { time: 'memory', chat: false, uploads: false };
+  let wheelHeld = false;
+  /** The same rule as the Worker's cleanScope: a time searches the chat unless a source is named; a source alone searches all of it. */
+  function setScope(next) {
+    let { time = 'memory', chat = false, uploads = false } = next;
+    if (time !== 'memory' && !chat && !uploads) chat = true;
+    if (time === 'memory' && (chat || uploads)) time = 'all';
+    if (time === 'memory') chat = false;
+    askScope = { time, chat, uploads };
+    if (scopeBtn) {
+      scopeBtn.textContent = scopeLabel(askScope);
+      scopeBtn.classList.toggle('wide', time !== 'memory');
+    }
+  }
+  function scopeLabel(sc) {
+    if (sc.time === 'memory') return 'Memory';
+    const when = { today: 'Today', week: 'Week', all: 'All' }[sc.time];
+    return `${when} · ${[sc.chat ? 'chat' : '', sc.uploads ? 'uploads' : ''].filter(Boolean).join(' + ')}`;
+  }
+  const SLICES = [
+    { id: 'today', label: 'Today', at: 210 },
+    { id: 'week', label: 'Past week', at: 270 },
+    { id: 'all', label: 'All time', at: 330 },
+    { id: 'uploads', label: 'Search uploads', at: 30 },
+    { id: 'chat', label: 'Search chat', at: 150 },
+  ];
+  function pick(id) {
+    if (id === 'memory') return setScope({ time: 'memory' });
+    if (id === 'chat' || id === 'uploads') {
+      const on = !askScope[id];
+      const next = { ...askScope, [id]: on };
+      // Switching a source off when it was the only one leaves the time searching the chat, which is what a time means.
+      return setScope(next.chat || next.uploads ? next : { ...next, chat: id === 'uploads' });
+    }
+    return setScope({ ...askScope, time: askScope.time === id ? 'memory' : id, ...(askScope.time === id ? { chat: false, uploads: false } : {}) });
+  }
+  function wheelStyle() {
+    if (document.getElementById('pa-scope-wheel')) return;
+    const st = document.createElement('style');
+    st.id = 'pa-scope-wheel';
+    st.textContent = `
+      .ask-scope { order: -1; flex: none; align-self: flex-end; min-height: 44px; padding: 0 .7rem; border-radius: 999px; border: 1px solid var(--edge-lit, rgba(255,255,255,.18));
+        background: transparent; color: var(--soft, #c9c9d1); font: inherit; font-size: .78rem; font-weight: 700; white-space: nowrap; max-width: 9.5rem; overflow: hidden; text-overflow: ellipsis; }
+      .ask-scope.wide { border-color: var(--cyan, #3DDCF5); color: var(--ink, #fff); }
+      .advisor-ask > .btn { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; touch-action: none; }
+      .scope-wheel { position: fixed; inset: 0; z-index: 9000; touch-action: none; background: rgba(0,0,0,.35); }
+      .scope-ring { position: absolute; width: 0; height: 0; }
+      .scope-ring button { position: absolute; transform: translate(-50%, -50%); min-width: 4.6rem; min-height: 44px; padding: .35rem .6rem; border-radius: 999px;
+        border: 1px solid rgba(255,255,255,.22); background: rgba(14,16,20,.94); color: #f5f5f7; font: inherit; font-size: .8rem; font-weight: 700; line-height: 1.15; white-space: nowrap; }
+      .scope-ring button.on { border-color: var(--cyan, #3DDCF5); box-shadow: 0 0 0 2px rgba(61,220,245,.35); color: #fff; }
+      .scope-ring button.hot { background: rgba(61,220,245,.24); }
+      .scope-ring .scope-mid { min-width: 3.6rem; border-style: dashed; }
+      [data-scope-line] { display: block; font-size: .76rem; font-weight: 600; margin-top: .15rem; }`;
+    document.head.appendChild(st);
+  }
+  function openWheel(anchor, hold, pointerId = null) {
+    wheelStyle();
+    document.querySelector('.scope-wheel')?.remove();
+    const r = anchor.getBoundingClientRect();
+    const R = 92;
+    const cx = Math.min(Math.max(r.left + r.width / 2, R + 52), innerWidth - R - 52);
+    const cy = Math.min(Math.max(r.top + r.height / 2, R + 30), innerHeight - R - 30);
+    const veil = document.createElement('div');
+    veil.className = 'scope-wheel';
+    veil.setAttribute('role', 'dialog');
+    veil.setAttribute('aria-label', 'What this question searches');
+    const paint = () => {
+      veil.innerHTML = `<div class="scope-ring" style="left:${cx}px;top:${cy}px">${SLICES.map((sl) => {
+        const a = (sl.at * Math.PI) / 180;
+        const on = sl.id === 'chat' || sl.id === 'uploads' ? askScope[sl.id] : askScope.time === sl.id;
+        return `<button type="button" data-slice="${sl.id}" class="${on ? 'on' : ''}" style="left:${Math.round(Math.cos(a) * R)}px;top:${Math.round(Math.sin(a) * R)}px">${sl.label}</button>`;
+      }).join('')}<button type="button" data-slice="memory" class="scope-mid${askScope.time === 'memory' ? ' on' : ''}" style="left:0;top:0">Memory</button></div>`;
+    };
+    paint();
+    const close = () => { veil.remove(); };
+    const sliceAt = (x, y) => document.elementFromPoint(x, y)?.closest?.('[data-slice]');
+    if (hold) {
+      // Held: the finger slides to a slice and lets go on it, the old buy menu's way.
+      const move = (e) => { veil.querySelectorAll('.hot').forEach((b) => b.classList.remove('hot')); sliceAt(e.clientX, e.clientY)?.classList.add('hot'); };
+      const up = (e) => {
+        const b = e.type === 'pointerup' ? sliceAt(e.clientX, e.clientY) : null;
+        if (b) pick(b.dataset.slice);
+        document.removeEventListener('pointermove', move);
+        document.removeEventListener('pointerup', up);
+        document.removeEventListener('pointercancel', up);
+        close();
+        // The click that follows this release is swallowed by Ask, then Ask works again.
+        setTimeout(() => { wheelHeld = false; }, 60);
+      };
+      document.addEventListener('pointermove', move);
+      document.addEventListener('pointerup', up);
+      document.addEventListener('pointercancel', up);
+    } else {
+      veil.addEventListener('click', (e) => {
+        const b = e.target.closest('[data-slice]');
+        if (!b) { close(); return; }
+        pick(b.dataset.slice);
+        paint();
+      });
+      veil.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    }
+    document.body.appendChild(veil);
+    if (!hold) veil.querySelector('.scope-mid')?.focus();
+  }
+  wheelStyle();
+  scopeBtn?.addEventListener('click', () => openWheel(scopeBtn, false));
+  // Hold Ask to open the wheel there; a quick tap still asks.
+  let holdTimer = null;
+  askBtn.addEventListener('pointerdown', (e) => {
+    if (asking) return;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => { wheelHeld = true; openWheel(askBtn, true, e.pointerId); }, 380);
+  });
+  for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) askBtn.addEventListener(ev, () => clearTimeout(holdTimer));
+  askBtn.addEventListener('contextmenu', (e) => e.preventDefault());
 
   // The conversation with the advisor lives on its own Chat page when the
   // host provides one (Eric, 2026-08-21: "Do move where I talk to the advisor
