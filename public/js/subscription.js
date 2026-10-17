@@ -12,6 +12,7 @@ import { officeCueHtml, officeLineHtml } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
 import { wireHelp } from './help.js';
+import { SALES_OPEN } from './sales.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -71,6 +72,7 @@ async function load() {
         : 'Your subscription has ended. Your message history stays visible to you.'}
       <a href="#" id="portal">Manage subscription</a>
     </p>
+    <div data-step-up hidden></div>
     ${renewing(sub) ? '<p class="cancel-row"><button type="button" class="btn ghost" data-cancel-open>Cancel subscription</button></p>' : ''}
     <dialog class="cancel-sheet" id="cancel-sheet" aria-labelledby="cancel-title">
       <h2 id="cancel-title">Cancel 24/7 Priority Chat?</h2>
@@ -84,6 +86,7 @@ async function load() {
 
   watchPresence(page);
   wireHelp(page);
+  if (SALES_OPEN && renewing(sub) && !sub.stepUpCaseId) paintStepUp(page.querySelector('[data-step-up]')).catch(() => {});
   // The first-run guide (Home Screen, notifications), the same one a case
   // client gets, at the foot of the page. It asks about notifications itself,
   // so the push prompt here only refreshes the token quietly.
@@ -165,3 +168,25 @@ async function fetchSub() {
 // The escaper that used to live here went with the second response-line store.
 // Nothing on this page renders text from a document any more: the one line a
 // client reads is set by office.js, from the answer that paints the pill.
+
+// STEP UP FROM CHAT (Eric, 2026-10-17: "From chat, they can enhance to
+// advocacy case or full case management and just pay the month's difference";
+// "Credit $50, end chat"). The figures are the Worker's, with the chat month
+// already off; booking is the ordinary booking, and their advocate accepts or
+// declines it. Off while sales are off.
+async function paintStepUp(host) {
+  if (!host) return;
+  const res = await fetch('/api/step-up', { headers: { authorization: `Bearer ${await user.getIdToken()}` } });
+  const d = res.ok ? await res.json().catch(() => null) : null;
+  if (!d?.eligible) return;
+  const usd = (c) => `$${Math.round(Number(c) / 100).toLocaleString()}`;
+  host.className = 'panel step-up';
+  host.innerHTML = `
+    <h2 style="margin:0 0 .3rem; font-size:1.15rem;">Step up from chat</h2>
+    <p class="dim small" style="margin:0 0 .7rem;">Your ${usd(d.creditCents)} chat month comes off either one. Once your case is taken on, your chat line stops renewing and the case chat takes over.</p>
+    <div class="actions" style="display:flex; flex-wrap:wrap; gap:.5rem;">
+      <a class="btn glow" href="/book.html?step=case" data-step="case">Advocacy Case, ${usd(d.caseCents)}</a>
+      <a class="btn quiet" href="/book.html?step=full" data-step="full">Full-Service, ${usd(d.fullCents)} the first month</a>
+    </div>`;
+  host.hidden = false;
+}

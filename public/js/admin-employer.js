@@ -10,6 +10,7 @@ import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 import { ask } from './sheet.js';
 import { openStaffChat } from './admin-staffchat.js';
 import { listAccounts, openAddAdvocate, openAccount, paintOff } from './admin-accounts.js';
+import { addonFields, wireAddonFields, readAddonFields } from './admin-addons.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 // Whole dollars bare, anything with cents to two places ($1,234.50, never $1,234.5).
@@ -83,22 +84,25 @@ function card(p) {
   const shelf = p.owner ? '/admin.html' : `/admin.html?as=${encodeURIComponent(p.uid)}`;
   return `
     <article class="panel tm-card" data-uid="${esc(p.uid)}">
-      <a class="tm-open" href="${shelf}" aria-label="${p.owner ? 'Your cases' : `${esc(p.name)}'s cases`}">
-        <span class="tm-top">
-          ${photo(p)}
-          <span>
-            <span class="tm-name">${esc(p.name)}${pill}</span>
-            <span class="tm-sub">${esc(share)}${p.closed ? ` · ${p.closed} closed` : ''}</span>
+      <div class="tm-head">
+        <!-- Their photo opens their profile (Eric, 2026-10-17: "pressing on their profile picture"); the rest of the card, their cases. -->
+        <button type="button" class="tm-face" data-face aria-label="${p.owner ? 'Your profile' : `${esc(p.name)}'s profile`}">${photo(p)}<span class="tm-edit" aria-hidden="true">✎</span></button>
+        <a class="tm-open" href="${shelf}" aria-label="${p.owner ? 'Your cases' : `${esc(p.name)}'s cases`}">
+          <span class="tm-top">
+            <span>
+              <span class="tm-name">${esc(p.name)}${pill}</span>
+              <span class="tm-sub">${esc(share)}${p.closed ? ` · ${p.closed} closed` : ''}</span>
+            </span>
+            <span class="tm-go" aria-hidden="true">›</span>
           </span>
-          <span class="tm-go" aria-hidden="true">›</span>
-        </span>
-        <span class="tm-brief">${esc(brief(p))}</span>
-      </a>
+          <span class="tm-brief">${esc(brief(p))}</span>
+        </a>
+      </div>
       <div class="tm-money"><strong>${money(p.proposedCents)}</strong><span>${p.owner ? 'from the clients you have now' : 'theirs from the clients they have now'}${p.tipsCents ? `, ${money(p.tipsCents)} of it tips` : ''}</span></div>
       <div class="tm-acts">
         ${p.owner ? '' : `<a class="btn quiet" href="${shelf}">Their cases</a>
         <button type="button" class="btn quiet" data-msg>Message${p.unread ? `<span class="tm-badge" aria-label="${p.unread} new">${p.unread}</span>` : ''}</button>`}
-        <button type="button" class="btn quiet" data-profile>${p.owner ? 'Your photo and bio' : 'Photo and bio'}</button>
+        <button type="button" class="btn quiet" data-profile>${p.owner ? 'Your profile' : 'Profile'}</button>
         ${p.owner || p.sample ? '' : '<button type="button" class="btn quiet" data-account>Account</button>'}
       </div>
     </article>`;
@@ -125,6 +129,7 @@ async function load() {
       load();
     });
     el.querySelector('[data-profile]')?.addEventListener('click', () => editProfile(p));
+    el.querySelector('[data-face]')?.addEventListener('click', () => editProfile(p));
   }
   // The sample contractor's box went on 2026-10-16: Demo mode has a team of
   // its own, apart from his real one (his word, "Remove both").
@@ -141,7 +146,7 @@ function editProfile(p) {
   dlg.className = 'cancel-sheet ask-sheet tm-sheet';
   dlg.innerHTML = `
     <form method="dialog" class="ask-form">
-      <h2>${p.owner ? 'Your photo and bio' : `${esc(p.name)}'s photo and bio`}</h2>
+      <h2>${p.owner ? 'Your profile' : `${esc(p.name)}'s profile`}</h2>
       <div class="tm-pic">
         ${p.hasPhoto ? `<img data-pic-preview src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}${p.photoV ? `&v=${encodeURIComponent(p.photoV)}` : ''}" alt="">` : '<img data-pic-preview alt="" hidden>'}
         <label class="btn quiet tm-pick">Choose a photo<input type="file" accept="image/jpeg,image/png,image/webp" data-pic hidden></label>
@@ -149,6 +154,7 @@ function editProfile(p) {
       <label class="dim small">Name<input class="ask-input" name="name" maxlength="80" value="${esc(p.name)}" autocomplete="off"></label>
       <label class="dim small">Credentials<input class="ask-input" name="credentials" maxlength="200" value="${esc(p.credentials || '')}" placeholder="For example: RN, BCPA" autocomplete="off"></label>
       <label class="dim small">Bio<textarea class="ask-input" name="bio" maxlength="1500" rows="6" placeholder="${p.owner ? 'A few lines about you.' : 'The bio they sent you.'}">${esc(p.bio || '')}</textarea></label>
+      ${p.sample ? '' : addonFields(p.addons || {})}
       <p class="error" data-err hidden></p>
       <div class="cancel-acts">
         <button type="submit" class="btn glow" value="ok">Save</button>
@@ -156,6 +162,7 @@ function editProfile(p) {
       </div>
     </form>`;
   document.body.appendChild(dlg);
+  wireAddonFields(dlg);
   const close = () => { dlg.close(); dlg.remove(); };
   const pic = dlg.querySelector('[data-pic]');
   const preview = dlg.querySelector('[data-pic-preview]');
@@ -186,10 +193,12 @@ function editProfile(p) {
         const out = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(out.error || 'The photo did not upload.');
       }
+      const picked = dlg.querySelector('[data-addons]') ? readAddonFields(dlg) : { addons: undefined };
+      if (picked.error) throw new Error(picked.error);
       const res = await fetch('/api/admin/advocates', {
         method: 'POST',
         headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'update', uid: p.uid, name: f.elements.namedItem('name').value, credentials: f.elements.namedItem('credentials').value, bio: f.elements.namedItem('bio').value }),
+        body: JSON.stringify({ action: 'update', uid: p.uid, name: f.elements.namedItem('name').value, credentials: f.elements.namedItem('credentials').value, bio: f.elements.namedItem('bio').value, ...(picked.addons ? { addons: picked.addons } : {}) }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || 'That did not save.');

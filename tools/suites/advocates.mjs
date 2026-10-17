@@ -33,6 +33,7 @@ const f = (p) => readFileSync(j(ROOT, p), 'utf8');
 const W = f('worker/index.js');
 const SHOW = f('worker/showcase.js');
 const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
+const ADDONS = await import(pathToFileURL(j(ROOT, 'worker/addons.js')).href);
 const ACTS = await import(pathToFileURL(j(ROOT, 'worker/advisor-acts.js')).href);
 const DASH = new RegExp('[\\u2013\\u2014]');
 
@@ -586,6 +587,8 @@ console.log('\n--- G. accounts ---');
       sendEmail: async (env, m) => { mails.push(m); return true; },
       notifyUser: async (env, uid, m) => { pushes.push({ uid, ...m }); },
       ...STAFF,
+      // v7.65 (2026-10-17): a contractor's add-ons, checked by worker/addons.js.
+      addonsOf: ADDONS.addonsOf, cleanAddons: ADDONS.cleanAddons,
     };
     const body = SRC.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').replace(/^export (const|async function|function) /gm, '$1 ');
     const api = new Function(...Object.keys(deps), `${body}\nreturn { handleAdvocates, isStaffLogin, advocateLogin, loginPath };`)(...Object.values(deps));

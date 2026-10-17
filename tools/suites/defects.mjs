@@ -245,7 +245,11 @@ ck('scope note: a month at a time, hours-based, and appeals never counted as ite
    && /up to 20 hours of comprehensive advocacy/.test(TT)
    && /priority access maintained throughout the month/.test(TT)
    && /\$175 to \$225 an hour/.test(TT)
-   && /Appeals are not counted as items/.test(TT)
+   // RE-PINNED 2026-10-17 (v7.65): Eric, "With full case management, attending appointments and writing insurance
+   // appeals are enhancements": an appeal is no item of the month at all, it is bought on top.
+   // NEGATIVE CONTROL (run 2026-10-17, v7.65): the scope note's enhancements sentence taken out made this read FAIL.
+   && /Writing an insurance appeal, and coming to an appointment with you, are enhancements, not part of the month\./.test(TT)
+   && !/Insurance appeals, written by me/.test(TT)
    && !/you will never be told you have used them up/.test(TT)
    && !/FULL_APPEALS_INCLUDED = 2/.test(W));
 // UPDATED 2026-08-28, on Eric's word: "remove limitations on how many hand
@@ -441,8 +445,12 @@ ck('clock: all switches share one painter set, so no two can disagree',
   // (Agenda to Mine, About you to the Voice study fold); the other four names are his as they were.
   // NEGATIVE CONTROL (run 2026-10-16, v7.54): his strip's 'Mine' label renamed 'After' made this read
   //   FAIL  groups: the four names are Case, Advisor, Mine and Act
-  ck('groups: the four names are Case, Advisor, Mine and Act',
-     labels.join('|') === 'Case|Advisor|Mine|Act', labels.join('|'));
+  // RE-PINNED AND RENAMED 2026-10-17 (v7.65): Eric, "Get rid of the specific 'appeals' tab in 'act'. So just replace
+  // that whole tab with simply 'log'". The group keeps its id, so a saved place still lands there.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): his strip's 'Log' label put back to 'Act' made this read
+  //   FAIL  groups: the four names are Case, Advisor, Mine and Log
+  ck('groups: the four names are Case, Advisor, Mine and Log',
+     labels.join('|') === 'Case|Advisor|Mine|Log', labels.join('|'));
   ck('groups: their ids match, so nothing renamed only the visible half',
      ids.join('|') === 'case|read|mine|act', ids.join('|'));
   const mine = (block.match(/id: 'mine'[^}]*pages: \[([^\]]+)\]/) || [])[1] || '';

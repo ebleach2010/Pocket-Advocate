@@ -143,7 +143,9 @@ check('K4 the keyed diag carries the draft state per case (status, age, error), 
   // NEGATIVE CONTROL (run 2026-09-07): runDraft's `const hisVoice = myVoice(rows);` changed back to `const voice = myVoice(rows);` made this read
   //   FAIL  K5 the draft writer reads the thread's sample of his messages as hisVoice and builds its system block from the shared voice() block, and no function in the file that calls voice() binds a local named voice
   check('K5 the draft writer reads the thread\'s sample of his messages as hisVoice and builds its system block from the shared voice() block, and no function in the file that calls voice() binds a local named voice',
-    /const hisVoice = myVoice\(rows\);/.test(ADV)
+    // RE-PINNED 2026-10-17 (v7.65): myVoice takes env, to keep only the lines Eric sent by his own uid.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): `myVoice(env, rows)` put back to `myVoice(rows)` made K5 read FAIL.
+    /const hisVoice = myVoice\(env, rows\);/.test(ADV)
     && /const elsewhere = \(!turnPolicy\.getStore\(\)\?\.self && hisVoice\.length < 2500\)/.test(ADV)
     && /<his_voice>\\n\$\{hisVoice \|\| '\(nothing in this thread yet/.test(ADV)
     && /const voice = \(\) => \(turnPolicy\.getStore\(\)\?\.self \? SELF_VOICE : VOICE\);/.test(ADV)

@@ -599,6 +599,9 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
       const queryDocs = async () => [];
       const notifyUser = async (env, uid, m) => { __pushes.push({ uid, ...m }); };
       const firstName = (n) => String(n || '').split(' ')[0];
+      // RE-PINNED 2026-10-17 (v7.65): the report's new-enhancement nudge reads the sales switch.
+      // NEGATIVE CONTROL (run 2026-10-17, v7.65): status 'delivered' dropped from report-uploaded still made U16 read FAIL.
+      const SALES_OPEN = false;
       ${fn}
       return handleCaseUpdate;
     `);
@@ -1262,7 +1265,10 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
   // a line nobody has ever run.
   {
     const SEAM = lifted('seam', slab(ADMINCASE, "document.addEventListener('pa-send-forms'", '});'),
-      'The appeals workbench', ADMINCASE);
+      // RE-PINNED 2026-10-17 (v7.65): the appeals workbench that followed the seam is gone with the Appeals tab;
+      // the call notes' block is the next one down.
+      // NEGATIVE CONTROL (run 2026-10-17, v7.65): that block's first line renamed made U28k read FAIL.
+      'Notes for the next call, on the My doc page', ADMINCASE);
     // NEGATIVE CONTROL (run 2026-08-28): deleting the listener made this read
     //   FAIL  U28f the pa-send-forms seam is in the shipped page
     ck('U28f the pa-send-forms seam is in the shipped page', SEAM.length > 0);

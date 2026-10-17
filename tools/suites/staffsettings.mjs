@@ -205,7 +205,9 @@ console.log('\n--- D. the Worker: each advocate\'s own limit, prices and door si
     /const rateAtBooking = await ratesForCase\(env, \{ advocateId \}\);/.test(W)
     && /const live = await ratesForCase\(env, c\.data\);\n\s+const req = \{\n\s+state: 'pending',/.test(W)
     && /upgradeCents\(c\.data, \(await ratesForCase\(env, c\.data\)\)\.fullCents\)/.test(W)
-    && (W.match(/fullAccessCapacity\(env, contractorOf\(c\.data, env\)\)/g) || []).length === 2
+    // RE-PINNED 2026-10-17 (v7.65): a third ask on the case's own advocate's limit, accepting a Full-Service month booked from chat.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): that ask's contractorOf(c.data, env) made '' made D2 read FAIL.
+    && (W.match(/fullAccessCapacity\(env, contractorOf\(c\.data, env\)\)/g) || []).length === 3
     && ratchets === 1 && /async function raiseRatesFor\(env, data\) \{\n\s+if \(contractorOf\(data, env\)\) return;\n\s+await raiseRates\(env\);/.test(W)
     && (W.match(/raiseRatesFor\(env, /g) || []).length === 5,
     `bare ratchets: ${ratchets}`);

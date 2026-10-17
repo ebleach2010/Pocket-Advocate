@@ -288,13 +288,16 @@ console.log('\n--- C. the doubles cut (v7.54) ---');
 
   // NEGATIVE CONTROL (run 2026-10-16, v7.54): the Log page's `paintMilestones(miles);` taken out made this read
   //   FAIL  C2 the work log and the milestones are one Log, with a filter between them, under Act for him and for a contractor
-  check('C2 the work log and the milestones are one Log, with a filter between them, under Act for him and for a contractor',
+  // RE-PINNED AND RENAMED 2026-10-17 (v7.65): Act is Log for him and for a contractor, the Appeals tab gone from it.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): the contractor's group label put back to 'Act' made this read
+  //   FAIL  C2 the work log and the milestones are one Log, with a filter between them, its own Log tab for him and for a contractor
+  check('C2 the work log and the milestones are one Log, with a filter between them, its own Log tab for him and for a contractor',
     /id: 'log', title: 'Log', icon: '🗒',/.test(CASE)
     && /paintWorkLog\(work\);\n\s+paintMilestones\(miles\);/.test(CASE)
     && /pane\._reload = \(\) => \{ work\._reload\?\.\(\); miles\._reload\?\.\(\); \};/.test(CASE)
     && /data-show="all" aria-pressed="true">Everything<\/button>/.test(CASE) && /data-show="miles" aria-pressed="false">Milestones<\/button>/.test(CASE)
     && /work\.hidden = show === 'miles';\n\s+miles\.hidden = show === 'work';/.test(CASE)
-    && /\{ id: 'act', label: 'Act', icon: 'i-scale', pages: \['log'\] \},/.test(CASE)
+    && (CASE.match(/\{ id: 'act', label: 'Log', icon: 'i-check', pages: \['log'\] \},/g) || []).length === 2 && !/id: 'appeals'/.test(CASE)
     && /const ADVOCATE_PAGES = new Set\(\['overview', 'chat', 'files', 'notes', 'agenda', 'log'\]\);/.test(CASE)
     && /\.log-filter \.btn\.on \{/.test(f('public/css/admin.css')));
 

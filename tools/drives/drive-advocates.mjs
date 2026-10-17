@@ -69,7 +69,7 @@ console.log('\n--- B. their case ---');
 await adv.goto(`${P}/admin-case.html?id=demo-case-ana&demo=advocate`, { waitUntil: 'networkidle' });
 await adv.waitForTimeout(2500);
 const groupTabs = {};
-for (const g of ['Case', 'Mine', 'Act']) {
+for (const g of ['Case', 'Mine', 'Log']) {
   const btn = await adv.$(`.folder-groups button:has-text("${g}")`);
   if (!btn) { groupTabs[g] = null; continue; }
   await btn.click();
@@ -81,12 +81,14 @@ const groups = await adv.evaluate(() => [...document.querySelectorAll('.folder-g
 const named = Object.fromEntries(Object.entries(groupTabs).map(([g, t]) => [g, (t || []).map((x) => x.replace(/^[^\p{L}]+/u, '').trim())]));
 // RE-PINNED 2026-10-16 (v7.54): Saved went under Notes and the work log and milestones are one Log (Eric: "Merge logs").
 // NEGATIVE CONTROL (run 2026-10-16, v7.54): the ADVOCATE_PAGES filter taken off still made this read FAIL.
-const WANT = { Case: ['Overview', 'Chat', 'Uploads'], Mine: ['Notes', 'Agenda'], Act: ['Log'] };
+// RE-PINNED 2026-10-17 (v7.65): the Act group is named Log (Eric: "So just replace that whole tab with simply 'log'").
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): the group's label put back to 'Act' made this read FAIL.
+const WANT = { Case: ['Overview', 'Chat', 'Uploads'], Mine: ['Notes', 'Agenda'], Log: ['Log'] };
 // NEGATIVE CONTROL (run 2026-10-15): the ADVOCATE_PAGES filter taken off admin-case.js's pages made this read
 //   (first run MISSED: the check looked for page names that are not his; now it pins the exact set, then re-run)
-//   FAIL  their case opens in three groups, Case, Mine and Act, with the pages that hold their own work and none of his private reading
-ok('their case opens in three groups, Case, Mine and Act, with the pages that hold their own work and none of his private reading',
-  groups.join('|') === 'Case|Mine|Act' && JSON.stringify(named) === JSON.stringify(WANT),
+//   FAIL  their case opens in three groups, Case, Mine and Log, with the pages that hold their own work and none of his private reading
+ok('their case opens in three groups, Case, Mine and Log, with the pages that hold their own work and none of his private reading',
+  groups.join('|') === 'Case|Mine|Log' && JSON.stringify(named) === JSON.stringify(WANT),
   JSON.stringify({ groups, named }));
 await adv.click('.folder-groups button:has-text("Mine")');
 await adv.waitForTimeout(600);

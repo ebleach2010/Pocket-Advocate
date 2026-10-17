@@ -146,9 +146,11 @@ for (const p of PAGES) {
   //   FAIL  B5 the chat says what it guarantees and what it is not, first on its page and the same on subscribe and about, with live prices
   check('B5 the chat says what it guarantees and what it is not, first on its page and the same on subscribe and about, with live prices',
     /<p class="pkg-callout-h">Same day turnaround for at least one message, guaranteed\.<\/p>/.test(note)
-    && /At <span data-rate="sub">\$50<\/span> a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which guarantees <span data-hours="full">20<\/span> hours of work\. Expect priority, not in-depth case work\./.test(note)
+    // RE-PINNED 2026-10-17 (v7.65): Eric, asked whether these pages should say "up to 20 hours" like the rest: "Yes, up to 20".
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): priority-chat.html's "gives up to" put back to "guarantees" made B5 read FAIL.
+    && /At <span data-rate="sub">\$50<\/span> a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which gives up to <span data-hours="full">20<\/span> hours of work\. Expect priority, not in-depth case work\./.test(note)
     && chat.indexOf('pkg-callout') < chat.indexOf('pkg-letter')
-    && /you are guaranteed same day turnaround for at least one message\. At \$\$\{money\(subCents\)\} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which guarantees \$\{fullHours\} hours of work, so expect priority, not in-depth case work\./.test(sub)
+    && /you are guaranteed same day turnaround for at least one message\. At \$\$\{money\(subCents\)\} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which gives up to \$\{fullHours\} hours of work, so expect priority, not in-depth case work\./.test(sub)
     && /The important part: same day turnaround for at least one message, and priority, not in-depth case work\./.test(sub)
     && /You are guaranteed same day turnaround for at least one message\./.test(about)
     && !/not guaranteed/i.test(live) && !/\$45\b/.test(chat.replace(/<!--[\s\S]*?-->/g, '')));

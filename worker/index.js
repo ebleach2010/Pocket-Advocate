@@ -84,6 +84,8 @@ import { handleEmployer } from './employer.js';
 // Joe Bloe and the sample contractor, taken off his real shelf once (2026-10-16).
 import { retireSamples } from './retire.js';
 import { sweepFullServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
+import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddons } from './addons.js';
+import { chatStepUp, stepUpPrice, handleStepUpQuote, endChatForStepUp } from './stepup.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
 // The security rules, published by the Worker when what it carries changes.
@@ -647,6 +649,8 @@ async function handleRates(env, url) {
     fullAccessCapacity(env, own ? url.searchParams.get('advocate') : '').catch(() => ({ room: true })),
   ]);
   const r = own ? mergeRates(base, own) : base;
+  // What the advocate offers on top of a Full-Service month, and at what price (2026-10-17).
+  const addons = await caseAddons(env, { advocateId: url?.searchParams.get('advocate') || '' }, advocateIdOf).catch(() => null);
   // floorCents is deliberately NOT here: it is Eric's own margin line, it has
   // no business on a client-served endpoint, and the admin reads it back
   // through POST /api/admin/rates.
@@ -665,6 +669,7 @@ async function handleRates(env, url) {
     // The hours a Full-Service month includes, from the one constant, so a
     // page that states the number never has it typed in (2026-09-02).
     fullHours: FULL_INCLUDED_HOURS,
+    ...(addons ? { addons } : {}),
   });
 }
 // Follow-up sessions expire one month after the first discussion (Eric,
@@ -763,6 +768,8 @@ const SALES_ROUTES = new Set([
   // Another month asked for after one ended (2026-10-17): off while sales are,
   // on Eric's word ("No, keep it off").
   '/api/extend-request',
+  // An appeal asked for on a Full-Service case (2026-10-17): a purchase like the rest.
+  '/api/addon-request',
 ]);
 // 24/7 Priority Chat has its own switch (Eric, 2026-10-14: "Unlock priority
 // chat"), so it can be open while everything above stays shut.
@@ -1201,6 +1208,15 @@ export default {
         return await handleExtendDecision(request, env, {
           requireStaff, staffSees, json, notifyUser, stripePost, lineItems: extendLineItems,
           capacity: fullAccessCapacity, contractorOf, confirm: confirmExtensionPurchase, baseUrl: env.PUBLIC_BASE_URL,
+        });
+      if (url.pathname === '/api/step-up' && request.method === 'GET')
+        return await handleStepUpQuote(request, env, { requireUser, json, readRates });
+      if (url.pathname === '/api/addon-request' && request.method === 'POST')
+        return await handleAddonRequest(request, env, { requireUser, json, pingCase, advocateIdOf });
+      if (url.pathname === '/api/admin/addon-request' && request.method === 'POST')
+        return await handleAddonDecision(request, env, {
+          requireStaff, staffSees, json, notifyUser, stripePost, baseUrl: env.PUBLIC_BASE_URL,
+          confirm: (e, s) => confirmAddonPurchase(e, s, { pingCase }),
         });
       if (url.pathname === '/api/telehealth' && request.method === 'POST')
         return await handleTelehealthRequest(request, env);
@@ -2466,7 +2482,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-color-wheel';
+const BUILD_TAG = 'v2026-10-17-step-ups';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2474,7 +2490,7 @@ const BUILD_TAG = 'v2026-10-17-color-wheel';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.64';
+const VERSION = '7.65';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -2671,7 +2687,7 @@ function fullAccessLineItems(cents) {
         unit_amount: cents,
         product_data: {
           name: 'Full-Service Case Management, first month',
-          description: 'Direct work with your clinics and insurer, including appeals. Your case fee is credited against this.',
+          description: 'Direct work with your clinics and insurer, up to 20 hours in the month.',
         },
       },
     },
@@ -2981,6 +2997,12 @@ async function handleCaseCharge(request, env) {
     decision: body?.decision, amountCents: body?.amountCents, reason: body?.reason,
   }, now);
   if (d.error) return json({ error: d.error, cap: d.cap ?? null }, d.code);
+  // A first month of Full-Service booked from chat takes one of their places,
+  // the same check an upgrade gets when it is approved.
+  if (body?.decision === 'approve' && c.data.fullAccess && c.data.chatStepUp && !body?.overrideCap) {
+    const cap = await fullAccessCapacity(env, contractorOf(c.data, env));
+    if (!cap.room) return json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
+  }
   const ch = c.data.charge;
   let next = { ...ch, ...d.next };
 
@@ -3032,6 +3054,8 @@ async function handleCaseCharge(request, env) {
 
   if (d.op === 'cancel') await cancelHold(env, ch.paymentIntentId).catch((err) => console.warn('release hold:', err.message || err));
   if (approved && !ch.ratedAt) await raiseRatesFor(env, c.data).catch((err) => console.warn('rate raise:', err.message || err));
+  // Accepted from chat (2026-10-17): the chat line ends at the end of its month; the case chat takes over.
+  if (approved && c.data.chatStepUp) await endChatForStepUp(env, caseId, c.data, { stripePost }).catch((err) => console.warn('end chat:', err.message || err));
   if (next.state === 'declined') await releaseSlotOfCase(env, caseId).catch(() => {});
 
   // The client's words, the same in the push and the mail.
@@ -3341,11 +3365,18 @@ async function handleCheckout(request, env) {
   // "figure nobody agreed to" this route's quote handshake exists to stop —
   // the only senders of tier:'full' now are stale cached pages, and the
   // sentence converts them.
-  if (body?.tier === 'full')
+  // FROM CHAT (Eric, 2026-10-17: "From chat, they can enhance to advocacy case
+  // or full case management and just pay the month's difference"): a renewing
+  // chat line can book a first month of Full-Service, its $50 month off, behind
+  // the same scope note the upgrade takes. Nobody else books it directly.
+  const step = await chatStepUp(env, user.uid);
+  if (body?.tier === 'full' && !step)
     return json({
       error: 'Full-Service Case Management is added from inside an open case now. '
         + 'Book an Advocacy Case, then add it from your case page.',
     }, 400);
+  if (body?.tier === 'full' && typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
+    return json({ error: 'Read the scope note and acknowledge it first.' }, 400);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   // The number is asked for on every booking now, video included (Eric,
@@ -3362,7 +3393,7 @@ async function handleCheckout(request, env) {
   // Two paths: an open slot off the calendar, or a time the client requested.
   const isRequest = !slotId && typeof requestedStart === 'string';
   if (isRequest) return await checkoutRequestedTime(env, {
-    user, identity, requestedStart, method, phone, acks, clientTz, body,
+    user, identity, requestedStart, method, phone, acks, clientTz, body, step,
   });
 
   // Load and validate the slot.
@@ -3407,7 +3438,8 @@ async function handleCheckout(request, env) {
   // the page updates the number and re-enables the button. Honest about what
   // it costs, silent about why it changed.
   const live = await readRates(env);
-  const priceCents = live.caseCents;
+  const full = body?.tier === 'full';
+  const priceCents = stepUpPrice(live, { full, step });
   const quoted = Number(body?.quotedCents) || 0;
   if (quoted && quoted !== priceCents) {
     // The slot was held a few lines up. Give it back rather than parking it
@@ -3417,10 +3449,10 @@ async function handleCheckout(request, env) {
       { mask: ['state', 'holdExpiresAt', 'heldByUid'] }).catch(() => {});
     return json({
       error: 'rate-changed', caseCents: live.caseCents,
-      addonCents: live.addonCents, fullCents: live.fullCents,
+      addonCents: live.addonCents, fullCents: live.fullCents, creditCents: step?.creditCents || 0,
     }, 409);
   }
-  const lineItems = caseLineItems(priceCents);
+  const lineItems = full ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
 
   // A HOLD, NOT A CHARGE (Eric, 2026-09-06: "only once I approve their case
   // do they get charged"). The card is authorized for the case fee and
@@ -3446,6 +3478,7 @@ async function handleCheckout(request, env) {
       phone: cleanPhone(phone),
       address,
       acks: JSON.stringify(acks),
+      ...stepMeta(step, full),
     },
   });
 
@@ -3457,13 +3490,21 @@ async function handleCheckout(request, env) {
   return json({ url: session.url });
 }
 
+/** What a booking from chat carries to the case it becomes (2026-10-17). */
+function stepMeta(step, full) {
+  return {
+    ...(full ? { tier: 'full' } : {}),
+    ...(step ? { chatCredit: String(step.creditCents), chatSub: step.subscriptionId || '' } : {}),
+  };
+}
+
 /**
  * Checkout for a time the client asked for that isn't on the calendar. There
  * is no availability doc to hold — nothing is reserved — so the case is created
  * flagged `appointment.requested`, and the admin confirms or declines it.
  */
 async function checkoutRequestedTime(env, o) {
-  const { user, identity, requestedStart, method, phone, acks, clientTz } = o;
+  const { user, identity, requestedStart, method, phone, acks, clientTz, step = null } = o;
   const start = new Date(requestedStart);
   if (Number.isNaN(start.getTime())) return json({ error: 'Pick a valid date and time.' }, 400);
 
@@ -3489,17 +3530,18 @@ async function checkoutRequestedTime(env, o) {
   // ratchet landed: the one path made for people whose time is not on the
   // calendar could not take their money. (Post-2.2 audit, 2026-08-21.)
   const live = await readRates(env);
-  const priceCents = live.caseCents;
+  const full = o.body?.tier === 'full' && !!step;
+  const priceCents = stepUpPrice(live, { full, step });
   const quoted = Number(o.body?.quotedCents) || 0;
   if (quoted && quoted !== priceCents)
     return json({
       error: 'rate-changed', caseCents: live.caseCents,
-      addonCents: live.addonCents, fullCents: live.fullCents,
+      addonCents: live.addonCents, fullCents: live.fullCents, creditCents: step?.creditCents || 0,
     }, 409);
 
   const now = new Date();
   const expiresAt = new Date(now.getTime() + HOLD_MINUTES * 60_000);
-  const lineItems = caseLineItems(priceCents);
+  const lineItems = full ? fullAccessLineItems(priceCents) : caseLineItems(priceCents);
   // The same hold as the slot path (2026-09-06): authorized, captured on his
   // approval at the amount he sets.
   const session = await stripePost(env, '/checkout/sessions', {
@@ -3523,6 +3565,7 @@ async function checkoutRequestedTime(env, o) {
       phone: cleanPhone(phone),
       address: cleanAddress(o.body?.address),
       acks: JSON.stringify(acks),
+      ...stepMeta(step, full),
     },
   });
   return json({ url: session.url });
@@ -3686,6 +3729,7 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'telehealth') await confirmTelehealthPurchase(env, obj);
     else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
     else if (obj.metadata?.kind === 'casecharge') await confirmCaseCharge(env, obj);
+    else if (obj.metadata?.kind === 'addon') await confirmAddonPurchase(env, obj, { pingCase });
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'payment_intent.canceled') {
     // A hold the network let go (seven days) before he decided, or one he
@@ -4093,7 +4137,10 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       // it is what the "what has this case paid" helpers read.
       fullAccess: isFull,
       fullAccessAt: isFull ? now : null,
-      fullAccessRateCents: isFull ? rateAtBooking.fullCents : null,
+      // A month booked from chat is the month less the chat credit; what the card holds is what it costs.
+      fullAccessRateCents: isFull ? (Number(m.chatCredit) > 0 && Number(session.amount_total) > 0 ? Number(session.amount_total) : rateAtBooking.fullCents) : null,
+      // Booked from a chat line (2026-10-17): the credit taken, and the line it ends once the case is accepted.
+      ...(Number(m.chatCredit) > 0 ? { chatStepUp: { creditCents: Number(m.chatCredit), subscriptionId: m.chatSub || null, at: now, endedAt: null } } : {}),
       stripe: {
         sessionId: session.id,
         paymentIntentId: session.payment_intent || null,
@@ -4128,6 +4175,11 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   // when he approves it, not before: a booking he declines is not a client.
   // A case he scheduled at no charge is not a sale, so it moves nothing.
   if (created && !held && !(inviteId && !invitePaid)) await raiseRatesFor(env, { advocateId }).catch((err) => console.warn('rate raise:', err.message || err));
+  // Paid outright rather than held: the case is theirs now, so the chat line it came from ends.
+  if (created && !held && Number(m.chatCredit) > 0) {
+    const fresh = await getDoc(env, `cases/${caseId}`).catch(() => null);
+    if (fresh) await endChatForStepUp(env, caseId, fresh.data, { stripePost }).catch((err) => console.warn('end chat:', err.message || err));
+  }
   if (created && held) {
     await pingCase(env, { advocateId },
       `${firstName(m.name) || 'A client'} booked a case. Their card is held, not charged: approve or decline it.`,
@@ -7182,13 +7234,20 @@ async function handleChangelog(request, env) {
  * Stripe error.
  */
 function upgradeCents(c, liveFullCents) {
-  // NO CREDIT (Eric, 2026-08-29: "Clients don't get discounted their initial
-  // cost for a case review. They pay 3400 separately."). The case fee bought
-  // the case review; a Full-Service month is a separate service at the full
-  // month price. The credit this function used to apply lives in file
-  // history at v2.52. `c` stays in the signature so the callers and the
-  // quote-freeze handshake do not have to know the arithmetic changed.
-  return Math.max(100, Number(liveFullCents) || 0);
+  const month = Math.max(100, Number(liveFullCents) || 0);
+  // EVERY STEP UP AN ENHANCEMENT (Eric, 2026-10-17: "Advocacy case to full
+  // management, same thing but if they upgrade they don't get that document
+  // report"). Before the report is delivered the first month is the month less
+  // the case fee already paid, and Full-Service replaces the report
+  // (reportReplaced). After it is delivered, his answer: "The full month".
+  // This replaces the 2026-08-29 rule ("They pay 3400 separately").
+  if (reportDeliveredOn(c)) return month;
+  return Math.max(100, month - Math.max(0, Number(c?.caseRateCents) || 0));
+}
+
+/** The written report reached the client: a step up after this pays the full month. */
+function reportDeliveredOn(c) {
+  return !!c?.reportDeliveredAt || c?.status === 'delivered';
 }
 
 /**
@@ -7641,7 +7700,12 @@ async function handleExtendCheckout(request, env) {
   if (pending?.url && new Date(pending.expiresAt || 0).getTime() > Date.now())
     return json({ ok: true, url: pending.url });
 
-  const cents = FULL_EXTEND[30];
+  // THE CASE'S OWN MONTH PRICE (Eric, 2026-10-17, asked whether another month
+  // is $3,500 or $4,400: "$4,400", the same price as the first month). Read
+  // from the case's advocate's list, so the price editor and a contractor's
+  // own prices reach it; the constant is only the fallback when the list
+  // cannot be read.
+  const cents = Number((await ratesForCase(env, c.data).catch(() => null))?.fullCents) || FULL_EXTEND[30];
   // The same honesty check /api/checkout and /api/upgrade run. The price is
   // off the ratchet so it cannot move on its own, but it can move because
   // Eric edits the constant, and a card that read $1,750 must never charge
@@ -7828,8 +7892,18 @@ async function handleTelehealthRequest(request, env) {
     requestedAt: new Date(),
   };
 
-  // Included in the tier: no charge, straight to pending-confirmation.
+  // ON FULL-SERVICE, AN ENHANCEMENT (Eric, 2026-10-17: "With full case
+  // management, attending appointments and writing insurance appeals are
+  // enhancements"). It was included free; now it is the case's advocate's own
+  // price for attending, or not offered at all. His: "$525".
+  let cents = TELEHEALTH_PRICE_CENTS;
   if (c.data.fullAccess) {
+    const attend = (await caseAddons(env, c.data, advocateIdOf)).attend;
+    if (!attend.on) return json({ error: 'Your advocate does not come to appointments on Full-Service. Ask in chat.' }, 409);
+    cents = attend.cents;
+  }
+  // At no charge: straight to pending-confirmation.
+  if (cents === 0) {
     await patchDoc(env, `cases/${caseId}`, {
       pendingTelehealth: { ...req, state: 'requested', paidCents: 0, sessionId: null },
     }, { mask: ['pendingTelehealth'] });
@@ -7845,7 +7919,7 @@ async function handleTelehealthRequest(request, env) {
   const session = await stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
-    line_items: telehealthLineItems(TELEHEALTH_PRICE_CENTS),
+    line_items: telehealthLineItems(cents),
     payment_intent_data: HOLD_INTENT,
     success_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}&telehealth=1`,
     cancel_url: `${env.PUBLIC_BASE_URL}/case.html?id=${caseId}`,
@@ -11350,18 +11424,34 @@ async function handleCaseUpdate(request, env) {
     // as one would mark the case delivered and close the chat in 48 hours.
     if (doc.data.fullAccess) return json({ error: 'Full-Service has no written report. File it as another type.' }, 409);
     if (!doc.data.reportDueAt) return json({ error: 'Mark the call done first. The report comes after the call.' }, 409);
-    await patchDoc(env, `cases/${caseId}`, { status: 'delivered', reportDeliveredAt: now }, {
-      mask: ['status', 'reportDeliveredAt'],
+    // A NEW ENHANCEMENT (Eric, 2026-10-17: "if the document has been
+    // delivered they should be notified that they have a new enhancement. In
+    // that tab they can purchase the full case management easily"). Only
+    // while sales are open, and never on a free family case: otherwise there
+    // is nothing on that tab to buy. enhancementAt lights the tab's dot.
+    const enhance = SALES_OPEN && !doc.data.family;
+    await patchDoc(env, `cases/${caseId}`, {
+      status: 'delivered', reportDeliveredAt: now, ...(enhance ? { enhancementAt: now } : {}),
+    }, {
+      mask: ['status', 'reportDeliveredAt', ...(enhance ? ['enhancementAt'] : [])],
     });
     await sendEmail(env, {
       to: doc.data.clientEmail,
       subject: 'Your Pocket Advocate report is ready',
-      html: `<p>Your written report is in your case file — yours to download,
+      html: `<p>Your written report is in your case file: yours to download,
         print, and keep forever. Share it with your care team.</p>
-        <p>Take a couple of days to read it over — the case chat stays open for
+        <p>Take a couple of days to read it over. The case chat stays open for
         48 hours, so ask me anything it raises while it's fresh.</p>
+        ${enhance ? `<p>You also have a new enhancement on your case: Full-Service Case Management, where I deal with your clinics and insurer directly. It is under Enhance.</p>` : ''}
         <p><a href="${env.PUBLIC_BASE_URL}/case.html">Open your case</a></p>`,
     });
+    if (doc.data.clientUid) {
+      await notifyUser(env, doc.data.clientUid, {
+        title: 'Pocket Advocate',
+        body: enhance ? 'Your report is ready. You have a new enhancement on your case.' : 'Your report is ready.',
+        link: `/case.html?id=${caseId}${enhance ? '&page=addons' : ''}`,
+      }).catch(() => {});
+    }
   } else if (action === 'confirm-request') {
     const appt = doc.data.appointment || {};
     if (!appt.requested) return json({ error: 'This appointment is not a pending request.' }, 409);

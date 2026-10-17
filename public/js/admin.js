@@ -318,7 +318,7 @@ async function load() {
       // A stale check-in cadence and a telehealth request waiting on his
       // confirm are the same kind of state.
       overview: c.needsReschedule || dueSoon(c) || checkInDue(c)
-        || c.pendingTelehealth?.state === 'requested',
+        || c.pendingTelehealth?.state === 'requested' || c.addonRequest?.state === 'pending',
     });
     // The clock as it stands right now, so a card can paint "running" the
     // moment the shelf does rather than after a round trip.
@@ -378,6 +378,7 @@ async function load() {
       }${checkInDue(c) ? ' <strong class="fld-alert">CHECK-IN DUE</strong>' : ''
       }${pacingFlags(c).length ? ' <strong class="fld-alert">CHECK THE PACE</strong>' : ''
       }${c.pendingTelehealth?.state === 'requested' ? ' <strong class="fld-alert">TELEHEALTH, CONFIRM</strong>' : ''
+      }${c.addonRequest?.state === 'pending' ? ' <strong class="fld-alert">ENHANCEMENT ASKED FOR</strong>' : ''
       }${c.family ? ` <strong class="fld-family">FAMILY · FREE${c.familyRelation ? `, ${esc(c.familyRelation)}` : ''}</strong>` : ''
       }${c.sample ? ' <strong class="fld-family">SAMPLE · NOT A REAL CLIENT</strong>' : ''
       }</span>${badges ? `<span class="folder-badges" title="Not looked at yet">${badges}</span>` : ''}`,
@@ -406,6 +407,9 @@ async function load() {
     for (const f of pacingFlags(c)) loops.push({ href, name, label: f.label, tone: 'warm' });
     if (c.pendingTelehealth?.state === 'requested')
       loops.push({ href, name, label: 'Telehealth to confirm', tone: 'hot' });
+    // An enhancement asked for on top of a Full-Service month (2026-10-17).
+    if (c.addonRequest?.state === 'pending')
+      loops.push({ href, name, label: c.addonRequest.kind === 'appeal' ? 'Asking for an insurance appeal' : 'Asking for an enhancement', tone: 'hot' });
     // The call has happened and nothing says so (2026-10-15): the report
     // clock, or a Full-Service consult, waits on this one tap.
     const callAt = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;

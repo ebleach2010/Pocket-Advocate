@@ -336,7 +336,10 @@ const day = 86_400_000;
 // NEGATIVE CONTROL (run 2026-09-07): the deny's `if (heldNow) await cancelHold(env, p.paymentIntentId)` changed to `if (false) await cancelHold(...)` made this read
 //   FAIL  CH5 telehealth: the request holds the card and says so on the receipt, the webhook writes the hold on the request and pushes no payment, confirming captures the amount he set up to the hold (zero releases; a lapsed hold can only confirm at no charge) and writes captured money down, declining releases the hold with nothing to refund and says so, his card and the client's card carry the held words, and the demo mirrors it
 check('CH5 telehealth: the request holds the card and says so on the receipt, the webhook writes the hold on the request and pushes no payment, confirming captures the amount he set up to the hold (zero releases; a lapsed hold can only confirm at no charge) and writes captured money down, declining releases the hold with nothing to refund and says so, his card and the client\'s card carry the held words, and the demo mirrors it',
-  /line_items: telehealthLineItems\(TELEHEALTH_PRICE_CENTS\),\n\s+payment_intent_data: HOLD_INTENT,/.test(W)
+  // RE-PINNED 2026-10-17 (v7.65): the price held is `cents`: the flat rate, or on Full-Service the advocate's own price
+  // for attending (Eric: "attending appointments ... are enhancements").
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): the hold intent taken off the telehealth session made CH5 read FAIL.
+  /line_items: telehealthLineItems\(cents\),\n\s+payment_intent_data: HOLD_INTENT,/.test(W)
   && /Your card is held now and charged only when he confirms he can attend\./.test(W)
   && /async function confirmTelehealthPurchase\(env, session, \{ held = null \} = \{\}\) \{/.test(W)
   && /if \(!held\) payments\.push\(\{ kind: 'telehealth'/.test(W)
@@ -409,13 +412,16 @@ check('CH6 Full-Service approval takes the amount he typed (the quoted month by 
     && bookLine === `Your card is held today, not charged. ${mod.CHARGE_COPY.held.replace(/^Your card is held, not charged\. /, '')}`
     // RE-PINNED 2026-10-15 (v7.41): Eric, "Once a lead is scheduled they are prompted to fill out the forms and confirm
     // the time and date"; his invitation's last step confirms (and charges at once), every other booking still holds.
-    && /<button class="btn cta" id="pay">\$\{invite \? 'Confirm' : `Book, \$\$\{money\(caseCents\)\} held`\}<\/button>/.test(BOOK)
+    // RE-PINNED 2026-10-17 (v7.65): the figure is shownCents(), the case fee or, from chat, the credited price.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): the button's " held" taken out made CH7 read FAIL.
+    && /<button class="btn cta" id="pay">\$\{invite \? 'Confirm' : `Book, \$\$\{money\(shownCents\(\)\)\} held`\}<\/button>/.test(BOOK)
     && /your card is held as normal/.test(BOOK) && /Case fees are non-refundable once I have taken your case\./.test(BOOK)
     && /Your card is held, not charged\. I am opening your case now/.test(RET)
     && /\$\{chargeUndecided\(c\.charge\) \? chargeCard\(c\) : ''\}/.test(ADMC)
     && /data-charge-card/.test(card) && /data-charge-tap/.test(card) && /data-charge-in/.test(card) && /data-charge="approve"/.test(card) && /data-charge="decline"/.test(card)
     && /0 takes the case at no charge\./.test(card)
-    && /fetch\('\/api\/admin\/case-charge', \{/.test(wire) && /body: JSON\.stringify\(\{ caseId, decision, amountCents, reason \}\),/.test(wire)
+    // RE-PINNED 2026-10-17 (v7.65): the post may carry overrideCap, when a Full-Service month from chat would go over the limit.
+    && /fetch\('\/api\/admin\/case-charge', \{/.test(wire) && /body: JSON\.stringify\(\{ caseId, decision, amountCents, reason, \.\.\.\(overrideCap \? \{ overrideCap: true \} : \{\}\) \}\),/.test(wire)
     && /if \(ch\.state === 'held' && amountCents > cap\) \{ say\(/.test(wire)
     && /const chargeEl = pane\.querySelector\('\[data-charge-card\]'\);\n\s+if \(chargeEl\) wireChargeCard\(chargeEl, c\);/.test(ADMC)
     // RE-PINNED 2026-10-15 (v7.53): the shelf grew a FULL-SERVICE section, which tags a held charge like the other two.

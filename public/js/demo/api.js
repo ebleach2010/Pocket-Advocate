@@ -109,6 +109,25 @@ export function demoApi(role, store) {
     return '';
   };
   // A contractor's record, when the uid names an active one that is not his.
+  // What an advocate offers on top of a Full-Service month (worker/addons.js addonsOf, 2026-10-17).
+  const demoAddons = (uid) => {
+    const id = uid && /^[\w-]{1,64}$/.test(uid) ? uid : 'demo-admin';
+    const rec = store.docs.get(`advocates/${id}`);
+    const owner = id === 'demo-admin' || rec?.owner === true;
+    const set = rec?.addons || (owner ? { attend: { on: true, cents: 52500 }, appeal: { on: true, cents: 35000 } } : {});
+    const one = (v) => ({ on: v?.on === true, cents: Number.isInteger(v?.cents) && v.cents >= 0 ? v.cents : 0 });
+    return { attend: one(set.attend), appeal: one(set.appeal) };
+  };
+  const cleanDemoAddons = (input) => {
+    const out = {};
+    for (const [id, label] of [['attend', 'Attending an appointment'], ['appeal', 'Writing an insurance appeal']]) {
+      const v = input?.[id] || {};
+      const cents = Number(v.cents);
+      if (v.on === true && (!Number.isInteger(cents) || cents < 0 || cents > 2_000_000)) return { error: `${label}: a price from $0 to $20,000.` };
+      out[id] = { on: v.on === true, cents: Number.isInteger(cents) && cents >= 0 ? cents : 0 };
+    }
+    return { value: out };
+  };
   const demoContractor = (uid) => {
     if (!uid || !/^[\w-]{1,64}$/.test(uid) || uid === 'demo-admin') return null;
     const rec = store.docs.get(`advocates/${uid}`);
@@ -177,7 +196,7 @@ export function demoApi(role, store) {
         // A contractor's own prices over his, as the Worker does (2026-10-15).
         const own = demoContractor(q.get('advocate'));
         for (const k of ['caseCents', 'addonCents', 'fullCents']) if (Number(own?.settings?.rates?.[k]) > 0) now[k] = own.settings.rates[k];
-        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20 });
+        return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20, addons: demoAddons(q.get('advocate')) });
       }
       const want = { ...now };
       for (const k of Object.keys(SEEDS)) if (body && body[k] !== undefined) want[k] = Number(body[k]);
@@ -884,7 +903,8 @@ export function demoApi(role, store) {
         if (c.status === 'closed') return fail(409, 'Case is closed.');
         if (c.fullAccess) return fail(409, 'Full-Service has no written report. File it as another type.');
         if (!c.self && !c.reportDueAt) return fail(409, 'Mark the call done first. The report comes after the call.');
-        store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now });
+        // The new-enhancement stamp the Worker writes (2026-10-17); the page shows its dot only while sales are open.
+        store.docs.set(key, { ...c, status: 'delivered', reportDeliveredAt: now, ...(c.family ? {} : { enhancementAt: now }) });
       } else if (body.action === 'set-paid') {
         // Missing entirely until now, which is how a demo can agree with a
         // Worker that was itself throwing: neither one recorded anything.
@@ -1206,13 +1226,17 @@ export function demoApi(role, store) {
         when: new Date(body.when), clinicName: body.clinicName, provider: body.provider,
         attestAt: new Date(body.attestAt), requestedAt: new Date(),
       };
-      if (c.fullAccess) {
+      // On Full-Service, the advocate's own price for attending, or not offered (2026-10-17).
+      const attend = c.fullAccess ? demoAddons(c.advocateId).attend : null;
+      if (attend && !attend.on) return fail(409, 'Your advocate does not come to appointments on Full-Service. Ask in chat.');
+      const cents = attend ? attend.cents : 52500;
+      if (!cents) {
         store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 0 } });
         store.persist?.();
         return ok({ ok: true, requested: true });
       }
-      // Standard case: straight past Stripe, landing as a paid request.
-      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: 45000 } });
+      // Straight past Stripe, landing as a paid request.
+      store.docs.set(key, { ...c, pendingTelehealth: { ...req, state: 'requested', paidCents: cents } });
       store.persist?.();
       await beat(600);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&telehealth=1&demo=${role}` });
@@ -1328,7 +1352,8 @@ export function demoApi(role, store) {
       if (!c.fullAccess) return fail(409, 'Extensions are part of Full-Service Case Management.');
       if (c.status === 'closed') return fail(409, 'This case is closed.');
       await beat(600);
-      const cents = 350000;
+      // The month price, the same as the first (Eric, 2026-10-17: "$4,400").
+      const cents = 440000;
       store.docs.set(key, {
         ...c,
         fullAccessExtraDays: (Number(c.fullAccessExtraDays) || 0) + 30,
@@ -1363,6 +1388,64 @@ export function demoApi(role, store) {
       store.docs.set(key, { ...c, extendRequest: next });
       store.persist?.(); store.fire?.(key);
       return ok({ ok: true, state: 'pending', at: next.at });
+    }
+    // A step up from chat (worker/stepup.js, 2026-10-17): the $50 chat month off a case or a first Full-Service month.
+    if (path === '/api/step-up') {
+      const sub = store.docs.get(`subscriptions/${me}`);
+      const renewingSub = sub && (sub.status === 'active' || sub.status === 'trialing') && sub.cancelAtPeriodEnd !== true && !sub.stepUpCaseId;
+      if (!renewingSub) return ok({ eligible: false, creditCents: 0 });
+      const r = { caseCents: 210000, fullCents: 440000, ...(store.docs.get('config/rates') || {}) };
+      return ok({ eligible: true, creditCents: 5000, caseCents: Math.max(100, r.caseCents - 5000), fullCents: Math.max(100, r.fullCents - 5000) });
+    }
+    // An appeal on a Full-Service case (worker/addons.js, 2026-10-17): asked, then answered.
+    if (path === '/api/addon-request') {
+      const key = `cases/${body.caseId || ''}`;
+      const c = store.docs.get(key);
+      if (!c) return fail(404, 'Not found');
+      const req = c.addonRequest;
+      if (body.action === 'withdraw') {
+        if (req?.state !== 'pending') return fail(409, 'There is no request to withdraw.');
+        store.docs.set(key, { ...c, addonRequest: null });
+        store.persist?.(); store.fire?.(key);
+        return ok({ ok: true, withdrawn: true });
+      }
+      if (!c.fullAccess) return fail(409, 'These are enhancements on Full-Service Case Management.');
+      if (c.status === 'closed') return fail(409, 'This case is closed.');
+      if (body.kind !== 'appeal') return fail(400, 'Bad add-on');
+      if (req?.state === 'pending') return fail(409, 'You already have a request waiting on your advocate.');
+      const offered = demoAddons(c.advocateId).appeal;
+      if (!offered.on) return fail(409, 'Your advocate does not offer this one. Ask in chat.');
+      const next = { kind: 'appeal', state: 'pending', at: new Date(), cents: offered.cents, note: String(body.note || '').trim().slice(0, 600), decidedAt: null, declineReason: '' };
+      store.docs.set(key, { ...c, addonRequest: next });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, state: 'pending', at: next.at, cents: next.cents });
+    }
+    if (path === '/api/admin/addon-request') {
+      const key = `cases/${body.caseId || ''}`;
+      const c = store.docs.get(key);
+      const req = c?.addonRequest;
+      if (!c || req?.state !== 'pending') return fail(409, 'There is no request waiting.');
+      if (body.decision === 'decline') {
+        const reason = String(body.reason || '').trim();
+        if (!reason) return fail(400, 'Write the reason. The client reads it word for word.');
+        store.docs.set(key, { ...c, addonRequest: { ...req, state: 'declined', decidedAt: new Date(), declineReason: reason } });
+        store.persist?.(); store.fire?.(key);
+        return ok({ ok: true, state: 'declined' });
+      }
+      if (body.decision !== 'approve') return fail(400, 'Bad request');
+      const asked = body.amountCents === undefined || body.amountCents === null ? null : Number(body.amountCents);
+      if (asked !== null && (!Number.isInteger(asked) || asked < 0)) return fail(400, 'The amount has to be a whole number of cents, zero or more, under $20,000.');
+      const cents = asked === null ? (Number(req.cents) || 0) : asked;
+      const now = new Date();
+      // No checkout in the demo: a yes is the paid landing at once.
+      store.docs.set(key, {
+        ...c,
+        addonRequest: { ...req, state: 'started', decidedAt: now, startedAt: now },
+        addonsBought: [...(Array.isArray(c.addonsBought) ? c.addonsBought : []), { kind: req.kind, cents, at: now, sessionId: `cs_demo_addon_${now.getTime()}` }],
+        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), { kind: 'addon', addon: req.kind, amountCents: cents, sessionId: `cs_demo_addon_${now.getTime()}`, at: now }],
+      });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, state: 'started', cents });
     }
     if (path === '/api/admin/extend-request') {
       const key = `cases/${body.caseId || ''}`;
@@ -1616,15 +1699,16 @@ export function demoApi(role, store) {
           store.fire?.(key);
           return ok({ ok: true, withdrawn: true });
         }
-        const monthCents = 350000;
+        const monthCents = 440000;
         const at = new Date();
+        // Mirroring the Worker's upgradeCents (Eric, 2026-10-17): before the
+        // report, the month less the case fee; after it, the full month.
+        const delivered = !!c.reportDeliveredAt || c.status === 'delivered';
         store.docs.set(key, {
           ...c,
           fullAccessRequest: {
             state: 'pending', at, monthCents,
-            // NO CREDIT, mirroring the Worker (Eric, 2026-08-29: "They pay
-            // 3400 separately.").
-            firstMonthCents: monthCents,
+            firstMonthCents: delivered ? monthCents : Math.max(100, monthCents - Math.max(0, Number(c.caseRateCents) || 0)),
             ackAt: body.acks?.fullAccess || Date.now(),
             decidedAt: null, declineReason: '',
           },
@@ -2810,7 +2894,7 @@ export function demoApi(role, store) {
       const people = new Map();
       for (const { id, data: a } of docsUnder('advocates/')) {
         if (a.active !== true && !a.owner) continue;
-        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: !!a.headshotPath || !!a.owner, bio: a.bio || '', credentials: a.credentials || '', photoV: String(a.photoV || ''), commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
+        people.set(id, { uid: id, name: a.name || a.email || 'Advocate', owner: !!a.owner, sample: !!a.sample, active: true, onboarded: !!a.onboardedAt || !!a.owner, hasPhoto: !!a.headshotPath || !!a.owner, bio: a.bio || '', credentials: a.credentials || '', photoV: String(a.photoV || ''), addons: demoAddons(id), commissionPct: pctOf(a, id), open: 0, closed: 0, kinds: {}, chatLines: 0, paidCents: 0, tipsCents: 0, proposedCents: 0, clients: [] });
       }
       for (const { id, data: c } of docsUnder('cases/')) {
         const p = people.get(advOf(c));
@@ -3086,7 +3170,7 @@ export function demoApi(role, store) {
         // A client's address stays a client's (2026-10-16), as the Worker refuses it.
         if ([...store.docs.entries()].some(([k, v]) => /^users\/[^/]+$/.test(k) && v?.email === email && (v.role || 'client') === 'client')) return fail(409, 'That address already belongs to a client here. Use another email for their advocate account.');
         const uid = `demo-adv-${Date.now().toString(36)}`;
-        store.docs.set(`advocates/${uid}`, { uid, name, email, active: true, owner: false, commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null, acceptingNew: true, advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true });
+        store.docs.set(`advocates/${uid}`, { uid, name, email, active: true, owner: false, commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null, acceptingNew: true, addons: cleanDemoAddons(body.addons || {}).value, advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true });
         store.docs.set(`users/${uid}`, { email, name, role: 'advocate' });
         store.persist?.();
         return ok({ ok: true, uid, emailed: true });
@@ -3113,6 +3197,7 @@ export function demoApi(role, store) {
         if ('name' in body) { const n = String(body.name || '').trim().slice(0, 80); if (!n) return fail(400, 'Their name, please.'); next.name = n; }
         if ('credentials' in body) next.credentials = String(body.credentials || '').trim().slice(0, 200);
         if ('bio' in body) next.bio = String(body.bio || '').trim().slice(0, 1500);
+        if ('addons' in body) { const ad = cleanDemoAddons(body.addons); if (ad.error) return fail(400, ad.error); next.addons = ad.value; }
         if ('advisorEnabled' in body) {
           if (body.advisorEnabled === true && !a.owner && a.advisor?.optedIn !== true) return fail(409, 'They have not opted in. It can be switched on once they do.');
           next.advisor = { ...(a.advisor || {}), enabled: body.advisorEnabled === true };

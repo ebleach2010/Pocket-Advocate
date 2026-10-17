@@ -15,6 +15,7 @@ import { ageFromDob, MIN_AGE } from './profile.js';
 import { WAIVERS } from './waivers.js';
 import { SERVICE_TERMS, SERVICE_TERMS_PLAIN } from './service-terms.js';
 import { rates } from './rates.js';
+import { FULL_ACCESS_TERMS, FULL_ACCESS_PLAIN } from './tier-terms.js';
 
 // The fallback price, and only the fallback. The real one lives in the Worker
 // and moves on its own: every completed booking lifts it, so a number compiled
@@ -35,6 +36,13 @@ let caseCents = CASE_PRICE_CENTS;
 // compiled into this file any more.
 // Thousands separated, because the case price crossed $1,000 in the 2026-08-26
 // recalibration and "$1200" on a payment button reads like a typo.
+// FROM CHAT (Eric, 2026-10-17: "From chat, they can enhance to advocacy case
+// or full case management and just pay the month's difference"; "Credit $50,
+// end chat"). /book.html?step=case or ?step=full from the chat page. The
+// Worker says whether this subscriber has the credit and what each costs with
+// it; without it the page is the ordinary booking.
+const STEP = /^(case|full)$/.test(new URLSearchParams(location.search).get('step') || '') ? new URLSearchParams(location.search).get('step') : '';
+let stepUp = null; // { eligible, creditCents, caseCents, fullCents }
 const money = (cents) => (cents / 100).toLocaleString('en-US',
   cents % 100 ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
 
@@ -103,8 +111,9 @@ async function init() {
   user = await currentUser();
   if (!user) {
     // Signed-out visitors sign in right here, inside step 1.
-    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : '/book.html' });
+    user = await ensureSignedIn(document.getElementById('step'), { returnTo: INVITE_ID ? `/book.html?invite=${INVITE_ID}` : STEP ? `/book.html?step=${STEP}` : '/book.html' });
   }
+  if (!INVITE_ID) loadStepUp().catch(() => {});
   // requireUser used to create users/{uid} on first sign-in; currentUser +
   // ensureSignedIn do not, so replicate auth.js's ensureProfile here. The
   // same read also prefills the inline step-1 profile fields.
@@ -729,10 +738,13 @@ function renderPayment() {
     <h1>Lock it in</h1>
     <section class="stack-tight">
       <p class="price-line">
-        <span class="eyebrow">Advocacy Case</span>
-        <span class="price" data-case-price>${invite && !invite.priceCents ? 'No charge' : `$${money(invite ? invite.priceCents : caseCents)}`}</span>
-        <span class="included" data-included>This includes our call and your written report within 14 days.</span>
+        <span class="eyebrow">${stepFull() ? 'Full-Service Case Management, first month' : 'Advocacy Case'}</span>
+        <span class="price" data-case-price>${invite && !invite.priceCents ? 'No charge' : `$${money(invite ? invite.priceCents : shownCents())}`}</span>
+        <span class="included" data-included>${stepFull()
+    ? 'Up to 20 hours of advocacy in the month, from our first call. No written report: the work replaces it.'
+    : 'This includes our call and your written report within 14 days.'}</span>
       </p>
+      ${!invite && stepUp ? `<p class="muted small measure" data-step-credit>Your $${money(stepUp.creditCents)} chat month comes off. Once I take your case your chat line stops renewing, and the case chat takes over.</p>` : ''}
       <p class="muted small">
         <strong style="color:var(--ink)">${localLong.format(when)}</strong> (your time)<br>
         ${mtFmt.format(when)} MST my time<br>
@@ -744,8 +756,17 @@ function renderPayment() {
       your card is held as normal, and I'll confirm this time, or offer you the nearest one
       that works, before the date. Nothing is lost either way.
     </p>` : ''}
+    ${stepFull() ? `
+    <details class="agreement" data-id="${esc(FULL_ACCESS_TERMS.id)}">
+      <summary>
+        <span class="agreement-title">${esc(FULL_ACCESS_TERMS.title)}</span>
+        <span class="agreement-plain">${esc(FULL_ACCESS_PLAIN)}</span>
+      </summary>
+      <div class="agreement-body">${FULL_ACCESS_TERMS.body}</div>
+      <label class="agreement-check"><input type="checkbox" data-step-ack disabled> I have read and acknowledge this</label>
+    </details>` : ''}
     <p class="error" id="pay-error" hidden></p>
-    <button class="btn cta" id="pay">${invite ? 'Confirm' : `Book, $${money(caseCents)} held`}</button>
+    <button class="btn cta" id="pay">${invite ? 'Confirm' : `Book, $${money(shownCents())} held`}</button>
     <!-- THE HOLD (Eric, 2026-09-06): the card is held today and charged only
          when he takes the case. Said before the button is pressed, in the
          same words the case page and the mail use. -->
@@ -770,16 +791,17 @@ function renderPayment() {
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Full-Service Case Management</strong><br>
           I take over the legwork, a month at a time: up to 20 hours of
           comprehensive advocacy each 30-day service period, with priority
-          access throughout. Check-in calls at least twice a month, calls to
-          your clinics and insurer on your behalf, your telehealth visits
-          attended, and your insurance appeals written by me, all from those
-          hours. Most cases take about two months, and every month after the
-          first is your choice, not a commitment. It is a separate service at
-          its own monthly price; your case fee pays for the case review.</p>
+          access throughout. Check-in calls at least twice a month and calls to
+          your clinics and insurer on your behalf, all from those hours.
+          Writing an insurance appeal and coming to an appointment with you
+          are enhancements on top. Most cases take about two months, and every
+          month after the first is your choice, not a commitment. Asked for
+          before your written report, your case fee comes off the first month
+          and Full-Service replaces the report.</p>
         <p class="muted small" style="margin:0 0 .35rem;"><strong style="color:var(--ink)">Follow-up session · $<span data-rate="addon">325</span></strong><br>
           A second full discussion on the same case after your report lands. Same case, same file, no starting over.</p>
         <p class="muted small" style="margin:0;"><strong style="color:var(--ink)">Telehealth appointment advocacy · $<span data-rate="tele">525</span></strong><br>
-          I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; if I can't attend, or your provider doesn't allow it, you get every dollar back. Included with Full-Service Case Management.</p>
+          I join a telehealth visit with one of your own providers by video and advocate live. I confirm every appointment personally; your card is held, not charged, until I do, and if I can't attend or your provider doesn't allow it, nothing is charged. On Full-Service it is an enhancement at your advocate's price.</p>
       </div>
     </details>
     <p class="back-row"><button class="btn quiet pill" id="back">Back</button></p>`);
@@ -798,10 +820,25 @@ function renderPayment() {
       payBtn.textContent = invite.priceCents ? `Confirm and pay $${money(invite.priceCents)}` : 'Confirm my time';
       return;
     }
-    if (p) p.textContent = `$${money(caseCents)}`;
-    payBtn.textContent = `Pay $${money(caseCents)} and book`;
+    if (p) p.textContent = `$${money(shownCents())}`;
+    payBtn.textContent = `Pay $${money(shownCents())} and book`;
   };
   repaintPrice();
+  // The scope note gates a Full-Service month from chat the way it gates the
+  // upgrade (case.js): opened and read to its end, ticked, then the button.
+  let stepAckAt = 0;
+  {
+    const det = el.querySelector('details.agreement');
+    const body = det?.querySelector('.agreement-body');
+    const box = el.querySelector('[data-step-ack]');
+    if (det && body && box) {
+      payBtn.disabled = true;
+      const checkScrolled = () => { if (det.open && body.scrollTop + body.clientHeight >= body.scrollHeight - 8) box.disabled = false; };
+      body.addEventListener('scroll', checkScrolled);
+      det.addEventListener('toggle', () => { if (det.open) requestAnimationFrame(checkScrolled); });
+      box.addEventListener('change', () => { stepAckAt = box.checked ? Date.now() : 0; payBtn.disabled = !stepAckAt; });
+    }
+  }
 
   el.querySelector('#pay').addEventListener('click', async () => {
     const errEl = el.querySelector('#pay-error');
@@ -834,11 +871,12 @@ function renderPayment() {
           method: state.method,
           phone: state.phone,
           address: state.address,
-          acks: state.acks,
+          acks: stepFull() ? { ...state.acks, [FULL_ACCESS_TERMS.id]: stepAckAt } : state.acks,
+          ...(stepFull() ? { tier: 'full' } : {}),
           // What this screen is showing. If the rate moved between the page
           // loading and this button being pressed, the Worker refuses rather
           // than charging a number nobody agreed to.
-          quotedCents: caseCents,
+          quotedCents: shownCents(),
           // So emails can speak the client's local time (Eric, 2026-07-15).
           tz: Intl.DateTimeFormat().resolvedOptions().timeZone || null,
         }),
@@ -848,6 +886,8 @@ function renderPayment() {
         // Update the number and hand the button back. No explanation: the
         // price is what it is, and why it changed is nobody's business.
         caseCents = Number(data.caseCents);
+        // From chat, the credited figures again, from the Worker.
+        if (stepUp) await loadStepUp().catch(() => {});
         repaintPrice();
         payBtn.disabled = false;
         return;
@@ -861,6 +901,17 @@ function renderPayment() {
     }
   });
 }
+
+/** This subscriber's chat credit, if their line is renewing and the credit is unspent. */
+async function loadStepUp() {
+  const res = await fetch('/api/step-up', { headers: { authorization: `Bearer ${await user.getIdToken()}` } });
+  const d = res.ok ? await res.json().catch(() => null) : null;
+  stepUp = d?.eligible ? d : null;
+}
+/** Full-Service from chat: only on ?step=full, and only with the credit. */
+const stepFull = () => STEP === 'full' && !!stepUp;
+/** What this booking costs: the chat-credited figure when it applies, else the case fee. */
+const shownCents = () => (stepUp ? (stepFull() ? stepUp.fullCents : stepUp.caseCents) : caseCents);
 
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) =>

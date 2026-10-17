@@ -202,6 +202,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // happens at a month's end, the ask after it, the pace flags and the hours.
   // NEGATIVE CONTROL (run 2026-10-17, v7.63): changelog.js's VERSION left at '7.62' made this read
   //   FAIL  R1 both versions read 7.63 with the new tag, the 7.63 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.65): both versions read 7.65 with the step-ups tag, and the 7.65 entry says the chat step
+  // up, the upgrade's price, the add-ons and where they are set, the month's price, Log and the voice study.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): changelog.js's VERSION left at '7.64' made this read
+  //   FAIL  R1 both versions read 7.65 with the new tag, the 7.65 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry765 = (CL.match(/\{\n\s+\/\/ EVERY STEP UP AN ENHANCEMENT \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   // RE-PINNED 2026-10-17 (v7.64): both versions read 7.64 with the color-wheel tag, and the 7.64 entry says what the
   // wheel does, what Black is, where Blue and purple went, and the duty of care check.
   // NEGATIVE CONTROL (run 2026-10-17, v7.64): the worker's BUILD_TAG left at the month-end tag made this read
@@ -276,9 +281,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.64 with the new tag, the 7.64 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.64';/.test(CL) && /const VERSION = '7\.64';/.test(W) && /const BUILD_TAG = 'v2026-10-17-color-wheel';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.64'
+  check('R1 both versions read 7.65 with the new tag, the 7.65 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.65';/.test(CL) && /const VERSION = '7\.65';/.test(W) && /const BUILD_TAG = 'v2026-10-17-step-ups';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.65'
+    && /version: '7\.65',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry765)
+    && /with their \$50 chat month off\./.test(entry765) && /Act is now just Log/.test(entry765)
+    && !DASH.test(entry765) && !HARD.some((re) => re.test(entry765))
     && /version: '7\.64',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry764)
     && /Settings has a color wheel now\./.test(entry764) && /Black is a black background with white text/.test(entry764)
     && !DASH.test(entry764) && !HARD.some((re) => re.test(entry764))

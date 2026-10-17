@@ -148,7 +148,8 @@ const hisOwn = await adm.evaluate(() => document.querySelector('.tm-card [data-p
 //   FAIL  he uploads a contractor's photo and bio from their card, and they read back; his own card has his
 ok('he uploads a contractor\'s photo and bio from their card, and they read back; his own card has his',
   prof.hasPhoto && /^\d+$/.test(prof.photoV) && (prof.photo.includes(`uid=demo-advocate&v=${prof.photoV}`) || prof.init === 'AR') && reread.bio === 'Twelve years in neurology clinics, now on your side of the table.'
-  && reread.cred === 'RN, BCPA' && hisOwn === 'Your photo and bio', JSON.stringify({ prof, reread, hisOwn }));
+  // RE-PINNED 2026-10-17 (v7.65): the sheet holds their add-ons now too, so the button is Profile, and their photo opens it.
+  && reread.cred === 'RN, BCPA' && hisOwn === 'Your profile', JSON.stringify({ prof, reread, hisOwn }));
 
 console.log('\n--- C. the temporary chat ---');
 // The demo keeps each side's store in the browser, so his tab and theirs share

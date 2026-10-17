@@ -194,7 +194,9 @@ console.log('\n--- C. the Worker ---');
   // NEGATIVE CONTROL (run 2026-10-17): '/api/extend-request' taken out of SALES_ROUTES made this read
   //   FAIL  C1 asking is off while sales are off, both routes are wired, and the sweep has its own cron minute
   check('C1 asking is off while sales are off, both routes are wired, and the sweep has its own cron minute',
-    /const SALES_ROUTES = new Set\(\[[\s\S]*?'\/api\/extend-request',\n\]\);/.test(W)
+    // RE-PINNED 2026-10-17 (v7.65): an appeal asked for (/api/addon-request) is a sales route too, listed after it.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): '/api/extend-request' taken out of SALES_ROUTES made C1 read FAIL.
+    /const SALES_ROUTES = new Set\(\[[\s\S]*?'\/api\/extend-request',\n[\s\S]*?\]\);/.test(W)
     && /url\.pathname === '\/api\/extend-request' && request\.method === 'POST'\)\n\s+return await handleExtendRequest\(/.test(W)
     && /url\.pathname === '\/api\/admin\/extend-request' && request\.method === 'POST'\)\n\s+return await handleExtendDecision\(/.test(W)
     && /if \(minute % 15 === 3\) \{\n\s+ctx\.waitUntil\(sweepFullServiceMonths\(env, \{\n\s+windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: SALES_OPEN,/.test(W)
@@ -228,7 +230,9 @@ console.log('\n--- D. the pages ---');
     && /<button type="button" class="btn glow" data-request-month>Request another month<\/button>/.test(ask)
     && /Nothing is charged unless they say yes\./.test(ask) && /class="followup-offer month-ask"/.test(ask)
     && /\.followup-offer\.month-ask::after \{ animation: pa-month-shine/.test(CJ) && /prefers-reduced-motion: no-preference/.test(CJ)
-    && /const SELLING = '[^']*\[data-ask-again\],\[data-request-month\]';/.test(CJ)
+    // RE-PINNED 2026-10-17 (v7.65): the appeal's two buttons follow on the list.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): [data-request-month] taken off SELLING made D1 read FAIL.
+    && /const SELLING = '[^']*\[data-ask-again\],\[data-request-month\][^']*';/.test(CJ)
     && /fetch\('\/api\/extend-request'/.test(CJ));
   const AC = f('public/js/admin-case.js');
   const AD = f('public/js/admin.js');

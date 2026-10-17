@@ -327,9 +327,13 @@ check('S25 a signature nobody can draw is not the only route',
   // client-supplied name in the same shape of document.
   // NEGATIVE CONTROL (2026-08-28): removing either one
   //   FAIL  S30 ... -- 1 of 2 document builders escape
+  // RE-PINNED 2026-10-17 (v7.65): the printed one was the appeal letter's, on the Appeals page, which went with
+  // that tab (Eric: "Get rid of the specific 'appeals' tab in 'act'"). One builder is left, and it escapes; no
+  // page writes the text into a window unescaped.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): the stored builder's escape taken out made S30 read FAIL.
   const escapes = (ADMIN.match(/text\.replace\(\/\[&<>\]\/g/g) || []).length;
   check('S30 and both document builders escape, the stored one and the printed one',
-    escapes === 2, `${escapes} of 2 document builders escape`);
+    escapes === 1 && !/<pre>\$\{text\}<\/pre>/.test(ADMIN), `${escapes} of 1 document builder escapes`);
 }
 
 // ---- S31-S34: the scope of work agreement (Eric, 2026-08-29) --------------

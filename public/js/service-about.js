@@ -65,14 +65,14 @@ export const SERVICE_ABOUT = {
   handsOff: {
     title: 'Full-Service Case Management',
     price: '{full} a month, every month the same. The case fee is separate: it pays for the review.',
-    tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, the appeals, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
+    tldr: 'You hand me the case. I do the legwork: the calls, the records, the insurer, and we talk at least twice a month so you always know where it stands. A month at a time, for as long as you need it.',
     paragraphs: [
-      'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Full-Service Case Management I work inside the case. I phone your clinics, chase your records, deal with your insurer, and write your appeals myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
+      'In a standard case I work beside you: I read, I explain, and you carry it to your doctors and your insurer. With Full-Service Case Management I work inside the case. I phone your clinics, chase your records, and deal with your insurer myself. Your job shrinks to giving me the permission I need to act for you, which I bring you and walk you through, and from there the legwork is mine.',
       'You ask, and I answer personally. I carry a limited number of these at a time, so this is not something you can simply buy: you send the request, I read it, and I tell you yes or no. Asking costs nothing and takes no card. If I say no, nothing is charged and I will tell you why.',
       'It is billed a month at a time, and I would rather explain why than have you wonder. A single payment for a whole engagement is a large thing to hand over at the exact moment you are least able to think about money. Monthly means the biggest number you ever see is one month, and it means you are never locked into a case that is going nowhere. Most of these run about two months. Some run one. Some run five. You decide each month.',
       'We speak at least twice a month, by phone or video, for as long as the case runs. That rhythm is part of the service, not an option: it is how the case keeps moving, and how you always know what happened without having to push for updates. If something breaks between check-ins, I add calls at no charge.',
-      'If your insurer says no, I write the appeal: the first-level internal appeal, the escalation if they deny it, and I keep writing for as long as the case is mine. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself. Appeal help alone typically runs $600 to $1,500 per appeal elsewhere; here it draws from the month\'s hours like everything else.',
-      'A month buys up to 20 hours of comprehensive advocacy, with priority access maintained throughout: the check-ins, the calls in your name, the records chased, the appeals written, all from the same hours. Most months use less. If yours genuinely needs more, we talk first: additional substantive casework beyond those 20 hours is billed at $175 to $225 an hour, agreed in advance.',
+      'If your insurer says no, I can write the appeal: the first-level internal appeal, and the escalation if they deny it. Writing an appeal is an enhancement on top of the month, added from your case page at the price shown there; appeal help alone typically runs $600 to $1,500 per appeal elsewhere. If a doctor will not cooperate, a referral that never gets sent, records that never arrive, I put it in writing and go through the channels myself.',
+      'A month buys up to 20 hours of comprehensive advocacy, with priority access maintained throughout: the check-ins, the calls in your name, the records chased, all from the same hours. Most months use less. If yours genuinely needs more, we talk first: additional substantive casework beyond those 20 hours is billed at $175 to $225 an hour, agreed in advance.',
       'I cannot make an insurer answer faster and I cannot promise an outcome. What I promise is that somebody who knows these clocks is running yours, and that you hear the truth about how it is going, at least twice a month.',
     ],
     bullets: [
@@ -82,11 +82,11 @@ export const SERVICE_ABOUT = {
       'Up to 20 hours of comprehensive advocacy every 30-day service period',
       'Priority access maintained throughout the month',
       'Check-in calls at least twice a month, included; extra calls at my discretion, free',
-      'Calls to clinics and your insurer, and written insurance appeals, all from the same hours',
+      'Calls to clinics and your insurer, from the same hours',
+      'Writing an insurance appeal and coming to an appointment with you: enhancements on top, at the price on your case page',
       'Beyond 20 hours, additional casework at $175 to $225 an hour, agreed in advance',
       'An appeal in flight does not expire with the window: a late denial still gets its answer',
       'I write to providers too, when a doctor will not cooperate',
-      'Telehealth advocacy included: I join your video visits and advocate live',
       'A month at a time. Continue or stop at the end of any month, no penalty either way',
       'Your permission in writing starts my authority; I bring you the documents and walk you through them',
       'A separate service: the case fee pays for your review, and a month is priced on its own',
@@ -129,7 +129,7 @@ export const SERVICE_ABOUT = {
 
   telehealth: {
     title: 'Telehealth Appointment Advocacy',
-    price: '$525 flat. Included with Full-Service Case Management.',
+    price: '$525 flat. On Full-Service, an enhancement at your advocate\'s price.',
     tldr: 'I join your telehealth appointment by video and advocate live. If I cannot attend, or your provider refuses, every dollar comes back.',
     paragraphs: [
       'You name the appointment: the time, the clinic, the provider. I confirm each one personally, and then I am in the visit with you, asking the questions that get lost, keeping the thread when the appointment moves fast, and making sure what was agreed gets said out loud before it ends.',
@@ -140,7 +140,7 @@ export const SERVICE_ABOUT = {
       'You invite me; I confirm every appointment personally',
       'Any refusal, theirs or mine, refunds that appointment in full',
       'Never recorded: notes and advocacy only',
-      'Included at no charge on Full-Service Case Management',
+      'On Full-Service Case Management, added at your advocate\'s price',
     ],
   },
 };

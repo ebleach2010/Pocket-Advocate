@@ -24,6 +24,7 @@ import { notifyUser } from './push.js';
 import { caseBookingCents } from './charge.js';
 import { advocateIdOf, DEFAULT_COMMISSION_PCT } from './staff.js';
 import { cleanPayout, sealPayout } from './payroll.js';
+import { addonsOf } from './addons.js';
 
 const UID_RE = /^[\w-]{1,64}$/;
 const CHAT_MAX = 200;
@@ -81,6 +82,8 @@ export function teamSummary({ advocates, cases, subs, subCents, adminUid }) {
       // What he can change for them from here (2026-10-15): their card's words, and which photo is current.
       bio: String(a.data.bio || ''),
       credentials: String(a.data.credentials || ''),
+      // What they offer on top of a Full-Service month, and at what price (2026-10-17).
+      addons: addonsOf(a.data, { owner }),
       photoV: String(a.data.headshotPath || '').replace(/^.*headshot-(\d+)\..*$/, '$1').slice(0, 20),
       // He keeps all of his own, the way the payroll pays him.
       commissionPct: owner ? 100 : Number.isFinite(Number(a.data.commissionPct)) ? Number(a.data.commissionPct) : DEFAULT_COMMISSION_PCT,

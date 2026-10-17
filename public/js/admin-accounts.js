@@ -15,6 +15,7 @@
 // "Admin should not enable paid Advisor access unless the advocate opted in."
 
 import { ask } from './sheet.js';
+import { addonFields, wireAddonFields, readAddonFields } from './admin-addons.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -57,6 +58,8 @@ export function openAddAdvocate(user, { say, done }) {
       <label class="dim small">Their email<input class="ask-input" name="email" type="email" maxlength="200" required></label>
       <label class="dim small">A first password, at least 10 characters<input class="ask-input" name="password" type="text" minlength="10" maxlength="200" required></label>
       <p class="dim small" style="margin:0;">They get an email saying the account is ready. Give them this password yourself: it is never emailed, shown again or kept as you typed it. They choose their own the first time they sign in.</p>
+      ${addonFields({})}
+      <p class="dim small" style="margin:0;">What they told you they will do on top of a Full-Service month, at their price. Change it any time by tapping their photo on their card.</p>
       <p class="error" data-err hidden></p>
       <div class="cancel-acts">
         <button type="submit" class="btn glow">Create the account</button>
@@ -64,6 +67,7 @@ export function openAddAdvocate(user, { say, done }) {
       </div>
     </form>`);
   const form = dlg.querySelector('form');
+  wireAddonFields(form);
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const btn = form.querySelector('button[type="submit"]');
@@ -72,7 +76,9 @@ export function openAddAdvocate(user, { say, done }) {
     btn.disabled = true;
     err.hidden = true;
     try {
-      const out = await call(user, { action: 'create', name: fd.get('name'), email: fd.get('email'), password: fd.get('password') });
+      const picked = readAddonFields(form);
+      if (picked.error) throw new Error(picked.error);
+      const out = await call(user, { action: 'create', name: fd.get('name'), email: fd.get('email'), password: fd.get('password'), addons: picked.addons });
       close();
       say(out.emailed
         ? 'Done. They have an email saying the account is ready. Give them the password yourself.'

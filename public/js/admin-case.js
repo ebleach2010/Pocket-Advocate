@@ -23,7 +23,6 @@ import { openPrepSheet } from './prep.js';
 import { mountFolder } from './folder.js';
 import {
   recordsAuthorisation, representativeDesignation, scopeOfWork,
-  APPEAL_DEADLINES, appealDueAt,
 } from './authority.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { ask } from './sheet.js';
@@ -307,7 +306,7 @@ function render(el) {
       { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
       // Saved sits under Notes, and the work log and milestones are one Log (2026-10-16).
       { id: 'mine', label: 'Mine', icon: 'i-lock', pages: ['notes', 'agenda'] },
-      { id: 'act', label: 'Act', icon: 'i-scale', pages: ['log'] },
+      { id: 'act', label: 'Log', icon: 'i-check', pages: ['log'] },
     ] : [
       { id: 'case', label: 'Case', icon: 'i-folder', pages: ['overview', 'chat', 'files'] },
       { id: 'read', label: 'Advisor', icon: 'i-user', pages: ['advisor', 'dx', 'advisor-chat', 'education'] },
@@ -332,19 +331,15 @@ function render(el) {
       // and the milestones feed, and only Appeals stays Full-Service.
       // One Log (Eric, 2026-10-15: "Merge logs"): the work log and the
       // milestones on one page, with a filter between them.
-      { id: 'act', label: 'Act', icon: 'i-scale', pages: [...(data.fullAccess ? ['appeals'] : []), 'log'] },
+      // Act is Log, and Appeals is gone from it (Eric, 2026-10-17: "Get rid of
+      // the specific 'appeals' tab in 'act'. So just replace that whole tab
+      // with simply 'log'"): writing an appeal is an enhancement now.
+      { id: 'act', label: 'Log', icon: 'i-check', pages: ['log'] },
     ],
     // Landing on a page IS having seen it. The badge clears here rather than
     // on some later save, so it never outlives the thing it was pointing at.
     onShow: (id) => { markSeen(caseId, id); folder?.mark(id, false); },
     pages: [
-      ...(data.fullAccess ? [
-        {
-          id: 'appeals', title: 'Appeals', icon: '⚖️',
-          render: (pane) => paintAppeals(pane),
-          onShow: (pane) => pane._reload?.(),
-        },
-      ] : []),
       {
         id: 'overview', title: 'Overview', icon: 'i-bolt',
         render: (pane) => { paintOverview(pane); paintAuthorityStatus(pane); },
@@ -1972,8 +1967,9 @@ function refreshHeader() {
 
 // The working line under the client's name, kept current by the advisor's
 // state poll. Eric's override wins and carries his ✎ mark.
-// The advisor panel's own poll broadcasts the whole state; the appeals page
-// reads its letter and status from here rather than running a second poll.
+// The advisor panel's own poll broadcasts the whole state; the pages that
+// read from it (the call notes, the call document) take it from here rather
+// than running a second poll.
 let panelState = {};
 /** paintCallDoc's repainter, set while that page is mounted so the state poll
  *  can drive it. Declared up here beside panelState rather than under the
@@ -1989,7 +1985,6 @@ document.addEventListener('pa-panel-state', (e) => {
   // His own case's overview: the briefs it inherited, and the confirmed
   // diagnosis box, both come off this poll (2026-09-05).
   selfOverviewRepaint?.();
-  if (folder?.el('appeals')) folder.el('appeals')._reload?.();
   // The call-notes workbench reads from the same broadcast. It moved to the
   // My doc page, beside the other two sheets he holds on a call.
   folder?.el('calldoc')?.querySelector('[data-callnotes-host]')?._reload?.();
@@ -2374,13 +2369,21 @@ function wireChargeCard(card, c) {
     b.disabled = true;
     say('');
     try {
-      const token = await user.getIdToken();
-      const res = await fetch('/api/admin/case-charge', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ caseId, decision, amountCents, reason }),
-      });
-      const out = await res.json().catch(() => ({}));
+      const send = async (overrideCap) => {
+        const res = await fetch('/api/admin/case-charge', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': 'application/json' },
+          body: JSON.stringify({ caseId, decision, amountCents, reason, ...(overrideCap ? { overrideCap: true } : {}) }),
+        });
+        return { res, out: await res.json().catch(() => ({})) };
+      };
+      let { res, out } = await send(false);
+      // A first month of Full-Service booked from chat takes one of your places (2026-10-17).
+      if (res.status === 409 && out.error === 'full-booked') {
+        const carrying = out.max ? `${out.open} of ${out.max}` : `${out.open}, with no limit set`;
+        if (!confirm(`You already carry ${carrying} Full-Service cases. Take this one anyway?`)) { b.disabled = false; return; }
+        ({ res, out } = await send(true));
+      }
       if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
       load();
     } catch (e) {
@@ -2433,7 +2436,8 @@ function paintOverview(pane) {
       <h3 style="margin:0 0 .3rem; color:var(--cyan);">Full-Service request: your call</h3>
       <p class="small" style="margin:0 0 .2rem;">
         First month <strong>$${((Number(c.fullAccessRequest.firstMonthCents) || 0) / 100).toLocaleString()}</strong>
-        (their case fee is already off it), then
+        ${Number(c.fullAccessRequest.firstMonthCents) < Number(c.fullAccessRequest.monthCents)
+          ? '(their case fee is off it, and Full-Service replaces their report)' : '(their report is delivered, so it is the full month)'}, then
         <strong>$${((Number(c.fullAccessRequest.monthCents) || 0) / 100).toLocaleString()}/mo</strong>.</p>
       <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged and no
         card was taken. Approving sends them a link to start month one at the rate
@@ -2456,6 +2460,19 @@ function paintOverview(pane) {
       <button class="btn" data-month-request="approve">Approve: send the link</button>
       <button class="btn quiet" data-month-request="decline">Can't take it</button>
       <p class="error" data-month-request-error hidden></p>
+    </div>` : ''}
+    ${c.addonRequest?.state === 'pending' ? `
+    <div class="panel" data-addon-request style="border-color:var(--cyan); box-shadow:var(--glow-c);">
+      <h3 style="margin:0 0 .3rem; color:var(--cyan);">${c.addonRequest.kind === 'appeal' ? 'An insurance appeal' : 'An enhancement'}: your call</h3>
+      <p class="small" style="margin:0 0 .2rem;">They are asking for it on top of their month, quoted
+        <strong>$${((Number(c.addonRequest.cents) || 0) / 100).toLocaleString()}</strong>.</p>
+      ${c.addonRequest.note ? `<p class="small" style="margin:0 0 .2rem;">Their note: ${esc(c.addonRequest.note)}</p>` : ''}
+      <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged. Approving sends them a
+        link to pay, at that price or any you type (0 puts it on at no charge). Declining asks for your
+        reason, which they read word for word.</p>
+      <button class="btn" data-addon-decide="approve">Approve: send the link</button>
+      <button class="btn quiet" data-addon-decide="decline">Can't take it</button>
+      <p class="error" data-addon-request-error hidden></p>
     </div>` : ''}
     ${c.pendingTelehealth?.state === 'requested' ? `
     <div class="panel" style="border-color:var(--orange); box-shadow:var(--glow-o);">
@@ -2908,6 +2925,39 @@ function paintOverview(pane) {
     }));
   // Another month, asked for after one ended (2026-10-17): the same answer as
   // the Full-Service request above, through worker/monthend.js.
+  // An add-on asked for on top of a Full-Service month (2026-10-17): the same yes or no.
+  pane.querySelectorAll('[data-addon-decide]').forEach((b) => b.addEventListener('click', async () => {
+    const decision = b.dataset.addonDecide;
+    const errEl = pane.querySelector('[data-addon-request-error]');
+    let reason = '';
+    let amountCents;
+    if (decision === 'decline') {
+      reason = ((await ask({ title: 'Why can\'t you take it on?', body: 'They read this word for word.', okLabel: 'Decline', danger: true, input: { value: '' } })) || '').trim();
+      if (!reason) return;
+    } else {
+      const quoted = Number(c.addonRequest?.cents) || 0;
+      const typed = await ask({ title: 'The price, in dollars', body: `They were quoted $${dollars(quoted)}; change it to anything, or 0 to put it on at no charge.`, okLabel: 'Continue', input: { value: dollars(quoted).replace(/,/g, ''), type: 'text' } });
+      if (typed === null) return;
+      const n = Math.round(Number(String(typed).replace(/[^0-9.]/g, '')) * 100);
+      if (!Number.isInteger(n) || n < 0) { alert('A number of dollars, zero or more.'); return; }
+      amountCents = n;
+    }
+    b.disabled = true;
+    if (errEl) errEl.hidden = true;
+    try {
+      const res = await fetch('/api/admin/addon-request', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId, decision, reason, amountCents }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message; errEl.hidden = false; }
+      b.disabled = false;
+    }
+  }));
   pane.querySelectorAll('[data-month-request]').forEach((b) => b.tagName === 'BUTTON' && b.addEventListener('click', async () => {
     const decision = b.dataset.monthRequest;
     const errEl = pane.querySelector('[data-month-request-error]');
@@ -5338,180 +5388,7 @@ document.addEventListener('pa-send-forms', (e) => {
 });
 
 /**
- * The appeals workbench. One letter in flight at a time per case, which is
- * how appeals actually run: you file one, you wait for the plan's answer, and
- * what you file next depends on that answer.
- *
- * The letter is never sent from here. Eric files it through the insurer's own
- * portal, fax or certified mail, which is what keeps proof of timely filing
- * in his hands rather than in a mail server's logs. Approving is a state
- * write; the sending is his.
- */
-let appealKey = null;
-function paintAppeals(pane) {
-  const load = () => {
-    const st = panelState || {};
-    const meta = st.appealMeta || {};
-    const running = st.appealStatus === 'running';
-    const ready = st.appealStatus === 'ready' && st.appeal;
-    const key = JSON.stringify([st.appealStatus, st.appealAt, meta, (st.appeal || '').length]);
-    // A poll that changed nothing must not steal a tap, or rebuild a form
-    // mid-typing.
-    if (key === appealKey && pane.querySelector('[data-appeal-root]')) return;
-    appealKey = key;
-
-    // Same rule as the Worker: a bare date means the whole MST day, not UTC
-    // midnight, which rendered a day early on the card.
-    const due = meta.dueAt
-      ? new Date(/^\d{4}-\d{2}-\d{2}$/.test(String(meta.dueAt))
-        ? Date.parse(`${meta.dueAt}T23:59:59-07:00`)
-        : meta.dueAt)
-      : null;
-    const daysLeft = due ? Math.ceil((due.getTime() - Date.now()) / 86_400_000) : null;
-    const urgency = daysLeft === null ? '' : daysLeft <= 3 ? 'over' : daysLeft <= 14 ? 'soon' : '';
-
-    pane.innerHTML = `
-      <div class="panel" data-appeal-root>
-        <h3 style="margin:0 0 .3rem;">⚖️ Appeal</h3>
-        ${meta.filedAt ? `
-          <p class="dim small" style="margin:0 0 .6rem;">Filed ${new Date(meta.filedAt).toLocaleDateString()}.
-            ${meta.planName ? esc(meta.planName) : 'The plan'} owes an answer; commercial plans
-            generally have 30 days before service and 60 after.</p>`
-          : due ? `
-          <p class="appeal-due ${urgency}" style="margin:0 0 .6rem;">
-            Due ${due.toLocaleDateString()}${daysLeft !== null
-              ? ` · ${daysLeft <= 0 ? 'past due' : `${daysLeft} day${daysLeft === 1 ? '' : 's'} left`}` : ''}
-            ${meta.trackLabel ? `<br><span class="dim small">${esc(meta.trackLabel)}</span>` : ''}</p>`
-          : '<p class="dim small" style="margin:0 0 .6rem;">Fill in the denial and I will work out the filing deadline.</p>'}
-
-        <details class="faq" data-k="appeal-facts"${ready ? '' : ' open'}>
-          <summary>The claim and the denial</summary>
-          <div class="faq-a">
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Member ID
-                <input type="text" data-a="memberId" value="${esc(meta.memberId || '')}"></label>
-              <label class="dim small" style="flex:1 1 8rem;">Plan
-                <input type="text" data-a="planName" value="${esc(meta.planName || '')}"></label>
-            </div>
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Claim number
-                <input type="text" data-a="claimNumber" value="${esc(meta.claimNumber || '')}"></label>
-              <label class="dim small" style="flex:1 1 8rem;">Dates of service
-                <input type="text" data-a="serviceDates" placeholder="e.g. 12 Jun 2026"></label>
-            </div>
-            <div class="row" style="gap:.5rem; flex-wrap:wrap;">
-              <label class="dim small" style="flex:1 1 8rem;">Provider
-                <input type="text" data-a="provider"></label>
-              <label class="dim small" style="flex:1 1 8rem;">Denied on
-                <input type="date" data-a="deniedAt" value="${esc(meta.deniedAt || '')}"></label>
-            </div>
-            <label class="dim small">Which appeal is this
-              <select data-a="trackId">
-                <option value="">Choose…</option>
-                ${APPEAL_DEADLINES.map((t) => `<option value="${t.id}"${meta.trackId === t.id ? ' selected' : ''}>${esc(t.label)} (${t.days} days)</option>`).join('')}
-              </select></label>
-            <p class="dim small" style="margin:.3rem 0 .6rem;">Those are the legal
-              floors. Check the denial letter: a plan may allow longer and none may
-              allow less.</p>
-            <label class="dim small">What the plan said, in its words
-              <textarea data-a="denialReason" rows="3" placeholder="The denial reason and its code, copied from the letter."></textarea></label>
-            <label class="dim small">Their policy or criteria, if you have it
-              <textarea data-a="policyText" rows="3" placeholder="Paste the plan's medical policy language. This is what the letter argues against."></textarea></label>
-            <label class="dim small">Clinical facts worth leading with
-              <textarea data-a="clinicalFacts" rows="3" placeholder="Results with dates, who ordered what, what the treating clinician said."></textarea></label>
-          </div>
-        </details>
-
-        <p class="row" style="gap:.5rem; flex-wrap:wrap; margin:.7rem 0 0;">
-          <button class="btn${ready ? ' quiet' : ' glow'}" data-appeal-write ${running ? 'disabled' : ''}>
-            ${running ? '⚖️ Writing…' : ready ? 'Rewrite from these facts' : 'Write the appeal'}</button>
-          ${ready ? '<button class="btn quiet" data-appeal-revise>🔁 Revise…</button>' : ''}
-          ${ready ? '<button class="btn quiet" data-appeal-print>🖨 Print or save</button>' : ''}
-          ${ready && !meta.filedAt ? '<button class="btn" data-appeal-filed>Mark it filed</button>' : ''}
-          ${ready ? '<button class="btn quiet" data-appeal-clear>Discard</button>' : ''}
-        </p>
-        ${st.appealError ? `<p class="error" style="margin:.5rem 0 0;">${esc(st.appealError)}</p>` : ''}
-        <p class="error" data-appeal-err hidden style="margin:.5rem 0 0;"></p>
-        ${ready ? `
-          <textarea class="draft-box" data-appeal-text rows="18" style="margin-top:.7rem;">${esc(st.appeal)}</textarea>
-          <p class="dim small" style="margin:.3rem 0 0;">Anything in square brackets
-            marked NEEDS is a gap it would not invent. Fill those in before you file.</p>` : ''}
-      </div>`;
-
-    const facts = () => {
-      const g = (n) => pane.querySelector(`[data-a="${n}"]`)?.value.trim() || '';
-      const trackId = g('trackId');
-      const track = APPEAL_DEADLINES.find((t) => t.id === trackId);
-      const deniedAt = g('deniedAt');
-      const dueAt = appealDueAt(deniedAt, trackId);
-      return {
-        memberId: g('memberId'), planName: g('planName'), claimNumber: g('claimNumber'),
-        serviceDates: g('serviceDates'), provider: g('provider'), deniedAt,
-        trackId, trackLabel: track?.label || '',
-        dueAt: dueAt ? dueAt.toISOString().slice(0, 10) : '',
-        denialReason: g('denialReason'), policyText: g('policyText'),
-        clinicalFacts: g('clinicalFacts'),
-      };
-    };
-
-    const post = async (payload, btn) => {
-      const err = pane.querySelector('[data-appeal-err]');
-      if (btn) btn.disabled = true;
-      err.hidden = true;
-      try {
-        const token = await user.getIdToken();
-        const res = await fetch('/api/advisor', {
-          method: 'POST',
-          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-          body: JSON.stringify({ kind: 'case', id: caseId, ...payload }),
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok || out.ok === false) throw new Error(out.error || `Failed (${res.status})`);
-        appealKey = null; // let the next poll rebuild from truth
-      } catch (e) {
-        err.textContent = e.message;
-        err.hidden = false;
-        if (btn) btn.disabled = false;
-      }
-    };
-
-    pane.querySelector('[data-appeal-write]')?.addEventListener('click', (e) =>
-      post({ action: 'appeal-draft', appeal: facts() }, e.currentTarget));
-    pane.querySelector('[data-appeal-revise]')?.addEventListener('click', async (e) => {
-      const btn = e.currentTarget;
-      const what = await ask({ title: 'What should change about the letter?', okLabel: 'Revise', input: { value: '' } });
-      if (what === null) return;
-      post({
-        action: 'appeal-draft', revise: true,
-        base: pane.querySelector('[data-appeal-text]')?.value || '',
-        appeal: { ...facts(), instruction: what.slice(0, 1000) },
-      }, btn);
-    });
-    pane.querySelector('[data-appeal-clear]')?.addEventListener('click', (e) => {
-      if (confirm('Discard this letter?')) post({ action: 'clear-appeal' }, e.currentTarget);
-    });
-    pane.querySelector('[data-appeal-filed]')?.addEventListener('click', (e) => {
-      if (confirm('Mark this appeal as filed? The deadline warnings stop.')) post({ action: 'appeal-filed' }, e.currentTarget);
-    });
-    pane.querySelector('[data-appeal-print]')?.addEventListener('click', () => {
-      const text = pane.querySelector('[data-appeal-text]')?.value || '';
-      const win = window.open('', '_blank');
-      if (!win) { alert('Allow pop-ups to print this.'); return; }
-      win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Appeal</title>
-        <style>@page { margin: 20mm; }
-          body { font: 12.5px/1.6 Georgia, "Times New Roman", serif; color:#000; }
-          pre { white-space: pre-wrap; word-wrap: break-word; margin:0; font: inherit; }</style>
-        </head><body><pre>${text.replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</pre></body></html>`);
-      win.document.close();
-      setTimeout(() => win.print(), 350);
-    });
-  };
-  pane._reload = load;
-  load();
-}
-
-/**
- * Notes for the next call, on the My doc page. Same bones as the appeals
+ * Notes for the next call, on the My doc page. Same bones as the old appeals
  * workbench: paint from the advisor's state broadcast, a key guard so a poll
  * that changed nothing cannot steal a tap or wipe a hand edit, and revisions
  * that carry the box's CURRENT text so they build on manual edits.

@@ -262,8 +262,10 @@ console.log('\n--- D. the look audit\'s fixes ---');
   check('D3 the tab rails draw the home\'s stroke icons, on the client\'s case and on his',
     /return \/\^i-\[a-z-\]\+\$\/\.test\(icon\)\s*\?\s*`<svg class="ico" aria-hidden="true"><use href="\/img\/icons\.svg#\$\{icon\}"\/><\/svg>`/.test(FOLDER)
     && ["icon: 'i-pin'", "icon: 'i-chat'", "icon: 'i-doc'", "icon: 'i-gem'"].every((x) => CASE.includes(x))
-    && ["icon: 'i-folder'", "icon: 'i-scale'", "icon: 'i-clip'"].every((x) => ADMC.includes(x))
-    && ['i-pin', 'i-gem', 'i-bookmark', 'i-video', 'i-clip', 'i-folder', 'i-scale', 'i-bolt'].every((id) => f('public/img/icons.svg').includes(`id="${id}"`)));
+    // RE-PINNED 2026-10-17 (v7.65): Act is Log (Eric: "replace that whole tab with simply 'log'"), drawn with the tick.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): the Log group's icon put back to 'i-scale' made D3 read FAIL.
+    && ["icon: 'i-folder'", "icon: 'i-check'", "icon: 'i-clip'"].every((x) => ADMC.includes(x)) && !ADMC.includes("icon: 'i-scale'")
+    && ['i-pin', 'i-gem', 'i-bookmark', 'i-video', 'i-clip', 'i-folder', 'i-check', 'i-bolt'].every((id) => f('public/img/icons.svg').includes(`id="${id}"`)));
   // NEGATIVE CONTROL (run 2026-10-15): the manifest's theme_color put back to #EAF2FA made this read
   //   FAIL  D4 the installed app opens black too
   const MAN = JSON.parse(f('public/manifest.webmanifest'));

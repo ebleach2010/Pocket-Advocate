@@ -237,6 +237,8 @@ function render() {
     container: container.querySelector('[data-folder]'),
     storageKey: `client-case-${currentId}`,
     initial: 'progress',
+    // Landing on Enhance is having seen what is new there.
+    onShow: (id) => { if (id === 'addons') { markSeen(enhanceKey(c)); folder?.mark('addons', false); } },
     pages: [
       { id: 'progress', title: 'Progress', icon: 'i-pin', render: (pane) => renderProgress(pane, c) },
       {
@@ -288,6 +290,39 @@ function render() {
   folderEnter(container.querySelector('[data-folder]'));
   renderPageFooter(container.querySelector('[data-page-footer]'), c);
   renderedFor = currentId;
+  markEnhance(c);
+  // ?page= from a push ("You have a new enhancement" opens on Enhance), taken
+  // out of the address at once so a reload opens wherever they were.
+  const params = new URLSearchParams(location.search);
+  const asked = params.get('page');
+  if (asked) {
+    params.delete('page');
+    history.replaceState(null, '', `${location.pathname}${params.toString() ? `?${params}` : ''}${location.hash}`);
+    if (folder.el(asked)) folder.show(asked);
+  }
+}
+
+// A NEW ENHANCEMENT (Eric, 2026-10-17: "if the document has been delivered
+// they should be notified that they have a new enhancement"): the Worker
+// stamps enhancementAt when the report lands, and the Enhance tab wears a dot
+// until they open it. Only while there is something on it to buy.
+// Remembered on this device only, like his own badges (seen.js is his, and
+// never served to a client).
+const ENHANCE_SEEN_KEY = 'pa-enhance-seen';
+const enhanceKey = (c) => `client-${c.id}`;
+function markSeen(key) {
+  try {
+    const map = JSON.parse(localStorage.getItem(ENHANCE_SEEN_KEY) || '{}');
+    map[key] = Date.now();
+    localStorage.setItem(ENHANCE_SEEN_KEY, JSON.stringify(map));
+  } catch { /* storage blocked: the dot comes back next visit */ }
+}
+function isUnseen(key, stamp) {
+  if (!stamp) return false;
+  try { return stamp > (Number(JSON.parse(localStorage.getItem(ENHANCE_SEEN_KEY) || '{}')[key]) || 0); } catch { return true; }
+}
+function markEnhance(c) {
+  folder?.mark?.('addons', SALES_OPEN && !c.family && !c.fullAccess && isUnseen(enhanceKey(c), toDate(c.enhancementAt).getTime()));
 }
 
 /**
@@ -399,6 +434,7 @@ function refreshSections() {
   if (docs && !busyInside(docs)) renderDocs(docs, c);
   const addons = folder?.el('addons');
   if (addons && !busyInside(addons)) renderAddons(addons, c);
+  if (folder?.current?.() !== 'addons') markEnhance(c);
 }
 
 /** Is the client mid-interaction in here? Then leave it alone. */
@@ -1520,6 +1556,9 @@ const fullAccessPrice = () => fullAccessCents;
 // contractor's own, so the read names the case's advocate once the case is
 // known, and an answer for an advocate the page has moved off is dropped.
 let ratesWho = null;
+// What the case's advocate offers on top of a Full-Service month (2026-10-17),
+// from /api/rates: { attend: { on, cents }, appeal: { on, cents } }.
+let caseAddonsNow = null;
 let ratesReady = Promise.resolve();
 function readCaseRates(advocateId) {
   const who = /^[\w-]{1,64}$/.test(String(advocateId || '')) ? String(advocateId) : '';
@@ -1531,6 +1570,7 @@ function readCaseRates(advocateId) {
       if (who !== ratesWho) return;
       if (Number(d?.fullCents) > 0) fullAccessCents = Number(d.fullCents);
       if (Number(d?.teleCents) > 0) telehealthCents = Number(d.teleCents);
+      caseAddonsNow = d?.addons && typeof d.addons === 'object' ? d.addons : null;
     })
     .catch(() => { /* the compiled-in price is right at deploy time */ });
   return ratesReady;
@@ -1600,10 +1640,11 @@ function addAboutButton(host, id) {
 /**
  * Another month on a Full-Service case, as many times as it needs. The SAME
  * price as the first month, because it is the same thing - the tier is
- * monthly all the way down. A flat price the Worker also holds, so the
- * compiled-in number here and the number Stripe charges are the same.
+ * monthly all the way down. It read a compiled-in $3,500 while the Worker
+ * charged $4,400 (Eric, 2026-10-17: "$4,400", the same as the first month):
+ * now it is the case's advocate's month price, the number the Worker charges,
+ * and the button sends what it showed so the two can never part again.
  */
-const EXTEND_PRICE_CENTS = 350000;
 // The Worker's rule, and the Worker's numbers. These are not decoration: this
 // function tells a client the date their month runs to, and until now it said
 // SIXTY DAYS for every case, hardcoded, while the Worker gives a case bought
@@ -1694,7 +1735,7 @@ function extendOffer(c) {
         calls on your behalf and the rest carry on exactly as they are. Take as
         many as your case needs, one at a time, and stop whenever you like.</p>
       <div class="fu-buy">
-        <span class="price">$${(EXTEND_PRICE_CENTS / 100).toLocaleString()}</span>
+        <span class="price" data-extend-price>$${Math.round(fullAccessPrice() / 100).toLocaleString()}</span>
         <button class="btn glow" data-buy-extend>Add another month</button>
       </div>
       <p class="error" data-extend-error hidden></p>
@@ -1817,9 +1858,17 @@ function wireExtendOffer(el, c) {
       const res = await fetch('/api/extend', {
         method: 'POST',
         headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ caseId: c.id }),
+        body: JSON.stringify({ caseId: c.id, quotedCents: fullAccessPrice() }),
       });
       const out = await res.json().catch(() => ({}));
+      // The month price moved since this card was drawn: show the real one
+      // and let them press again, rather than charging a figure they did not see.
+      if (res.status === 409 && out.error === 'rate-changed' && Number(out.extendCents) > 0) {
+        fullAccessCents = Number(out.extendCents);
+        const p = el.querySelector('[data-extend-price]');
+        if (p) p.textContent = `$${Math.round(fullAccessCents / 100).toLocaleString()}`;
+        throw new Error('The monthly price changed. This is the current price; press again to continue.');
+      }
       if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
       location.href = out.url;
     } catch (e) {
@@ -1849,6 +1898,7 @@ function renderAddons(el, c) {
       this case whenever you need them. Nothing here is required, and nothing
       is charged until you choose it.</p>` : ''}
     <div data-telehealth></div>
+    <div data-appeal></div>
     <div data-followup></div>
     <div data-upgrade></div>
     <div data-extend></div>
@@ -1861,6 +1911,15 @@ function renderAddons(el, c) {
     ratesReady.then(() => {
       if (!th.isConnected || [...th.querySelectorAll('input')].some((i) => i.value || i.checked)) return;
       th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth');
+    }).catch(() => {});
+  }
+  const ap = el.querySelector('[data-appeal]');
+  if (ap) {
+    ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap);
+    // Shown once the advocate's own offer is known.
+    ratesReady.then(() => {
+      if (!ap.isConnected || busyInside(ap)) return;
+      ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap);
     }).catch(() => {});
   }
   const ex = el.querySelector('[data-extend]');
@@ -1887,14 +1946,96 @@ function renderAddons(el, c) {
     }).catch(() => {});
   }
   const none = el.querySelector('[data-addons-closed]');
-  if (!SALES_OPEN && none && ![th, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
+  if (!SALES_OPEN && none && ![th, ap, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
     none.textContent = SALES_CLOSED_MESSAGE;
     none.hidden = false;
   }
 }
 
+// AN INSURANCE APPEAL, AN ENHANCEMENT ON FULL-SERVICE (Eric, 2026-10-17:
+// "With full case management, attending appointments and writing insurance
+// appeals are enhancements"). At the advocate's own price, asked for and
+// answered like every other request on a case: nothing is charged unless they
+// say yes.
+function appealCard(c) {
+  if (!c.fullAccess) return '';
+  const req = c.addonRequest?.kind === 'appeal' ? c.addonRequest : null;
+  const pend = c.pendingAddon?.kind === 'appeal' && c.pendingAddon.url && toDate(c.pendingAddon.expiresAt).getTime() > Date.now() ? c.pendingAddon : null;
+  const bought = (Array.isArray(c.addonsBought) ? c.addonsBought : []).filter((b) => b.kind === 'appeal');
+  const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+  const done = bought.length ? `<p class="dim small" data-appeals-bought style="margin:.4rem 0 0;">On your case: ${bought.map((b) => `an appeal, ${esc(dateFmt.format(toDate(b.at)))}`).join('; ')}.</p>` : '';
+  const adv = advFirstHtml(c);
+  if (req?.state === 'approved' && pend) return `
+    <div class="followup-offer" data-appeal-state="approved">
+      <h3><span class="fu-tick" aria-hidden="true">✓</span> ${adv} will write your appeal.</h3>
+      <div class="fu-buy">
+        <span class="price">$${Math.max(1, Math.round(Number(pend.cents) / 100)).toLocaleString()}</span>
+        <a class="btn glow" href="${esc(pend.url)}">Pay for the appeal</a>
+      </div>${done}
+    </div>`;
+  if (req?.state === 'pending') return `
+    <div class="followup-offer" data-appeal-state="pending">
+      <h3>Your appeal request is with ${adv}.</h3>
+      <p>Nothing is charged unless they say yes.</p>${done}
+      <p><button type="button" class="btn quiet tiny" data-appeal-withdraw>Withdraw my request</button></p>
+      <p class="error" data-appeal-error hidden></p>
+    </div>`;
+  if (c.status === 'closed') return done ? `<div class="followup-offer is-done" data-appeal-state="done"><h3>Insurance appeals</h3>${done}</div>` : '';
+  const offer = caseAddonsNow?.appeal;
+  if (req?.state === 'declined') return `
+    <div class="followup-offer" data-appeal-state="declined">
+      <h3>${adv} could not take that appeal on</h3>
+      ${req.declineReason ? `<p>${esc(req.declineReason)}</p>` : ''}
+      <p class="fu-fine">Nothing was charged.</p>${done}
+      ${offer?.on ? '<div class="fu-buy"><button class="btn quiet" data-appeal-again>Ask again</button></div>' : ''}
+    </div>`;
+  if (!offer?.on) return done ? `<div class="followup-offer is-done" data-appeal-state="done"><h3>Insurance appeals</h3>${done}</div>` : '';
+  const cents = Math.max(0, Number(offer.cents) || 0);
+  return `
+    <div class="followup-offer" data-appeal-state="offer">
+      <h3>An insurance appeal, written</h3>
+      <p>A denial on your plate? ${adv} writes the appeal and files it, on top
+        of your month.</p>
+      <label class="dim small" style="display:block; margin:.4rem 0 .5rem;">Which denial is it? (optional)
+        <input type="text" data-appeal-note maxlength="600" placeholder="e.g. The MRI my neurologist ordered" style="display:block; width:100%; margin-top:.2rem;"></label>
+      <div class="fu-buy">
+        <span class="price">${cents ? `$${Math.round(cents / 100).toLocaleString()}` : 'No charge'}</span>
+        <button class="btn glow" data-request-appeal>Ask for it</button>
+      </div>
+      <p class="fu-fine">Asking costs nothing and takes no card. Nothing is
+        charged unless ${adv} says yes.</p>${done}
+      <p class="error" data-appeal-error hidden></p>
+    </div>`;
+}
+function wireAppealCard(el, c) {
+  const paint = (next) => { el.innerHTML = appealCard(next); wireAppealCard(el, next); keepCard(el); };
+  const post = async (payload) => {
+    const res = await fetch('/api/addon-request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${await user.getIdToken()}` },
+      body: JSON.stringify({ caseId: c.id, ...payload }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `That did not go through (${res.status}).`);
+    return out;
+  };
+  const fail = (e) => { const err = el.querySelector('[data-appeal-error]'); if (err) { err.textContent = e.message; err.hidden = false; } };
+  el.querySelector('[data-request-appeal]')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      const out = await post({ kind: 'appeal', note: el.querySelector('[data-appeal-note]')?.value || '' });
+      paint({ ...c, addonRequest: { kind: 'appeal', state: 'pending', at: out.at || new Date().toISOString(), cents: out.cents } });
+    } catch (x) { fail(x); e.currentTarget.disabled = false; }
+  });
+  el.querySelector('[data-appeal-withdraw]')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try { await post({ action: 'withdraw' }); paint({ ...c, addonRequest: null }); } catch (x) { fail(x); e.currentTarget.disabled = false; }
+  });
+  el.querySelector('[data-appeal-again]')?.addEventListener('click', () => paint({ ...c, addonRequest: null }));
+}
+
 /** The buttons that start a new purchase. */
-const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again],[data-request-month]';
+const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again],[data-request-month],[data-request-appeal],[data-appeal-again]';
 /**
  * While sales are closed, empties a card that is only an offer and takes the
  * "buy again" button off a finished one. True when something is left to show.
@@ -1959,13 +2100,18 @@ function telehealthCard(c) {
     </div>`;
 
   if (c.status === 'closed') return '';
+  // ON FULL-SERVICE, AN ENHANCEMENT (Eric, 2026-10-17): the advocate's own
+  // price for attending, or not offered at all. Nothing shows until it is known.
+  const attend = c.fullAccess ? caseAddonsNow?.attend : null;
+  if (c.fullAccess && !attend?.on) return '';
+  const cents = c.fullAccess ? Math.max(0, Number(attend.cents) || 0) : telehealthCents;
   const denied = c.telehealthDenied && !visits.length ? `
     <p class="dim small" style="margin:0 0 .6rem;">I couldn't make your last
       request${Number(c.telehealthDenied.refundCents) > 0 ? '; your refund is on its way' : c.telehealthDenied.released ? '. Nothing was charged; the hold on your card is released' : ''}.
       You're welcome to ask again for another appointment.</p>` : '';
-  const price = c.fullAccess
-    ? '<span class="price" style="font-size:1rem;">Included</span>'
-    : `<span class="price">$${(telehealthCents / 100).toFixed(0)}</span>`;
+  const price = cents
+    ? `<span class="price">$${Math.round(cents / 100).toLocaleString()}</span>`
+    : '<span class="price" style="font-size:1rem;">No charge</span>';
   return `
     <div class="followup-offer">
       <h3>Bring me to your appointment</h3>
@@ -1985,11 +2131,11 @@ function telehealthCard(c) {
       </div>
       <div class="fu-buy">
         ${price}
-        <button class="btn glow" data-th-request>${c.fullAccess ? 'Request it' : 'Pay and request'}</button>
+        <button class="btn glow" data-th-request>${cents ? 'Pay and request' : 'Request it'}</button>
       </div>
-      <p class="fu-fine">${c.fullAccess
-        ? 'Included in your Full-Service Case Management. I confirm every appointment personally.'
-        : 'I confirm every appointment personally. If I can\'t attend, or your provider doesn\'t allow it, you get every dollar back.'}
+      <p class="fu-fine">${cents
+        ? 'I confirm every appointment personally. Your card is held, not charged, until I do. If I can\'t attend, or your provider doesn\'t allow it, nothing is charged.'
+        : 'At no charge on your case. I confirm every appointment personally.'}
         I never record your provider's visit. My role on that screen is notes and advocacy only.</p>
       <p class="error" data-th-error hidden></p>
     </div>`;
@@ -2091,14 +2237,18 @@ function followUpOffer(c) {
  * checkout POST cannot quote different numbers - which is the whole point
  * of the handshake below.
  *
- * NO CREDIT (Eric, 2026-08-29: "Clients don't get discounted their initial
- * cost for a case review. They pay 3400 separately."). The case fee bought
- * the review; a Full-Service month is a separate service at the full month
- * price. The credit this used to apply is in file history at v2.52. `c`
- * stays in the signature so the callers did not have to learn anything.
+ * EVERY STEP UP AN ENHANCEMENT (Eric, 2026-10-17: "Advocacy case to full
+ * management, same thing but if they upgrade they don't get that document
+ * report"). Before the report is delivered the first month is the month less
+ * the case fee already paid, and Full-Service takes the report's place. After
+ * it is delivered, his answer: "The full month". Mirrors the Worker's
+ * upgradeCents line for line.
  */
+const reportDelivered = (c) => !!c?.reportDeliveredAt || c?.status === 'delivered';
 function upgradeQuoteCents(c) {
-  return Math.max(100, fullAccessPrice());
+  const month = Math.max(100, fullAccessPrice());
+  if (reportDelivered(c)) return month;
+  return Math.max(100, month - Math.max(0, Number(c?.caseRateCents) || 0));
 }
 
 function upgradeOffer(c) {
@@ -2119,9 +2269,7 @@ function upgradeOffer(c) {
     && toDate(c.pendingFullAccess.expiresAt).getTime() > Date.now()) return `
     <div class="followup-offer">
       <h3><span class="fu-tick" aria-hidden="true">\u2713</span> I can take your case.</h3>
-      <p>Your first month is ready to start. Full-Service is its own service,
-        priced on its own: your case fee paid for the review you already
-        have, and the month below is the month.</p>
+      <p>Your first month is ready to start.${reportDelivered(c) ? ' Your case fee paid for the review and the report you have; the month below is the month.' : ' What your case fee paid comes off it, and Full-Service takes the place of the written report.'}</p>
       <div class="fu-buy">
         <span class="price">$${Math.max(1, Math.round(Number(c.pendingFullAccess.cents) / 100)).toLocaleString()}</span>
         <a class="btn glow" href="${esc(c.pendingFullAccess.url)}">Start month one</a>
@@ -2163,8 +2311,8 @@ function upgradeOffer(c) {
       <p>Right now I work beside you: I read everything, we talk it through,
         and you carry it to your doctors and your insurer. Full-Service Case Management is where
         I do that part myself. I speak to your clinics, with you on the line or
-        alone once you have given me permission in writing, and I write and file
-        your insurance appeals.</p>
+        alone once you have given me permission in writing. Writing an insurance
+        appeal, or coming to an appointment with you, is an enhancement on top.</p>
       <p class="fu-emphasis">Same case. Same file. I just stop handing it back to you.</p>
       <details class="agreement" data-id="${esc(FULL_ACCESS_TERMS.id)}">
         <summary>
@@ -2183,9 +2331,10 @@ function upgradeOffer(c) {
       <p class="fu-fine"><strong style="color:var(--ink)">Asking costs nothing
         and takes no card.</strong> I answer every request myself. If I say yes,
         your first month is
-        <strong style="color:var(--ink)">$${first.toLocaleString()}</strong>, the
-        same as every month after it. Your case fee paid for the case review;
-        this pays for the month. Every month is your choice, one at a time.
+        <strong style="color:var(--ink)">$${first.toLocaleString()}</strong>${reportDelivered(c)
+          ? ', the same as every month after it. Your case fee paid for the review and the report you have; this pays for the month.'
+          : `: the month less the $${Math.round((Number(c.caseRateCents) || 0) / 100).toLocaleString()} your case fee already paid. Full-Service takes the place of your written report, so the report is not written. After that it is $${monthly.toLocaleString()} a month.`}
+        Every month is your choice, one at a time.
         Open the note above first: it is the whole of what I do, what I need
         from you, and where it stops.</p>
       <p class="error" data-upgrade-error hidden></p>

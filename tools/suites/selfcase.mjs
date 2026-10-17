@@ -366,7 +366,9 @@ const guards = [
   // NEGATIVE CONTROL (run 2026-10-15, v7.53): the recording clock's self return taken out made S17 read FAIL -- the recording clock.
   ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+if \(doc\.data\.fullAccess\) \{[\s\S]{0,1500}?\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
   ['the document push', /if \(doc\.data\.clientUid && !doc\.data\.self\) \{/],
-  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,8}\s+if \(doc\.data\.fullAccess\) return json\([^\n]*\n\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{ status: 'delivered'/],
+  // RE-PINNED 2026-10-17 (v7.65): the new-enhancement stamp sits between the last refusal and the write.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): report-uploaded's Full-Service refusal taken out made S17 read FAIL.
+  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,8}\s+if \(doc\.data\.fullAccess\) return json\([^\n]*\n\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n(?:\s+\/\/[^\n]*\n){0,6}\s+const enhance = SALES_OPEN && !doc\.data\.family;\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+status: 'delivered'/],
   ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.work\?\.includedDoneAt\) return;/],
   ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self \|\| row\.data\.showcase\) continue;/],
   ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],
@@ -855,11 +857,15 @@ const corpusFn = lift(ADV, 'export async function voiceCorpus(env, { exclude = n
 const isEchoFn = grab(ADV, /const isEcho = \(m, exclude\) => \{[\s\S]*?\n\};/);
 const voiceConsts = ['VOICE_CORPUS_CHARS', 'VOICE_THREAD_MESSAGES', 'VOICE_QA_CHARS'].map((k) => grab(ADV, new RegExp(`const ${k} = [^\\n]+;`))).join('\n');
 const voiceThreads = grab(ADV, /const VOICE_THREADS = \{[\s\S]*?\n\};/);
+// RE-PINNED 2026-10-17 (v7.65): the study reads only what Eric sent, by his own uid (Eric: "No voice study for
+// contractors besides myself"), so the fixture's lines carry his uid and the run carries ADMIN_UID.
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): the self skip made `if (false) continue;` still made S39 read FAIL.
+const ericWroteFn = grab(ADV, /const ericWrote = [^\n]+;/);
 const corpusDocs = {
   cases: [{ id: 'mine', data: { self: true } }, { id: 'c1', data: {} }],
   subscriptions: [],
-  'cases/mine/chat': [{ id: 'm1', data: { role: 'admin', text: 'Day 3: tremor is back, slept 4 hours.' } }],
-  'cases/c1/chat': [{ id: 'k1', data: { role: 'admin', text: 'I will call the clinic Monday.' } }, { id: 'k2', data: { role: 'client', text: 'thanks' } }],
+  'cases/mine/chat': [{ id: 'm1', data: { role: 'admin', from: 'eric', text: 'Day 3: tremor is back, slept 4 hours.' } }],
+  'cases/c1/chat': [{ id: 'k1', data: { role: 'admin', from: 'eric', text: 'I will call the clinic Monday.' } }, { id: 'k2', data: { role: 'client', text: 'thanks' } }],
   'cases/mine/advisor/state/qa': [{ id: 'q', data: { question: 'Is my taper too fast?', at: 1 } }],
   'cases/c1/advisor/state/qa': [{ id: 'q', data: { question: 'Should I push for the MRI?', at: 1 } }],
 };
@@ -867,9 +873,9 @@ const corpusReads = [];
 let corpus = { text: '', questions: [] };
 try {
   // eslint-disable-next-line no-new-func
-  const corpusRun = new Function('listDocs', `${voiceConsts}\n${voiceThreads}\n${isEchoFn}\n${corpusFn.replace(/^export /, '')}\nreturn voiceCorpus;`)(
+  const corpusRun = new Function('listDocs', `${voiceConsts}\n${voiceThreads}\n${isEchoFn}\n${ericWroteFn}\n${corpusFn.replace(/^export /, '')}\nreturn voiceCorpus;`)(
     async (env, path) => { corpusReads.push(path); return corpusDocs[path] || []; });
-  corpus = await corpusRun({}, {});
+  corpus = await corpusRun({ ADMIN_UID: 'eric' }, {});
 } catch (e) { corpus = { text: `threw: ${e.message}`, questions: [] }; }
 // NEGATIVE CONTROL (run 2026-09-03): the self skip in voiceCorpus replaced with `if (false) continue;` made this read
 //   FAIL  S39 the voice study never reads his own case: not his entries, not his private questions  -- Day 3: tremor is back, slept 4 hours.

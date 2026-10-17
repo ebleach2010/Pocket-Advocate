@@ -32,7 +32,7 @@ try {
 // The pitch is visible before sign-in; every displayed price is the live one.
 document.getElementById('pitch').innerHTML = `
   <p class="price-line"><strong>$${money(subCents)}</strong> a month. Cancel anytime; your chat history stays available.</p>
-  <p><strong>The honest deal:</strong> you are guaranteed same day turnaround for at least one message. At $${money(subCents)} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which guarantees ${fullHours} hours of work, so expect priority, not in-depth case work.</p>`;
+  <p><strong>The honest deal:</strong> you are guaranteed same day turnaround for at least one message. At $${money(subCents)} a month, this chat is a fraction of a fraction of the cost of Full-Service Case Management, which gives up to ${fullHours} hours of work, so expect priority, not in-depth case work.</p>`;
 
 const flow = document.getElementById('flow');
 

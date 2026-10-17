@@ -131,8 +131,12 @@ check('T8 a duplicate webhook is idempotent by sessionId',
   /payments\.some\(\(x\) => x\.sessionId === session\.id\)\) return;/.test(SRC));
 check('T9 an abandoned checkout clears itself like the other kinds',
   /pendingTelehealth\?\.sessionId === session\.id/.test(SRC));
+// RE-PINNED 2026-10-17 (v7.65): the card holds rather than charges (the 2026-09-06 hold), and says so before they
+// pay: nothing is charged if he cannot attend. On Full-Service it is the advocate's price (Eric: "attending
+// appointments ... are enhancements").
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): the card's "nothing is charged." taken off its fine print made T10 read FAIL.
 check('T10 the client card promises the refund BEFORE they pay',
-  /you get every dollar back/.test(CASE));
+  /Your card is held, not charged, until I do\. If I can\\'t attend, or your provider doesn\\'t allow it, nothing is charged\./.test(CASE));
 check('T11 and says he never records the provider\'s visit',
   /never record your provider's visit/.test(CASE));
 check('T12 the Case Enhancements tab exists and hosts all three cards',
@@ -204,8 +208,11 @@ check('AB1 the About module carries all six services, each fully shaped',
     }));
 check('AB2 Hands-Off says he does the legwork, in those words',
   /I do the legwork/.test(ABOUT));
+// RE-PINNED 2026-10-17 (v7.65): writing an appeal is an enhancement on top of the month (Eric: "With full case
+// management, attending appointments and writing insurance appeals are enhancements").
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): "I can write the appeal" put back to "I write the appeal" made AB3 read FAIL.
 check('AB3 and that he writes appeals when a doctor will not cooperate',
-  /If a doctor will not cooperate/.test(ABOUT) && /I write the appeal/.test(ABOUT));
+  /If a doctor will not cooperate/.test(ABOUT) && /I can write the appeal/.test(ABOUT) && /Writing an appeal is an enhancement on top of the month/.test(ABOUT));
 // WHY THIS CHECK IS SHAPED THIS WAY (2026-08-26).
 // It used to end in /addAbout\(/ against case.js, which proved only that a
 // particular short name still appeared somewhere in the file. It would have

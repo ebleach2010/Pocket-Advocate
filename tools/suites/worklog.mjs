@@ -474,7 +474,10 @@ ck('L28 and his half of it is on every case as well',
   //   FAIL  L28 and his half of it is on every case as well
   // RE-PINNED 2026-10-16 (v7.54): Eric, "Merge logs": the log and the milestones are one Log page, so Act carries 'log'.
   // NEGATIVE CONTROL (run 2026-10-16, v7.54): his Act group's 'log' taken out still made L28 read FAIL.
-  && /'act', label: 'Act', icon: 'i-scale', pages: \[\.\.\.\(data\.fullAccess \? \['appeals'\] : \[\]\), 'log'\]/.test(strip)
+  // RE-PINNED 2026-10-17 (v7.65): Eric, "Get rid of the specific 'appeals' tab in 'act'. So just replace that whole
+  // tab with simply 'log'": the group is Log, holding the log alone, on every case.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): his Log group's 'log' taken out made L28 read FAIL.
+  && /\{ id: 'act', label: 'Log', icon: 'i-check', pages: \['log'\] \},/.test(strip)
   && !/\.\.\.\(data\.fullAccess\s*\? \[\{ id: 'act'/.test(strip),
   'log is behind a tier gate the client\'s half is not');
 // FOUR TABS PER GROUP AT 320px IS A HARD LIMIT, and he has photographed the

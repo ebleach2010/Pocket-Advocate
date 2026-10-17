@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.64';
+export const VERSION = '7.65';
 
 /**
  * Newest first.
@@ -51,6 +51,21 @@ export const VERSION = '7.64';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // EVERY STEP UP AN ENHANCEMENT (Eric, 2026-10-17: "make every step up an
+    // enhancement", "Credit $50, end chat", "$350", "$525", "The full month",
+    // and "replace that whole tab with simply 'log'"). Admin only.
+    version: '7.65',
+    quiet: true,
+    client: [],
+    admin: [
+      'From chat, a client can step up to an Advocacy Case or Full-Service with their $50 chat month off. Once you take the case, their chat line stops renewing.',
+      'Advocacy Case to Full-Service before the report: they pay the difference and the report is not written. After the report: the full month. When the report lands they are told about the new enhancement.',
+      'On Full-Service, writing an insurance appeal and coming to an appointment are enhancements, at each team member\'s own price. Yours: $350 and $525.',
+      'Set each team member\'s add-ons when you add them, and change them any time by tapping their photo on their card.',
+      'Another month is $4,400, the same as the first. Act is now just Log, and the voice study reads only your own messages.',
+    ],
+  },
   {
     // THE COLOR WHEEL AND BLACK (Eric, 2026-10-17: "Keep the whole color
     // scheme and gradient, but allow it to be adjusted via a color wheel in

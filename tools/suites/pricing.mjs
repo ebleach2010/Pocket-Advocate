@@ -187,8 +187,12 @@ check('T3 the ack is not required for a standard case',
   !/REQUIRED_ACKS = \[[^\]]*fullAccess/.test(SRC));
 check('T4 capacity closes the door rather than raising the price',
   /error: 'full-booked'/.test(SRC) && /async function fullAccessCapacity/.test(SRC));
+// RE-PINNED 2026-10-17 (v7.65): a second door, guarded the same way: a first month of Full-Service booked from chat
+// (Eric: "From chat, they can enhance to ... full case management"), checked when its advocate accepts it.
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): the capacity check taken off handleCaseCharge made T5 read FAIL.
 check('T5 capacity still guards the one door left: the upgrade',
-  (SRC.match(/error: 'full-booked'/g) || []).length === 1);
+  (SRC.match(/error: 'full-booked'/g) || []).length === 2
+  && /if \(body\?\.decision === 'approve' && c\.data\.fullAccess && c\.data\.chatStepUp && !body\?\.overrideCap\) \{\n\s+const cap = await fullAccessCapacity/.test(SRC));
 // UPDATED 2026-08-29, on Eric's word: "Clients don't get discounted their
 // initial cost for a case review. They pay 3400 separately." The credit this
 // check used to pin is deliberately gone (history at v2.52); what is pinned
@@ -196,9 +200,21 @@ check('T5 capacity still guards the one door left: the upgrade',
 // removal would have been.
 // NEGATIVE CONTROL (run 2026-08-29): restoring `liveFullCents - alreadyPaid`
 // made this read FAIL T6. Restored.
-check('T6 the upgrade charges the full month, with no case-fee credit',
-  /function upgradeCents/.test(SRC) && !/liveFullCents - alreadyPaid/.test(SRC)
-  && /Number\(liveFullCents\) \|\| 0/.test(SRC));
+// RE-PINNED AND RENAMED 2026-10-17 (v7.65): Eric, "Advocacy case to full management, same thing [the month's
+// difference] but if they upgrade they don't get that document report"; after the report is delivered, his answer:
+// "The full month". Run, not read.
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): upgradeCents's `if (reportDeliveredOn(c)) return month;` taken out made T6 read FAIL.
+{
+  const grabFn = (head) => { const at = SRC.indexOf(head); return at < 0 ? '' : SRC.slice(at, SRC.indexOf('\n}\n', at) + 2); };
+  let up = null;
+  try { up = new Function(`${grabFn('function upgradeCents(c, liveFullCents) {')}\n${grabFn('function reportDeliveredOn(c) {')}\nreturn upgradeCents;`)(); } catch { /* read below */ }
+  const before = up ? up({ caseRateCents: 210000, status: 'awaiting_report' }, 440000) : 0;
+  const after = up ? up({ caseRateCents: 210000, status: 'delivered', reportDeliveredAt: new Date() }, 440000) : 0;
+  const closedAfter = up ? up({ caseRateCents: 210000, status: 'confirmed', reportDeliveredAt: new Date() }, 440000) : 0;
+  const free = up ? up({ caseRateCents: 0 }, 440000) : 0;
+  check('T6 the upgrade charges the month less the case fee before the report, and the full month after it',
+    before === 230000 && after === 440000 && closedAfter === 440000 && free === 440000, JSON.stringify({ before, after, closedAfter, free }));
+}
 check('T7 an abandoned upgrade checkout is cleared',
   /pendingFullAccess: null/.test(SRC) && /kind === 'fullaccess' && session\.metadata\.caseId/.test(SRC));
 check('T8 paying twice is recorded and flagged for refund, never dropped',
@@ -402,10 +418,14 @@ check('H3 the advisor is told the floor as a bare fact, not a flourish',
   // initial cost for a case review. They pay 3400 separately." The credit
   // promise is gone from every client surface; this catches it creeping
   // back in any wording it ever used. Comments are stripped like Q3.
+  // RE-PINNED 2026-10-17 (v7.65): the credit is back on Eric's word, before the report only ("if they upgrade they
+  // don't get that document report"; after it, "The full month"). A page may promise it only beside that condition.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.65): "before your written report" taken out of book.js's sentence made Q5 read FAIL.
   const creditTalk = [];
   for (const rel of pages) {
     const body = noComments(readFileSync(__j(__REPO, rel), 'utf8'));
-    if (/case fee comes off|comes off your first month|minus what you have already paid|less the case fee/.test(body))
+    if (/case fee comes off|comes off your first month|minus what you have already paid|less the case fee/.test(body)
+      && !/before your written report/.test(body))
       creditTalk.push(rel);
   }
   // NEGATIVE CONTROL (run 2026-08-29): planting "comes off your first month"

@@ -2077,3 +2077,54 @@ New: hue.mjs (8 checks, every one controlled); drive-hue (9, every one
 controlled; the Black-to-colour control run by hand, the runner tripping on a
 two-line edit). Re-pinned with controls: warm A4, E1; landingwarm B2, B3;
 auditfix A10; cancelsearch C3; drive-cleanup's wheel check; release R1.
+
+### Every step up an enhancement, a team member's add-ons, Act is Log (2026-10-17, v7.65)
+
+Eric: "No voice study for contractors besides myself. Also, make every step up an
+enhancement. From chat, they can enhance to advocacy case or full case
+management and just pay the month's difference. Advocacy case to full
+management, same thing but if they upgrade they don't get that document report.
+Also, if the document has been delivered they should be notified that they have
+a new enhancement. ... With full case management, attending appointments and
+writing insurance appeals are enhancements. When I add a contractor into the app
+it will be a simple toggle with a price input. I can go into their profile and
+change this at any time by pressing on their profile picture ... Get rid of the
+specific 'appeals' tab in 'act'. So just replace that whole tab with simply
+'log'". His answers: "Credit $50, end chat", "$350" (an appeal), "$525"
+(attending), "The full month" (after the report), "$4,400" (another month),
+"Yes, up to 20" (the chat pages).
+
+- The voice study, the draft writer's sample and the profile read only messages
+  Eric sent by his own uid (advisor.js ericWrote).
+- Act is Log for him and for a contractor; the Appeals page and its workbench
+  are gone.
+- upgradeCents: before the report is delivered the first month is the month less
+  the case fee (and Full-Service replaces the report); after it, the full month.
+  case.js mirrors it. A delivered report stamps enhancementAt and pushes "You
+  have a new enhancement" (opening on Enhance) while sales are open; the Enhance
+  tab wears a dot until opened (remembered per device in pa-enhance-seen; seen.js
+  is staff-only and must never be imported by a client module, steps G1).
+- worker/addons.js: advocates/{uid}.addons, attend and appeal, each { on, cents };
+  his default $525 and $350, a contractor's off. Set in Add an advocate
+  (admin-addons.js), changed from the profile sheet their photo opens. Attending
+  on Full-Service is the telehealth request at the advocate's price (refused if
+  off); an appeal is POST /api/addon-request (a sales route), answered by POST
+  /api/admin/addon-request (a link, or 0 at no charge, or no with a reason), paid
+  through Stripe kind 'addon' into addonsBought. The case card, the shelf flag
+  and Needs attention carry the ask; the client's card has four states.
+- worker/stepup.js: a renewing chat line books an Advocacy Case, or a first
+  Full-Service month (scope note acknowledged), $50 off (GET /api/step-up quotes
+  it). The booking is the ordinary hold; accepting it (capacity checked for
+  Full-Service) stops the chat line renewing, once per line. The chat page and
+  book.html?step= offer it while sales are open.
+- Another month is the case's own month price, on the card and at checkout.
+- Package words: appeals and attending are enhancements on top (scope note,
+  service-about, book.js); the chat pages say up to 20 hours.
+
+New: steps.mjs (13 checks, every one controlled); drive-steps (8, seven
+controlled, plus no page errors). Re-pinned with controls: dictionary K5;
+packages B5; uploads U16 (harness), U28k; defects groups, scope note; worklog
+L28; cleanup C2; selfcase S17, S39; authority S30; cancelsearch D3; checkins
+T10, AB3; charge CH5, CH7; invites E2; monthend C1, D1; pricing T5, T6, Q5;
+staffsettings D2; tighten T3, T4, T5; release R1; drive-employer's profile
+check; drive-advocates' and drive-cleanup's groups (Act is Log). Harnesses given the add-on helpers: employer.mjs, advocates.mjs.

@@ -296,7 +296,9 @@ console.log('\n--- E. the wiring ---');
   //   FAIL  E2 the booking page reads the invitation after sign-in and returns to it, shows his time in place of the calendar, wires the same details for both paths, and confirms through the invitation route
   check('E2 the booking page reads the invitation after sign-in and returns to it, shows his time in place of the calendar, wires the same details for both paths, and confirms through the invitation route',
     /const INVITE_ID = \(\(\) => \{\n\s+const v = new URLSearchParams\(location\.search\)\.get\('invite'\) \|\| '';\n\s+return \/\^\[\\w-\]\{6,64\}\$\/\.test\(v\) \? v : '';/.test(BOOK)
-    && /returnTo: INVITE_ID \? `\/book\.html\?invite=\$\{INVITE_ID\}` : '\/book\.html'/.test(BOOK)
+    // RE-PINNED 2026-10-17 (v7.65): a step up from chat returns to ?step= after sign-in too; the invitation still comes first.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): the invitation's return taken out of the sign-in made E2 read FAIL.
+    && /returnTo: INVITE_ID \? `\/book\.html\?invite=\$\{INVITE_ID\}` : STEP \? `\/book\.html\?step=\$\{STEP\}` : '\/book\.html'/.test(BOOK)
     && /if \(INVITE_ID && !\(await readInvite\(\)\)\) return;\n\s+render\(\);/.test(BOOK)
     && /if \(state\.invite\) \{\n\s+showInviteTime\(el\);\n\s+wireStep1\(el\);\n\s+return;\n\s+\}/.test(BOOK)
     && /syncRequest\(\);\n\s+\}\n\s+wireStep1\(el\);\n\}/.test(BOOK)

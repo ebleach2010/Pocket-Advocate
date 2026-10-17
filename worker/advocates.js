@@ -20,6 +20,7 @@
 //   GET  /api/advocates/headshot?uid= an active advocate's photo, public
 
 import { getDoc, patchDoc, deleteDoc, queryDocs, listDocs } from './firestore.js';
+import { addonsOf, cleanAddons } from './addons.js';
 import { putFile, deleteFile, mediaFetch } from './storage.js';
 import { sendEmail } from './email.js';
 import { notifyUser } from './push.js';
@@ -121,6 +122,10 @@ async function adminAdvocates(request, env, h) {
       return h.json({ error: 'That is your own address.' }, 409);
     const problem = passwordProblem(body.password);
     if (problem) return h.json({ error: problem }, 400);
+    // THEIR ADD-ONS, SET AS HE ADDS THEM (Eric, 2026-10-17: "when I add a
+    // contractor into the app it will be a simple toggle with a price input").
+    const addons = body.addons === undefined ? { value: addonsOf(null) } : cleanAddons(body.addons);
+    if (addons.error) return h.json({ error: addons.error }, 400);
     // A CLIENT'S ADDRESS STAYS A CLIENT'S (onboarding review, 2026-10-16).
     // Made an advocate's, the address would sign in with a password from then
     // on and the client's own account, cases and chat would be out of reach.
@@ -138,6 +143,7 @@ async function adminAdvocates(request, env, h) {
       commissionPct: DEFAULT_COMMISSION_PCT, payroll: true,
       primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null,
       acceptingNew: true, tz: 'America/Boise',
+      addons: addons.value,
       advisor: { optedIn: false, enabled: false },
       createdAt: now, createdBy: admin.uid, onboardedAt: null,
       // Their own password first (setupPending in staff.js); the hash is on staffSecrets.
@@ -197,6 +203,12 @@ async function adminAdvocates(request, env, h) {
       patch.commissionPct = pct; mask.push('commissionPct');
     }
     if ('acceptingNew' in body) { patch.acceptingNew = body.acceptingNew === true; mask.push('acceptingNew'); }
+    // "I can go into their profile and change this at any time" (2026-10-17).
+    if ('addons' in body) {
+      const addons = cleanAddons(body.addons);
+      if (addons.error) return h.json({ error: addons.error }, 400);
+      patch.addons = addons.value; mask.push('addons');
+    }
     // Paid access only for someone who asked for it (Eric: "Admin should not
     // enable paid Advisor access unless the advocate opted in.").
     if ('advisorEnabled' in body) {

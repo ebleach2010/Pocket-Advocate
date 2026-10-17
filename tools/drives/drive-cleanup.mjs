@@ -236,7 +236,7 @@ const mine = await eric.evaluate(() => ({
   agenda: !!document.querySelector('[data-agenda-host] [data-alist]'),
   waitingHost: !!document.querySelector('[data-waiting-host]'),
 }));
-await group(eric, 'Act', 'log');
+await group(eric, 'Log', 'log');
 const log = await eric.evaluate(() => ({
   tabs: [...document.querySelectorAll('.folder-tabs [data-page]')].filter((e) => e.checkVisibility()).map((e) => e.dataset.page),
   filter: [...document.querySelectorAll('[data-log-filter] button')].map((b) => b.textContent.trim()),
@@ -253,9 +253,11 @@ await group(eric, 'Case', 'chat');
 const chatStart = await eric.evaluate(() => [...document.querySelectorAll('button')].some((b) => b.checkVisibility() && /Start working/.test(b.textContent)));
 if (SHOTS) await eric.screenshot({ path: `${SHOTS}/cleanup-5-one-log.png` });
 // NEGATIVE CONTROL (run 2026-10-16, v7.54): his Track group put back (`{ id: 'track', label: 'Track', icon: 'i-doc', pages: ['agenda'] },` after Advisor) made this read
-//   FAIL  his case has four groups, Agenda under Mine, one Log with its filter under Act, Saved under Notes, the PDF on Uploads, and no second Start
-ok('his case has four groups, Agenda under Mine, one Log with its filter under Act, Saved under Notes, the PDF on Uploads, and no second Start',
-  strip.join('|') === 'Case|Advisor|Mine|Act' && mine.tabs.includes('agenda') && mine.agenda && mine.waitingHost
+// RE-PINNED 2026-10-17 (v7.65): the Act group is named Log (Eric: "So just replace that whole tab with simply 'log'").
+// NEGATIVE CONTROL (run 2026-10-17, v7.65): the group's label put back to 'Act' made this read
+//   FAIL  his case has four groups, Agenda under Mine, one Log with its filter under Log, Saved under Notes, the PDF on Uploads, and no second Start
+ok('his case has four groups, Agenda under Mine, one Log with its filter under Log, Saved under Notes, the PDF on Uploads, and no second Start',
+  strip.join('|') === 'Case|Advisor|Mine|Log' && mine.tabs.includes('agenda') && mine.agenda && mine.waitingHost
   && log.tabs.join() === 'log' && log.filter.join('|') === 'Everything|Work|Milestones' && log.both
   && onlyMiles.work === true && onlyMiles.miles === false && notesHasSaved && uploadsPdf && !chatStart,
   JSON.stringify({ strip, mine, log, onlyMiles, notesHasSaved, uploadsPdf, chatStart }));

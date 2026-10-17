@@ -107,7 +107,9 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   // RE-PINNED 2026-10-17 (v7.63): Eric, "No, keep it off": the ask for another month after one ended is an offer too.
   // NEGATIVE CONTROL (run 2026-10-17, v7.63): `[data-request-month]` taken out of SELLING made this read FAIL.
   check('T3 while sales are closed an offer card empties, a confirmed appointment and a request under way stay, a finished month loses its buy-again button, and an open shop changes nothing',
-    /^\[data-th-request\],\[data-buy-extend\],\[data-buy-followup\],\[data-buy-upgrade\],\[data-ask-again\],\[data-request-month\]$/.test(SELLING)
+    // RE-PINNED 2026-10-17 (v7.65): an appeal asked for on Full-Service (and its Ask again) is an offer too.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): `[data-request-appeal]` taken out of SELLING made T3 read FAIL.
+    /^\[data-th-request\],\[data-buy-extend\],\[data-buy-followup\],\[data-buy-upgrade\],\[data-ask-again\],\[data-request-month\],\[data-request-appeal\],\[data-appeal-again\]$/.test(SELLING)
     && r.join() === 'false,true,true,true,true' && monthKept === false && month.innerHTML === ''
     && offer.innerHTML === ''
     && /Appointment advocacy/.test(visit.innerHTML) && /Confirmed: Tue, Oct 20/.test(visit.innerHTML) && !/data-th-request/.test(visit.innerHTML)
@@ -122,7 +124,9 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   check('T4 the Enhance tab drops its sales line and says the approved closed sentence when nothing is left, and the Chat tab\'s paid unlock is gone while closed',
     /import \{ SALES_OPEN, SALES_CLOSED_MESSAGE \} from '\.\/sales\.js';/.test(CASE)
     && /\$\{SALES_OPEN \? `<p class="dim small" style="margin:\.2rem 0 \.8rem;">Extras you can put on/.test(addons)
-    && /if \(!SALES_OPEN && none && !\[th, ex, offer, up\]\.some\(\(h\) => h && h\.innerHTML\.trim\(\)\)\) \{\s*none\.textContent = SALES_CLOSED_MESSAGE;/.test(addons)
+    // RE-PINNED 2026-10-17 (v7.65): the appeal card (ap) counts among what is left.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): `ap` taken out of the list made T4 read FAIL.
+    && /if \(!SALES_OPEN && none && !\[th, ap, ex, offer, up\]\.some\(\(h\) => h && h\.innerHTML\.trim\(\)\)\) \{\s*none\.textContent = SALES_CLOSED_MESSAGE;/.test(addons)
     && /const addAbout = \(host, topic\) => \{ if \(keepCard\(host\)\) addAboutButton\(host, topic\); \};/.test(addons)
     && /\$\{chatLocked && SALES_OPEN \? `\s*<div class="panel" data-chat-unlock/.test(CASE));
 
@@ -134,7 +138,11 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   check('T5 the telehealth card quotes what Stripe charges: the live price, seeded with the Worker\'s own number',
     seed > 0 && seed === wTele && !/TELEHEALTH_PRICE_CENTS/.test(CASE)
     && /if \(Number\(d\?\.teleCents\) > 0\) telehealthCents = Number\(d\.teleCents\);/.test(CASE)
-    && /<span class="price">\$\$\{\(telehealthCents \/ 100\)\.toFixed\(0\)\}<\/span>/.test(CASE),
+    // RE-PINNED 2026-10-17 (v7.65): the card prices `cents`: the live telehealth price, or on Full-Service the advocate's
+    // own price for attending (Eric: "attending appointments ... are enhancements"), the same figure the Worker holds.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.65): `: telehealthCents` made `: 45000` made T5 read FAIL.
+    && /const cents = c\.fullAccess \? Math\.max\(0, Number\(attend\.cents\) \|\| 0\) : telehealthCents;/.test(CASE)
+    && /<span class="price">\$\$\{Math\.round\(cents \/ 100\)\.toLocaleString\(\)\}<\/span>/.test(CASE),
     `case.js ${seed}, worker ${wTele}`);
 }
 

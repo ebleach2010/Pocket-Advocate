@@ -1068,9 +1068,16 @@ function splitDelta(rows, throughMs, overlap = DELTA_OVERLAP) {
   };
 }
 
+/**
+ * Eric's own line in a thread. A contractor writes as staff too (role
+ * 'admin'), and Eric, 2026-10-17: "No voice study for contractors besides
+ * myself." So his voice is what HE sent, by his uid, and nobody else's.
+ */
+const ericWrote = (env, r) => r.data.role === 'admin' && !!env.ADMIN_UID && r.data.from === env.ADMIN_UID;
+
 /** Only Eric's lines — the sample the draft writer imitates. */
-function myVoice(rows) {
-  return rows.filter((r) => r.data.role === 'admin' && r.data.text)
+function myVoice(env, rows) {
+  return rows.filter((r) => ericWrote(env, r) && r.data.text)
     .map((r) => r.data.text).slice(-40).join('\n---\n');
 }
 
@@ -2008,7 +2015,7 @@ export async function voiceCorpus(env, { exclude = null } = {}) {
       // unchanged is the MODEL's writing, and reading it back as evidence of
       // how Eric writes converges the profile on itself (echo drift). The
       // exclude set carries the flattened text of every draft-born send.
-      const mine = rows.filter((r) => r.data.role === 'admin' && r.data.text)
+      const mine = rows.filter((r) => ericWrote(env, r) && r.data.text)
         .map((r) => String(r.data.text).trim())
         .filter((m) => m && !seen.has(m) && !isEcho(m, exclude));
       for (const m of mine) {
@@ -2506,7 +2513,7 @@ export async function runStyleDistill(env, kind, id) {
     // the send that triggered this distill is by definition in `rows`.
     const sentSet = new Set(edits.map((r) => r.data.sent).filter(Boolean).map(flatText));
     const organic = rows
-      .filter((r) => r.data.role === 'admin' && r.data.text
+      .filter((r) => ericWrote(env, r) && r.data.text
         && !sentSet.has(flatText(r.data.text)))
       .map((r) => r.data.text).slice(-40).join('\n---\n').slice(-6000);
     // Edit pairs are the best evidence and used to be the ONLY evidence, which
@@ -5383,7 +5390,7 @@ export async function runDraft(env, kind, id, instruction, revise = false, base 
     // draft died the moment it started ("voice2 is not a function", found
     // on two cases through the diag, 2026-09-07). dictionary.mjs K5 scans
     // for the same shadow anywhere in this file.
-    const hisVoice = myVoice(rows);
+    const hisVoice = myVoice(env, rows);
     // THE THIN-THREAD FIX (Eric, 2026-08-29: "The app still isn't picking up
     // my tone at all and it has 30 pages of my writing"). It did have the
     // pages; the draft writer never saw them. myVoice reads THIS thread only,
