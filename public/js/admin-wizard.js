@@ -267,7 +267,6 @@ export async function openAdvocateWizard(user, { mode = 'add', uid = '', say = (
       <input class="ask-input" type="text" data-s-about maxlength="240" value="${esc(x.about || '')}" placeholder="One line about it" aria-label="About the service">
       <button type="button" class="btn quiet tiny" data-s-remove aria-label="Remove it">Remove</button>
       ${x.askedAt && !x.on ? '<span class="dim small" data-s-asked>They asked for this.</span>' : ''}
-      ${x.kind === 'month' ? '<span class="dim small" data-s-later>Monthly services go on sale with the next update.</span>' : ''}
     </div>`;
   }
   function customRow(x, i) {

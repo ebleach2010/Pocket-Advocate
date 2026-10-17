@@ -9,11 +9,13 @@
 // ask for one from their settings; it stays off until he turns it on, on their
 // card in Employer mode, where he can also add, change or take one away.
 //
-// A one-time service is sold from their booking page like a case, with the
-// card held until they take it on, and opens a case with no call time: they
-// set things up together in the case chat. A monthly one (its months run like
-// Full-Service) is kept and switched here; it is sold once its months are
-// built, so `sellable` answers for one-time services only.
+// Either kind is sold from their booking page like a case, with the card held
+// until they take it on, and opens a case with no call time: they set things
+// up together in the case chat. A monthly one buys a month at a time, like
+// Full-Service (2026-10-17, v7.75): thirty days from the day it is taken on, a heads-up
+// three days before the end, the case closes at the end, and another month is
+// asked for afterwards, which their advocate says yes or no to
+// (worker/monthend.js).
 
 const SERVICE_ID = /^s[a-z0-9]{8}$/;
 export const SERVICE_MAX = 6;
@@ -38,9 +40,27 @@ export function servicesOf(record) {
   }));
 }
 
-/** What a client can buy right now: on, priced, and (for now) one-time. */
+/** What a client can buy right now: on and priced, one-time or monthly. */
 export function sellable(s) {
-  return !!s && s.on === true && s.kind === 'once' && s.cents >= 50;
+  return !!s && s.on === true && SERVICE_KINDS.includes(s.kind) && s.cents >= 50;
+}
+
+/** A month of their own service, in days, as a month of Full-Service is. */
+export const SERVICE_MONTH_DAYS = 30;
+
+/**
+ * When the month a monthly service case is on runs out: thirty days for each
+ * month from the day their advocate took it on (the card is only held until
+ * then, so no day of it is spent waiting), plus any time the case sat paused
+ * (`heldMs`, from the Worker). Null while the card is held, and for anything
+ * that is not a monthly service case.
+ */
+export function serviceWindowEnd(c, heldMs = 0) {
+  if (c?.serviceMonthly !== true || c.charge?.state === 'held') return null;
+  const start = new Date(c.charge?.decidedAt || c.charge?.capturedAt || c.serviceAt || c.createdAt || 0).getTime();
+  if (!Number.isFinite(start) || !start) return null;
+  const days = SERVICE_MONTH_DAYS + (Number(c.serviceExtraDays) || 0);
+  return new Date(start + days * 86_400_000 + (Number(heldMs) || 0));
 }
 
 /** One service by id, or null. */

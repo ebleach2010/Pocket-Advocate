@@ -86,9 +86,9 @@ import { handleAdvocates, isStaffLogin, advocateLogin } from './advocates.js';
 import { handleEmployer } from './employer.js';
 // Joe Bloe and the sample contractor, taken off his real shelf once (2026-10-16).
 import { retireSamples } from './retire.js';
-import { sweepFullServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
+import { sweepFullServiceMonths, sweepServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
 import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddons } from './addons.js';
-import { servicesOf, serviceOf, sellable } from './services.js';
+import { servicesOf, serviceOf, sellable, serviceWindowEnd } from './services.js';
 import { chatStepUp, stepUpPrice, handleStepUpQuote, endChatForStepUp } from './stepup.js';
 import { handlePayroll } from './payroll.js';
 import { handleStaffSettings, contractorOf, contractorSettings, mergeRates } from './staffsettings.js';
@@ -1264,9 +1264,13 @@ export default {
       // The end of a Full-Service month (2026-10-17): worker/monthend.js.
       if (url.pathname === '/api/extend-request' && request.method === 'POST')
         return await handleExtendRequest(request, env, { requireUser, json, pingCase, monthCentsFor: async (data) => (await ratesForCase(env, data)).fullCents });
+      // Another month of their own monthly service (2026-10-17, v7.75): its own door, on that service's own switch.
+      if (url.pathname === '/api/service-month-request' && request.method === 'POST')
+        return await handleExtendRequest(request, env, { requireUser, json, pingCase, kind: 'service', monthCentsFor: (data) => serviceMonthCents(env, data) });
       if (url.pathname === '/api/admin/extend-request' && request.method === 'POST')
         return await handleExtendDecision(request, env, {
-          requireStaff, staffSees, json, notifyUser, stripePost, lineItems: extendLineItems,
+          requireStaff, staffSees, json, notifyUser, stripePost,
+          lineItems: (cents, data) => (data?.serviceMonthly === true ? serviceMonthLineItems(cents, data) : extendLineItems(cents)),
           capacity: fullAccessCapacity, contractorOf, confirm: confirmExtensionPurchase, baseUrl: env.PUBLIC_BASE_URL,
         });
       if (url.pathname === '/api/step-up' && request.method === 'GET')
@@ -1801,6 +1805,11 @@ export default {
       ctx.waitUntil(readSwitches(env).then((sw) => sweepFullServiceMonths(env, {
         windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: sw.full, baseUrl: env.PUBLIC_BASE_URL,
       })).catch((err) => console.warn('month sweep:', err.message || err)));
+      // Their own monthly services (2026-10-17, v7.75), each on its own switch.
+      ctx.waitUntil(sweepServiceMonths(env, {
+        windowEnd: (c) => serviceWindowEnd(c, heldMs(c)), notifyUser, sendEmail, pingCase,
+        offered: async (c) => (await serviceMonthCents(env, c)) > 0, baseUrl: env.PUBLIC_BASE_URL,
+      }).catch((err) => console.warn('service month sweep:', err.message || err)));
     }
     if (minute % 15 === 13) ctx.waitUntil(retireSamples(env).catch((err) => console.warn('retire samples:', err.message || err)));
 
@@ -2550,7 +2559,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-their-services';
+const BUILD_TAG = 'v2026-10-17-their-months';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2558,7 +2567,7 @@ const BUILD_TAG = 'v2026-10-17-their-services';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.74';
+const VERSION = '7.75';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3698,7 +3707,7 @@ async function handleServiceCheckout(request, env) {
     customer_email: identity.email || user.email || undefined,
     line_items: [{
       quantity: 1,
-      price_data: { currency: 'usd', unit_amount: svc.cents, product_data: { name: svc.label, description: `With ${firstName(rec?.name)}, your advocate` } },
+      price_data: { currency: 'usd', unit_amount: svc.cents, product_data: { name: svc.kind === 'month' ? `${svc.label}, one month` : svc.label, description: `With ${firstName(rec?.name)}, your advocate` } },
     }],
     payment_intent_data: HOLD_INTENT,
     success_url: `${env.PUBLIC_BASE_URL}/return.html?session_id={CHECKOUT_SESSION_ID}`,
@@ -3719,6 +3728,7 @@ async function handleServiceCheckout(request, env) {
       // Which of their services (createCaseFromSession opens it with no time), and its name as sold.
       serviceId: svc.id,
       serviceLabel: svc.label,
+      serviceKind: svc.kind,
     },
   });
   return json({ url: session.url });
@@ -4360,9 +4370,12 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
   const svcRec = m.serviceId ? (await getDoc(env, `advocates/${advocateId}`).catch(() => null))?.data : null;
   const svcRow = m.serviceId ? serviceOf(svcRec, m.serviceId) : null;
   const service = m.serviceId ? {
-    id: m.serviceId, label: String(m.serviceLabel || svcRow?.label || 'Their service').slice(0, 60), kind: 'once',
+    id: m.serviceId, label: String(m.serviceLabel || svcRow?.label || 'Their service').slice(0, 60),
+    kind: (m.serviceKind || svcRow?.kind) === 'month' ? 'month' : 'once',
     cents: Number(session.amount_total) > 0 ? Number(session.amount_total) : (svcRow?.cents || 0),
   } : null;
+  // A month at a time, like Full-Service (2026-10-17, v7.75): its clock starts when it is taken on (serviceWindowEnd).
+  const monthly = service?.kind === 'month';
 
   const created = await patchDoc(
     env,
@@ -4392,6 +4405,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
         requested: isRequest,
       },
       ...(service ? { service, chatUnlocked: true } : {}),
+      ...(monthly ? { serviceMonthly: true, serviceAt: now, serviceMonths: 1, serviceExtraDays: 0 } : {}),
       // Always private — the election screen is gone. Field retained so
       // existing cases and the case page keep rendering.
       publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] },
@@ -4518,7 +4532,7 @@ async function createCaseFromSession(env, session, { held = null } = {}) {
       to: clientEmail,
       subject: held ? 'Your Pocket Advocate case is in' : 'Your Pocket Advocate case is open',
       html: `<p>${held ? escHtml(CHARGE_COPY.held) : inviteId && !invitePaid ? 'Your time is confirmed. Your case file is live.' : 'Payment confirmed. Your case file is live.'}</p>
-        ${service ? `<p><strong>${escHtml(service.label)}</strong>, with ${escHtml(svcWho)}. There is no call time to pick: you plan the next step together in your case chat.</p>
+        ${service ? `<p><strong>${escHtml(service.label)}</strong>${monthly ? ', a month at a time,' : ','} with ${escHtml(svcWho)}. There is no call time to pick: you plan the next step together in your case chat.${monthly ? ' Your month starts the day your case is taken on.' : ''}</p>
         <p>Upload labs, imaging, or records any time.</p>` : `${whenHtml(start, m.tz)}
         <p>Meeting method: ${m.method}.</p>
         <p>Upload labs, imaging, or records any time before the call.</p>`}
@@ -7966,6 +7980,30 @@ async function confirmFollowUpPurchase(env, session) {
  * Off the ratchet, so no quote handshake: the price cannot move between the
  * paint and the tap.
  */
+/** Another month of their own service (2026-10-17, v7.75), named for it. */
+function serviceMonthLineItems(cents, data) {
+  return [{
+    price_data: {
+      currency: 'usd',
+      product_data: { name: `${String(data?.service?.label || 'Your service').slice(0, 60)}, one month`, description: 'Another month on this case.' },
+      unit_amount: cents,
+    },
+    quantity: 1,
+  }];
+}
+
+/**
+ * Another month of their own monthly service: its price now, or 0 once it is
+ * no longer offered (switched off, priced away, its advocate off), which is
+ * how the request and the month-end mail know not to offer one.
+ */
+async function serviceMonthCents(env, data) {
+  const uid = advocateIdOf(data, env);
+  if (!(await contractorSettings(env, uid).catch(() => null))) return 0;
+  const s = serviceOf((await getDoc(env, `advocates/${uid}`).catch(() => null))?.data, data?.service?.id);
+  return s && s.kind === 'month' && sellable(s) ? s.cents : 0;
+}
+
 function extendLineItems(cents) {
   return [{
     price_data: {
@@ -8054,12 +8092,14 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
   const amountCents = Number.isFinite(Number(session.amount_total)) ? Number(session.amount_total) : FULL_EXTEND[30];
   // A month asked for after the case closed reopens it (2026-10-17), and only
   // the one its advocate said yes to.
-  const reopening = session.metadata?.reopen === '1' && c.data.fullAccess && c.data.status === 'closed'
+  // Their own monthly service (2026-10-17, v7.75) takes months the same way, on its own clock.
+  const svcMonth = c.data.serviceMonthly === true;
+  const reopening = session.metadata?.reopen === '1' && (c.data.fullAccess || svcMonth) && c.data.status === 'closed'
     && c.data.extendRequest?.state === 'approved';
 
   // Money moved into a case that cannot take the days: written down and
   // flagged for a hand refund, exactly like the sibling confirmers.
-  if (!c.data.fullAccess || (c.data.status === 'closed' && !reopening)) {
+  if (!(c.data.fullAccess || svcMonth) || (c.data.status === 'closed' && !reopening)) {
     payments.push({ kind: 'extend', amountCents, sessionId: session.id, at: now, duplicate: true });
     const okDup = await patchDoc(env, `cases/${caseId}`, { extraPayments: payments },
       { mask: ['extraPayments'], ifUpdateTime: c.updateTime });
@@ -8075,6 +8115,36 @@ async function confirmExtensionPurchase(env, session, attempt = 0) {
   }
 
   payments.push({ kind: 'extend', amountCents, sessionId: session.id, at: now, days: 30 });
+  if (svcMonth) {
+    const reopen = reopening ? {
+      status: c.data.closedFromStatus || 'confirmed', closedAt: null, closedBy: null, closedReason: null,
+      extendRequest: { ...c.data.extendRequest, state: 'started', startedAt: now }, monthNotice: null,
+    } : {};
+    const reopenMask = reopening ? ['status', 'closedAt', 'closedBy', 'closedReason', 'extendRequest', 'monthNotice'] : [];
+    // Thirty days of use from today at worst, as below: what the last month already lost is credited first.
+    const prevEnd = serviceWindowEnd(c.data, heldMs(c.data));
+    const lapsedDays = prevEnd ? Math.max(0, Math.ceil((Date.now() - prevEnd.getTime()) / 86_400_000)) : 0;
+    const extraDays = (Number(c.data.serviceExtraDays) || 0) + lapsedDays + FULL_MONTH_DAYS;
+    const okSvc = await patchDoc(env, `cases/${caseId}`, {
+      serviceExtraDays: extraDays, serviceMonths: (Number(c.data.serviceMonths) || 1) + 1,
+      pendingExtend: null, extraPayments: payments, ...reopen,
+    }, { mask: ['serviceExtraDays', 'serviceMonths', 'pendingExtend', 'extraPayments', ...reopenMask], ifUpdateTime: c.updateTime });
+    if (okSvc === false) return confirmExtensionPurchase(env, session, attempt + 1);
+    const until = serviceWindowEnd({ ...c.data, serviceExtraDays: extraDays }, heldMs(c.data));
+    const label = String(c.data.service?.label || 'your service');
+    if (c.data.clientEmail) {
+      await sendEmail(env, {
+        to: c.data.clientEmail,
+        subject: reopening ? 'Your case is open again' : 'Thirty more days on your case',
+        html: `<p>${reopening ? 'Your case is open again. ' : ''}Your month of <strong>${escHtml(label)}</strong> now runs through <strong>${until ? MT_FMT.format(until) : 'the extended date'} MST</strong>.</p>
+          <p><a href="${env.PUBLIC_BASE_URL}/case.html?id=${caseId}">Open your case</a></p>`,
+      }).catch(() => {});
+    }
+    for (const a of await caseRecipients(env, c.data)) {
+      await notifyUser(env, a.id, { title: 'Pocket Advocate', body: `${firstName(c.data.clientName) || 'A client'} started another month of ${label}.`, link: `/admin-case.html?id=${caseId}` }).catch(() => {});
+    }
+    return;
+  }
   // Thirty days of USE, not thirty days on a date that has already passed.
   // A tier case can legitimately outlive its window (the close sweep waits
   // on an undecided appeal), and adding 30 to an end date three weeks gone

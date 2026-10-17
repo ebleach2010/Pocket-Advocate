@@ -819,7 +819,7 @@ function renderProgress(el, c) {
       ${start ? `
         <h2 class="appt-when">${mtFmt.format(start)} MST<br>
         <span class="dim small" style="display:inline-block;margin-top:.3rem;line-height:1.35;">${localFmt.format(start)} your time</span></h2>`
-    : c.service ? '<h2 class="appt-when">Your case is open<br><span class="dim small">Plan the next step together in your case chat.</span></h2>'
+    : c.service ? `<h2 class="appt-when">Your case is open<br><span class="dim small">${svcSubLine(c)}</span></h2>`
       : '<h2 class="appt-when">Your case is open<br><span class="dim small">No call is on the books yet.</span></h2>'}
       ${underLine ? `<p class="dim small">${underLine}</p>` : ''}
       ${primaryAction}
@@ -1677,6 +1677,27 @@ const FULL_WINDOW_DAYS = 30;
 const FULL_LEGACY_WINDOW_DAYS = 60;
 const FULL_MONTHLY_FROM_AT = Date.parse('2026-08-26T00:00:00Z');
 const FULL_WINDOW_FROM_PURCHASE_AT = Date.parse('2026-08-25T00:00:00Z');
+/**
+ * A monthly service case's month (2026-10-17, v7.75), mirroring
+ * worker/services.js serviceWindowEnd: thirty days a month from the day it
+ * was taken on, plus paused time. Null while the card is held.
+ */
+function svcUntil(c) {
+  if (!c?.serviceMonthly || c.charge?.state === 'held') return null;
+  const from = toDate(c.charge?.decidedAt || c.charge?.capturedAt || c.serviceAt || c.createdAt);
+  if (!from || Number.isNaN(from.getTime())) return null;
+  const held = Math.max(0, Number(c.hold?.totalMs) || 0) + (c.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
+  return new Date(from.getTime() + (30 + (Number(c.serviceExtraDays) || 0)) * 86_400_000 + held);
+}
+/** The line under a service case's heading: where its month stands, then where things start. */
+function svcSubLine(c) {
+  const next = 'Plan the next step together in your case chat.';
+  if (!c.serviceMonthly) return next;
+  const until = svcUntil(c);
+  if (until) return `Your month runs through ${esc(new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(until))}. ${next}`;
+  return `Your month starts the day your case is taken on. ${next}`;
+}
+
 function windowEndOf(c) {
   // Mirrors worker/index.js fullAccessWindowEnd line for line, including the
   // start it measures from: a case bought before the rule changed was sold
@@ -1715,7 +1736,8 @@ function livePendingExtend(c) {
   return p;
 }
 function extendOffer(c) {
-  if (c.fullAccess && c.status === 'closed' && c.monthEndedAt) return monthAsk(c);
+  // Their own monthly service asks the same way once its month ends (2026-10-17, v7.75).
+  if ((c.fullAccess || c.serviceMonthly) && c.status === 'closed' && c.monthEndedAt) return monthAsk(c);
   if (!c.fullAccess || c.status === 'closed') return '';
   const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
   const pending = livePendingExtend(c);
@@ -1794,7 +1816,7 @@ function monthAsk(c) {
   return `
     <div class="followup-offer month-ask" data-month-ask="offer">
       <h3>Want another month?</h3>
-      <p>Your month of Full-Service has ended. Ask ${adv} for another: the same work and the same file,
+      <p>Your month of ${c.serviceMonthly ? esc(String(c.service?.label || 'your service')) : 'Full-Service'} has ended. Ask ${adv} for another: the same work and the same file,
         picking up where you left off. Nothing is charged unless they say yes.</p>
       <p><button type="button" class="btn glow" data-request-month>Request another month</button></p>
       <p class="error" data-month-error hidden></p>
@@ -1820,7 +1842,8 @@ function monthAskStyle() {
 }
 async function postMonthAsk(c, body) {
   const idToken = await user.getIdToken();
-  const res = await fetch('/api/extend-request', {
+  // Their own service has its own door, on its own switch (worker/monthend.js).
+  const res = await fetch(c.serviceMonthly ? '/api/service-month-request' : '/api/extend-request', {
     method: 'POST',
     headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
     body: JSON.stringify({ caseId: c.id, ...body }),
@@ -1831,7 +1854,7 @@ async function postMonthAsk(c, body) {
 }
 
 function wireExtendOffer(el, c) {
-  const paint = (next) => { el.innerHTML = extendOffer(next); wireExtendOffer(el, next); addAboutButton(el, 'extension'); };
+  const paint = (next) => { el.innerHTML = extendOffer(next); wireExtendOffer(el, next); if (!next.serviceMonthly) addAboutButton(el, 'extension'); };
   const asking = el.querySelector('[data-request-month]');
   if (asking) asking.addEventListener('click', async () => {
     asking.disabled = true;
@@ -1956,7 +1979,8 @@ function renderAddons(el, c) {
   };
   if (cu) { paintCustoms(); ratesReady.then(paintCustoms).catch(() => {}); }
   const ex = el.querySelector('[data-extend]');
-  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); addAbout(ex, 'extension'); }
+  // A month of their own service follows that service's own switch, which the Worker checks; the Full-Service one follows Full-Service.
+  if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); if (!c.serviceMonthly) addAbout(ex, 'extension'); }
   const offer = el.querySelector('[data-followup]');
   if (offer) {
     offer.innerHTML = followUpOffer(c);
@@ -2321,6 +2345,8 @@ function followUpOffer(c) {
           within the next 30 days.</p>
       </div>`;
   if (c.addOnFollowUp || c.followUp || c.pendingExtra) return '';
+  // A contractor's own service (2026-10-17) has no report to follow up on.
+  if (c.service) return '';
   if (!['awaiting_report', 'delivered', 'closed'].includes(c.status)) return '';
   // With a dollar sign. Every other price in the product carries one, and a
   // bare "75" beside a button, wrapped onto its own line on a narrow phone, is

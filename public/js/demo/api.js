@@ -360,7 +360,7 @@ export function demoApi(role, store) {
         // Their own chat line, once he has turned it on (2026-10-17).
         const askedFor = q.get('advocate');
         const chatOffered = own ? own.settings?.offers?.chat === true : !askedFor || askedFor === 'demo-admin';
-        const services = own ? demoServices(own).filter((x) => x.on && x.kind === 'once' && x.cents >= 50).map(({ id, label, about, kind, cents }) => ({ id, label, about, kind, cents })) : [];
+        const services = own ? demoServices(own).filter((x) => x.on && ['once', 'month'].includes(x.kind) && x.cents >= 50).map(({ id, label, about, kind, cents }) => ({ id, label, about, kind, cents })) : [];
         return ok({ caseCents: now.caseCents, addonCents: now.addonCents, subCents: now.subCents, fullCents: now.fullCents, chatOpenCents: 5000, teleCents: 52500, fullHours: 20, addons: demoAddons(q.get('advocate')), chatOffered, services });
       }
       const want = { ...now };
@@ -1591,11 +1591,19 @@ export function demoApi(role, store) {
     // ANOTHER MONTH, ASKED FOR AFTER ONE ENDED (2026-10-17), as
     // worker/monthend.js answers it. There is no Stripe here, so a yes lands
     // where paying would have: the case open again, thirty days from today.
-    if (path === '/api/extend-request') {
+    // Their own monthly service has its own door (2026-10-17, v7.75), on its own switch.
+    if (path === '/api/extend-request' || path === '/api/service-month-request') {
       const key = `cases/${body.caseId || ''}`;
       const c = store.docs.get(key);
       if (!c) return fail(404, 'Not found');
-      if (!c.fullAccess || c.status !== 'closed' || !c.monthEndedAt) return fail(409, 'Another month can be asked for once a month of Full-Service has ended.');
+      const svcDoor = path === '/api/service-month-request';
+      const label = String(c.service?.label || 'your service');
+      if (svcDoor ? (c.serviceMonthly !== true || c.status !== 'closed' || !c.monthEndedAt) : (!c.fullAccess || c.status !== 'closed' || !c.monthEndedAt))
+        return fail(409, svcDoor ? `Another month can be asked for once a month of ${label} has ended.` : 'Another month can be asked for once a month of Full-Service has ended.');
+      // The Worker reads the service as it stands now. A client's demo tab may not hold the advocate's list, so the demo
+      // refuses only one it can see switched off, and otherwise quotes the month at the price it was sold at.
+      const svcRow = svcDoor ? demoServices(demoContractor(c.advocateId) || {}).find((x) => x.id === c.service?.id) : null;
+      const svcCents = !svcDoor ? 0 : svcRow ? (svcRow.on && svcRow.kind === 'month' && svcRow.cents >= 50 ? svcRow.cents : 0) : Number(c.service?.cents) || 0;
       const req = c.extendRequest;
       if (body.action === 'withdraw') {
         if (req?.state !== 'pending') return fail(409, 'There is no request to withdraw.');
@@ -1604,7 +1612,8 @@ export function demoApi(role, store) {
         return ok({ ok: true, withdrawn: true });
       }
       if (req?.state === 'pending') return ok({ ok: true, state: 'pending', at: req.at });
-      const next = { state: 'pending', at: new Date(), monthCents: 440000, decidedAt: null, declineReason: '' };
+      if (svcDoor && !svcCents) return fail(409, 'That service is not offered right now.');
+      const next = { state: 'pending', at: new Date(), monthCents: svcDoor ? svcCents : 440000, decidedAt: null, declineReason: '' };
       store.docs.set(key, { ...c, extendRequest: next });
       store.persist?.(); store.fire?.(key);
       return ok({ ok: true, state: 'pending', at: next.at });
@@ -1687,6 +1696,22 @@ export function demoApi(role, store) {
       if (asked !== null && (!Number.isInteger(asked) || asked < 0)) return fail(400, 'The amount has to be a whole number of cents, zero or more, under $20,000.');
       const cents = asked === null ? (Number(req.monthCents) || 0) : asked;
       const DAY = 86_400_000;
+      if (c.serviceMonthly === true) {
+        // Their own monthly service: its own clock, from the day it was taken on (worker/services.js serviceWindowEnd).
+        const from = new Date(c.charge?.decidedAt || c.charge?.capturedAt || c.serviceAt || Date.now()).getTime();
+        const endS = from + (30 + (Number(c.serviceExtraDays) || 0)) * DAY;
+        const lapsedS = Math.max(0, Math.ceil((Date.now() - endS) / DAY));
+        const at = new Date();
+        store.docs.set(key, {
+          ...c,
+          status: c.closedFromStatus || 'confirmed', closedAt: null, closedBy: null, closedReason: null, monthNotice: null,
+          serviceExtraDays: (Number(c.serviceExtraDays) || 0) + lapsedS + 30, serviceMonths: (Number(c.serviceMonths) || 1) + 1,
+          extendRequest: { ...req, state: 'started', decidedAt: at, startedAt: at },
+          extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), { kind: 'extend', amountCents: cents, sessionId: `cs_demo_month_${at.getTime()}`, at, days: 30 }],
+        });
+        store.persist?.(); store.fire?.(key);
+        return ok({ ok: true, state: 'started', cents });
+      }
       const end0 = new Date(c.fullAccessAt || Date.now()).getTime() + (30 + (Number(c.fullAccessExtraDays) || 0)) * DAY;
       const lapsed = Math.max(0, Math.ceil((Date.now() - end0) / DAY));
       const now = new Date();
@@ -1813,7 +1838,7 @@ export function demoApi(role, store) {
       const adv = typeof body.advocate === 'string' ? body.advocate : '';
       const rec = demoContractor(adv);
       const svc = rec ? demoServices(rec).find((x) => x.id === body.service) : null;
-      if (!svc || !svc.on || svc.kind !== 'once' || svc.cents < 50) return fail(404, 'That service is not offered right now.');
+      if (!svc || !svc.on || !['once', 'month'].includes(svc.kind) || svc.cents < 50) return fail(404, 'That service is not offered right now.');
       if (!/^\+?[\d\s().-]{7,20}$/.test(String(body.phone || ''))) return fail(400, 'A valid phone number is required so your advocate can reach you.');
       if (!['disclaimer', 'privacy', 'recording', 'service', 'phoneConsent'].every((f) => typeof body?.acks?.[f] === 'number'))
         return fail(400, 'All acknowledgment forms must be completed first.');
@@ -1827,7 +1852,9 @@ export function demoApi(role, store) {
         clientDob: profile.dob || null, clientTz: body.tz || 'America/Denver', clientPhone: body.phone || null,
         clientAddress: String(body.address || '').trim().slice(0, 300) || null,
         status: 'confirmed', createdAt: now, appointment: null,
-        service: { id: svc.id, label: svc.label, kind: 'once', cents: svc.cents }, chatUnlocked: true,
+        service: { id: svc.id, label: svc.label, kind: svc.kind, cents: svc.cents }, chatUnlocked: true,
+        // A month at a time (2026-10-17, v7.75), as createCaseFromSession writes it.
+        ...(svc.kind === 'month' ? { serviceMonthly: true, serviceAt: now, serviceMonths: 1, serviceExtraDays: 0 } : {}),
         publicElection: { choice: 'private', history: [{ choice: 'private', at: now }] }, addOnFollowUp: false,
         forms: Object.fromEntries(Object.entries(body.acks || {}).map(([k, v]) => [k, new Date(v)])),
         files: [], reportDueAt: null, caseRateCents: svc.cents, addonRateCents: 32500,

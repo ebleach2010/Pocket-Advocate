@@ -135,7 +135,7 @@ async function addServiceList(el) {
   el.querySelector('#days')?.insertAdjacentHTML('beforebegin', `
     <div class="stack-tight" data-adv-services>
       ${list.map((x) => `<a class="card-quiet adv-svc" href="/book.html?advocate=${encodeURIComponent(ADVOCATE)}&service=${encodeURIComponent(x.id)}" data-adv-service="${esc(x.id)}">
-        <strong>${esc(x.label)}</strong> <span class="muted">$${money(Number(x.cents) || 0)}</span>
+        <strong>${esc(x.label)}</strong> <span class="muted">$${money(Number(x.cents) || 0)}${x.kind === 'month' ? ' a month' : ''}</span>
         ${x.about ? `<span class="muted small" style="display:block;">${esc(x.about)}</span>` : ''}</a>`).join('')}
     </div>`);
 }
@@ -156,10 +156,11 @@ async function showService(el) {
     stripUnwiredStep1(el, { keepIntro: false });
     return false;
   }
-  state.service = { id: svc.id, label: svc.label, about: svc.about || '', cents: Number(svc.cents) || 0 };
+  state.service = { id: svc.id, label: svc.label, about: svc.about || '', cents: Number(svc.cents) || 0, monthly: svc.kind === 'month' };
   el.querySelector('h1').textContent = svc.label;
-  el.querySelector('#time-intro').innerHTML = `${svc.about ? `${esc(svc.about)} ` : ''}With <strong>${esc(name || 'your advocate')}</strong>. There is no call time to pick: once ${esc(first)} takes it on, you plan the next step together in your case chat.`;
-  el.querySelector('#days').innerHTML = `<div class="day" data-svc-pick><div class="slots"><div class="slot selected">${esc(svc.label)}, $${money(state.service.cents)}</div></div></div>`;
+  // A monthly one runs like Full-Service (2026-10-17, v7.75): a month at a time, and another only when both of you want it.
+  el.querySelector('#time-intro').innerHTML = `${svc.about ? `${esc(svc.about)} ` : ''}With <strong>${esc(name || 'your advocate')}</strong>. There is no call time to pick: once ${esc(first)} takes it on, you plan the next step together in your case chat.${state.service.monthly ? ` It runs a month at a time, from the day ${esc(first)} takes it on. When the month ends your case closes, and you can ask for another.` : ''}`;
+  el.querySelector('#days').innerHTML = `<div class="day" data-svc-pick><div class="slots"><div class="slot selected">${esc(svc.label)}, $${money(state.service.cents)}${state.service.monthly ? ' a month' : ''}</div></div></div>`;
   el.querySelector('#request-box')?.remove();
   // Their way to reach the client stays; there is no call to choose a kind of.
   el.querySelector('#chips')?.remove();
@@ -888,11 +889,12 @@ function renderServicePayment() {
     <section class="stack-tight">
       <p class="price-line">
         <span class="eyebrow" data-svc-name>${esc(svc.label)}</span>
-        <span class="price" data-case-price>$${money(svc.cents)}</span>
+        <span class="price" data-case-price>$${money(svc.cents)}</span>${svc.monthly ? ' <span class="muted" data-svc-month>for one month</span>' : ''}
         ${svc.about ? `<span class="included" data-included>${esc(svc.about)}</span>` : ''}
       </p>
       <p class="muted small">With ${esc(state.advocate?.name || 'your advocate')}<br>
         No call time: you plan the next step together in your case chat.<br>
+        ${svc.monthly ? 'A month at a time: your month starts the day your case is taken on.<br>' : ''}
         We reach you at ${esc(state.phone)}</p>
     </section>
     <p class="error" id="pay-error" hidden></p>

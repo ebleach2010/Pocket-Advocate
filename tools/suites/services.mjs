@@ -21,6 +21,9 @@
 //   S8 the shelf, the team page and payroll call the case by the service's name
 //   S9 the pages: their booking page lists and sells it, their case runs on its own steps, his card and their settings
 //      carry it, and the demo mirrors it
+//   S10 to S14 (v7.75, a monthly one, "Like Full-Service"): its month runs thirty days from the day it is taken on; the
+//      heads-up and the close in its own name; another month asked for at its own door and answered by its advocate;
+//      paying opens the case again; the purchase, the case, payroll and the pages carry its month
 import { readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
@@ -71,11 +74,13 @@ console.log('\n--- S1. what a service is ---');
   const many = servicesOf({ services: Array.from({ length: 9 }, (_, i) => ({ id: `smany0000${i}`.slice(0, 9), label: `Service ${i}`, kind: 'once', cents: 100, on: true })) });
   // NEGATIVE CONTROL (run 2026-10-17): sellable's `s.kind === 'once' &&` taken out made this read
   //   FAIL  S1 a stored service is well formed or dropped, and only one that is on, priced and one-time can be bought
-  check('S1 a stored service is well formed or dropped, and only one that is on, priced and one-time can be bought',
+  // RE-PINNED 2026-10-17 (v7.75): monthly ones go on sale ("Like Full-Service"), so an on, priced monthly one can be bought too.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.75): sellable's `SERVICE_KINDS.includes(s.kind)` made `s.kind === 'once'` made S1 read FAIL.
+  check('S1 a stored service is well formed or dropped, and only one that is on and priced, one-time or monthly, can be bought',
     JSON.stringify(list.map((s) => s.id)) === '["sabc12345","sghi11111","sjkl22222","smno33333","spqr44444"]'
     && list[0].label === 'Records review' && list[0].about === 'Read and sorted'
     && list[3].kind === 'once' && list[3].on === false
-    && JSON.stringify(list.filter(sellable).map((s) => s.id)) === '["sabc12345"]'
+    && JSON.stringify(list.filter(sellable).map((s) => s.id)) === '["sabc12345","sghi11111"]'
     && serviceOf(rec, 'sabc12345')?.cents === 30000 && serviceOf(rec, '../x') === null && serviceOf(rec, 'sdef67890') === null && serviceOf(null, 'sabc12345') === null
     && servicesOf({ services: 'x' }).length === 0 && servicesOf(null).length === 0 && many.length === SERVICE_MAX && SERVICE_MAX === 6
     && sellable(null) === false,
@@ -286,7 +291,9 @@ console.log('\n--- S5. the rates list what can be bought ---');
   // NEGATIVE CONTROL (run 2026-10-17): handleRates' `.filter(sellable)` taken out made this read
   //   FAIL  S5 the rates list what a client can buy from them right now, by name, price and line, and never a switch or a request; his and a turned off contractor's list none
   check('S5 the rates list what a client can buy from them right now, by name, price and line, and never a switch or a request; his and a turned off contractor\'s list none',
-    JSON.stringify(ana.services) === JSON.stringify([{ id: 'sabc12345', label: 'Records review', about: 'Your records read and sorted', kind: 'once', cents: 30000 }])
+    // RE-PINNED 2026-10-17 (v7.75): the monthly one is on sale now, so it is listed with its kind.
+    JSON.stringify(ana.services) === JSON.stringify([{ id: 'sabc12345', label: 'Records review', about: 'Your records read and sorted', kind: 'once', cents: 30000 },
+      { id: 'sghi11111', label: 'Monthly check-ins', about: '', kind: 'month', cents: 90000 }])
     && JSON.stringify(his.services) === '[]' && JSON.stringify(off.services) === '[]' && JSON.stringify(junk.services) === '[]'
     && !/askedAt|"on"/.test(JSON.stringify(ana)),
     JSON.stringify({ ana: ana.services, his: his.services, off: off.services }));
@@ -310,6 +317,8 @@ console.log('\n--- S6. the checkout ---');
   };
   const good = { advocate: 'ana', service: 'sabc12345', quotedCents: 30000, method: 'phone', phone: '208-555-0100', address: '1 Main St', acks: ACKS, tz: 'America/Boise' };
   const ok = await run(good);
+  const month = await run({ ...good, service: 'sghi11111', quotedCents: 90000 });
+  const mm = month.s?.b?.metadata || {};
   const m = ok.s?.b?.metadata || {};
   const li = ok.s?.b?.line_items?.[0]?.price_data || {};
   const refused = {
@@ -318,7 +327,6 @@ console.log('\n--- S6. the checkout ---');
     his: await run({ ...good, advocate: ERIC }),
     off: await run({ ...good, advocate: 'off' }),
     junk: await run({ ...good, advocate: '../users/x' }),
-    monthly: await run({ ...good, service: 'sghi11111', quotedCents: 90000 }),
     waiting: await run({ ...good, service: 'sjkl22222', quotedCents: 5000 }),
     unknown: await run({ ...good, service: 'szzz99999' }),
     otherAdvocates: await run({ ...good, advocate: 'ben' }),
@@ -335,7 +343,11 @@ console.log('\n--- S6. the checkout ---');
     && !m.slotId && !m.requestedStart && m.phone === '208-555-0100' && JSON.parse(m.acks).privacy === 1
     && /\/book\.html\?advocate=ana&service=sabc12345&canceled=1$/.test(ok.s.b.cancel_url)
     && refused.signedOut.res.status === 401 && refused.minor.res.status === 403
-    && ['his', 'off', 'junk', 'monthly', 'waiting', 'unknown', 'otherAdvocates'].every((k) => refused[k].res.status === 404 && refused[k].res.body.error === 'That service is not offered right now.')
+    // RE-PINNED 2026-10-17 (v7.75): a monthly one sells now, one month at a time, and says so on the session.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.75): the line item's `svc.kind === 'month' ? `${svc.label}, one month` : ` taken out made S6 read FAIL.
+    && month.res.status === 200 && month.s?.b?.line_items?.[0]?.price_data?.unit_amount === 90000 && month.s.b.line_items[0].price_data.product_data.name === 'Monthly check-ins, one month'
+    && mm.serviceKind === 'month' && m.serviceKind === 'once' && month.s.b.payment_intent_data?.capture_method === 'manual'
+    && ['his', 'off', 'junk', 'waiting', 'unknown', 'otherAdvocates'].every((k) => refused[k].res.status === 404 && refused[k].res.body.error === 'That service is not offered right now.')
     && refused.phone.res.status === 400 && refused.forms.res.status === 400
     && refused.moved.res.status === 409 && refused.moved.res.body.priceCents === 30000
     && Object.values(refused).every((r) => !r.s),
@@ -443,11 +455,203 @@ console.log('\n--- S9. the pages ---');
     && /const SERVICE_STEPS = \[/.test(CASE) && /\['confirmed', 'Taken on\. Plan the next step together in your case chat'\],/.test(CASE)
     && /data-services/.test(WIZ) && /data-s-on/.test(fn(WIZ, 'serviceRow')) && /\.\.\.\(owner \? \{\} : \{ tz: st\.tz, commissionPct: st\.commissionPct, settings, payout, services \}\)/.test(WIZ)
     && /data-svc-save disabled[^>]*>Save and send to Eric<\/button>/.test(SSET) && /and again after you change its name or kind\./.test(SSET)
-    && /if \(!svc \|\| !svc\.on \|\| svc\.kind !== 'once' \|\| svc\.cents < 50\) return fail\(404, 'That service is not offered right now\.'\);/.test(DEMO)
-    && /status: 'confirmed', createdAt: now, appointment: null,\n\s+service: \{ id: svc\.id, label: svc\.label, kind: 'once', cents: svc\.cents \}, chatUnlocked: true,/.test(DEMO)
+    // RE-PINNED 2026-10-17 (v7.75): the demo sells a monthly one too and writes its month, as the Worker does.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.75): the demo case's `kind: svc.kind` made `kind: 'once'` made S9 read FAIL.
+    && /if \(!svc \|\| !svc\.on \|\| !\['once', 'month'\]\.includes\(svc\.kind\) \|\| svc\.cents < 50\) return fail\(404, 'That service is not offered right now\.'\);/.test(DEMO)
+    && /status: 'confirmed', createdAt: now, appointment: null,\n\s+service: \{ id: svc\.id, label: svc\.label, kind: svc\.kind, cents: svc\.cents \}, chatUnlocked: true,/.test(DEMO)
+    && /\.\.\.\(svc\.kind === 'month' \? \{ serviceMonthly: true, serviceAt: now, serviceMonths: 1, serviceExtraDays: 0 \} : \{\}\),/.test(DEMO)
     && /const same = !!was && String\(was\.label \|\| ''\)\.toLowerCase\(\) === name\.toLowerCase\(\) && was\.kind === x\.kind;/.test(DEMO)
     && ![fn(BOOK, 'showService'), fn(BOOK, 'addServiceList'), fn(BOOK, 'renderServicePayment'), fn(SSET, 'serviceRow'), fn(WIZ, 'serviceRow'), SV].some((x) => DASH.test(x))
     && [fn(BOOK, 'showService'), fn(BOOK, 'addServiceList'), fn(BOOK, 'renderServicePayment'), fn(SSET, 'serviceRow'), fn(WIZ, 'serviceRow')].every(Boolean));
+}
+
+// ---- v7.75: monthly services, a month at a time, like Full-Service --------------------------------------------------
+// Eric, 2026-10-17, asked what a monthly one does: "Like Full-Service". worker/monthend.js is evaluated whole with the
+// store stood in; confirmExtensionPurchase is lifted out of worker/index.js and RUN.
+const MDAY = 86_400_000;
+const MONTHLY = { id: 'sghi11111', label: 'Monthly check-ins', about: '', kind: 'month', cents: 90000, on: true, askedAt: null };
+
+console.log('\n--- S10. the month of a monthly service ---');
+{
+  const taken = new Date('2026-10-01T12:00:00.000Z');
+  const base = { serviceMonthly: true, serviceAt: '2026-09-28T12:00:00.000Z', charge: { state: 'captured', decidedAt: taken.toISOString() } };
+  const end = SVCS.serviceWindowEnd(base);
+  const more = SVCS.serviceWindowEnd({ ...base, serviceExtraDays: 31 }, 2 * MDAY);
+  const noCharge = SVCS.serviceWindowEnd({ serviceMonthly: true, serviceAt: '2026-09-28T12:00:00.000Z' });
+  // NEGATIVE CONTROL (run 2026-10-17): serviceWindowEnd's `|| c.charge?.state === 'held'` taken out made this read
+  //   FAIL  S10 a monthly service's month is thirty days from the day it was taken on, plus each month added and any paused time, and none while the card is held
+  check('S10 a monthly service\'s month is thirty days from the day it was taken on, plus each month added and any paused time, and none while the card is held',
+    end?.toISOString() === new Date(taken.getTime() + 30 * MDAY).toISOString()
+    && more?.toISOString() === new Date(taken.getTime() + 63 * MDAY).toISOString()
+    && noCharge?.toISOString() === new Date(Date.parse('2026-09-28T12:00:00.000Z') + 30 * MDAY).toISOString()
+    && SVCS.serviceWindowEnd({ ...base, charge: { state: 'held' } }) === null
+    && SVCS.serviceWindowEnd({ ...base, serviceMonthly: undefined }) === null && SVCS.serviceWindowEnd(null) === null && SVCS.SERVICE_MONTH_DAYS === 30,
+    JSON.stringify({ end, more, noCharge }));
+}
+
+/** worker/monthend.js whole, its three Firestore calls handed in; the query honours its one filter. */
+function monthWorld(docs) {
+  const log = { pushes: [], mails: [], pings: [], stripe: [], confirmed: [], cap: 0 };
+  const getDoc = async (_e, p) => (docs.has(p) ? { data: clone(docs.get(p)) } : null);
+  const patchDoc = async (_e, p, d) => { docs.set(p, { ...(docs.get(p) || {}), ...clone(d) }); return true; };
+  const queryDocs = async (_e, coll, filters) => [...docs.entries()].filter(([k, v]) => /^cases\/[^/]+$/.test(k) && filters.every(([fld, , val]) => v[fld] === val))
+    .map(([k, v]) => ({ id: k.split('/')[1], data: clone(v) }));
+  const M = new Function('getDoc', 'patchDoc', 'queryDocs', `${strip(f('worker/monthend.js'))}\nreturn { sweepServiceMonths, sweepFullServiceMonths, handleExtendRequest, handleExtendDecision };`)(getDoc, patchDoc, queryDocs);
+  const h = {
+    windowEnd: (c) => (c.endsAt ? new Date(c.endsAt) : null),
+    notifyUser: async (_e, uid, m) => { log.pushes.push([uid, m.body]); },
+    sendEmail: async (_e, m) => { log.mails.push([m.to, m.subject, m.html]); },
+    pingCase: async (_e, c, body) => { log.pings.push([c.advocateId || 'eric', body]); },
+    offered: async (c) => c.stillOffered !== false, baseUrl: 'https://x',
+  };
+  return { M, h, log, docs };
+}
+const mjson = (o, st = 200) => new Response(JSON.stringify(o), { status: st, headers: { 'content-type': 'application/json' } });
+const mreq = (body, uid = '') => new Request('https://x/api', { method: 'POST', headers: { 'content-type': 'application/json', 'x-uid': uid }, body: JSON.stringify(body) });
+const answer = async (p) => { const r = await p; return { status: r.status, body: await r.json() }; };
+
+console.log('\n--- S11. its month ends like Full-Service ---');
+{
+  const now = Date.now();
+  const svc = { service: { id: 'sghi11111', label: 'Monthly check-ins', kind: 'month', cents: 90000 }, serviceMonthly: true, advocateId: 'ana', clientUid: 'cl', clientEmail: 'cl@x.test', clientName: 'Dana Reyes', status: 'confirmed' };
+  const docs = new Map([
+    ['cases/soon', { ...svc, endsAt: new Date(now + 2 * MDAY).toISOString() }],
+    ['cases/done', { ...svc, endsAt: new Date(now - 60_000).toISOString() }],
+    ['cases/gone', { ...svc, endsAt: new Date(now - 60_000).toISOString(), stillOffered: false }],
+    ['cases/far', { ...svc, endsAt: new Date(now + 10 * MDAY).toISOString() }],
+    ['cases/held', { ...svc, endsAt: new Date(now - 60_000).toISOString(), charge: { state: 'held' } }],
+    ['cases/paused', { ...svc, endsAt: new Date(now - 60_000).toISOString(), hold: { pausedAt: new Date().toISOString() } }],
+    ['cases/paying', { ...svc, endsAt: new Date(now - 60_000).toISOString(), pendingExtend: { url: 'https://pay', expiresAt: new Date(now + 3600_000).toISOString() } }],
+    ['cases/fullcase', { fullAccess: true, status: 'confirmed', endsAt: new Date(now - 60_000).toISOString(), clientUid: 'cl' }],
+  ]);
+  const w = monthWorld(docs);
+  const first = await w.M.sweepServiceMonths({}, w.h);
+  const again = await w.M.sweepServiceMonths({}, w.h);
+  const soonMail = w.log.mails.find((m) => /ends/.test(m[1]));
+  const doneMail = w.log.mails.filter((m) => /has ended/.test(m[1]));
+  // NEGATIVE CONTROL (run 2026-10-17): sweepServiceMonths' `if (c.charge?.state === 'held') continue;` taken out made this read
+  //   FAIL  S11 its month ends like Full-Service: a heads-up three days out, once, in its own name; the close at the end, offering another month only while it is offered; a held card, a pause or a month being paid for waits, and Full-Service is not touched
+  check('S11 its month ends like Full-Service: a heads-up three days out, once, in its own name; the close at the end, offering another month only while it is offered; a held card, a pause or a month being paid for waits, and Full-Service is not touched',
+    first.told === 1 && first.closed === 2 && again.told === 0 && again.closed === 0
+    && /^Your month of Monthly check-ins ends \w+ \d+$/.test(soonMail?.[1] || '') && w.log.pushes.some(([, b]) => /^Your month of Monthly check-ins ends /.test(b))
+    && w.log.pings.some(([a, b]) => a === 'ana' && /^Dana's month of Monthly check-ins ends /.test(b))
+    && docs.get('cases/done').status === 'closed' && !!docs.get('cases/done').monthEndedAt && docs.get('cases/done').closedFromStatus === 'confirmed'
+    && docs.get('cases/done').closedReason === 'The month of Monthly check-ins reached its end, so the case wrapped up on schedule.'
+    && doneMail.length === 2 && doneMail.filter((m) => /ask for one from Case Enhancements/.test(m[2])).length === 1
+    && ['held', 'paused', 'paying', 'far'].every((k) => docs.get(`cases/${k}`).status === 'confirmed') && docs.get('cases/fullcase').status === 'confirmed'
+    && !w.log.mails.some((m) => DASH.test(m[1] + m[2])) && !DASH.test(f('worker/monthend.js')),
+    JSON.stringify({ first, again, done: docs.get('cases/done').status, held: docs.get('cases/held').status }));
+}
+
+console.log('\n--- S12. another month, asked for and answered ---');
+{
+  const closedSvc = { service: { id: 'sghi11111', label: 'Monthly check-ins', kind: 'month', cents: 90000 }, serviceMonthly: true, advocateId: 'ana', clientUid: 'cl', clientName: 'Dana Reyes', status: 'closed', monthEndedAt: '2026-10-01T00:00:00.000Z' };
+  const docs = new Map([
+    ['cases/s1', closedSvc], ['cases/s2', { ...closedSvc }],
+    ['cases/f1', { fullAccess: true, clientUid: 'cl', status: 'closed', monthEndedAt: '2026-10-01T00:00:00.000Z', advocateId: 'eric' }],
+  ]);
+  const w = monthWorld(docs);
+  const hc = (kind, cents = 95000) => ({ requireUser: async () => ({ uid: 'cl' }), json: mjson, pingCase: w.h.pingCase, kind, monthCentsFor: async () => cents });
+  const svcAsk = await answer(w.M.handleExtendRequest(mreq({ caseId: 's1' }), {}, hc('service')));
+  const fullOnSvcDoor = await answer(w.M.handleExtendRequest(mreq({ caseId: 'f1' }), {}, hc('service')));
+  const svcOnFullDoor = await answer(w.M.handleExtendRequest(mreq({ caseId: 's2' }), {}, hc(undefined)));
+  const switchedOff = await answer(w.M.handleExtendRequest(mreq({ caseId: 's2' }), {}, hc('service', 0)));
+  const hd = {
+    requireStaff: async () => ({ uid: 'ana' }), staffSees: () => true, json: mjson, notifyUser: w.h.notifyUser,
+    stripePost: async (_e, p, b) => { w.log.stripe.push(b); return { id: 'cs_m', url: 'https://pay/m' }; },
+    lineItems: (cents, data) => [{ name: data?.serviceMonthly ? `${data.service.label}, one month` : 'Full-Service', cents }],
+    capacity: async () => { w.log.cap += 1; return { room: false, open: 3, max: 3 }; }, contractorOf: () => 'ana',
+    confirm: async (_e, sess) => { w.log.confirmed.push(sess); }, baseUrl: 'https://x',
+  };
+  const yes = await answer(w.M.handleExtendDecision(mreq({ caseId: 's1', decision: 'approve' }), {}, hd));
+  // NEGATIVE CONTROL (run 2026-10-17): handleExtendDecision's `c.data.serviceMonthly === true ? { room: true } : ` taken out made this read
+  //   FAIL  S12 another month of it is asked for at its own door at its price now, in its name; neither door opens the other's month, a switched off one is refused, and his yes sends a link for it that takes no Full-Service place
+  check('S12 another month of it is asked for at its own door at its price now, in its name; neither door opens the other\'s month, a switched off one is refused, and his yes sends a link for it that takes no Full-Service place',
+    svcAsk.status === 200 && svcAsk.body.state === 'pending' && docs.get('cases/s1').extendRequest?.monthCents === 95000 && !!docs.get('cases/s1').extendRequest
+    && w.log.pings.some(([a, b]) => a === 'ana' && b === 'Dana is asking for another month of Monthly check-ins.')
+    && fullOnSvcDoor.status === 409 && svcOnFullDoor.status === 409 && svcOnFullDoor.body.error === 'Another month can be asked for once a month of Full-Service has ended.'
+    && switchedOff.status === 409 && switchedOff.body.error === 'That service is not offered right now.' && !docs.get('cases/s2').extendRequest
+    && yes.status === 200 && yes.body.url === 'https://pay/m' && yes.body.cents === 95000 && w.log.cap === 0
+    && w.log.stripe[0]?.line_items?.[0]?.name === 'Monthly check-ins, one month' && w.log.stripe[0].metadata.kind === 'extend' && w.log.stripe[0].metadata.reopen === '1',
+    JSON.stringify({ svcAsk, fullOnSvcDoor, svcOnFullDoor, switchedOff, yes, cap: w.log.cap }));
+}
+
+console.log('\n--- S13. paying for it opens the case again ---');
+{
+  const MT = new Intl.DateTimeFormat('en-US', { timeZone: 'Etc/GMT+7', month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const run = async (data, session) => {
+    const docs = new Map([['cases/k1', clone(data)]]);
+    const log = { mails: [], pushes: [] };
+    const fn = new Function('getDoc', 'patchDoc', 'queryDocs', 'notifyUser', 'firstName', 'FULL_EXTEND', 'fullAccessWindowEnd', 'serviceWindowEnd', 'heldMs',
+      'FULL_MONTH_DAYS', 'sendEmail', 'MT_FMT', 'escHtml', 'caseRecipients', `${afn('confirmExtensionPurchase')} return confirmExtensionPurchase;`)(
+      async (e, p) => (docs.has(p) ? { data: clone(docs.get(p)), updateTime: 't' } : null),
+      async (e, p, d) => { docs.set(p, { ...docs.get(p), ...clone(d) }); return true; }, async () => [],
+      async (e, uid, m) => { log.pushes.push([uid, m.body]); }, (v) => String(v || '').trim().split(/\s+/)[0] || 'A client', { 30: 440000 },
+      () => null, SVCS.serviceWindowEnd, () => 0, 30, async (e, m) => { log.mails.push([m.subject, m.html]); }, MT, (v) => String(v), async () => [{ id: 'ana' }]);
+    await fn({ PUBLIC_BASE_URL: 'https://x' }, session);
+    await fn({ PUBLIC_BASE_URL: 'https://x' }, session);
+    return { c: docs.get('cases/k1'), log };
+  };
+  const taken = new Date(Date.now() - 40 * MDAY).toISOString();
+  const closedSvc = { service: { id: 'sghi11111', label: 'Monthly check-ins', kind: 'month', cents: 90000 }, serviceMonthly: true, serviceMonths: 1, serviceExtraDays: 0,
+    charge: { state: 'captured', decidedAt: taken }, clientEmail: 'cl@x.test', clientName: 'Dana Reyes', status: 'closed', closedFromStatus: 'confirmed', monthEndedAt: new Date().toISOString(),
+    extendRequest: { state: 'approved' } };
+  const paid = await run(closedSvc, { id: 'cs_m', amount_total: 95000, metadata: { kind: 'extend', caseId: 'k1', days: '30', reopen: '1' } });
+  const end = SVCS.serviceWindowEnd(paid.c);
+  const stray = await run({ ...closedSvc, extendRequest: { state: 'declined' } }, { id: 'cs_x', amount_total: 95000, metadata: { kind: 'extend', caseId: 'k1', days: '30', reopen: '1' } });
+  // NEGATIVE CONTROL (run 2026-10-17): confirmExtensionPurchase's `(c.data.fullAccess || svcMonth)` in reopening made `c.data.fullAccess` made this read
+  //   FAIL  S13 paying for the month it was said yes to opens the case again with thirty days from today, once, and names it in the mail; money for one nobody said yes to is flagged, not used
+  check('S13 paying for the month it was said yes to opens the case again with thirty days from today, once, and names it in the mail; money for one nobody said yes to is flagged, not used',
+    paid.c.status === 'confirmed' && paid.c.closedAt === null && paid.c.serviceMonths === 2 && paid.c.extendRequest?.state === 'started'
+    && paid.c.serviceExtraDays >= 40 && Math.abs(end.getTime() - (Date.now() + 30 * MDAY)) < 2 * MDAY
+    && paid.c.extraPayments.length === 1 && paid.c.extraPayments[0].kind === 'extend' && paid.c.extraPayments[0].amountCents === 95000 && paid.c.pendingExtend === null
+    && paid.log.mails.length === 1 && paid.log.mails[0][0] === 'Your case is open again' && /Your month of <strong>Monthly check-ins<\/strong> now runs through/.test(paid.log.mails[0][1])
+    && paid.log.pushes.some(([, b]) => b === 'Dana started another month of Monthly check-ins.')
+    && stray.c.status === 'closed' && stray.c.extraPayments?.[0]?.duplicate === true && !DASH.test(paid.log.mails[0][1]),
+    JSON.stringify({ c: { status: paid.c.status, months: paid.c.serviceMonths, extra: paid.c.serviceExtraDays }, end, stray: stray.c.status }));
+}
+
+console.log('\n--- S14. the purchase, the case and the pages for a monthly one ---');
+{
+  const make = async (metadata) => {
+    const store = new Map([['advocates/ana', { uid: 'ana', name: 'Ana Rivera', active: true, owner: false, services: [MONTHLY] }]]);
+    const log = [];
+    const deps = {
+      queryDocs: async () => [], getDoc: async (env, p) => (store.has(p) ? { id: p.split('/').pop(), data: clone(store.get(p)) } : null),
+      patchDoc: async (env, p, data, opts = {}) => { if (opts.mustNotExist && store.has(p)) return null; store.set(p, { ...(store.get(p) || {}), ...clone(data) }); return true; },
+      resolveClientEmail: async (env, uid, e) => e, safeJson: (x) => { try { return JSON.parse(x); } catch { return null; } }, advocateIdOf: STAFF.advocateIdOf,
+      ratesForCase: async () => ({ caseCents: 210000, addonCents: 32500, fullCents: 440000 }), serviceOf, heldChargeOf: (session, h) => h,
+      pingAdmins: async () => {}, pingCase: async () => {}, firstName: (v) => String(v || '').trim().split(/\s+/)[0] || 'A client', raiseRatesFor: async () => {},
+      endChatForStepUp: async () => {}, stripePost: async () => ({}), escHtml: (x) => String(x), sendEmail: async (env, m) => { log.push(m.html); return true; },
+      caseRecipients: async () => [], notifyUser: async () => {}, CHARGE_COPY: CHARGE.CHARGE_COPY, whenHtml: () => '', homeScreenTips: () => '', console: { warn() {}, error() {} },
+    };
+    const create = new Function(...Object.keys(deps), `${CONSTS}\n${afn('createCaseFromSession')}\nreturn createCaseFromSession;`)(...Object.values(deps));
+    await create(ENV, { id: 'cs_mo', amount_total: 90000, metadata }, { held: { state: 'held' } });
+    return { c: store.get([...store.keys()].find((k) => k.startsWith('cases/'))), mail: log[0] || '' };
+  };
+  const mo = await make({ ...CHARGE.HOLD_META, uid: 'c1', email: 'dana@x.test', name: 'Dana Reyes', method: 'phone', phone: '208-555-0100', acks: JSON.stringify(ACKS), advocateId: 'ana', serviceId: 'sghi11111', serviceLabel: 'Monthly check-ins', serviceKind: 'month' });
+  const BOOK = f('public/js/book.js'); const CASE = f('public/js/case.js'); const ADMIN = f('public/js/admin.js'); const ACASE = f('public/js/admin-case.js');
+  const WIZ = f('public/js/admin-wizard.js'); const DEMO = f('public/js/demo/api.js');
+  const salesSet = (W.match(/const SALES_ROUTES = new Map\(\[[\s\S]*?\]\);/) || [''])[0];
+  const lines = PAYROLL.caseLines([{ id: 'k1', data: { advocateId: 'ana', service: { label: 'Monthly check-ins' }, charge: { state: 'captured', capturedCents: 90000, capturedAt: '2026-10-05T00:00:00.000Z' },
+    extraPayments: [{ kind: 'extend', amountCents: 95000, at: '2026-10-20T00:00:00.000Z' }] } }], new Date('2026-10-01T00:00:00Z'), new Date('2026-11-01T00:00:00Z'), ENV);
+  // NEGATIVE CONTROL (run 2026-10-17): createCaseFromSession's `...(monthly ? { serviceMonthly: true, ... } : {}),` taken out made this read
+  //   FAIL  S14 a monthly one opens its case on its own month, its mail says a month at a time, payroll names its months, and the pages carry its month: the booking page, the client's case and its request door, his shelf and his case page, and the demo
+  check('S14 a monthly one opens its case on its own month, its mail says a month at a time, payroll names its months, and the pages carry its month: the booking page, the client\'s case and its request door, his shelf and his case page, and the demo',
+    mo.c?.serviceMonthly === true && mo.c.service.kind === 'month' && mo.c.serviceMonths === 1 && mo.c.serviceExtraDays === 0 && !!mo.c.serviceAt && mo.c.appointment === null
+    && /<strong>Monthly check-ins<\/strong>, a month at a time, with Ana\./.test(mo.mail) && /Your month starts the day your case is taken on\./.test(mo.mail)
+    && lines[1]?.label === 'Monthly check-ins, another month' && lines[0]?.label === 'Monthly check-ins'
+    && /url\.pathname === '\/api\/service-month-request' && request\.method === 'POST'\)\n\s+return await handleExtendRequest\(request, env, \{ requireUser, json, pingCase, kind: 'service',/.test(W)
+    && !/service-month-request/.test(salesSet) && /ctx\.waitUntil\(sweepServiceMonths\(env, \{\n\s+windowEnd: \(c\) => serviceWindowEnd\(c, heldMs\(c\)\),/.test(W)
+    && /\$\{x\.kind === 'month' \? ' a month' : ''\}/.test(BOOK) && /It runs a month at a time, from the day \$\{esc\(first\)\} takes it on\. When the month ends your case closes, and you can ask for another\./.test(BOOK)
+    && /data-svc-month>for one month<\/span>/.test(BOOK)
+    && /if \(\(c\.fullAccess \|\| c\.serviceMonthly\) && c\.status === 'closed' && c\.monthEndedAt\) return monthAsk\(c\);/.test(CASE)
+    && /fetch\(c\.serviceMonthly \? '\/api\/service-month-request' : '\/api\/extend-request', \{/.test(CASE) && /function svcUntil\(c\) \{/.test(CASE)
+    && /\$\{c\.serviceMonthly \? svcMonthLine\(c, dateFmt\) : `opened /.test(ADMIN) && /function svcMonthWords\(c\) \{/.test(ACASE)
+    && /Their month of \$\{c\.serviceMonthly \? esc\(String\(c\.service\?\.label \|\| 'their service'\)\) : 'Full-Service'\} ended/.test(ACASE)
+    && !/data-s-later|go on sale with the next update/.test(WIZ)
+    && /if \(path === '\/api\/extend-request' \|\| path === '\/api\/service-month-request'\) \{/.test(DEMO) && /if \(c\.serviceMonthly === true\) \{/.test(DEMO),
+    JSON.stringify({ c: mo.c && { monthly: mo.c.serviceMonthly, kind: mo.c.service?.kind }, lines: lines.map((l) => l.label), mail: mo.mail.slice(0, 200) }));
 }
 
 const failed = results.filter((r) => !r.pass);

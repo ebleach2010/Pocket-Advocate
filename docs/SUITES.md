@@ -2460,3 +2460,37 @@ New: services.mjs S1 to S9; drive-services (9), every check controlled.
 Re-pinned with controls: charge CH3 (twice) and CH7, cleanup B5 (twice),
 hardening U5, invites E2 (twice), defects (strip count), staffsettings D3,
 wizard W6, chatline K6, release R1.
+
+### Their monthly services (2026-10-17, v7.75)
+
+Eric, on a monthly one: "Like Full-Service".
+
+- worker/services.js: sellable takes monthly ones too. serviceWindowEnd:
+  thirty days a month from the day the case was taken on (the charge's
+  decidedAt), plus serviceExtraDays and paused time; null while the card is
+  held.
+- worker/index.js: the checkout names a month ("X, one month") and carries
+  serviceKind; createCaseFromSession writes serviceMonthly, serviceAt,
+  serviceMonths 1 and serviceExtraDays 0, and the mail says a month at a
+  time. /api/service-month-request (not a sales route: the service's own
+  switch governs it, through serviceMonthCents, which is 0 once it is no
+  longer offered) asks for another month after the case closes.
+  /api/admin/extend-request answers either kind; a service month takes no
+  Full-Service place and its line item names it. confirmExtensionPurchase
+  reopens a closed service case it was said yes to, thirty days from today
+  at worst. The cron runs sweepServiceMonths beside the Full-Service sweep.
+- worker/monthend.js: sweepServiceMonths, the heads-up three days out (once
+  an end date) and the close, in the service's name, waiting on a held
+  card, a pause or a month being paid for; handleExtendRequest takes kind
+  'service' at its own door, and neither door opens the other's month.
+- worker/payroll.js: another month reads "X, another month".
+- Pages: the booking page says a month at a time; the client's case shows
+  where its month stands, asks for another at the service's door, and no
+  longer offers a report follow-up on any service case; his shelf and case
+  page show the month; the wizard's not-yet line is gone.
+- Demo mode mirrors it (a client's demo tab may not hold the advocate's
+  list, so it refuses only a month it can see switched off).
+
+New: services.mjs S10 to S14; drive-services H (3 checks, 12 in all), every
+check controlled. Re-pinned with controls: services S1, S5, S6, S9, monthend C2
+and D1, release R1.

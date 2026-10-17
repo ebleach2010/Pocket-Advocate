@@ -492,7 +492,7 @@ async function load() {
     section('FULL-SERVICE', 'var(--gold)', fullOpen.map((c) => rowFor(c,
       `${chargeTag(c)}${c.showcase ? '<strong style="color:var(--orange)">SHOWCASE, nobody behind it</strong> · ' : ''}month ${Number(c.fullAccessMonths) || 1}${fullNextLine(c, dateFmt)}`))) +
     section('OWN SERVICES', 'var(--violet)', svcOpen.map((c) => rowFor(c,
-      `${chargeTag(c)}<strong style="color:var(--manila-strong)">${esc(c.service.label)}</strong> · opened ${c.createdAt ? dateFmt.format(toDate(c.createdAt)) : 'no date'}`))) +
+      `${chargeTag(c)}<strong style="color:var(--manila-strong)">${esc(c.service.label)}</strong> · ${c.serviceMonthly ? svcMonthLine(c, dateFmt) : `opened ${c.createdAt ? dateFmt.format(toDate(c.createdAt)) : 'no date'}`}`))) +
     section('BOOKED: UPCOMING CALLS', 'var(--green)', future.map((c) => rowFor(c,
       `${chargeTag(c)}${buyTag(c)}<strong style="color:var(--manila-strong)">${mtFmt.format(toDate(c.appointment.start))} MST</strong> · ${esc(c.appointment.method)}
        ${followUpFlag(c)}`))) +
@@ -844,6 +844,20 @@ function buyTag(c) {
 }
 
 /** What comes next on a Full-Service case, for its shelf line (2026-10-15). */
+/**
+ * Where a monthly service case's month stands (2026-10-17, v7.75), mirroring
+ * worker/services.js serviceWindowEnd: thirty days a month from the day it was
+ * taken on, plus any paused time.
+ */
+function svcMonthLine(c, fmt) {
+  if (c.charge?.state === 'held') return 'its month starts when you take it on';
+  const from = toDate(c.charge?.decidedAt || c.charge?.capturedAt || c.serviceAt || c.createdAt);
+  if (!from || Number.isNaN(from.getTime())) return `month ${Number(c.serviceMonths) || 1}`;
+  const held = Math.max(0, Number(c.hold?.totalMs) || 0) + (c.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
+  const until = new Date(from.getTime() + (30 + (Number(c.serviceExtraDays) || 0)) * 86_400_000 + held);
+  return `month ${Number(c.serviceMonths) || 1} · through <strong style="color:var(--manila-strong)">${fmt.format(until)}</strong>`;
+}
+
 function fullNextLine(c, fmt) {
   // A check-in due already wears its own CHECK-IN DUE flag on the card.
   if (checkInDue(c)) return '';

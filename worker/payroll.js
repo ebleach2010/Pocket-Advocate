@@ -72,7 +72,9 @@ export function caseLines(cases, start, end, env) {
       const cents = Number(p?.amountCents) || 0;
       if (!cents || p?.duplicate || !inRange(p?.at, start, end)) continue;
       const kind = p.kind || 'extra';
-      lines.push({ ...base, kind, label: KIND_LABEL[kind] || p.label || 'Payment', cents, at: new Date(p.at).toISOString() });
+      // Another month of their own monthly service (2026-10-17, v7.75) reads by its name.
+      const label = kind === 'extend' && c.service?.label ? `${String(c.service.label)}, another month` : KIND_LABEL[kind] || p.label || 'Payment';
+      lines.push({ ...base, kind, label, cents, at: new Date(p.at).toISOString() });
     }
   }
   return lines;

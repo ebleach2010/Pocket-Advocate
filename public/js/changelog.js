@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.74';
+export const VERSION = '7.75';
 
 /**
  * Newest first.
@@ -51,6 +51,19 @@ export const VERSION = '7.74';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // THEIR MONTHLY SERVICES (Eric, 2026-10-17, on a monthly one: "Like
+    // Full-Service"). Admin only.
+    version: '7.75',
+    quiet: true,
+    client: [],
+    admin: [
+      'Monthly services are on sale now, a month at a time, like Full-Service.',
+      'The month starts the day the case is taken on. Three days before it ends, the client and their advocate are told, and when it ends the case closes.',
+      'After it closes, the client can ask for another month. Their advocate says yes, with a link to pay or at no charge, or no, in their own words. Paying opens the case again.',
+      'Another month is only offered while that service is switched on. A one-time or monthly service case no longer offers a report follow-up.',
+    ],
+  },
   {
     // THEIR OWN SERVICES (Eric, 2026-10-17: "including new tier types that a
     // contractor wants during onboarding"; one-time: "Opens a case, no time").

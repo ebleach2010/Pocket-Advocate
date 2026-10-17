@@ -243,6 +243,11 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // one-time one opens a case with no call time.
   // NEGATIVE CONTROL (run 2026-10-17, v7.74): the worker's BUILD_TAG left at the their-chat tag made this read
   //   FAIL  R1 both versions read 7.74 with the new tag, the 7.74 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.75): both versions read 7.75 with the their-months tag, and the 7.75 entry says monthly
+  // services are on sale like Full-Service, when the month starts and ends, and that another month is asked for and answered.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.75): changelog.js's VERSION left at '7.74' made this read
+  //   FAIL  R1 both versions read 7.75 with the new tag, the 7.75 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry775 = (CL.match(/\{\n\s+\/\/ THEIR MONTHLY SERVICES \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry774 = (CL.match(/\{\n\s+\/\/ THEIR OWN SERVICES \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry773 = (CL.match(/\{\n\s+\/\/ THEIR OWN CHAT LINE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry772 = (CL.match(/\{\n\s+\/\/ A SWITCH FOR EACH SERVICE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
@@ -327,9 +332,12 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.74 with the new tag, the 7.74 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.74';/.test(CL) && /const VERSION = '7\.74';/.test(W) && /const BUILD_TAG = 'v2026-10-17-their-services';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.74'
+  check('R1 both versions read 7.75 with the new tag, the 7.75 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.75';/.test(CL) && /const VERSION = '7\.75';/.test(W) && /const BUILD_TAG = 'v2026-10-17-their-months';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.75'
+    && /version: '7\.75',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry775)
+    && /Monthly services are on sale now, a month at a time, like Full-Service\./.test(entry775) && /the client can ask for another month/.test(entry775)
+    && !DASH.test(entry775) && !HARD.some((re) => re.test(entry775))
     && /version: '7\.74',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry774)
     && /services of their own, at their own price/.test(entry774) && /It stays off until you turn it on/.test(entry774) && /opens a case with no call time/.test(entry774)
     && !DASH.test(entry774) && !HARD.some((re) => re.test(entry774))

@@ -15,8 +15,13 @@
 // pay or at no charge, or no, in their own words; paying reopens the case with
 // thirty days from that day.
 //
-//   cron: sweepFullServiceMonths(env, h)
-//   POST /api/extend-request          { caseId } | { caseId, action: 'withdraw' }   the client
+// A contractor's own monthly service runs the same way (2026-10-17, v7.75:
+// "Like Full-Service"), on its own clock and in its own name, and another
+// month of it is offered while that service is switched on.
+//
+//   cron: sweepFullServiceMonths(env, h), sweepServiceMonths(env, h)
+//   POST /api/extend-request          { caseId } | { caseId, action: 'withdraw' }   the client, Full-Service
+//   POST /api/service-month-request   the same, for their own monthly service
 //   POST /api/admin/extend-request    { caseId, decision, reason, amountCents, overrideCap }   their advocate
 
 import { getDoc, patchDoc, queryDocs } from './firestore.js';
@@ -26,6 +31,7 @@ export const HEADS_UP_MS = 3 * 86_400_000;
 export const MONTH_CLOSED_REASON = 'The month of Full-Service reached its end, so the case wrapped up on schedule.';
 const DAY = new Intl.DateTimeFormat('en-US', { timeZone: 'Etc/GMT+7', month: 'long', day: 'numeric' });
 const first = (v) => String(v || '').trim().split(/\s+/)[0] || '';
+const esc = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 
 /**
  * Every open Full-Service case, once a quarter hour: the heads-up three days
@@ -113,7 +119,86 @@ export async function sweepFullServiceMonths(env, h) {
   return out;
 }
 
-/** Their month asked for again, after the case closed. `h`: requireUser, json, pingCase, monthCentsFor (the case's own month price). */
+/**
+ * Every open monthly service case, on the same quarter hour: the heads-up
+ * three days out and the close, in the service's own name. `h`: windowEnd
+ * (serviceWindowEnd with the case's paused time), notifyUser, sendEmail,
+ * pingCase, offered (whether another month of it can be asked for now), and
+ * baseUrl.
+ */
+export async function sweepServiceMonths(env, h) {
+  const out = { told: 0, closed: 0 };
+  let rows;
+  try {
+    rows = await queryDocs(env, 'cases', [['serviceMonthly', 'EQUAL', true]], 200);
+  } catch { return out; }
+  const now = Date.now();
+  for (const row of rows) {
+    const c = row.data || {};
+    if (c.status === 'closed' || c.self || c.showcase || c.sample || c.hold?.pausedAt) continue;
+    // Not taken on yet: the month waits on its advocate's yes, as the case does.
+    if (c.charge?.state === 'held') continue;
+    const until = h.windowEnd(c);
+    if (!until) continue;
+    const end = until.getTime();
+    const endKey = until.toISOString();
+    const label = String(c.service?.label || 'your service');
+    const name = first(c.clientName) || 'Your client';
+    const link = `${h.baseUrl}/case.html?id=${row.id}`;
+    if (end > now) {
+      if (end - now > HEADS_UP_MS || c.monthNotice?.for === endKey) continue;
+      await patchDoc(env, `cases/${row.id}`, { monthNotice: { for: endKey, at: new Date() } }, { mask: ['monthNotice'] }).catch(() => {});
+      const day = DAY.format(until);
+      const more = await h.offered(c).catch(() => false);
+      if (c.clientUid) {
+        await h.notifyUser(env, c.clientUid, { title: 'Pocket Advocate', body: `Your month of ${label} ends ${day}.`, link: `/case.html?id=${row.id}` }).catch(() => {});
+      }
+      if (c.clientEmail) {
+        await h.sendEmail(env, {
+          to: c.clientEmail,
+          subject: `Your month of ${label} ends ${day}`,
+          html: `<p>Your month of <strong>${esc(label)}</strong> runs through <strong>${day}</strong>.</p>
+            <p>Your case closes that day, and your file, documents and chat log stay yours.${more ? ' If you want another month, ask for one from Case Enhancements on your case once it closes. Your advocate says yes or no, and nothing is charged unless they say yes.' : ''}</p>
+            <p><a href="${link}">Open your case</a></p>`,
+        }).catch(() => {});
+      }
+      await h.pingCase(env, c, `${name}'s month of ${label} ends ${day}.`, `/admin-case.html?id=${row.id}`).catch(() => {});
+      out.told += 1;
+      continue;
+    }
+    const p = c.pendingExtend;
+    if (p?.url && new Date(p.expiresAt || 0).getTime() > now) continue;
+    await patchDoc(env, `cases/${row.id}`, {
+      status: 'closed', closedAt: new Date(), closedBy: 'automatic', closedReason: `The month of ${label} reached its end, so the case wrapped up on schedule.`,
+      closedFromStatus: c.status || 'confirmed', monthEndedAt: new Date(),
+      pendingExtend: null, extendRequest: null,
+    }, { mask: ['status', 'closedAt', 'closedBy', 'closedReason', 'closedFromStatus', 'monthEndedAt', 'pendingExtend', 'extendRequest'] });
+    const more = await h.offered(c).catch(() => false);
+    if (c.clientUid) {
+      await h.notifyUser(env, c.clientUid, { title: 'Pocket Advocate', body: `Your month of ${label} has ended. Your file stays yours.`, link: `/case.html?id=${row.id}` }).catch(() => {});
+    }
+    if (c.clientEmail) {
+      await h.sendEmail(env, {
+        to: c.clientEmail,
+        subject: `Your month of ${label} has ended`,
+        html: `<p>Your month of <strong>${esc(label)}</strong> has ended, so your case is closed. Your file, documents and the whole chat log stay yours to keep.</p>
+          ${more ? '<p>If you want another month, ask for one from Case Enhancements on your case. Your advocate says yes or no, and nothing is charged unless they say yes.</p>' : ''}
+          <p><a href="${link}">Open your case</a></p>`,
+      }).catch(() => {});
+    }
+    await h.pingCase(env, c, `${name}'s month of ${label} ended, and the case is closed.`, `/admin-case.html?id=${row.id}`).catch(() => {});
+    out.closed += 1;
+  }
+  return out;
+}
+
+/**
+ * Their month asked for again, after the case closed. `h`: requireUser, json,
+ * pingCase, monthCentsFor (the case's own month price; for their own service,
+ * 0 when it is no longer offered), and kind: 'service' on
+ * /api/service-month-request, which takes only a monthly service case, and
+ * Full-Service otherwise, so neither door opens the other's month.
+ */
 export async function handleExtendRequest(request, env, h) {
   const user = await h.requireUser(request, env);
   if (!user) return h.json({ error: 'Sign in required' }, 401);
@@ -122,8 +207,11 @@ export async function handleExtendRequest(request, env, h) {
   if (!ID.test(caseId)) return h.json({ error: 'Bad case' }, 400);
   const c = await getDoc(env, `cases/${caseId}`);
   if (!c || c.data.clientUid !== user.uid) return h.json({ error: 'Not found' }, 404);
-  if (!c.data.fullAccess || c.data.status !== 'closed' || !c.data.monthEndedAt)
-    return h.json({ error: 'Another month can be asked for once a month of Full-Service has ended.' }, 409);
+  const svc = h.kind === 'service';
+  const label = String(c.data.service?.label || 'your service');
+  if (svc ? c.data.serviceMonthly !== true || c.data.status !== 'closed' || !c.data.monthEndedAt
+    : !c.data.fullAccess || c.data.status !== 'closed' || !c.data.monthEndedAt)
+    return h.json({ error: svc ? `Another month can be asked for once a month of ${label} has ended.` : 'Another month can be asked for once a month of Full-Service has ended.' }, 409);
   const req = c.data.extendRequest;
   if (body?.action === 'withdraw') {
     if (req?.state !== 'pending') return h.json({ error: 'There is no request to withdraw.' }, 409);
@@ -135,9 +223,11 @@ export async function handleExtendRequest(request, env, h) {
   if (req?.state === 'approved' && live?.url && new Date(live.expiresAt || 0).getTime() > Date.now())
     return h.json({ ok: true, state: 'approved', url: live.url });
   const monthCents = Math.max(0, Math.round(Number(await h.monthCentsFor(c.data).catch(() => 0)) || 0));
+  // Their service switched off since: no month of it to ask for.
+  if (svc && !monthCents) return h.json({ error: 'That service is not offered right now.' }, 409);
   const next = { state: 'pending', at: new Date(), monthCents, decidedAt: null, declineReason: '' };
   await patchDoc(env, `cases/${caseId}`, { extendRequest: next }, { mask: ['extendRequest'] });
-  await h.pingCase(env, c.data, `${first(c.data.clientName) || 'A client'} is asking for another month of Full-Service.`, `/admin-case.html?id=${caseId}`).catch(() => {});
+  await h.pingCase(env, c.data, `${first(c.data.clientName) || 'A client'} is asking for another month of ${svc ? label : 'Full-Service'}.`, `/admin-case.html?id=${caseId}`).catch(() => {});
   return h.json({ ok: true, state: 'pending', at: next.at });
 }
 
@@ -171,8 +261,8 @@ export async function handleExtendDecision(request, env, h) {
     return h.json({ ok: true, state: 'declined' });
   }
 
-  // Opening it again takes one of their Full-Service places.
-  const cap = await h.capacity(env, h.contractorOf(c.data, env));
+  // Opening it again takes one of their Full-Service places; their own service takes none.
+  const cap = c.data.serviceMonthly === true ? { room: true } : await h.capacity(env, h.contractorOf(c.data, env));
   if (!cap.room && !body?.overrideCap) return h.json({ error: 'full-booked', open: cap.open, max: cap.max }, 409);
   const quoted = Number(req.monthCents) || 0;
   const asked = body?.amountCents;
@@ -192,7 +282,7 @@ export async function handleExtendDecision(request, env, h) {
   const session = await h.stripePost(env, '/checkout/sessions', {
     mode: 'payment',
     customer_email: c.data.clientEmail || undefined,
-    line_items: h.lineItems(cents),
+    line_items: h.lineItems(cents, c.data),
     success_url: `${h.baseUrl}/case.html?id=${caseId}&extended=1`,
     cancel_url: `${h.baseUrl}/case.html?id=${caseId}`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),

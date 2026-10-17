@@ -2452,7 +2452,7 @@ function paintOverview(pane) {
     ${c.extendRequest?.state === 'pending' && c.status === 'closed' ? `
     <div class="panel" data-month-request style="border-color:var(--cyan); box-shadow:var(--glow-c);">
       <h3 style="margin:0 0 .3rem; color:var(--cyan);">Another month: your call</h3>
-      <p class="small" style="margin:0 0 .2rem;">Their month of Full-Service ended and they are asking
+      <p class="small" style="margin:0 0 .2rem;">Their month of ${c.serviceMonthly ? esc(String(c.service?.label || 'their service')) : 'Full-Service'} ended and they are asking
         for another, quoted <strong>$${((Number(c.extendRequest.monthCents) || 0) / 100).toLocaleString()}</strong>.</p>
       <p class="dim small" style="margin:0 0 .7rem;">Nothing has been charged. Approving sends them a
         link to pay, at that price or any you type (0 opens it at no charge), and paying opens the
@@ -4396,7 +4396,7 @@ function infoBar(c, mtFmt, start, due) {
       </span>
     </span>`);
   // A contractor's own service (2026-10-17) opens with no call: its name stands where the call would.
-  if (c.service && !start) row('SERVICE', `${esc(c.service.label || 'Their own service')} · no call time`, 'var(--cyan)');
+  if (c.service && !start) row('SERVICE', `${esc(c.service.label || 'Their own service')} · ${c.serviceMonthly ? svcMonthWords(c) : 'no call time'}`, 'var(--cyan)');
   else row('CALL', start
     ? `${fmt.format(start)} MST · ${esc(c.appointment.method)}${c.publicElection?.choice === 'public' ? ' · <span style="color:var(--magenta)">PUBLIC</span>' : ''}`
     : 'no appointment', start ? null : 'var(--danger)');
@@ -4888,6 +4888,21 @@ function prettySize(bytes) {
   if (bytes > 1024) return Math.round(bytes / 1024) + ' KB';
   return bytes + ' B';
 }
+/**
+ * A monthly service case's month (2026-10-17, v7.75), mirroring
+ * worker/services.js serviceWindowEnd: thirty days a month from the day it was
+ * taken on, plus paused time.
+ */
+function svcMonthWords(c) {
+  if (c.charge?.state === 'held') return 'a month at a time, starting when you take it on';
+  const from = toDate(c.charge?.decidedAt || c.charge?.capturedAt || c.serviceAt || c.createdAt);
+  const n = Number(c.serviceMonths) || 1;
+  if (!from || Number.isNaN(from.getTime())) return `month ${n}`;
+  const held = Math.max(0, Number(c.hold?.totalMs) || 0) + (c.hold?.pausedAt ? Math.max(0, Date.now() - toDate(c.hold.pausedAt).getTime()) : 0);
+  const until = new Date(from.getTime() + (30 + (Number(c.serviceExtraDays) || 0)) * 86_400_000 + held);
+  return `month ${n}, ${c.status === 'closed' ? 'ended' : 'through'} ${new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric' }).format(until)}`;
+}
+
 function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }

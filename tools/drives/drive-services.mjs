@@ -8,7 +8,8 @@
 // time". Driven in the admin demo at 390px: on Ana's card in Employer mode he adds Records review at $300, ticked;
 // her booking page lists it; its own page asks for no time; the payment step names it and holds the card; the case it
 // opens runs on its own steps and sits on his shelf under OWN SERVICES; and in her own demo she asks for another one
-// from her settings, which waits for him.
+// from her settings, which waits for him. And a monthly one (v7.75, "Like Full-Service"): on sale a month at a time, its
+// case on its own month, another month asked for once it ends, and his yes opening the case again.
 import { chromium } from 'playwright';
 import { mkdirSync } from 'node:fs';
 
@@ -220,6 +221,91 @@ ok('she asks for one from her settings: it is saved, waits for him, and the page
   asked.rows.some((r) => r.label === 'Appeal letter' && r.state === 'Waiting for Eric to turn it on.')
   && asked.said === 'Saved. Eric is told, and turns it on before clients can buy it.' && !asked.sideways,
   JSON.stringify(asked));
+
+console.log('\n--- H. a monthly one, a month at a time (v7.75) ---');
+// Eric, 2026-10-17, on a monthly one: "Like Full-Service". Back on his side: he adds Monthly check-ins at $900 a month.
+await page.context().addCookies([{ name: 'pa_demo', value: 'admin', domain: '127.0.0.1', path: '/' }]);
+await openOffers();
+await tryStep(() => page.click(`${sheet} [data-add-service]`, { timeout: 4000 }));
+await page.waitForTimeout(300);
+await tryStep(() => page.fill(`${sheet} [data-service]:last-of-type [data-s-label]`, 'Monthly check-ins', { timeout: 3000 }));
+await tryStep(() => page.selectOption(`${sheet} [data-service]:last-of-type [data-s-kind]`, 'month', { timeout: 3000 }));
+await tryStep(() => page.fill(`${sheet} [data-service]:last-of-type [data-s-price]`, '900', { timeout: 3000 }));
+const laterLine = await page.evaluate((s2) => !!document.querySelector(`${s2} [data-s-later]`), sheet).catch(() => true);
+await tryStep(() => page.click(`${sheet} [data-save]`, { timeout: 4000 }));
+await page.waitForTimeout(1500);
+await page.goto(`${P}/book.html?advocate=${ANA}&demo=admin`, { waitUntil: 'networkidle' });
+await tryStep(() => page.waitForSelector('[data-adv-service]', { timeout: 8000 }));
+const monthly = await page.evaluate(() => { const a = [...document.querySelectorAll('[data-adv-service]')].find((x) => /Monthly check-ins/.test(x.textContent)); return { text: (a?.textContent || '').replace(/\s+/g, ' ').trim(), href: a?.getAttribute('href') || '' }; });
+await page.goto(`${P}${monthly.href || '/book.html'}&demo=admin`, { waitUntil: 'networkidle' });
+await tryStep(() => page.waitForSelector('[data-svc-pick]', { timeout: 8000 }));
+const monthPage = await page.evaluate(() => ({ intro: document.getElementById('time-intro')?.textContent.replace(/\s+/g, ' ').trim() || '', pick: document.querySelector('[data-svc-pick]')?.textContent.trim() || '' }));
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/services-8-monthly-page.png`, fullPage: true });
+// NEGATIVE CONTROL (run 2026-10-17, v7.75): the demo rates' `['once', 'month'].includes(x.kind)` made `x.kind === 'once'` made this read
+//   FAIL  a monthly one goes on sale: his card keeps no not-yet line, her booking page lists it a month at a time, and its page says how its months run
+ok('a monthly one goes on sale: his card keeps no not-yet line, her booking page lists it a month at a time, and its page says how its months run',
+  !laterLine && /^Monthly check-ins \$900 a month$/.test(monthly.text) && monthPage.pick === 'Monthly check-ins, $900 a month'
+  && /It runs a month at a time, from the day Ana takes it on\. When the month ends your case closes, and you can ask for another\./.test(monthPage.intro),
+  JSON.stringify({ laterLine, monthly, monthPage }));
+
+// Bought through the demo's own checkout, taken on, and its month run out (what the sweep does at its end).
+const svcId = (monthly.href.match(/service=(s[a-z0-9]{8})/) || [])[1] || '';
+const boughtM = await page.evaluate(async (b) => {
+  const r = await fetch('/api/service-checkout', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer demo' }, body: JSON.stringify(b) });
+  return { status: r.status, out: await r.json().catch(() => ({})) };
+}, { advocate: ANA, service: svcId, quotedCents: 90000, phone: '+1 208 555 0100', acks: { disclaimer: 1, privacy: 1, recording: 1, service: 1, phoneConsent: 1 } });
+const madeM = await caseDoc();
+await page.evaluate(() => {
+  const s = JSON.parse(localStorage.getItem('pa-demo-store') || '{}');
+  const e = (s.docs || []).find(([p]) => p === 'cases/demo-case-booked');
+  if (e) {
+    const past = new Date(Date.now() - 31 * 86_400_000).toISOString();
+    e[1] = { ...e[1], charge: { ...e[1].charge, state: 'captured', capturedCents: 90000, decidedAt: past, capturedAt: past },
+      status: 'closed', closedFromStatus: 'confirmed', monthEndedAt: new Date().toISOString(), closedAt: new Date().toISOString(), closedReason: 'The month of Monthly check-ins reached its end, so the case wrapped up on schedule.' };
+  }
+  localStorage.setItem('pa-demo-store', JSON.stringify(s));
+});
+await page.goto(`${P}/case.html?id=demo-case-booked&demo=1`, { waitUntil: 'networkidle' });
+await settle(2500);
+await page.evaluate(() => { const t = [...document.querySelectorAll('button, a, [role="tab"]')].find((x) => /^Enhance$/.test((x.textContent || '').trim())); t?.click(); }).catch(() => {});
+await page.waitForTimeout(800);
+const askCard = await page.evaluate(() => { const c = document.querySelector('[data-month-ask]'); return { state: c?.dataset.monthAsk || '', text: (c?.textContent || '').replace(/\s+/g, ' ').trim(), report: /read your report/.test(document.body.textContent || '') }; });
+await tryStep(() => page.click('[data-request-month]', { timeout: 4000 }));
+await page.waitForTimeout(1200);
+const askedM = await page.evaluate(() => document.querySelector('[data-month-ask]')?.dataset.monthAsk || '');
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/services-9-month-ask.png`, fullPage: true });
+// NEGATIVE CONTROL (run 2026-10-17, v7.75): extendOffer's `(c.fullAccess || c.serviceMonthly)` made `c.fullAccess` made this read
+//   FAIL  bought, it opens a case on its own month; when the month ends the client is offered another of it, in its name, and asking sends it to her
+ok('bought, it opens a case on its own month; when the month ends the client is offered another of it, in its name, and asking sends it to her',
+  boughtM.status === 200 && madeM?.serviceMonthly === true && madeM.service?.kind === 'month' && madeM.serviceMonths === 1
+  // The advocate's first name comes from the live lookup, which a client's demo tab answers with his; the words around it are checked.
+  && askCard.state === 'offer' && /Your month of Monthly check-ins has ended\. Ask \w+ for another: the same work and the same file/.test(askCard.text) && askedM === 'pending'
+  // RE-PINNED 2026-10-17 (first run): the Enhance tab also offered a follow-up "once you've had time to read your report"; a service has none.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.75): followUpOffer's `if (c.service) return '';` taken out made this read FAIL.
+  && !askCard.report,
+  JSON.stringify({ boughtM: boughtM.status, made: madeM && { monthly: madeM.serviceMonthly, kind: madeM.service?.kind }, askCard, askedM }));
+
+await page.goto(`${P}/admin-case.html?id=demo-case-booked&demo=admin`, { waitUntil: 'networkidle' });
+await settle(2000);
+await page.evaluate(() => { document.querySelector('[data-group="case"]')?.click(); document.querySelector('[data-page="overview"]')?.click(); }).catch(() => {});
+await page.waitForTimeout(600);
+const hisCard = await page.evaluate(() => ({ req: (document.querySelector('[data-month-request]')?.textContent || '').replace(/\s+/g, ' ').trim(), body: (document.body.innerText || '').replace(/\s+/g, ' ') }));
+const yesM = await page.evaluate(async () => {
+  const r = await fetch('/api/admin/extend-request', { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer demo' }, body: JSON.stringify({ caseId: 'demo-case-booked', decision: 'approve' }) });
+  return { status: r.status, out: await r.json().catch(() => ({})) };
+});
+const openAgain = await caseDoc();
+await page.goto(`${P}/case.html?id=demo-case-booked&demo=1`, { waitUntil: 'networkidle' });
+await settle(2500);
+const clientAgain = await page.evaluate(() => (document.body.textContent || '').replace(/\s+/g, ' '));
+if (SHOTS) await page.screenshot({ path: `${SHOTS}/services-10-month-again.png`, fullPage: true });
+// NEGATIVE CONTROL (run 2026-10-17, v7.75): the demo decision's `if (c.serviceMonthly === true) {` branch taken out made this read
+//   FAIL  his case page asks him about another month of it by name; his yes opens the case again on its second month, and the client reads when it runs through
+ok('his case page asks him about another month of it by name; his yes opens the case again on its second month, and the client reads when it runs through',
+  /Their month of Monthly check-ins ended and they are asking for another, quoted \$900\./.test(hisCard.req) && /SERVICE Monthly check-ins · month 1, ended/.test(hisCard.body)
+  && yesM.status === 200 && openAgain?.status === 'confirmed' && openAgain.serviceMonths === 2 && openAgain.serviceExtraDays >= 30
+  && /Your month runs through \w+ \d+\. Plan the next step together in your case chat\./.test(clientAgain),
+  JSON.stringify({ req: hisCard.req.slice(0, 160), yesM: yesM.status, open: openAgain && { status: openAgain.status, months: openAgain.serviceMonths } }));
 
 // NEGATIVE CONTROL (run 2026-10-17): `throw new Error('control');` added at the end of book.js made this read
 // (one at the end of admin-staffsettings.js is caught by the settings loader, so it reaches no page error)

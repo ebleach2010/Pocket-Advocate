@@ -207,8 +207,11 @@ console.log('\n--- C. the Worker ---');
   // NEGATIVE CONTROL (run 2026-10-17): the reopen's `c.data.extendRequest?.state === 'approved'` condition taken out made this read
   //   FAIL  C2 paying reopens a closed case only for the month its advocate approved, as it was, and a month given free records nothing
   check('C2 paying reopens a closed case only for the month its advocate approved, as it was, and a month given free records nothing',
-    /const reopening = session\.metadata\?\.reopen === '1' && c\.data\.fullAccess && c\.data\.status === 'closed'\n\s+&& c\.data\.extendRequest\?\.state === 'approved';/.test(conf)
-    && /if \(!c\.data\.fullAccess \|\| \(c\.data\.status === 'closed' && !reopening\)\) \{/.test(conf)
+    // RE-PINNED 2026-10-17 (v7.75): a contractor's own monthly service ("Like Full-Service") reopens the same way, only for
+    // the month its advocate approved (services.mjs S13 runs it).
+    // NEGATIVE CONTROL (run 2026-10-17, v7.75): the reopen's `&& c.data.extendRequest?.state === 'approved'` taken out made C2 read FAIL.
+    /const reopening = session\.metadata\?\.reopen === '1' && \(c\.data\.fullAccess \|\| svcMonth\) && c\.data\.status === 'closed'\n\s+&& c\.data\.extendRequest\?\.state === 'approved';/.test(conf)
+    && /if \(!\(c\.data\.fullAccess \|\| svcMonth\) \|\| \(c\.data\.status === 'closed' && !reopening\)\) \{/.test(conf)
     && /status: c\.data\.closedFromStatus \|\| 'confirmed', closedAt: null, closedBy: null, closedReason: null,/.test(conf)
     && /\.\.\.\(reopening \? \['status', 'closedAt', 'closedBy', 'closedReason', 'extendRequest', 'monthNotice'\] : \[\]\)/.test(conf)
     && /const amountCents = Number\.isFinite\(Number\(session\.amount_total\)\) \? Number\(session\.amount_total\) : FULL_EXTEND\[30\];/.test(conf));
@@ -228,7 +231,9 @@ console.log('\n--- D. the pages ---');
   // NEGATIVE CONTROL (run 2026-10-17): extendOffer's first line (`return monthAsk(c)` on a month-closed case) taken out made this read
   //   FAIL  D1 a case its month closed shows the shining ask in its four states, and the ask and Ask again go while sales are off
   check('D1 a case its month closed shows the shining ask in its four states, and the ask and Ask again go while sales are off',
-    /function extendOffer\(c\) \{\n\s+if \(c\.fullAccess && c\.status === 'closed' && c\.monthEndedAt\) return monthAsk\(c\);/.test(CJ)
+    // RE-PINNED 2026-10-17 (v7.75): a contractor's own monthly service asks the same way, at its own door.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.75): extendOffer's `return monthAsk(c);` line taken out made D1 read FAIL.
+    /function extendOffer\(c\) \{\n(?:\s+\/\/[^\n]*\n)?\s+if \(\(c\.fullAccess \|\| c\.serviceMonthly\) && c\.status === 'closed' && c\.monthEndedAt\) return monthAsk\(c\);/.test(CJ)
     && /data-month-ask="approved"/.test(ask) && /data-month-ask="pending"/.test(ask) && /data-month-ask="declined"/.test(ask) && /data-month-ask="offer"/.test(ask)
     && /<button type="button" class="btn glow" data-request-month>Request another month<\/button>/.test(ask)
     && /Nothing is charged unless they say yes\./.test(ask) && /class="followup-offer month-ask"/.test(ask)
@@ -236,7 +241,7 @@ console.log('\n--- D. the pages ---');
     // RE-PINNED 2026-10-17 (v7.65): the appeal's two buttons follow on the list.
     // NEGATIVE CONTROL (run 2026-10-17, v7.65): [data-request-month] taken off SELLING made D1 read FAIL.
     && /const SELLING = '[^']*\[data-ask-again\],\[data-request-month\][^']*';/.test(CJ)
-    && /fetch\('\/api\/extend-request'/.test(CJ));
+    && /fetch\(c\.serviceMonthly \? '\/api\/service-month-request' : '\/api\/extend-request', \{/.test(CJ));
   const AC = f('public/js/admin-case.js');
   const AD = f('public/js/admin.js');
   // NEGATIVE CONTROL (run 2026-10-17): admin.js's Needs attention loop over former cases taken out made this read
