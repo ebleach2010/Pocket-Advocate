@@ -16,6 +16,7 @@ import { EMOJI_REACTIONS, STATUS_REACTIONS } from '../msg-actions.js';
 // Worker's own rules.
 import { fundDemo } from './fund.js';
 import { caseDay } from '../service-day.js';
+import { hoursOf, needsChoice, extraCents, EXTRA_HOUR_CENTS } from '../extra-hours.js';
 // DEMO MODE (2026-10-16): his practice copy's team, and what its clients ask back.
 import { LIVE_TEAM, LIVE_QUESTIONS, LIVE_CHAT_QUESTIONS, firstRead } from './live.js';
 const LIVE = (() => { try { return sessionStorage.getItem('pa-demo-live') === '1'; } catch { return false; } })();
@@ -1588,6 +1589,44 @@ export function demoApi(role, store) {
       store.persist?.();
       store.fire?.(key);
       return ok({ ok: true, url: `/case.html?id=${body.caseId || DEMO_CASE_ID}&extended=1&demo=1` });
+    }
+    // PAST THE MONTH'S HOURS (2026-10-17, v7.78), as worker/hours.js answers
+    // it: the client's choice, and the advocate's bill, which lands paid here
+    // because there is no Stripe to pay it through.
+    if (path === '/api/hours-choice') {
+      const key = `cases/${body.caseId || ''}`;
+      const c = store.docs.get(key);
+      if (!c) return fail(404, 'Not found');
+      if (!needsChoice(c)) return fail(409, 'There is nothing to choose right now.');
+      const choice = body.choice === 'hourly' ? 'hourly' : body.choice === 'end' ? 'end' : '';
+      if (!choice) return fail(400, 'Bad request');
+      const at = new Date();
+      const picked = { kind: choice, month: hoursOf(c).months, at, ...(choice === 'hourly' ? { rateCents: EXTRA_HOUR_CENTS } : {}) };
+      store.docs.set(key, choice === 'hourly' ? { ...c, hoursChoice: picked } : {
+        ...c, hoursChoice: picked, status: 'closed', closedAt: at, closedBy: 'client', closedFromStatus: c.status || 'confirmed',
+        closedReason: 'You ended the case after your month\'s 20 hours. Everything in it stays here for your reference.',
+        pendingExtend: null, extendRequest: null, work: { ...(c.work || {}), startedAt: null },
+      });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, choice });
+    }
+    if (path === '/api/admin/bill-hours') {
+      const key = `cases/${body.caseId || ''}`;
+      const c = store.docs.get(key);
+      if (!c) return fail(404, 'Not found');
+      const h = hoursOf(c);
+      if (c.hoursChoice?.kind !== 'hourly' || Number(c.hoursChoice.month) !== h.months) return fail(409, 'They have not chosen to continue by the hour.');
+      const seconds = Math.floor(h.extra / 60) * 60;
+      if (seconds < 60) return fail(409, 'Nothing past the month\'s hours is left to bill.');
+      const cents = extraCents(seconds);
+      const at = new Date();
+      store.docs.set(key, {
+        ...c,
+        hoursBilledSec: h.billed + seconds,
+        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), { kind: 'hours', amountCents: cents, sessionId: `cs_demo_hours_${at.getTime()}`, at, seconds }],
+      });
+      store.persist?.(); store.fire?.(key);
+      return ok({ ok: true, seconds, cents, paid: true });
     }
     // ANOTHER MONTH, ASKED FOR AFTER ONE ENDED (2026-10-17), as
     // worker/monthend.js answers it. There is no Stripe here, so a yes lands

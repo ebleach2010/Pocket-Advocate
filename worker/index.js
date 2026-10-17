@@ -87,6 +87,8 @@ import { handleEmployer } from './employer.js';
 // Joe Bloe and the sample contractor, taken off his real shelf once (2026-10-16).
 import { retireSamples } from './retire.js';
 import { sweepFullServiceMonths, sweepServiceMonths, handleExtendRequest, handleExtendDecision } from './monthend.js';
+// Past the month's 20 hours (2026-10-17, v7.78): the client's three choices and the advocate's bill.
+import { handleHoursChoice, handleBillHours, confirmHoursPurchase, clearHoursCheckout } from './hours.js';
 import { handleAddonRequest, handleAddonDecision, confirmAddonPurchase, caseAddons } from './addons.js';
 import { servicesOf, serviceOf, sellable, serviceWindowEnd } from './services.js';
 import { caseDay } from '../public/js/service-day.js';
@@ -1274,6 +1276,14 @@ export default {
           lineItems: (cents, data) => (data?.serviceMonthly === true ? serviceMonthLineItems(cents, data) : extendLineItems(cents)),
           capacity: fullAccessCapacity, contractorOf, confirm: confirmExtensionPurchase, baseUrl: env.PUBLIC_BASE_URL,
         });
+      // Past the month's 20 hours (2026-10-17, v7.78): worker/hours.js.
+      if (url.pathname === '/api/hours-choice' && request.method === 'POST')
+        return await handleHoursChoice(request, env, {
+          requireUser, json, pingCase,
+          stopClock: (e, id, data) => stopWorkClock(e, id, data.work, Date.now(), clockPathFor(e, advocateIdOf(data, e))),
+        });
+      if (url.pathname === '/api/admin/bill-hours' && request.method === 'POST')
+        return await handleBillHours(request, env, { requireStaff, staffSees, json, notifyUser, sendEmail, stripePost, baseUrl: env.PUBLIC_BASE_URL });
       if (url.pathname === '/api/step-up' && request.method === 'GET')
         return await handleStepUpQuote(request, env, { requireUser, json, readRates });
       if (url.pathname === '/api/addon-request' && request.method === 'POST')
@@ -1438,13 +1448,15 @@ export default {
           for (const r of rows) wiped.push({ id: r.id, ...(await wipeCase(env, r.id, { adminUid: env.ADMIN_UID || '' })) });
           return json({ ok: true, wiped });
         }
-        const [cron, adv, queueRows, caseRows, knowledgeRows] = await Promise.all([
+        const [cron, adv, queueRows, caseRows, knowledgeRows, sends] = await Promise.all([
           getDoc(env, 'diag/cron').catch(() => null),
           getDoc(env, 'diag/advisor').catch(() => null),
           listDocs(env, 'advisorQueue', { pageSize: 10 }).catch(() => []),
           listDocs(env, 'cases', { pageSize: 50, all: true }).catch(() => []),
           // How big the dictionary is (2026-09-06): a count, no terms.
           listDocs(env, 'advisorKnowledge', { pageSize: 300, all: true }).catch(() => []),
+          // Chat messages that did not go (2026-10-17): handleChatTrouble's ring.
+          getDoc(env, 'diag/sends').catch(() => null),
         ]);
         // Sanitized machine state for the open cases: ages and counters only,
         // no ids and no case content, so "why is nothing even queueing" is
@@ -1488,6 +1500,14 @@ export default {
             draftStatus: d.draftStatus || null,
             draftAgeS: age(d.draftStartedAt),
             draftError: d.draftError ? String(d.draftError).slice(0, 140) : null,
+            // Whether the client's chat takes messages (2026-10-17, "My client is
+            // having issues sending me messages"), the rule case.js draws it by:
+            // paused, locked while the call is more than a week off and not
+            // opened early, or open. When the last message was, and whose side.
+            chat: c.data.hold?.pausedAt ? 'paused'
+              : (!c.data.chatUnlocked && c.data.appointment?.start && new Date(c.data.appointment.start).getTime() - Date.now() > 7 * 86_400_000) ? 'locked' : 'open',
+            lastMsgRole: c.data.lastMessage?.role === 'admin' ? 'staff' : c.data.lastMessage ? 'client' : null,
+            lastMsgAgeS: age(c.data.lastMessage?.ts),
           });
         }
         const diagRes = json({
@@ -1496,6 +1516,7 @@ export default {
           states,
           knowledgeCount: knowledgeRows.length,
           runs: adv?.data.runs || [],
+          sends: sends?.data.runs || [],
         });
         diagRes.headers.set('cache-control', 'max-age=60');
         await caches.default.put(diagKey, diagRes.clone()).catch(() => {});
@@ -1563,6 +1584,8 @@ export default {
         return await handleAdminSession(request, env);
       if (url.pathname === '/api/admin/stall' && request.method === 'POST')
         return await handleStall(request, env);
+      if (url.pathname === '/api/chat-trouble' && request.method === 'POST')
+        return await handleChatTrouble(request, env);
       if (url.pathname === '/api/admin/oversee' && request.method === 'POST')
         return await handleOversee(request, env, { requireAdmin, json });
       if (url.pathname.startsWith('/api/')) {
@@ -2562,7 +2585,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-day-count';
+const BUILD_TAG = 'v2026-10-17-sent-is-sent';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2570,7 +2593,7 @@ const BUILD_TAG = 'v2026-10-17-day-count';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.77';
+const VERSION = '7.79';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -4018,6 +4041,7 @@ async function handleWebhook(request, env) {
     else if (obj.metadata?.kind === 'fullaccess') await confirmFullAccessPurchase(env, obj);
     else if (obj.metadata?.kind === 'casecharge') await confirmCaseCharge(env, obj);
     else if (obj.metadata?.kind === 'addon') await confirmAddonPurchase(env, obj, { pingCase });
+    else if (obj.metadata?.kind === 'hours') await confirmHoursPurchase(env, obj, { pingCase });
     else await createCaseFromSession(env, obj);
   } else if (event.type === 'payment_intent.canceled') {
     // A hold the network let go (seven days) before he decided, or one he
@@ -6427,31 +6451,41 @@ async function setClockRunning(env, caseId, running, path = CLOCK_DOC) {
  * which is the exact overcount the prompt is there to prevent. Banking to the
  * last beacon is the last moment the time is known to be real.
  */
+// RE-PINNED 2026-10-17 (v7.78): past the hours the client now chooses how to
+// go on (Eric: "The full service clients should get a notification and a pop
+// up when opening the app once 20 hours have passed"), so the notice asks them
+// to open the app, tells their advocate too, and comes again each month bought
+// (work.includedDoneMonths) instead of once for the life of the case. Hours
+// billed and paid for are their own (public/js/extra-hours.js hoursOf).
 async function markIncludedHours(env, caseId, c, bankedSeconds, tierMark) {
-  // His own case has no included hours: nothing is owed to anyone.
-  if (!c?.fullAccess || c.self || c.status === 'closed' || c.work?.includedDoneAt) return;
+  // His own case has no included hours: nothing is owed to anyone. A family case is free.
+  if (!c?.fullAccess || c.self || c.family || c.status === 'closed') return;
   const months = Math.max(1, Math.floor(Number(c.fullAccessMonths) || 1));
-  const delivered = Math.max(0, bankedSeconds - tierMark);
+  const told = Number(c.work?.includedDoneMonths) || (c.work?.includedDoneAt ? 1 : 0);
+  if (told >= months) return;
+  const delivered = Math.max(0, bankedSeconds - tierMark - Math.max(0, Number(c.hoursBilledSec) || 0));
   if (delivered < months * FULL_INCLUDED_HOURS * 3600) return;
   const now = new Date();
   // Stamp FIRST, so a second stop landing in the same breath finds the mark
-  // and says nothing: one notice is the promise.
-  const stamped = await patchDoc(env, `cases/${caseId}`, { work: { includedDoneAt: now } },
-    { mask: ['work.includedDoneAt'] }).catch(() => false);
+  // and says nothing: one notice a month is the promise.
+  const stamped = await patchDoc(env, `cases/${caseId}`, { work: { includedDoneAt: now, includedDoneMonths: months } },
+    { mask: ['work.includedDoneAt', 'work.includedDoneMonths'] }).catch(() => false);
   if (!stamped) return;
-  const hours = months * FULL_INCLUDED_HOURS;
+  const hours = FULL_INCLUDED_HOURS;
   await patchDoc(env, `cases/${caseId}/private/milestones/items/${crypto.randomUUID()}`, {
-    what: `All ${hours} hours of the month are delivered. Work continues.`,
+    what: `All ${hours} hours of the month are delivered. The client is asked how to continue.`,
     kind: 'included', kindLabel: 'Included hours delivered', kindColor: 'green',
     at: now, createdAt: now,
   }, { mustNotExist: true }).catch(() => {});
   if (c.clientUid) {
     await notifyUser(env, c.clientUid, {
       title: 'Pocket Advocate',
-      body: `${await caseAdvocateFirst(env, c)} has delivered all ${hours} hours of your month. Work continues.`,
+      body: `${await caseAdvocateFirst(env, c)} has delivered all ${hours} hours of your month. Open the app to choose how to continue.`,
       link: `/case.html?id=${caseId}`,
     }).catch(() => {});
   }
+  await pingCase(env, c, `${firstName(c.clientName) || 'Your client'}'s month reached its ${hours} hours. They are asked to choose: by the hour, another month, or end the case.`,
+    `/admin-case.html?id=${caseId}`).catch(() => {});
 }
 
 async function stopWorkClock(env, caseId, w, until = Date.now(), path = CLOCK_DOC) {
@@ -9688,6 +9722,33 @@ async function handleStall(request, env) {
   return json({ ok: true });
 }
 
+/**
+ * A CHAT MESSAGE THAT DID NOT GO (Eric, 2026-10-17: "My client is having
+ * issues sending me messages"). The page says which step failed (the message,
+ * the thread's pointer, or a file), the error's code and whether it was
+ * online, so the flight recorder shows why instead of a guess. Anyone signed
+ * in; short words only, never the message, the thread or who sent it. Its own
+ * ring of thirty, so the reads' entries never push it out.
+ */
+async function handleChatTrouble(request, env) {
+  const user = await requireUser(request, env);
+  if (!user) return json({ error: 'Not found' }, 404);
+  const b = await request.json().catch(() => ({}));
+  const entry = {
+    at: new Date(), ev: 'send-fail', kind: b.kind === 'sub' ? 'sub' : 'case',
+    step: ['send', 'pointer', 'upload'].includes(b.step) ? b.step : 'other',
+    code: String(b.code ?? '').replace(/[^\w/-]/g, '').slice(0, 40), online: b.online === true,
+  };
+  try {
+    const doc = await tryGet(env, 'diag/sends');
+    if (doc !== READ_FAILED) {
+      const runs = Array.isArray(doc?.data.runs) ? doc.data.runs : [];
+      await patchDoc(env, 'diag/sends', { runs: [entry, ...runs].slice(0, 30) }, { mask: ['runs'] });
+    }
+  } catch { /* diagnostics never break the thing they watch */ }
+  return json({ ok: true });
+}
+
 async function handleAdminSession(request, env) {
   if (request.method === 'DELETE') {
     return new Response(JSON.stringify({ ok: true }), {
@@ -12197,6 +12258,8 @@ async function releaseHold(env, session) {
         mask: ['pendingExtend'],
       });
   }
+  // A bill for extra hours left unpaid: their advocate can send a fresh one (2026-10-17, v7.78).
+  if (session.metadata?.kind === 'hours' && session.metadata.caseId) await clearHoursCheckout(env, session);
   // An upgrade to Full Access that was started and walked away from.
   if (session.metadata?.kind === 'fullaccess' && session.metadata.caseId) {
     const caseDoc = await getDoc(env, `cases/${session.metadata.caseId}`);

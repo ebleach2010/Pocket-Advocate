@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.77';
+export const VERSION = '7.79';
 
 /**
  * Newest first.
@@ -51,6 +51,32 @@ export const VERSION = '7.77';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // SENT IS SENT (Eric, 2026-10-17: "My client is having issues sending me
+    // messages"). Admin only.
+    version: '7.79',
+    quiet: true,
+    client: [],
+    admin: [
+      'A message that went through no longer tells the sender "Couldn\'t send" when only the line under the chat failed to update. That told people to type it again, or to give up.',
+      'When a message really does not go, the reason is written down for us to read: which step and the error, never the words.',
+      'The error a client sees now says what to do: try again when the connection is back, or reload the page.',
+    ],
+  },
+  {
+    // PAST THE MONTH'S 20 HOURS (Eric, 2026-10-17: "The full service clients
+    // should get a notification and a pop up when opening the app once 20
+    // hours have passed"; "$200 an hour"; "Advocate bills hours used"). Admin only.
+    version: '7.78',
+    quiet: true,
+    client: [],
+    admin: [
+      'When a Full-Service month passes its 20 hours, the client gets a notice, and a pop up when they open their case: continue up to the full 30 days for $200 an hour, buy an additional month at the case\'s month price, or end the case with everything kept.',
+      'They are asked again each time they open it until they choose, and again for each new month. You and the case\'s advocate are told when the hours are reached and what they chose.',
+      'If they choose by the hour, their case page has Bill extra hours: one tap sends them a link to pay for the time past the 20 hours, to the minute. Paid hours show on payroll as Full-Service extra hours.',
+      'The hours card no longer says the work carries on at no extra charge.',
+    ],
+  },
   {
     // THE DAY OF THE SERVICE (Eric, 2026-10-17: "Next to hours should be the
     // day we're on of the service"). Admin only.

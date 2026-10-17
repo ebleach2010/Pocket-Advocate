@@ -88,12 +88,16 @@ if (SHOTS) await cl.screenshot({ path: `${SHOTS}/hue-a-settings.png` });
 // RE-PINNED 2026-10-17 (v7.66): the wheel is gone; Settings offers Warm, Blue and green and Black.
 // NEGATIVE CONTROL (run 2026-10-17, v7.66): Blue and green taken out of APPEARANCES in theme.js made this read
 //   FAIL  the warm look is the start, and Settings offers Warm, Blue and green and Black, and nothing else to pick
-ok('the warm look is the start, and Settings offers Warm, Blue and green and Black, and nothing else to pick',
-  first.look === '' && first.ground === WARM_GROUND && opened && !offer.wheel && offer.names?.join('|') === 'Warm|Blue and green|Black'
-  && offer.on === 'warm' && /^Black background, white text\./.test(offer.black || '') && offer.sideways === false,
+// RE-PINNED 2026-10-17 (v7.76): Eric, "Change the standard color for clients and advocates past the main page to
+// green/blue that's in settings". Blue and green is the start and is listed first; Warm is a tap away.
+// NEGATIVE CONTROL (run 2026-10-17, v7.78): case.html's head line `var cool = localStorage.getItem('pa-look') !== 'warm';` made `=== 'cool'` made this read
+//   FAIL  Blue and green is the start, and Settings offers Blue and green, Warm and Black, and nothing else to pick
+ok('Blue and green is the start, and Settings offers Blue and green, Warm and Black, and nothing else to pick',
+  first.look === 'cool' && first.ground === COOL_GROUND && opened && !offer.wheel && offer.names?.join('|') === 'Blue and green|Warm|Black'
+  && offer.on === 'cool' && /^Black background, white text\./.test(offer.black || '') && offer.sideways === false,
   JSON.stringify({ first, opened, offer }));
 
-await pick(cl, 'cool');
+await pick(cl, 'warm');
 const turned = await paint(cl);
 if (SHOTS) await cl.screenshot({ path: `${SHOTS}/hue-b-cool.png` });
 // NEGATIVE CONTROL (run 2026-10-17): theme.js's paintHue setting no data-hue made this read
@@ -101,9 +105,12 @@ if (SHOTS) await cl.screenshot({ path: `${SHOTS}/hue-b-cool.png` });
 // RE-PINNED 2026-10-17 (v7.66): a tap on Blue and green, in place of a turn of the wheel.
 // NEGATIVE CONTROL (run 2026-10-17, v7.66): applyAppearance's `if (id === 'cool') document.documentElement.dataset.look = 'cool';` made `void 0;` made this read
 //   FAIL  a tap on Blue and green changes the whole look at once: the ground and the gradient both change, and its swatch is the one on
-ok('a tap on Blue and green changes the whole look at once: the ground and the gradient both change, and its swatch is the one on',
-  turned.look === 'cool' && turned.hue === '' && turned.ground === COOL_GROUND && turned.lit && turned.lit !== first.lit
-  && await cl.evaluate(() => [...document.querySelectorAll('#pa-settings [data-scheme].on')].map((x) => x.dataset.scheme).join()).catch(() => '') === 'cool',
+// RE-PINNED 2026-10-17 (v7.76): Blue and green is the start now, so the tap is on Warm.
+// NEGATIVE CONTROL (run 2026-10-17, v7.78): applyAppearance's `else delete document.documentElement.dataset.look;` taken out made this read
+//   FAIL  a tap on Warm changes the whole look at once: the ground and the gradient both change, and its swatch is the one on
+ok('a tap on Warm changes the whole look at once: the ground and the gradient both change, and its swatch is the one on',
+  turned.look === '' && turned.hue === '' && turned.ground === WARM_GROUND && turned.lit && turned.lit !== first.lit
+  && await cl.evaluate(() => [...document.querySelectorAll('#pa-settings [data-scheme].on')].map((x) => x.dataset.scheme).join()).catch(() => '') === 'warm',
   JSON.stringify({ turned, first: first.lit }));
 
 await closeSettings(cl);
@@ -118,8 +125,11 @@ const elsewhere = await paint(cl);
 // RE-PINNED 2026-10-17 (v7.66): the look stays, in place of the wheel's colour.
 // NEGATIVE CONTROL (run 2026-10-17, v7.66): the head snippet's `if (cool) document.documentElement.dataset.look = 'cool';` taken off case.html made this read
 //   FAIL  the look stays after a reload and on the next page, set before the page paints
+// RE-PINNED 2026-10-17 (v7.76): the look kept is Warm, picked over the Blue and green start.
+// NEGATIVE CONTROL (run 2026-10-17, v7.78): the head snippet's `if (!cool) delete document.documentElement.dataset.look;` taken off case.html made this read
+//   FAIL  the look stays after a reload and on the next page, set before the page paints
 ok('the look stays after a reload and on the next page, set before the page paints',
-  kept.look === 'cool' && kept.ground === COOL_GROUND && elsewhere.look === 'cool' && elsewhere.ground === COOL_GROUND,
+  kept.look === '' && kept.ground === WARM_GROUND && elsewhere.look === '' && elsewhere.ground === WARM_GROUND,
   JSON.stringify({ kept, elsewhere }));
 
 console.log('\n--- B. Black ---');
@@ -242,7 +252,8 @@ const lookPage = async (role, url, set) => {
   await settle(page, 1800);
   return page;
 };
-const warmPage = await lookPage('client', '/case.html?id=demo-case-full&demo=1', null);
+// RE-PINNED 2026-10-17 (v7.76): Blue and green is the start, so the warm page picks Warm first.
+const warmPage = await lookPage('client', '/case.html?id=demo-case-full&demo=1', [['pa-look', 'warm']]);
 const warmB = await buttons(warmPage);
 const warmLit = warmB.plain.filter((x) => standsOff(warmB, x));
 if (SHOTS) await warmPage.screenshot({ path: `${SHOTS}/hue-f-raised-warm.png` });

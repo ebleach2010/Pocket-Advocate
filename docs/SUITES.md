@@ -2550,3 +2550,52 @@ alerts me and marks the contractor in employment mode".
 
 New: days.mjs D1 to D6; drive-days (4), every check controlled. Re-pinned
 with controls: cleanup B3 (REPORT PAST DUE, counted by caseDay), release R1.
+
+### Past the month's 20 hours (2026-10-17, v7.78)
+
+Eric: "The full service clients should get a notification and a pop up when
+opening the app once 20 hours have passed. 'To continue, select one of the
+three: continue up to the full 30 days for [$/hour] | Purchase an addition
+month at [fulll case price] | end case (all information is kept for your
+reference)'". Rate: "$200 an hour". Paying: "Advocate bills hours used".
+
+- public/js/extra-hours.js (new, read by both case pages, the demo and
+  worker/hours.js): hoursOf (delivered, included, used past what was
+  billed, extra left to bill), needsChoice (once a month until chosen),
+  extraCents (to the minute at $200 an hour).
+- worker/hours.js (new): POST /api/hours-choice (the client, their own case
+  only: by the hour, or end the case with everything kept and the clock
+  banked); POST /api/admin/bill-hours (the case's advocate or him, only
+  after by the hour that month, one link at a time); webhook kind 'hours'
+  (the minutes become theirs, once); expiry clears an unpaid link.
+- worker/index.js markIncludedHours: once a month (work.includedDoneMonths),
+  past hours billed; the client is asked to open the app, the advocate told.
+- Client case page: the pop up on opening and as the hours land, his words
+  with the rate, the month's price and "additional"; Not now; End case asks
+  once more; the month goes through /api/extend. The hours card no longer
+  says "at no extra charge"; a bill shows with Pay now, closed case too.
+- His case page: the panel with their choice and Bill extra hours.
+- Payroll: "Full-Service extra hours". Demo answers both routes.
+
+New: pasthours.mjs P1 to P6; drive-pasthours (7), every check controlled.
+Re-pinned with controls: clock C51b, C51c, C51d, C51e; selfcase S17;
+release R1; drive-cleanup's look check (Blue and green first, from v7.76).
+
+### Sent is sent (2026-10-17, v7.79)
+
+Eric: "My client is having issues sending me messages. Not sure if that's
+still an issue but he's not responding." A send wrote the message, then the
+thread's preview line; a refused second write threw, so a message that had
+landed read "Couldn't send". A real failure left no trace.
+
+- public/js/chat.js: the pointer's failure is written down, never shown;
+  only the message's own failure reaches the sender, in words they can act
+  on (no connection, or reload). reportTrouble posts the step, the error's
+  code and online, never the words.
+- worker/index.js: POST /api/chat-trouble (anyone signed in) keeps a ring
+  of thirty in diag/sends; the plain diag shows it as `sends`, and each open
+  case's `chat` (open, paused or locked, by case.js's own rule), the last
+  message's side and age. No ids, no words.
+
+New: chatsend.mjs M1 to M3, every check controlled. Re-pinned with a
+control: release R1; the tour drive's chat look check (Blue and green).

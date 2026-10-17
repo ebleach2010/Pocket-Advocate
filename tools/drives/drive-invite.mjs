@@ -245,8 +245,12 @@ console.log('\n--- E. his side again: the list empties, the cards by state, Dele
   // peach to pink rim and its own breath, so the cyan rim and st-open-glow are read as warm ones.
   // NEGATIVE CONTROL (run 2026-10-16): warm.css's open folder rim taken back to #3DDCF5 made this read
   //   FAIL  open cards wear the warm rim and breathe, a paused one the gold, and only his own and the showcase carry Delete
-  ok('open cards wear the warm rim and breathe, a paused one the gold, and only his own and the showcase carry Delete',
-    /st-open/.test(sc?.cls) && /rgb\(255, 196, 138\)/.test(sc?.rim) && sc?.anim === 'st-open-glow-warm'
+  // RE-PINNED 2026-10-17 (v7.76): Blue and green is the start past the home, so his open folders wear the cyan to violet
+  // rim and its breath again, unless Warm is picked in Settings.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.78): admin.html's head line `var cool = localStorage.getItem('pa-look') !== 'warm';` made `=== 'cool'` made this read
+  //   FAIL  open cards wear the Blue and green rim and breathe, a paused one the gold, and only his own and the showcase carry Delete
+  ok('open cards wear the Blue and green rim and breathe, a paused one the gold, and only his own and the showcase carry Delete',
+    /st-open/.test(sc?.cls) && /rgb\(61, 220, 245\)/.test(sc?.rim) && sc?.anim === 'st-open-glow'
     && /st-paused/.test(paused?.cls) && /rgb\(233, 185, 73\)/.test(paused?.rim) && paused?.anim === 'st-paused-glow'
     && /st-open/.test(invited?.cls) && sc?.del && !paused?.del && !invited?.del, JSON.stringify({ sc, paused, invited }));
   // Delete from the card: the sheet asks, Keep it keeps it. Each step is read before the next tap, so a

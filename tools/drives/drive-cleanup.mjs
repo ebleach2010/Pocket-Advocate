@@ -409,39 +409,44 @@ const paint = () => lk.evaluate(() => ({
   plus: getComputedStyle(document.querySelector('.add-btn') || document.body).backgroundImage.slice(0, 60),
   bar: document.querySelector('meta[name="theme-color"]')?.getAttribute('content') || '',
 }));
-const warmFirst = await paint();
+const coolFirst = await paint();
 // RE-PINNED 2026-10-17 (v7.64): Eric, "Keep the whole color scheme and gradient, but allow it to be adjusted via a color
 // wheel in settings ... Include black". Settings offered the wheel and Black; a tap on the wheel turned his pages too.
 // RE-PINNED 2026-10-17 (v7.66): Eric, "The color wheel is horrendous. Get rid of it. Have it be either the blue/green
 // from before or this warm look, or just black on white". Settings offers Warm, Blue and green and Black again; a tap
 // on Blue and green turns his pages, and Warm brings them back.
+// RE-PINNED 2026-10-17 (v7.76): Eric, "Change the standard color for clients and advocates past the main page to
+// green/blue that's in settings". His pages open in Blue and green, listed first; a tap on Warm turns them, it stays
+// after a reload, and Blue and green brings them back.
 await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
-await tryStep(() => lk.waitForSelector('.settings-card [data-scheme="cool"]', { timeout: 6000 }));
+await tryStep(() => lk.waitForSelector('.settings-card [data-scheme="warm"]', { timeout: 6000 }));
 const offered = await lk.evaluate(() => [...document.querySelectorAll('.settings-card .scheme-swatch .scheme-name')].map((x) => x.textContent.trim()));
-await tryStep(() => lk.click('.settings-card [data-scheme="cool"]', { timeout: 3000 }));
+await tryStep(() => lk.click('.settings-card [data-scheme="warm"]', { timeout: 3000 }));
 await lk.waitForTimeout(400);
-const coolNow = await paint();
+const warmNow = await paint();
 await lk.reload({ waitUntil: 'networkidle' });
 await settle(lk, 1500);
-const coolKept = await paint();
+const warmKept = await paint();
 await lk.evaluate(() => document.querySelector('.cog-btn')?.click());
-await tryStep(() => lk.click('.settings-card [data-scheme="warm"]', { timeout: 6000 }));
+await tryStep(() => lk.click('.settings-card [data-scheme="cool"]', { timeout: 6000 }));
 await lk.waitForTimeout(400);
-const warmBack = await paint();
-if (SHOTS) await lk.screenshot({ path: `${SHOTS}/cleanup-9-warm-back.png` });
+const coolBack = await paint();
+if (SHOTS) await lk.screenshot({ path: `${SHOTS}/cleanup-9-cool-back.png` });
 // NEGATIVE CONTROL (run 2026-10-16, v7.57): warm.css's link taken off admin.html made this read
 //   FAIL  his pages are warm unless Blue and purple is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back
 // NEGATIVE CONTROL (run 2026-10-17, v7.64): theme.js's paintHue setting no data-hue made this read
 //   FAIL  his pages are warm unless the wheel in Settings turns them: it takes effect at once, stays after a reload, and Back to the warm look brings it back
 // NEGATIVE CONTROL (run 2026-10-17, v7.66): Blue and green taken out of APPEARANCES in theme.js made this read
 //   FAIL  his pages are warm unless Blue and green is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back
-ok('his pages are warm unless Blue and green is chosen in Settings: it takes effect at once, stays after a reload, and Warm brings it back',
-  warmFirst.look === '' && /rgb\(30, 21, 25\)/.test(warmFirst.ground) && /255, 196, 138/.test(warmFirst.plus) && warmFirst.bar === '#1E1519'
-  && offered.join('|') === 'Warm|Blue and green|Black'
-  && coolNow.look === 'cool' && coolNow.hue === '' && !/30, 21, 25/.test(coolNow.ground) && /61, 220, 245/.test(coolNow.plus) && coolNow.bar === '#0A0A0C'
-  && coolKept.look === 'cool' && /61, 220, 245/.test(coolKept.plus)
-  && warmBack.look === '' && /rgb\(30, 21, 25\)/.test(warmBack.ground) && /255, 196, 138/.test(warmBack.plus),
-  JSON.stringify({ warmFirst, offered, coolNow, coolKept, warmBack }));
+// NEGATIVE CONTROL (run 2026-10-17, v7.78): admin.html's head line `var cool = localStorage.getItem('pa-look') !== 'warm';` made `=== 'cool'` made this read
+//   FAIL  his pages are Blue and green unless Warm is chosen in Settings: it takes effect at once, stays after a reload, and Blue and green brings it back
+ok('his pages are Blue and green unless Warm is chosen in Settings: it takes effect at once, stays after a reload, and Blue and green brings it back',
+  coolFirst.look === 'cool' && coolFirst.hue === '' && !/30, 21, 25/.test(coolFirst.ground) && /61, 220, 245/.test(coolFirst.plus) && coolFirst.bar === '#0A0A0C'
+  && offered.join('|') === 'Blue and green|Warm|Black'
+  && warmNow.look === '' && /rgb\(30, 21, 25\)/.test(warmNow.ground) && /255, 196, 138/.test(warmNow.plus) && warmNow.bar === '#1E1519'
+  && warmKept.look === '' && /255, 196, 138/.test(warmKept.plus)
+  && coolBack.look === 'cool' && /61, 220, 245/.test(coolBack.plus),
+  JSON.stringify({ coolFirst, offered, warmNow, warmKept, coolBack }));
 
 console.log('\n--- C. errors ---');
 // NEGATIVE CONTROL (run 2026-10-15, v7.52): a `null.x` put first in wireAddMenu's + click made this read

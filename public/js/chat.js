@@ -517,14 +517,50 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     }
     const message = { from: user.uid, role: myRole, text, ts: serverTimestamp() };
     if (attachment) message.attachment = attachment;
-    await addDoc(messagesRef, message);
-    await updateDoc(parentRef, {
-      lastMessage: {
-        text: (text || `📎 ${attachment?.name || 'file'}`).slice(0, 120),
-        from: user.uid, role: myRole, ts: new Date(), emailed: false,
-      },
-    });
+    try {
+      await addDoc(messagesRef, message);
+    } catch (err) {
+      reportTrouble('send', err);
+      if (err && typeof err === 'object') err.reported = true;
+      throw err;
+    }
+    // SENT IS SENT (Eric, 2026-10-17: "My client is having issues sending me
+    // messages"). The message is in. The pointer on the thread only feeds the
+    // shelf's preview line, so a refused pointer write is written down and the
+    // sender is never told a message that landed did not go: that told people
+    // to type it again, or to give up.
+    try {
+      await updateDoc(parentRef, {
+        lastMessage: {
+          text: (text || `📎 ${attachment?.name || 'file'}`).slice(0, 120),
+          from: user.uid, role: myRole, ts: new Date(), emailed: false,
+        },
+      });
+    } catch (err) {
+      reportTrouble('pointer', err);
+    }
     nudgeOtherSide();
+  }
+
+  /**
+   * A message that did not go, written down where it can be read
+   * (2026-10-17): which step, the error's code and whether the phone was
+   * online. Never the words, the thread or who sent it.
+   */
+  function reportTrouble(step, err) {
+    user.getIdToken().then((token) => fetch('/api/chat-trouble', {
+      method: 'POST',
+      keepalive: true,
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: parentPath[0] === 'subscriptions' ? 'sub' : 'case', step, code: String(err?.code || err?.name || 'error').slice(0, 40), online: navigator.onLine !== false }),
+    })).catch(() => {});
+  }
+
+  /** Why it did not go, in words a person can act on. */
+  function troubleWords(err) {
+    if (navigator.onLine === false || err?.code === 'unavailable') return 'there is no connection right now. Try again in a moment.';
+    if (err?.code === 'permission-denied') return 'this chat is not taking messages right now. Reload the page and try again.';
+    return err?.message || 'something went wrong. Try again.';
   }
 
   /**
@@ -773,7 +809,7 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
     try {
       await send({ text });
     } catch (err) {
-      errEl.textContent = `Couldn't send: ${err.message}`;
+      errEl.textContent = `Couldn't send: ${troubleWords(err)}`;
       errEl.hidden = false;
       input.value = text;
       autoGrow();
@@ -851,7 +887,8 @@ export function mountChat({ container, parentPath, user, myRole, saveUid, disabl
       // long-press save already fires.
       document.dispatchEvent(new CustomEvent('pa-saved-file'));
     } catch (err) {
-      errEl.textContent = `Upload failed: ${err.message}`;
+      if (!err?.reported) reportTrouble('upload', err);
+      errEl.textContent = `Upload failed: ${troubleWords(err)}`;
       errEl.hidden = false;
     }
     bar.hidden = true;

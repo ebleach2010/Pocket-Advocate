@@ -255,6 +255,16 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   // the hours, report past due in red, chat by the month, and his notice and the mark in Employer mode.
   // NEGATIVE CONTROL (run 2026-10-17, v7.77): the worker's VERSION left at '7.76' made this read
   //   FAIL  R1 both versions read 7.77 with the new tag, the 7.77 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.78): both versions read 7.78 with the past-hours tag, and the 7.78 entry says the notice
+  // and the pop up past 20 hours with his three choices, and Bill extra hours.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.78): changelog.js's VERSION left at '7.77' made this read
+  //   FAIL  R1 both versions read 7.78 with the new tag, the 7.78 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  // RE-PINNED 2026-10-17 (v7.79): both versions read 7.79 with the sent-is-sent tag, and the 7.79 entry says a message
+  // that went through never reads as failed and a real failure is written down.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.79): the worker's BUILD_TAG left at the past-hours tag made this read
+  //   FAIL  R1 both versions read 7.79 with the new tag, the 7.79 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list
+  const entry779 = (CL.match(/\{\n\s+\/\/ SENT IS SENT \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
+  const entry778 = (CL.match(/\{\n\s+\/\/ PAST THE MONTH'S 20 HOURS \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry777 = (CL.match(/\{\n\s+\/\/ THE DAY OF THE SERVICE \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry776 = (CL.match(/\{\n\s+\/\/ BLUE AND GREEN, SMOOTH, NO SIDEWAYS \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
   const entry775 = (CL.match(/\{\n\s+\/\/ THEIR MONTHLY SERVICES \(Eric, 2026-10-17[\s\S]*?\n  \},/) || [''])[0];
@@ -342,9 +352,15 @@ const HARD = [/advisor/i, /differential/i, /\bAI\b/, /\bLLM\b/i, /language model
   const entry737 = (CL.match(/\{\n\s+\/\/ ONE PACKAGE, ONE PAGE \(Eric, 2026-10-15[\s\S]*?\n  \},/) || [''])[0];
   const entry736 = (CL.match(/\{\n\s+\/\/ CHAT OPEN, ONE SCREEN \(Eric, 2026-10-14[\s\S]*?\n  \},/) || [''])[0];
   const entry735 = (CL.match(/\{\n\s+\/\/ SALES CLOSED \(Eric, 2026-10-12[\s\S]*?\n  \},/) || [''])[0];
-  check('R1 both versions read 7.77 with the new tag, the 7.77 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
-    /export const VERSION = '7\.77';/.test(CL) && /const VERSION = '7\.77';/.test(W) && /const BUILD_TAG = 'v2026-10-17-day-count';/.test(W)
-    && changelog.CHANGELOG[0].version === '7.77'
+  check('R1 both versions read 7.79 with the new tag, the 7.79 to 7.21 entries are quiet and admin-only in his words with no dash and no blindness word, and every entry from 4.6 on is quiet with an empty client list',
+    /export const VERSION = '7\.79';/.test(CL) && /const VERSION = '7\.79';/.test(W) && /const BUILD_TAG = 'v2026-10-17-sent-is-sent';/.test(W)
+    && changelog.CHANGELOG[0].version === '7.79'
+    && /version: '7\.79',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry779)
+    && /no longer tells the sender "Couldn\\'t send"/.test(entry779) && /never the words/.test(entry779)
+    && !DASH.test(entry779) && !HARD.some((re) => re.test(entry779))
+    && /version: '7\.78',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry778)
+    && /continue up to the full 30 days for \$200 an hour/.test(entry778) && /Bill extra hours/.test(entry778)
+    && !DASH.test(entry778) && !HARD.some((re) => re.test(entry778))
     && /version: '7\.77',\n\s+quiet: true,\n\s+client: \[\],\n\s+admin: \[/.test(entry777)
     && /Beside the hours, each case shows its day/.test(entry777) && /Report past due, in red/.test(entry777) && /1 month of chatting/.test(entry777)
     && !DASH.test(entry777) && !HARD.some((re) => re.test(entry777))

@@ -708,6 +708,7 @@ Date.now = realNow;
 {
   const CASEJS = readFileSync(__j(__REPO, 'public/js/case.js'), 'utf8');
   const stateSrc = (CASEJS.match(/function hoursState\([\s\S]*?\n\}/) || [''])[0];
+  const cardSrc = (CASEJS.match(/function hoursCard\(c\) \{[\s\S]*?\n\}/) || [''])[0];
   let hoursState = null;
   // FULL_INCLUDED_HOURS rides inside hoursState since 2026-09-02, so it is
   // lifted beside it; limit is the 20 included hours now, close is 80% of it.
@@ -726,7 +727,10 @@ Date.now = realNow;
   const foldAt = CASEJS.indexOf('<details class="faq card-quiet" data-steps');
   check('C51b the card is front and center: after the appointment, before any fold',
     apptAt > -1 && cardAt > apptAt && foldAt > cardAt
-    && /if \(!c\.fullAccess \|\| c\.status === 'closed'\) return '';/.test(CASEJS),
+    // RE-PINNED 2026-10-17 (v7.78): the gate is read inside hoursCard itself (extendOffer carries the old line too, so
+    // the whole-file test could no longer fail), and a closed case keeps only a bill for extra hours left to pay.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.78): hoursCard's `if (!c.fullAccess) return '';` taken out made C51b read FAIL.
+    && /\n  if \(!c\.fullAccess\) return '';\n[^\n]*\n  if \(c\.status === 'closed'\) return hoursBill\(c\) \?/.test(cardSrc),
     JSON.stringify({ apptAt, cardAt, foldAt }));
   // THE NOTES MOVED, 2026-09-02 (Eric, 2026-09-01: past the included hours
   // the client is told "at no extra charge"). The pacing sentence and the
@@ -735,8 +739,11 @@ Date.now = realNow;
     /I pace this work to be as\s+efficient as possible with your hours: nothing is padded, and no time\s+is wasted\./.test(CASEJS)
     // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": the month's hours are a ceiling, not a target.
     // NEGATIVE CONTROL (run 2026-10-17, v7.63): the close note back to "the included hours" made C51c read FAIL.
-    && /Beyond those hours the work carries on at no extra charge\./.test(CASEJS)
-    && /We are getting close to your month's \$\{includedH\} hours\. Past them the work carries on at no extra charge\./.test(CASEJS)
+    // RE-PINNED 2026-10-17 (v7.78): Eric, "To continue, select one of the three": past the hours the client chooses how
+    // to go on, so neither note says the work carries on at no extra charge.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.78): the close note back to "Past them the work carries on at no extra charge." made C51c read FAIL.
+    && /We are getting close to your month's \$\{includedH\} hours\. When they are reached, you choose how to continue\./.test(CASEJS)
+    && !/no extra charge/.test(cardSrc) && cardSrc.length > 0
     && /is not counted here/.test(CASEJS));
 }
 
@@ -751,23 +758,29 @@ Date.now = realNow;
   // NEGATIVE CONTROL (run 2026-09-02): dropping "at no extra charge" from the
   // past-20 sentence made C51d read FAIL; dropping `if (!stamped) return;`
   // from the Worker hook made C51e read FAIL. Both restored.
-  check('C51d the card says delivered, then done with a check, then beyond at no extra charge',
+  // RE-PINNED 2026-10-17 (v7.78): past the hours the card says they are delivered, with a check, and no longer that the
+  // work carries on at no extra charge; hours are measured past what was billed (extra-hours.js hoursOf).
+  // NEGATIVE CONTROL (run 2026-10-17, v7.78): `const used = hrs.used;` made `const used = hrs.delivered;` made C51d read FAIL.
+  check('C51d the card says so far, then all delivered with a check, measured past the hours billed',
     // RE-PINNED 2026-10-17 (v7.63): Eric, "Yes, 'up to 20 hours'": so far, of up to 20, then all 20 delivered.
     // NEGATIVE CONTROL (run 2026-10-17, v7.63): the first line back to `Included hours: ... delivered.` made C51d read FAIL.
     /`Hours so far: \$\{doneH\} of up to \$\{includedH\}\.`/.test(CASEJS)
-    && /beyond what your month includes, at no extra charge\.`/.test(CASEJS)
-    && /`All \$\{includedH\} hours of your month are delivered\. ✓ Work continues\.`/.test(CASEJS)
-    && /const used = banked;/.test(CASEJS));
+    && /`All \$\{includedH\} hours of your month are delivered\. ✓`/.test(CASEJS)
+    && /const hrs = hoursOf\(c\);\n\s+const used = hrs\.used;/.test(CASEJS));
   const hook = (W.match(/async function markIncludedHours\([\s\S]*?\n\}/) || [''])[0];
-  check('C51e the Worker marks the month once on a clock-out: stamp first, one notice, one milestone',
+  // RE-PINNED 2026-10-17 (v7.78): once for each month bought (work.includedDoneMonths), the notice asking them to open
+  // the app and choose, and their advocate told as well.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.78): `if (told >= months) return;` taken out made C51e read FAIL.
+  check('C51e the Worker marks each month once on a clock-out: stamp first, one notice asking them to choose, one milestone',
     /await markIncludedHours\(env, caseId, doc\.data, banked, tierMark\)/.test(W)
-    && /c\.work\?\.includedDoneAt\) return;/.test(hook)
-    && /mask: \['work\.includedDoneAt'\]/.test(hook)
+    && /if \(told >= months\) return;/.test(hook)
+    && /mask: \['work\.includedDoneAt', 'work\.includedDoneMonths'\]/.test(hook)
     && /if \(!stamped\) return;/.test(hook)
     && /kindLabel: 'Included hours delivered'/.test(hook)
     // RE-PINNED 2026-10-17 (v7.63): the notice says all 20 hours of the month.
     // NEGATIVE CONTROL (run 2026-10-17, v7.63): the notice back to "the ${hours} hours included in your month" made C51e read FAIL.
-    && /has delivered all \$\{hours\} hours of your month\. Work continues\./.test(hook));
+    && /has delivered all \$\{hours\} hours of your month\. Open the app to choose how to continue\./.test(hook)
+    && /await pingCase\(env, c, /.test(hook));
 }
 
 // ---- C52: the cron watchdog ------------------------------------------------

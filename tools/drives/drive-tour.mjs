@@ -140,8 +140,12 @@ if (SHOTS) await page.screenshot({ path: `${SHOTS}/tour-3-chat.png` });
 ok('in the chat Eric is in office, his face and name at the top', /IN OFFICE/i.test(chat.pill) && chat.who === 'Eric, your advocate' && chat.whoPhoto > 0, JSON.stringify(chat));
 // NEGATIVE CONTROL (run 2026-10-15): warm.css's link taken off case.html made this read
 //   FAIL  the chat is warm, not black: a plum ground, the client's words in the warm pop, his on a warm card with his photo, and a line for each day
-ok('the chat is warm, not black: a plum ground, the client\'s words in the warm pop, his on a warm card with his photo, and a line for each day',
-  ground === 'rgb(30, 21, 25)' && /linear-gradient/.test(chat.meBg) && chat.meInk === 'rgb(43, 18, 7)' && /linear-gradient/.test(chat.themBg)
+// RE-PINNED 2026-10-17 (v7.76): Eric, "Change the standard color for clients and advocates past the main page to
+// green/blue that's in settings. This includes the preview in the main page." The preview's chat is Blue and green.
+// NEGATIVE CONTROL (run 2026-10-17, v7.79): case.html's head line `var cool = localStorage.getItem('pa-look') !== 'warm';` made `=== 'cool'` made this read
+//   FAIL  the chat is Blue and green: the black ground, the client's words in the cyan glow, his photo beside his, and a line for each day
+ok('the chat is Blue and green: the black ground, the client\'s words in the cyan glow, his photo beside his, and a line for each day',
+  ground === 'rgb(10, 10, 12)' && /linear-gradient/.test(chat.meBg) && /61, 220, 24/.test(chat.meBg)
   && chat.avatars >= 5 && chat.avatarLoaded > 0 && chat.days.length >= 5 && chat.days.some((x) => x === 'Today' || x === 'Yesterday'),
   JSON.stringify({ ground, ...chat, days: chat.days.length }));
 await page.click('.ftab[data-page="docs"]');

@@ -27,6 +27,7 @@ import {
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { ask } from './sheet.js';
 import { caseDay } from './service-day.js';
+import { hoursOf, needsChoice, extraCents, hm, money, EXTRA_HOUR_CENTS, MONTH_HOURS } from './extra-hours.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7';
 // Keep in sync with CASE_PRICE_CENTS in worker/index.js — the custom-rate
@@ -2463,6 +2464,7 @@ function paintOverview(pane) {
       <button class="btn quiet" data-month-request="decline">Can't take it</button>
       <p class="error" data-month-request-error hidden></p>
     </div>` : ''}
+    ${pastHoursPanel(c)}
     ${c.addonRequest?.state === 'pending' ? `
     <div class="panel" data-addon-request style="border-color:var(--cyan); box-shadow:var(--glow-c);">
       <h3 style="margin:0 0 .3rem; color:var(--cyan);">${c.addonRequest.kind === 'appeal' ? 'An insurance appeal' : esc(c.addonRequest.label || 'An enhancement')}: your call</h3>
@@ -2960,6 +2962,29 @@ function paintOverview(pane) {
       b.disabled = false;
     }
   }));
+  pane.querySelector('[data-bill-hours]')?.addEventListener('click', async (e) => {
+    const b = e.currentTarget;
+    const errEl = pane.querySelector('[data-bill-hours-error]');
+    const sec = Math.floor(hoursOf(c).extra / 60) * 60;
+    const okd = await ask({ title: 'Bill extra hours?', body: `${hm(sec)} past the month's ${MONTH_HOURS} hours, at ${money(EXTRA_HOUR_CENTS)} an hour: ${money(extraCents(sec))}. They get a link to pay.`, okLabel: 'Send the bill' });
+    if (!okd) return;
+    b.disabled = true;
+    if (errEl) errEl.hidden = true;
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/admin/bill-hours', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify({ caseId }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.error || `Failed (${res.status})`);
+      load();
+    } catch (err) {
+      if (errEl) { errEl.textContent = err.message; errEl.hidden = false; }
+      b.disabled = false;
+    }
+  });
   pane.querySelectorAll('[data-month-request]').forEach((b) => b.tagName === 'BUTTON' && b.addEventListener('click', async () => {
     const decision = b.dataset.monthRequest;
     const errEl = pane.querySelector('[data-month-request-error]');
@@ -3002,6 +3027,42 @@ function paintOverview(pane) {
     }
   }));
   wireHoldAndClose(pane);
+}
+
+/**
+ * PAST THE MONTH'S HOURS (Eric, 2026-10-17). Once a Full-Service month passes
+ * its 20 hours the client chooses how to go on: by the hour ($200), another
+ * month, or ending the case. This shows where that stands, and once they chose
+ * by the hour, Bill extra hours sends them a link for every minute past the
+ * hours not yet billed (Eric: "Advocate bills hours used").
+ */
+function pastHoursPanel(c) {
+  if (!c.fullAccess || c.self || c.family || c.showcase) return '';
+  const h = hoursOf(c);
+  const p = c.pendingHours;
+  const live = p?.url && (!p.expiresAt || toDate(p.expiresAt).getTime() > Date.now());
+  if (h.used < h.included && !live && h.billed < 60) return '';
+  const picked = c.hoursChoice && Number(c.hoursChoice.month) === h.months ? c.hoursChoice.kind : '';
+  const unbilled = Math.floor(h.extra / 60) * 60;
+  const head = needsChoice(c) ? 'Past the month\'s hours: their choice'
+    : picked === 'hourly' ? 'Past the month\'s hours: by the hour'
+      : picked === 'end' ? 'Past the month\'s hours: they ended the case' : 'Extra hours';
+  const said = needsChoice(c)
+    ? `All ${MONTH_HOURS} hours of the month are delivered. They are asked when they open the app: continue at ${money(EXTRA_HOUR_CENTS)} an hour, another month, or end the case. Time past the hours is billable only if they choose by the hour.`
+    : picked === 'hourly' ? `They chose to continue to the end of the month at ${money(EXTRA_HOUR_CENTS)} an hour.`
+      : picked === 'end' ? 'They ended the case after the month\'s hours. Everything stays on file.' : '';
+  return `
+    <div class="panel" data-past-hours style="border-color:var(--cyan); box-shadow:var(--glow-c);">
+      <h3 style="margin:0 0 .3rem; color:var(--cyan);">${head}</h3>
+      ${said ? `<p class="small" style="margin:0 0 .4rem;">${said}</p>` : ''}
+      ${live ? `<p class="small" style="margin:0 0 .4rem;">Bill sent: <strong>${esc(hm(p.seconds))}, ${esc(money(p.cents))}</strong>, waiting on their payment.</p>` : ''}
+      ${picked === 'hourly' && !live ? (unbilled >= 60
+    ? `<p class="small" style="margin:0 0 .6rem;">Past the hours, not yet billed: <strong>${hm(unbilled)}, ${money(extraCents(unbilled))}</strong>.</p>
+      <button class="btn" data-bill-hours>Bill extra hours</button>`
+    : '<p class="dim small" style="margin:0 0 .4rem;">Nothing past the hours is left to bill. Bill again once you clock more.</p>') : ''}
+      ${h.billed >= 60 ? `<p class="dim small" style="margin:.4rem 0 0;">Extra hours paid for so far: ${hm(h.billed)}.</p>` : ''}
+      <p class="error" data-bill-hours-error hidden></p>
+    </div>`;
 }
 
 /**

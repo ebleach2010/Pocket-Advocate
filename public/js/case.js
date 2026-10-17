@@ -29,6 +29,7 @@ import { mountFolder, folderEnter } from './folder.js';
 import { ask } from './sheet.js';
 import { live as sales, loadSales, SALES_CLOSED_MESSAGE } from './sales.js';
 import { caseDay } from './service-day.js';
+import { hoursOf, needsChoice, hm, money, EXTRA_HOUR_CENTS, MONTH_HOURS } from './extra-hours.js';
 
 // His switches (2026-10-17), asked for before anything is drawn: a service he
 // has turned off offers nothing new on a case. An add-on follows the service it
@@ -180,6 +181,8 @@ async function boot() {
     render();
   }
   watchCase();
+  // Past the month's hours: asked on opening (2026-10-17, v7.78).
+  askHoursIfDue();
 
   // First arrival straight from checkout: open the explainer unprompted. It's
   // the one moment a client has no idea what they just bought access to.
@@ -407,6 +410,7 @@ function watchCase() {
       cases[i] = { id: currentId, ...data };
       refreshSections();
       armWorkTick();
+      askHoursIfDue();
     });
   } catch { /* live updates are a nicety; the load-time truth stands */ }
   armWorkTick();
@@ -559,15 +563,23 @@ function hoursState(usedSec, months) {
   if (usedSec >= 0.8 * m * FULL_INCLUDED_HOURS * 3600) return 'close';
   return 'ok';
 }
+// RE-PINNED 2026-10-17 (v7.78): past the month's hours the work no longer
+// carries on at no extra charge. The client chooses (Eric: "To continue,
+// select one of the three"), so the card says the hours are delivered and
+// shows their choice, or a button to make it, and any bill for the extra
+// hours with a way to pay it. Hours are measured with extra-hours.js, so time
+// billed and paid for is their own and not spent from a month bought after it.
 function hoursCard(c) {
-  if (!c.fullAccess || c.status === 'closed') return '';
+  if (!c.fullAccess) return '';
+  // A closed case still shows a bill left to pay.
+  if (c.status === 'closed') return hoursBill(c) ? `<section class="card hours-card" data-hours-card>${hoursBill(c)}</section>` : '';
   const w = c.work || {};
   const mark = Math.max(0, Number(w.tierMark) || 0);
-  const banked = Math.max(0, (Number(w.seconds) || 0) - mark);
   // Banked time only: the card moves when he clocks out, never while the
   // clock runs, so it never reads as a meter ticking against the client.
-  const used = banked;
-  const months = Math.max(1, Math.floor(Number(c.fullAccessMonths) || 1));
+  const hrs = hoursOf(c);
+  const used = hrs.used;
+  const months = hrs.months;
   const state = hoursState(used, months);
   const includedH = months * FULL_INCLUDED_HOURS;
   const doneH = Math.floor(used / 3600);
@@ -577,16 +589,17 @@ function hoursCard(c) {
     return `${h ? `${h}h ` : ''}${m2}m`;
   };
   const pct = Math.min(100, Math.round((used / (includedH * 3600)) * 100));
-  // The three sentences, Eric's choices (2026-09-01).
+  // The sentences, Eric's choices (2026-09-01), and past the hours his three (2026-10-17).
   const span = state !== 'limit'
     ? `Hours so far: ${doneH} of up to ${includedH}.`
-    : doneH > includedH
-      ? `${doneH} hours: ${doneH - includedH} beyond what your month includes, at no extra charge.`
-      : `All ${includedH} hours of your month are delivered. ✓ Work continues.`;
+    : `All ${includedH} hours of your month are delivered. ✓`;
+  const picked = c.hoursChoice && Number(c.hoursChoice.month) === months ? c.hoursChoice.kind : '';
   const note = state === 'limit'
-    ? 'Beyond those hours the work carries on at no extra charge. If a month ever needs a great deal more, we talk first, exactly as your agreement says.'
+    ? picked === 'hourly'
+      ? `You chose to continue to the end of the month at ${money(EXTRA_HOUR_CENTS)} an hour for the time past them.`
+      : needsChoice(c) ? 'To continue, choose how.' : ''
     : state === 'close'
-      ? `We are getting close to your month's ${includedH} hours. Past them the work carries on at no extra charge.`
+      ? `We are getting close to your month's ${includedH} hours. When they are reached, you choose how to continue.`
       : '';
   return `
     <section class="card hours-card${state === 'ok' ? '' : ` is-${state}`}" data-hours-card>
@@ -597,11 +610,165 @@ function hoursCard(c) {
       <div class="hours-meter" role="img" aria-label="${fmt(used)} of up to ${includedH} advocacy hours delivered"><span style="width:${pct}%;"></span></div>
       <p class="dim small" style="margin:0;">${span}</p>
       ${note ? `<p class="small hours-note" style="margin:.4rem 0 0;"><strong>${note}</strong></p>` : ''}
+      ${needsChoice(c) ? '<p style="margin:.5rem 0 0;"><button type="button" class="btn glow" data-hours-choose>Choose how to continue</button></p>' : ''}
+      ${hrs.billed >= 60 ? `<p class="dim small" style="margin:.4rem 0 0;">Extra hours paid for: ${hm(hrs.billed)}.</p>` : ''}
+      ${hoursBill(c)}
       <p class="dim small" style="margin:.4rem 0 0;">I pace this work to be as
         efficient as possible with your hours: nothing is padded, and no time
         is wasted.</p>
       ${mark >= 60 ? `<p class="dim small" style="margin:.4rem 0 0;">Your case review's ${fmt(mark)} came with the case and is not counted here.</p>` : ''}
     </section>`;
+}
+
+/** A bill for the extra hours, while its link is live: what it is for and a way to pay. */
+function hoursBill(c) {
+  const p = c?.pendingHours;
+  if (!p?.url || (p.expiresAt && toDate(p.expiresAt).getTime() <= Date.now())) return '';
+  return `
+      <div class="hours-bill" data-hours-bill style="margin:.6rem 0 0;">
+        <p class="small" style="margin:0 0 .4rem;"><strong>Your bill for the extra hours: ${esc(hm(p.seconds))}, ${esc(money(p.cents))}.</strong></p>
+        <a class="btn glow" href="${esc(p.url)}">Pay now</a>
+      </div>`;
+}
+
+/**
+ * PAST THE MONTH'S HOURS, ASKED (Eric, 2026-10-17: "The full service clients
+ * should get a notification and a pop up when opening the app once 20 hours
+ * have passed. 'To continue, select one of the three: continue up to the full
+ * 30 days for [$/hour] | Purchase an addition month at [fulll case price] |
+ * end case (all information is kept for your reference)'"). His words, with
+ * the rate he set ($200 an hour), the case's own month price, and "an
+ * additional month". Once each time the case opens until they choose, and
+ * again for each month bought. Not now closes it until the next time.
+ */
+let hoursAskedFor = '';
+function askHoursIfDue() {
+  const c = cases.find((x) => x.id === currentId);
+  if (!c || !needsChoice(c)) return;
+  const key = `${c.id}:${hoursOf(c).months}`;
+  if (hoursAskedFor === key) return;
+  hoursAskedFor = key;
+  readCaseRates(c.advocateId);
+  ratesReady.then(() => openHoursAsk(c), () => openHoursAsk(c));
+}
+document.addEventListener('click', (e) => {
+  if (!e.target.closest?.('[data-hours-choose]')) return;
+  const c = cases.find((x) => x.id === currentId);
+  if (c && needsChoice(c)) openHoursAsk(c);
+});
+
+function openHoursAsk(c) {
+  if (document.querySelector('dialog.hours-ask') || !needsChoice(c)) return;
+  hoursAskStyle();
+  const dlg = document.createElement('dialog');
+  dlg.className = 'cancel-sheet hours-ask';
+  dlg.setAttribute('aria-label', 'Choose how to continue');
+  dlg.dataset.hoursAsk = '';
+  const close = () => { dlg.close(); dlg.remove(); };
+  const err = (m) => { const el = dlg.querySelector('[data-hours-error]'); if (el) { el.textContent = m; el.hidden = !m; } };
+  const post = async (choice) => {
+    const idToken = await user.getIdToken();
+    const res = await fetch('/api/hours-choice', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+      body: JSON.stringify({ caseId: c.id, choice }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `That did not go through (${res.status}).`);
+    return out;
+  };
+  const end = windowEndOf(c);
+  const endDay = end ? new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(end) : '';
+  const views = {
+    pick: () => `
+      <p class="eyebrow" style="margin:0 0 .3rem;">All ${MONTH_HOURS} hours of your month are delivered</p>
+      <h2>To continue, select one of the three:</h2>
+      <div class="hours-picks">
+        <button type="button" class="btn glow" data-pick="hourly">continue up to the full 30 days for ${money(EXTRA_HOUR_CENTS)} an hour</button>
+        <button type="button" class="btn glow" data-pick="month">Purchase an additional month at <span data-hours-price>${money(fullAccessPrice())}</span></button>
+        <button type="button" class="btn quiet" data-pick="end">end case (all information is kept for your reference)</button>
+      </div>
+      <p class="error" data-hours-error hidden></p>
+      <p class="hours-later"><button type="button" class="btn quiet" data-later>Not now</button></p>`,
+    end: () => `
+      <h2>End your case now?</h2>
+      <p>Everything in it stays here for your reference: your file, your documents and your chat. ${advFirstHtml(c)} stops work on it.</p>
+      <div class="hours-picks">
+        <button type="button" class="btn danger" data-end-yes>End case</button>
+        <button type="button" class="btn quiet" data-back>Back</button>
+      </div>
+      <p class="error" data-hours-error hidden></p>`,
+    hourly: () => `
+      <h2>Done.</h2>
+      <p>${advFirstHtml(c)} carries on${endDay ? ` through ${esc(endDay)}` : ' to the end of your month'}. The time past your ${MONTH_HOURS} hours is ${money(EXTRA_HOUR_CENTS)} an hour, and the bill for it comes to you here.</p>
+      <div class="hours-picks"><button type="button" class="btn glow" data-done>OK</button></div>`,
+  };
+  const show = (name) => {
+    dlg.innerHTML = `<div class="ask-form">${views[name]()}</div>`;
+    dlg.querySelector('[data-later]')?.addEventListener('click', close);
+    dlg.querySelector('[data-done]')?.addEventListener('click', close);
+    dlg.querySelector('[data-back]')?.addEventListener('click', () => show('pick'));
+    dlg.querySelector('[data-pick="end"]')?.addEventListener('click', () => show('end'));
+    const busy = (b, fn) => b?.addEventListener('click', async () => {
+      dlg.querySelectorAll('button').forEach((x) => { x.disabled = true; });
+      err('');
+      try { await fn(); } catch (e) { err(e.message); dlg.querySelectorAll('button').forEach((x) => { x.disabled = false; }); }
+    });
+    busy(dlg.querySelector('[data-pick="hourly"]'), async () => {
+      const out = await post('hourly');
+      patchCase(c.id, { hoursChoice: { kind: 'hourly', month: hoursOf(c).months, at: out.at || new Date().toISOString() } });
+      show('hourly');
+    });
+    busy(dlg.querySelector('[data-end-yes]'), async () => {
+      await post('end');
+      close();
+      patchCase(c.id, { status: 'closed', closedReason: "You ended the case after your month's 20 hours. Everything in it stays here for your reference.", hoursChoice: { kind: 'end', month: hoursOf(c).months } });
+    });
+    // Another month: the Add another month checkout, at the price on the button.
+    busy(dlg.querySelector('[data-pick="month"]'), async () => {
+      const idToken = await user.getIdToken();
+      const res = await fetch('/api/extend', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ caseId: c.id, quotedCents: fullAccessPrice() }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (res.status === 409 && out.error === 'rate-changed' && Number(out.extendCents) > 0) {
+        fullAccessCents = Number(out.extendCents);
+        const p = dlg.querySelector('[data-hours-price]');
+        if (p) p.textContent = money(fullAccessCents);
+        throw new Error('The monthly price changed. This is the current price; press again to continue.');
+      }
+      if (!res.ok || !out.url) throw new Error(out.error || `Couldn't start that (${res.status})`);
+      location.href = out.url;
+    });
+  };
+  dlg.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+  show('pick');
+  document.body.appendChild(dlg);
+  dlg.showModal();
+}
+
+/** What the page shows changes at once; the live copy of the case catches up a moment later. */
+function patchCase(id, fields) {
+  const i = cases.findIndex((x) => x.id === id);
+  if (i < 0) return;
+  cases[i] = { ...cases[i], ...fields };
+  refreshSections();
+}
+
+/** The three choices stacked, full width, each starting with a capital. */
+function hoursAskStyle() {
+  if (document.getElementById('pa-hours-ask')) return;
+  const st = document.createElement('style');
+  st.id = 'pa-hours-ask';
+  st.textContent = `
+    dialog.hours-ask h2 { text-wrap: balance; }
+    dialog.hours-ask .hours-picks { display: grid; gap: .6rem; margin-top: .9rem; }
+    dialog.hours-ask .hours-picks .btn { display: block; width: 100%; white-space: normal; line-height: 1.3; text-align: center; padding: .8rem 1rem; }
+    dialog.hours-ask .hours-picks .btn::first-letter { text-transform: uppercase; }
+    dialog.hours-ask .hours-later { margin: .7rem 0 0; text-align: center; }`;
+  document.head.appendChild(st);
 }
 
 // ---- Progress section ----

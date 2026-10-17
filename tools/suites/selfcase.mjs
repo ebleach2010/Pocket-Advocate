@@ -371,7 +371,9 @@ const guards = [
   // NEGATIVE CONTROL (run 2026-10-17, v7.72): the delivered state's `if (doc.data.self) return json({ ok: true, self: true });` taken out made S17 read FAIL.
   // NEGATIVE CONTROL (run 2026-10-17, v7.65): report-uploaded's Full-Service refusal taken out made S17 read FAIL.
   ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,8}\s+if \(doc\.data\.fullAccess\) return json\([^\n]*\n\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n(?:\s+\/\/[^\n]*\n){0,6}\s+const sw = await readSwitches\(env\);\n\s+const enhance = \(sw\.case \|\| sw\.full\) && !doc\.data\.family;\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+status: 'delivered'/],
-  ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.work\?\.includedDoneAt\) return;/],
+  // RE-PINNED 2026-10-17 (v7.78): the month's notice comes once a month now, so its stamp is read on the next line; a family case is free.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.78): markIncludedHours' `c.self || ` taken out made S17 read FAIL -- the included hours.
+  ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.family \|\| c\.status === 'closed'\) return;/],
   ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self \|\| row\.data\.showcase\) continue;/],
   ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],
   ['the missing-email repair', /if \(!c\.clientUid \|\| c\.self\) continue;/],

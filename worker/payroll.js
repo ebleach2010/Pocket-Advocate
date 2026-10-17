@@ -42,6 +42,8 @@ export const KIND_LABEL = {
   booking: 'Advocacy Case', casecharge: 'Advocacy Case', fullaccess: 'Full-Service month', extend: 'Full-Service extra month',
   followup: 'Follow-up call', telehealth: 'Telehealth visit', chatunlock: 'Chat opened early', extra: 'Extra session',
   sub: 'Priority Chat month', tip: 'Tip', refund: 'Refund', dispute: 'Chargeback', advisor: 'Advisor, monthly',
+  // The time past a Full-Service month's 20 hours, billed by the hour (2026-10-17, v7.78).
+  hours: 'Full-Service extra hours',
 };
 
 const ms = (v) => (v ? new Date(v).getTime() : NaN);
