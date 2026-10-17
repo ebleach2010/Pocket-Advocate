@@ -158,6 +158,7 @@ const ADMIN_ASSETS = [
   // 2026-10-17: the pacing flags on Full-Service cases.
   '/js/admin-pacing.js',
   '/js/admin-addons.js',
+  '/js/admin-wizard.js',
   '/js/advisor.js', '/js/notes.js', '/js/duty.js', '/js/prep.js',
   '/js/drawer.js', '/js/seen.js', '/js/panel-bridge.js', '/css/admin.css',
   // The demo's fixtures are advisor output, so they are gated the same way. A

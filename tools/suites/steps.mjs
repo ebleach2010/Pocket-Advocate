@@ -106,9 +106,11 @@ const ADD = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
   const good = ADD.cleanAddons({ attend: { on: true, cents: 0 }, appeal: { on: false, cents: '' } });
   // NEGATIVE CONTROL (run 2026-10-17): OWNER_ADDONS's appeal set to 30000 made this read
   //   FAIL  A1 each advocate's add-ons: his own on his word, a contractor's off until set, every price checked
+  // RE-PINNED 2026-10-17 (v7.68): every advocate's add-ons carry a list of his own extras for them, empty until set.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.68): OWNER_ADDONS's appeal set to 30000 made A1 read FAIL.
   check('A1 each advocate\'s add-ons: his own on his word, a contractor\'s off until set, every price checked',
-    JSON.stringify(his) === '{"attend":{"on":true,"cents":52500},"appeal":{"on":true,"cents":35000}}'
-    && JSON.stringify(theirs) === '{"attend":{"on":false,"cents":0},"appeal":{"on":false,"cents":0}}'
+    JSON.stringify(his) === '{"attend":{"on":true,"cents":52500},"appeal":{"on":true,"cents":35000},"custom":[]}'
+    && JSON.stringify(theirs) === '{"attend":{"on":false,"cents":0},"appeal":{"on":false,"cents":0},"custom":[]}'
     && set.attend.on && set.attend.cents === 30000 && !set.appeal.on
     && bad.every((r) => !!r.error) && !good.error && good.value.attend.on && good.value.attend.cents === 0 && !good.value.appeal.on,
     JSON.stringify({ his, theirs, bad, good }));
@@ -174,10 +176,15 @@ const ADD = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
   const ADV = f('worker/advocates.js');
   // NEGATIVE CONTROL (run 2026-10-17): the team card's `data-face` listener taken out made this read
   //   FAIL  A4 Employer mode sets them: toggles with a price when adding, and their photo opens the profile to change them
+  // RE-PINNED 2026-10-17 (v7.68): adding them, and their photo, open the page by page wizard (admin-wizard.js), whose
+  // add-ons page has the same toggles with a price.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.68): the wizard's `${addonFields(st.addons)}` taken out made A4 read FAIL.
+  const WIZ = f('public/js/admin-wizard.js');
   check('A4 Employer mode sets them: toggles with a price when adding, and their photo opens the profile to change them',
-    /\$\{addonFields\(\{\}\)\}/.test(ACC) && /addons: picked\.addons \}\);/.test(ACC)
+    /\$\{addonFields\(st\.addons\)\}/.test(WIZ) && /const picked = readAddonFields\(dlg\);/.test(WIZ) && /settings, addons, payout,/.test(WIZ)
+    && /return openAdvocateWizard\(user, \{ mode: 'add', say, done \}\);/.test(ACC)
     && /<button type="button" class="tm-face" data-face aria-label=/.test(EMP) && /el\.querySelector\('\[data-face\]'\)\?\.addEventListener\('click', \(\) => editProfile\(p\)\);/.test(EMP)
-    && /\$\{p\.sample \? '' : addonFields\(p\.addons \|\| \{\}\)\}/.test(EMP) && /\.\.\.\(picked\.addons \? \{ addons: picked\.addons \} : \{\}\)/.test(EMP)
+    && /return openAdvocateWizard\(user, \{ mode: 'edit', uid: p\.uid, say: teamSay, done: load \}\);/.test(EMP)
     && /const addons = body\.addons === undefined \? \{ value: addonsOf\(null\) \} : cleanAddons\(body\.addons\);/.test(ADV) && /addons: addons\.value,/.test(ADV)
     && /if \('addons' in body\) \{\n\s+const addons = cleanAddons\(body\.addons\);/.test(ADV)
     && /addons: addonsOf\(a\.data, \{ owner \}\),/.test(f('worker/employer.js'))
@@ -191,7 +198,9 @@ const ADD = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
     ['approved', 'pending', 'declined', 'offer', 'done'].every((s) => card.includes(`data-appeal-state="${s}"`))
     && /if \(!c\.fullAccess\) return '';/.test(card) && /if \(!offer\?\.on\) return done/.test(card)
     && /Asking costs nothing and takes no card\. Nothing is\s+charged unless \$\{adv\} says yes\./.test(card)
-    && /\[data-request-appeal\],\[data-appeal-again\]'/.test(CASE) && /ap\.innerHTML = appealCard\(c\); wireAppealCard\(ap, c\); keepCard\(ap\);/.test(CASE));
+    // RE-PINNED 2026-10-17 (v7.68): SELLING goes on past the appeal's buttons, to his own extras'.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.68): `[data-appeal-again],` taken out of SELLING made A5 read FAIL.
+    && /\[data-request-appeal\],\[data-appeal-again\],/.test(CASE) && /ap\.innerHTML = appealCard\(c\); wireAppealCard\(ap, c\); keepCard\(ap\);/.test(CASE));
 }
 
 console.log('\n--- from chat ---');

@@ -409,7 +409,7 @@ async function load() {
       loops.push({ href, name, label: 'Telehealth to confirm', tone: 'hot' });
     // An enhancement asked for on top of a Full-Service month (2026-10-17).
     if (c.addonRequest?.state === 'pending')
-      loops.push({ href, name, label: c.addonRequest.kind === 'appeal' ? 'Asking for an insurance appeal' : 'Asking for an enhancement', tone: 'hot' });
+      loops.push({ href, name, label: c.addonRequest.kind === 'appeal' ? 'Asking for an insurance appeal' : `Asking for ${c.addonRequest.label || 'an enhancement'}`, tone: 'hot' });
     // The call has happened and nothing says so (2026-10-15): the report
     // clock, or a Full-Service consult, waits on this one tap.
     const callAt = c.appointment?.start ? toDate(c.appointment.start).getTime() : 0;

@@ -1977,7 +1977,8 @@ async function handleAvailability(env, url) {
   // schedule of their own. Anything else, his. Still the two keys and no more.
   const own = await contractorSettings(env, url?.searchParams.get('advocate') || '').catch(() => null);
   const { manual, responseTime } = own ? own.office : await readOfficeHours(env);
-  const state = officeStatus(manual);
+  // Their own week (2026-10-17), when he or they set one.
+  const state = officeStatus(manual, new Date(), own?.hours ? { hours: own.hours, tz: own.tz } : null);
   return json({
     inOffice: state.inOffice,
     responseTime,
@@ -2483,7 +2484,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-leads-chat';
+const BUILD_TAG = 'v2026-10-17-add-wizard';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2491,7 +2492,7 @@ const BUILD_TAG = 'v2026-10-17-leads-chat';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.67';
+const VERSION = '7.68';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3252,6 +3253,8 @@ async function fullAccessCapacity(env, contractor = '') {
     const [rows, own] = await Promise.all([openRows().catch(() => null), contractorSettings(env, contractor).catch(() => null)]);
     const max = own?.fullCap ?? 0;
     const open = rows ? rows.length : 0;
+    // Full-Service switched off for them (Eric, 2026-10-17) is never room, at every door that asks.
+    if (own?.offers?.full === false) return { open, max, room: false, counted: rows !== null, off: true };
     return { open, max, room: max === 0 || open < max, counted: rows !== null };
   }
   const [rows, cfg] = await Promise.all([
@@ -11023,6 +11026,9 @@ async function handleLeadInvite(request, env) {
   // Stripe will not take a card payment under fifty cents.
   if (priceCents > 0 && priceCents < 50)
     return json({ error: 'Stripe cannot charge less than $0.50. Use 0 for no charge.' }, 400);
+  // Advocacy Cases switched off for them (Eric, 2026-10-17): no invitation goes out.
+  if (!staff.isAdmin && (await contractorSettings(env, staff.uid).catch(() => null))?.offers?.case === false)
+    return json({ error: 'Advocacy Cases are turned off for you. Ask Eric to turn them on.' }, 409);
   const id = crypto.randomUUID();
   const now = new Date();
   await patchDoc(env, `invites/${id}`, {

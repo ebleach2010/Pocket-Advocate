@@ -2198,3 +2198,47 @@ no page errors). Re-pinned with controls: employer C4; cleanup A2; advocates E2
 (fixture name); leads A2, B7; tighten W5; release R1. His name in every test
 fixture (selfcase, worklog, release, hardening, copy-deck, drive-selfcase,
 drive-selfchain, drive-terms, drive-delete) is Eric Leach.
+
+### Add an advocate, page by page (2026-10-17, v7.68)
+
+Eric: "When I add an advocate, it should go page by page through everything I
+asked I could toggle on or off, their pricing, their initial schedule,
+profile picture, bio, any extra tiers or add-ons and their pricing, their pay
+preferences and if ACH their routing # and account # (assuming this is
+encrypted enough for that info to be safe) etc"
+
+- admin-wizard.js: seven pages (who, what they offer, add-ons, available hours,
+  photo and bio, their share and pay, check it over), each validated before
+  Next; Back always open. Add an advocate and the photo (and Profile) on each
+  team card open it; a change opens on any page by its dot and saves from any
+  page. His own card shows four (who, add-ons, photo and bio, check): his
+  prices, hours and pay live elsewhere. Blank pages are left for them to fill
+  in at first sign-in.
+- worker/advocates.js: create and update take `settings` (offers, rates,
+  fullCap, hours, office.responseTime, checked by staffsettings.js
+  cleanSettingsChange with admin), `payout` (cleanPayout, sealed by
+  sealPayout into payouts/{uid} with setBy), and on create the profile words,
+  time zone and share; everything is checked before the address is claimed. A
+  new `get` action opens the pages again (never a sealed detail: method and
+  hint only).
+- What they offer: settings.offers.{case, full}, his to switch (their own
+  route refuses it). Full-Service off is never room (fullAccessCapacity
+  answers room false, off true, so every door that asks says no); Advocacy
+  Case off refuses their lead invitations.
+- Their week: settings.hours, on their own tz; schedule.js openByHours, and
+  officeStatus takes it, so their In office light follows it (a hand set in
+  or out still wins). They can change it in their own settings
+  (admin-staffsettings.js "Your available hours").
+- His own extras: addons.custom [{ id x+8, label, on, cents }], up to six,
+  asked for through /api/addon-request exactly as an appeal is, under their
+  own name on the request, the checkout, the case and payroll. The client's
+  Enhance page lists each as its own card (case.js customCard).
+- Bank details: AES-GCM, a fresh nonce each time, the key derived on the
+  Worker (PAYOUT_KEY, else the service account); only the method and the last
+  four are stored in the clear, and only his payroll opens the rest.
+
+New: wizard.mjs (12 checks, every one controlled); drive-wizard (4, every one
+controlled, plus no page errors). Re-pinned with controls: steps A1, A4, A5;
+cleanup D1; tighten T3, T4; release R1; drive-advocates' add, drive-steps'
+add-on rows, drive-employer's photo and bio (all through the wizard now). The
+advocates.mjs harness carries the new helpers.

@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.67';
+export const VERSION = '7.68';
 
 /**
  * Newest first.
@@ -51,6 +51,23 @@ export const VERSION = '7.67';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // ADD AN ADVOCATE, PAGE BY PAGE (Eric, 2026-10-17: "When I add an
+    // advocate, it should go page by page through everything I asked I could
+    // toggle on or off, their pricing, their initial schedule, profile
+    // picture, bio, any extra tiers or add-ons and their pricing, their pay
+    // preferences and if ACH their routing # and account #"). Admin only.
+    version: '7.68',
+    quiet: true,
+    client: [],
+    admin: [
+      'Add an advocate goes page by page: who they are, what they offer and at what price, add-ons, their available hours, photo and bio, their share and how they are paid, then a page to check it all.',
+      'Turn Advocacy Cases or Full-Service off for anyone, set their prices and how many Full-Service clients they take, and give them add-ons of your own with a name and a price.',
+      'Their available hours run their In office light. They can change them in their own settings.',
+      'Bank numbers are encrypted before they are stored. Only you see them in full; everyone else sees the last four.',
+      'Tap their photo to open the same pages and change anything.',
+    ],
+  },
   {
     // HIS NAME, AND A LEAD'S MESSAGES BESIDE THEM (Eric, 2026-10-17: "my name
     // is Eric Leach. Not Eric Bleach", and "It says my lead Rosemarie sent me

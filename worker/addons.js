@@ -8,7 +8,11 @@
 // pressing on their profile picture." His own prices, asked: an appeal "$350",
 // attending an appointment "$525".
 //
-// advocates/{uid}.addons = { attend: { on, cents }, appeal: { on, cents } }
+// advocates/{uid}.addons = { attend: { on, cents }, appeal: { on, cents }, custom: [{ id, label, on, cents }] }
+//   custom: his own extras for each advocate, by name and price (2026-10-17:
+//   "any extra tiers or add-ons and their pricing"). Asked for and answered
+//   exactly as an appeal is; the name they were asked for by rides on the
+//   request, the checkout and the case.
 //   Attending an appointment runs through the telehealth request (index.js),
 //   which reads the price here on a Full-Service case. An appeal is asked for
 //   here: the client asks, their advocate says yes (a link to pay, or at no
@@ -30,6 +34,20 @@ const KIND = new Map(ADDON_KINDS.map((k) => [k.id, k]));
 /** His own, on his word (2026-10-17). A contractor's are off until he sets them. */
 export const OWNER_ADDONS = { attend: { on: true, cents: 52500 }, appeal: { on: true, cents: 35000 } };
 const MAX_CENTS = 2_000_000;
+/** An extra of his own naming: x and eight letters or digits. */
+export const CUSTOM_ID = /^x[a-z0-9]{8}$/;
+export const CUSTOM_MAX = 6;
+const LABEL_MAX = 60;
+const label = (v) => (typeof v === 'string' ? v.replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, LABEL_MAX) : '');
+
+/** The extras of his own naming, as stored: every one well formed, the rest dropped. */
+function customOf(list) {
+  if (!Array.isArray(list)) return [];
+  return list.filter((x) => x && CUSTOM_ID.test(String(x.id)) && label(x.label).length >= 2).slice(0, CUSTOM_MAX).map((x) => ({
+    id: x.id, label: label(x.label), on: x.on === true,
+    cents: Number.isInteger(x.cents) && x.cents >= 0 && x.cents <= MAX_CENTS ? x.cents : 0,
+  }));
+}
 
 /** One advocate's add-ons, every kind present: what they offer and at what price. */
 export function addonsOf(a, { owner = false } = {}) {
@@ -40,6 +58,7 @@ export function addonsOf(a, { owner = false } = {}) {
     const cents = Number.isInteger(v.cents) && v.cents >= 0 && v.cents <= MAX_CENTS ? v.cents : 0;
     out[id] = { on: v.on === true, cents };
   }
+  out.custom = customOf(set.custom);
   return out;
 }
 
@@ -56,8 +75,38 @@ export function cleanAddons(input) {
     if (on && cents > 0 && cents < 50) return { error: `${label}: Stripe cannot charge less than $0.50. Use 0 for no charge.` };
     value[id] = { on, cents: on ? cents : (Number.isInteger(cents) && cents >= 0 && cents <= MAX_CENTS ? cents : 0) };
   }
+  if (input.custom !== undefined) {
+    if (!Array.isArray(input.custom)) return { error: 'Bad add-ons.' };
+    const rows = input.custom.filter((x) => x && (label(x.label) || x.on === true));
+    if (rows.length > CUSTOM_MAX) return { error: `Up to ${CUSTOM_MAX} of your own add-ons.` };
+    const seen = new Set();
+    value.custom = [];
+    for (const x of rows) {
+      const name = label(x.label);
+      if (name.length < 2) return { error: 'Each add-on of your own needs a name.' };
+      if (seen.has(name.toLowerCase())) return { error: `${name} is there twice.` };
+      seen.add(name.toLowerCase());
+      const on = x.on === true;
+      const cents = Number(x.cents);
+      if (on && (!Number.isInteger(cents) || cents < 0 || cents > MAX_CENTS)) return { error: `${name}: a price from $0 to $20,000.` };
+      if (on && cents > 0 && cents < 50) return { error: `${name}: Stripe cannot charge less than $0.50. Use 0 for no charge.` };
+      // An id is kept once given, so a request already made still finds its add-on.
+      const id = CUSTOM_ID.test(String(x.id)) ? x.id : `x${crypto.randomUUID().replace(/-/g, '').slice(0, 8)}`;
+      value.custom.push({ id, label: name, on, cents: Number.isInteger(cents) && cents >= 0 && cents <= MAX_CENTS ? cents : 0 });
+    }
+  }
   return { value };
 }
+
+/** What a request is for, by kind: the appeal, or one of his own extras. Null when it is neither. */
+export function addonKind(offered, kind) {
+  if (kind === 'appeal') return { label: KIND.get('appeal').label, line: KIND.get('appeal').line, on: offered.appeal?.on === true, cents: offered.appeal?.cents || 0, mine: false };
+  const x = CUSTOM_ID.test(String(kind)) ? (offered.custom || []).find((k) => k.id === kind) : null;
+  return x ? { label: x.label, line: '', on: x.on, cents: x.cents, mine: true } : null;
+}
+
+/** How a request is named in a sentence: "an insurance appeal" style for his kinds, the extra's own name otherwise. */
+const named = (req) => (KIND.has(req?.kind) ? KIND.get(req.kind).label.toLowerCase() : (req?.label || 'your enhancement'));
 
 /** The add-ons a case's own advocate offers. His when the case is his; none when theirs cannot be read. */
 export async function caseAddons(env, c, advocateIdOf) {
@@ -94,15 +143,18 @@ export async function handleAddonRequest(request, env, h) {
   if (c.data.status === 'closed') return h.json({ error: 'This case is closed.' }, 409);
   const kind = typeof body?.kind === 'string' ? body.kind : '';
   // Attending runs through the appointment request, which takes the clinic and the time.
-  if (kind !== 'appeal') return h.json({ error: 'Bad add-on' }, 400);
+  if (kind !== 'appeal' && !CUSTOM_ID.test(kind)) return h.json({ error: 'Bad add-on' }, 400);
   if (req?.state === 'pending') return h.json({ error: 'You already have a request waiting on your advocate.' }, 409);
   if (req?.state === 'approved' && c.data.pendingAddon?.url && new Date(c.data.pendingAddon.expiresAt || 0).getTime() > Date.now())
     return h.json({ error: 'Your last one is ready to pay. Finish that first.' }, 409);
-  const offered = (await caseAddons(env, c.data, h.advocateIdOf))[kind];
+  const offered = addonKind(await caseAddons(env, c.data, h.advocateIdOf), kind);
+  if (!offered) return h.json({ error: 'Bad add-on' }, 400);
   if (!offered.on) return h.json({ error: 'Your advocate does not offer this one. Ask in chat.' }, 409);
 
   const next = {
     kind, state: 'pending', at: new Date(),
+    // Its name as they saw it, for every screen and email after.
+    label: offered.label,
     // The price quoted when they asked, so a yes days later charges what they saw.
     cents: offered.cents,
     note: typeof body?.note === 'string' ? body.note.replace(/\s+/g, ' ').trim().slice(0, 600) : '',
@@ -110,7 +162,7 @@ export async function handleAddonRequest(request, env, h) {
   };
   const wrote = await patchDoc(env, `cases/${caseId}`, { addonRequest: next }, { mask: ['addonRequest'], ifUpdateTime: c.updateTime });
   if (wrote === false) return h.json({ error: 'Try that once more.' }, 409);
-  await h.pingCase(env, c.data, `${String(c.data.clientName || '').trim().split(/\s+/)[0] || 'A client'} is asking for ${KIND.get(kind).label.toLowerCase()}. Say yes or no on their case.`,
+  await h.pingCase(env, c.data, `${String(c.data.clientName || '').trim().split(/\s+/)[0] || 'A client'} is asking for ${named(next)}. Say yes or no on their case.`,
     `/admin-case.html?id=${caseId}`);
   return h.json({ ok: true, state: 'pending', at: next.at, cents: next.cents });
 }
@@ -131,7 +183,7 @@ export async function handleAddonDecision(request, env, h) {
   if (!c || !h.staffSees(staff, c.data, env)) return h.json({ error: 'Not found' }, 404);
   const req = c.data.addonRequest;
   if (req?.state !== 'pending') return h.json({ error: 'There is no request waiting.' }, 409);
-  const what = (KIND.get(req.kind)?.label || 'Your enhancement').toLowerCase();
+  const what = named(req);
   const tell = (text) => (c.data.clientUid
     ? h.notifyUser(env, c.data.clientUid, { title: 'Pocket Advocate', body: text, link: `/case.html?id=${caseId}&page=addons` }).catch(() => {})
     : null);
@@ -155,7 +207,7 @@ export async function handleAddonDecision(request, env, h) {
     await patchDoc(env, `cases/${caseId}`, {
       addonRequest: { ...req, state: 'approved', decidedAt: new Date(), compedAt: new Date(), decidedBy: staff.uid },
     }, { mask: ['addonRequest'] });
-    await h.confirm(env, { id: `comp_addon_${caseId}_${Date.now()}`, amount_total: 0, metadata: { kind: 'addon', caseId, addon: req.kind } });
+    await h.confirm(env, { id: `comp_addon_${caseId}_${Date.now()}`, amount_total: 0, metadata: { kind: 'addon', caseId, addon: req.kind, label: String(req.label || '').slice(0, 100) } });
     await tell(`Good news: ${what} is on your case, at no charge.`);
     return h.json({ ok: true, state: 'started', cents: 0, comped: true });
   }
@@ -168,13 +220,13 @@ export async function handleAddonDecision(request, env, h) {
       quantity: 1,
       price_data: {
         currency: 'usd', unit_amount: cents,
-        product_data: { name: KIND.get(req.kind)?.label || 'Case enhancement', description: KIND.get(req.kind)?.line || '' },
+        product_data: { name: KIND.get(req.kind)?.label || req.label || 'Case enhancement', description: KIND.get(req.kind)?.line || undefined },
       },
     }],
     success_url: `${h.baseUrl}/case.html?id=${caseId}&page=addons`,
     cancel_url: `${h.baseUrl}/case.html?id=${caseId}&page=addons`,
     expires_at: Math.floor(expiresAt.getTime() / 1000),
-    metadata: { kind: 'addon', caseId, uid: c.data.clientUid || '', addon: req.kind },
+    metadata: { kind: 'addon', caseId, uid: c.data.clientUid || '', addon: req.kind, label: String(req.label || '').slice(0, 100) },
   });
   await patchDoc(env, `cases/${caseId}`, {
     addonRequest: { ...req, state: 'approved', decidedAt: new Date(), decidedBy: staff.uid },
@@ -196,12 +248,13 @@ export async function confirmAddonPurchase(env, session, h, attempt = 0) {
   if (!c) throw new Error(`addon: no case for ${session.id}`);
   const payments = Array.isArray(c.data.extraPayments) ? [...c.data.extraPayments] : [];
   if (payments.some((x) => x.sessionId === session.id)) return;
-  const kind = KIND.has(session.metadata?.addon) ? session.metadata.addon : 'appeal';
+  const kind = KIND.has(session.metadata?.addon) || CUSTOM_ID.test(String(session.metadata?.addon || '')) ? session.metadata.addon : 'appeal';
+  const name = KIND.get(kind)?.label || label(session.metadata?.label) || 'Case enhancement';
   const amountCents = Number.isFinite(Number(session.amount_total)) ? Number(session.amount_total) : 0;
   const now = new Date();
-  payments.push({ kind: 'addon', addon: kind, amountCents, sessionId: session.id, at: now });
+  payments.push({ kind: 'addon', addon: kind, label: name, amountCents, sessionId: session.id, at: now });
   const bought = Array.isArray(c.data.addonsBought) ? [...c.data.addonsBought] : [];
-  bought.push({ kind, cents: amountCents, at: now, sessionId: session.id });
+  bought.push({ kind, label: name, cents: amountCents, at: now, sessionId: session.id });
   const req = c.data.addonRequest;
   const ok = await patchDoc(env, `cases/${caseId}`, {
     extraPayments: payments,
@@ -211,7 +264,7 @@ export async function confirmAddonPurchase(env, session, h, attempt = 0) {
   }, { mask: ['extraPayments', 'addonsBought', 'addonRequest', 'pendingAddon'], ifUpdateTime: c.updateTime }).catch(() => false);
   if (ok === false) return confirmAddonPurchase(env, session, h, attempt + 1);
   if (amountCents > 0) {
-    await h.pingCase(env, c.data, `${String(c.data.clientName || '').trim().split(/\s+/)[0] || 'Your client'} paid for ${(KIND.get(kind)?.label || 'an enhancement').toLowerCase()}.`,
+    await h.pingCase(env, c.data, `${String(c.data.clientName || '').trim().split(/\s+/)[0] || 'Your client'} paid for ${named({ kind, label: name })}.`,
       `/admin-case.html?id=${caseId}`).catch(() => {});
   }
 }

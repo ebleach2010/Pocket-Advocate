@@ -120,13 +120,20 @@ ok('his team: him first, each with their clients by kind and what they stand to 
   JSON.stringify({ before, maya }));
 
 // Eric, 2026-10-15: "I should be able to upload a bio and profile picture for each [contractor] when they submit it to me."
+// RE-PINNED 2026-10-17 (v7.68): Profile opens the page by page wizard; its Photo and bio page is one tap on its dot.
+// NEGATIVE CONTROL (run 2026-10-17, v7.68): the wizard's update upload `if (st.photo) await api(...headshot...)` made `if (false)` made the photo check read FAIL.
+const toPhotoPage = async () => {
+  await tryStep(() => adm.waitForSelector('dialog.tm-sheet[open] .wz-dot', { timeout: 8000 }));
+  await tryStep(() => adm.click('dialog.tm-sheet[open] .wz-dot[aria-label="Photo and bio"]', { timeout: 4000 }));
+  await adm.waitForTimeout(300);
+};
 await tap(adm, '.tm-card[data-uid="demo-advocate"] [data-profile]');
-await tryStep(() => adm.waitForSelector('dialog.tm-sheet[open]', { timeout: 8000 }));
+await toPhotoPage();
 const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 16, 74, 70, 73, 70, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0, 0xff, 0xd9]);
 await tryStep(() => adm.setInputFiles('dialog.tm-sheet [data-pic]', { name: 'ana.jpg', mimeType: 'image/jpeg', buffer: JPEG }));
 await tryStep(() => adm.fill('dialog.tm-sheet [name="credentials"]', 'RN, BCPA', { timeout: 3000 }));
 await tryStep(() => adm.fill('dialog.tm-sheet [name="bio"]', 'Twelve years in neurology clinics, now on your side of the table.', { timeout: 3000 }));
-await tap(adm, 'dialog.tm-sheet[open] button[value="ok"]');
+await tap(adm, 'dialog.tm-sheet[open] [data-save]');
 await tryStep(() => adm.waitForSelector('dialog.tm-sheet', { state: 'detached', timeout: 8000 }));
 await adm.waitForTimeout(800);
 // RE-PINNED 2026-10-17 (v7.62): the look audit, a photo that will not load now becomes initials, and the bytes
@@ -139,10 +146,11 @@ const prof = await adm.evaluate(async () => {
   return { photo: card?.querySelector('.tm-photo')?.getAttribute('src') || '', init: card?.querySelector('.tm-init')?.textContent || '', hasPhoto: !!ana.hasPhoto, photoV: ana.photoV || '' };
 });
 await tap(adm, '.tm-card[data-uid="demo-advocate"] [data-profile]');
-await tryStep(() => adm.waitForSelector('dialog.tm-sheet[open]', { timeout: 8000 }));
+await toPhotoPage();
 const reread = await adm.evaluate(() => ({ bio: document.querySelector('dialog.tm-sheet [name="bio"]')?.value, cred: document.querySelector('dialog.tm-sheet [name="credentials"]')?.value }));
 if (SHOTS) await adm.screenshot({ path: `${SHOTS}/employer-2b-profile.png` });
-await tap(adm, 'dialog.tm-sheet[open] [data-no]');
+await adm.keyboard.press('Escape').catch(() => {});
+await adm.waitForTimeout(300);
 const hisOwn = await adm.evaluate(() => document.querySelector('.tm-card [data-profile]')?.textContent.trim());
 // NEGATIVE CONTROL (run 2026-10-15, v7.50): the sheet's photo upload taken out (the `if (file) {` block skipped) made this read
 //   FAIL  he uploads a contractor's photo and bio from their card, and they read back; his own card has his

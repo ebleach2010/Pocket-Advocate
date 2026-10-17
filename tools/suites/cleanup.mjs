@@ -328,7 +328,10 @@ console.log('\n--- D. one Team page, one Calendar page (v7.55) ---');
 {
   const { readdirSync, existsSync } = await import('node:fs');
   const EMP = f('public/js/admin-employer.js');
-  const ACC = f('public/js/admin-accounts.js');
+  // RE-PINNED 2026-10-17 (v7.68): adding an advocate (and changing one, from their photo) is the page by page
+  // wizard (admin-wizard.js); the account sheet keeps the share, the password and turning them off.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.68): the wizard's `action: 'create'` made `action: 'make'` made D1 read FAIL.
+  const ACC = `${f('public/js/admin-accounts.js')}\n${f('public/js/admin-wizard.js')}`;
   // NEGATIVE CONTROL (run 2026-10-16, v7.55): the team card's Account button taken out made this read
   //   FAIL  D1 one Team page: Employer mode adds advocates and opens each one's account, the Advocates tab is gone and its address forwards there
   check('D1 one Team page: Employer mode adds advocates and opens each one\'s account, the Advocates tab is gone and its address forwards there',
@@ -341,7 +344,8 @@ console.log('\n--- D. one Team page, one Calendar page (v7.55) ---');
     && !existsSync(j(ROOT, 'public/js/admin-advocates.js'))
     && /location\.replace\('\/admin-employer\.html'\);/.test(f('public/admin-advocates.html'))
     && /link: '\/admin-employer\.html',/.test(ADV)
-    && /'\/js\/admin-accounts\.js',/.test(f('tools/blindness-audit.mjs')) && !DASH.test(ACC));
+    && /'\/js\/admin-accounts\.js',/.test(f('tools/blindness-audit.mjs')) && /'\/js\/admin-wizard\.js',/.test(f('tools/blindness-audit.mjs'))
+    && /return openAdvocateWizard\(user, \{ mode: 'add', say, done \}\);/.test(ACC) && !DASH.test(ACC));
 
   const pages = readdirSync(j(ROOT, 'public')).filter((n) => /^admin.*\.html$/.test(n));
   const withLink = pages.filter((n) => /<a href="\/admin-availability\.html"/.test(f(`public/${n}`)));

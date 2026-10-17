@@ -21,6 +21,8 @@
 
 import { getDoc, patchDoc, deleteDoc, queryDocs, listDocs } from './firestore.js';
 import { addonsOf, cleanAddons } from './addons.js';
+import { cleanSettingsChange, settingsFrom, nest } from './staffsettings.js';
+import { cleanPayout, sealPayout, PAYOUT_METHODS } from './payroll.js';
 import { putFile, deleteFile, mediaFetch } from './storage.js';
 import { sendEmail } from './email.js';
 import { notifyUser } from './push.js';
@@ -100,6 +102,48 @@ function welcomeEmail(env, name) {
 
 // ---- his Advocates tab ----------------------------------------------------------
 
+/**
+ * The rest of his pages, checked (2026-10-17): their share, their profile
+ * words, what they offer with their prices and week (settings), and how they
+ * are paid. { error } or the cleaned parts. On create the profile and share
+ * land on the new record; on an update the settings come back as a dotted
+ * patch, and the owner's own record takes no settings or payout here (his
+ * live in his cog, and he is not on the payroll).
+ */
+function cleanSetup(body, { creating, owner = false }) {
+  const out = { profile: {} };
+  if (creating) {
+    out.profile = cleanProfile({ ...(body.profile && typeof body.profile === 'object' ? body.profile : {}) });
+    delete out.profile.name;
+    delete out.profile.advisorOptIn;
+    if (body.commissionPct !== undefined) {
+      const pct = Number(body.commissionPct);
+      if (!Number.isInteger(pct) || pct < 0 || pct > 100) return { error: 'Their share is a whole percent, 0 to 100.' };
+      out.commissionPct = pct;
+    }
+  }
+  const s = body.settings;
+  if (s && typeof s === 'object' && Object.keys(s).length) {
+    if (owner) return { error: 'Your own prices and hours are in your settings.' };
+    const got = cleanSettingsChange(s, { admin: true });
+    if (got.error) return { error: got.error };
+    if (creating) out.settings = nest(got.patch).settings;
+    else { out.settingsPatch = got.patch; out.settingsMask = got.mask; }
+  }
+  if (body.payout && body.payout.method) {
+    if (owner) return { error: 'You are not on the payroll.' };
+    const got = cleanPayout(body.payout);
+    if (got.error) return { error: got.error };
+    out.payout = got;
+  }
+  return out;
+}
+
+/** Their way to be paid, as he typed it: sealed, with only the method and a masked hint in the clear. */
+async function writePayout(env, uid, got, by, at) {
+  await patchDoc(env, `payouts/${uid}`, { method: got.method, hint: got.hint, sealed: await sealPayout(env, got.details), updatedAt: at, setBy: by });
+}
+
 async function adminAdvocates(request, env, h) {
   const admin = await h.requireAdmin(request, env);
   if (!admin) return h.json({ error: 'Not found' }, 404);
@@ -126,6 +170,15 @@ async function adminAdvocates(request, env, h) {
     // contractor into the app it will be a simple toggle with a price input").
     const addons = body.addons === undefined ? { value: addonsOf(null) } : cleanAddons(body.addons);
     if (addons.error) return h.json({ error: addons.error }, 400);
+    // EVERYTHING ELSE, PAGE BY PAGE (Eric, 2026-10-17: "When I add an
+    // advocate, it should go page by page through everything I asked I could
+    // toggle on or off, their pricing, their initial schedule, profile
+    // picture, bio, any extra tiers or add-ons and their pricing, their pay
+    // preferences and if ACH their routing # and account #"). All of it is
+    // checked before the address is claimed, so a refusal never leaves half
+    // an account. What he leaves blank they fill in when they first sign in.
+    const extra = cleanSetup(body, { creating: true });
+    if (extra.error) return h.json({ error: extra.error }, 400);
     // A CLIENT'S ADDRESS STAYS A CLIENT'S (onboarding review, 2026-10-16).
     // Made an advocate's, the address would sign in with a password from then
     // on and the client's own account, cases and chat would be out of reach.
@@ -140,9 +193,11 @@ async function adminAdvocates(request, env, h) {
     if (!claimed) return h.json({ error: 'That address already has an advocate account.' }, 409);
     await patchDoc(env, `advocates/${uid}`, {
       uid, name, email, active: true, owner: false,
-      commissionPct: DEFAULT_COMMISSION_PCT, payroll: true,
-      primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null,
-      acceptingNew: true, tz: 'America/Boise',
+      commissionPct: extra.commissionPct ?? DEFAULT_COMMISSION_PCT, payroll: true,
+      primarySpecialty: extra.profile.primarySpecialty ?? '', specialties: extra.profile.specialties ?? [],
+      credentials: extra.profile.credentials ?? '', bio: extra.profile.bio ?? '', headshotPath: null,
+      acceptingNew: true, tz: extra.profile.tz || 'America/Boise',
+      ...(extra.settings ? { settings: { ...extra.settings, updatedAt: now } } : {}),
       addons: addons.value,
       advisor: { optedIn: false, enabled: false },
       createdAt: now, createdBy: admin.uid, onboardedAt: null,
@@ -150,9 +205,11 @@ async function adminAdvocates(request, env, h) {
       mustChange: true,
     }, { mustNotExist: true });
     await patchDoc(env, `users/${uid}`, { role: ADVOCATE_ROLE, email, name, setupPending: true }, { mustNotExist: true });
+    // How they are paid, sealed before it is written (worker/payroll.js); only the method and a masked hint are in the clear.
+    if (extra.payout) await writePayout(env, uid, extra.payout, admin.uid, now);
     const mail = welcomeEmail(env, name);
     const emailed = await sendEmail(env, { to: email, subject: mail.subject, html: mail.html }).catch(() => false);
-    return h.json({ ok: true, uid, emailed: !!emailed });
+    return h.json({ ok: true, uid, emailed: !!emailed, payout: extra.payout ? { method: extra.payout.method, hint: extra.payout.hint } : null });
   }
 
   const uid = String(body.uid || '');
@@ -160,6 +217,16 @@ async function adminAdvocates(request, env, h) {
   const doc = await getDoc(env, `advocates/${uid}`);
   if (!doc) return h.json({ error: 'Not found' }, 404);
   const a = doc.data;
+
+  // Everything his pages set, to open them again for a change (2026-10-17). Never a sealed detail: the method and its masked hint.
+  if (action === 'get') {
+    const p = await getDoc(env, `payouts/${uid}`).catch(() => null);
+    return h.json({
+      advocate: advocateView(uid, a), addons: addonsOf(a, { owner: a.owner === true }), settings: settingsFrom(a),
+      payout: p?.data?.method ? { method: p.data.method, label: PAYOUT_METHODS[p.data.method] || '', hint: p.data.hint || '' } : null,
+      methods: PAYOUT_METHODS, zones: STAFF_ZONES, specialties: SPECIALTIES,
+    });
+  }
 
   // The sample contractor (employer mode) has no sign-in and no switch; she is removed there.
   if (a.sample === true && action !== 'update') return h.json({ error: 'This is the sample contractor. Remove her in employer mode.' }, 409);
@@ -209,6 +276,13 @@ async function adminAdvocates(request, env, h) {
       if (addons.error) return h.json({ error: addons.error }, 400);
       patch.addons = addons.value; mask.push('addons');
     }
+    // His pages, again (2026-10-17): what they offer, their prices and week, and how they are paid.
+    const extra = cleanSetup(body, { creating: false, owner: a.owner === true });
+    if (extra.error) return h.json({ error: extra.error }, 400);
+    if (extra.settingsPatch) {
+      patch.settings = { ...nest(extra.settingsPatch).settings, updatedAt: new Date() };
+      mask.push(...extra.settingsMask, 'settings.updatedAt');
+    }
     // Paid access only for someone who asked for it (Eric: "Admin should not
     // enable paid Advisor access unless the advocate opted in.").
     if ('advisorEnabled' in body) {
@@ -218,8 +292,9 @@ async function adminAdvocates(request, env, h) {
       patch.advisor = { ...(a.advisor || {}), enabled: want, enabledAt: want ? new Date() : null };
       mask.push('advisor');
     }
-    if (!mask.length) return h.json({ error: 'Nothing to change.' }, 400);
-    await patchDoc(env, `advocates/${uid}`, { ...patch, updatedAt: new Date() }, { mask: [...mask, 'updatedAt'] });
+    if (!mask.length && !extra.payout) return h.json({ error: 'Nothing to change.' }, 400);
+    if (extra.payout) await writePayout(env, uid, extra.payout, admin.uid, new Date());
+    if (mask.length) await patchDoc(env, `advocates/${uid}`, { ...patch, updatedAt: new Date() }, { mask: [...mask, 'updatedAt'] });
     // The name on their sign-in profile follows, the way their own change does (never for the sample, who has none).
     if ('name' in patch && a.sample !== true) await patchDoc(env, `users/${uid}`, { name: patch.name }, { mask: ['name'] }).catch(() => {});
     const fresh = await getDoc(env, `advocates/${uid}`);

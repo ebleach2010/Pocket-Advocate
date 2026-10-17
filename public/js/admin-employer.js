@@ -10,7 +10,7 @@ import { requireAdmin, hydrateNav, STAFF } from './auth.js';
 import { ask } from './sheet.js';
 import { openStaffChat } from './admin-staffchat.js';
 import { listAccounts, openAddAdvocate, openAccount, paintOff } from './admin-accounts.js';
-import { addonFields, wireAddonFields, readAddonFields } from './admin-addons.js';
+import { openAdvocateWizard } from './admin-wizard.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 // Whole dollars bare, anything with cents to two places ($1,234.50, never $1,234.5).
@@ -142,71 +142,8 @@ async function load() {
  * through his door), then the words; the card repaints from the answer.
  */
 function editProfile(p) {
-  const dlg = document.createElement('dialog');
-  dlg.className = 'cancel-sheet ask-sheet tm-sheet';
-  dlg.innerHTML = `
-    <form method="dialog" class="ask-form">
-      <h2>${p.owner ? 'Your profile' : `${esc(p.name)}'s profile`}</h2>
-      <div class="tm-pic">
-        ${p.hasPhoto ? `<img data-pic-preview src="/api/advocates/headshot?uid=${encodeURIComponent(p.uid)}${p.photoV ? `&v=${encodeURIComponent(p.photoV)}` : ''}" alt="">` : '<img data-pic-preview alt="" hidden>'}
-        <label class="btn quiet tm-pick">Choose a photo<input type="file" accept="image/jpeg,image/png,image/webp" data-pic hidden></label>
-      </div>
-      <label class="dim small">Name<input class="ask-input" name="name" maxlength="80" value="${esc(p.name)}" autocomplete="off"></label>
-      <label class="dim small">Credentials<input class="ask-input" name="credentials" maxlength="200" value="${esc(p.credentials || '')}" placeholder="For example: RN, BCPA" autocomplete="off"></label>
-      <label class="dim small">Bio<textarea class="ask-input" name="bio" maxlength="1500" rows="6" placeholder="${p.owner ? 'A few lines about you.' : 'The bio they sent you.'}">${esc(p.bio || '')}</textarea></label>
-      ${p.sample ? '' : addonFields(p.addons || {})}
-      <p class="error" data-err hidden></p>
-      <div class="cancel-acts">
-        <button type="submit" class="btn glow" value="ok">Save</button>
-        <button type="button" class="btn quiet" data-no>Cancel</button>
-      </div>
-    </form>`;
-  document.body.appendChild(dlg);
-  wireAddonFields(dlg);
-  const close = () => { dlg.close(); dlg.remove(); };
-  const pic = dlg.querySelector('[data-pic]');
-  const preview = dlg.querySelector('[data-pic-preview]');
-  pic.addEventListener('change', () => {
-    const file = pic.files?.[0];
-    if (!file) return;
-    preview.src = URL.createObjectURL(file);
-    preview.hidden = false;
-  });
-  dlg.querySelector('[data-no]').addEventListener('click', close);
-  dlg.addEventListener('cancel', close);
-  dlg.querySelector('form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = e.currentTarget;
-    const err = dlg.querySelector('[data-err]');
-    const save = f.querySelector('button[type="submit"]');
-    err.hidden = true;
-    save.disabled = true;
-    try {
-      const file = pic.files?.[0];
-      if (file) {
-        if (file.size > 3 * 1024 * 1024) throw new Error('That photo is over 3 MB.');
-        const res = await fetch(`/api/admin/advocates/headshot?uid=${encodeURIComponent(p.uid)}`, {
-          method: 'POST',
-          headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': file.type },
-          body: file,
-        });
-        const out = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(out.error || 'The photo did not upload.');
-      }
-      const picked = dlg.querySelector('[data-addons]') ? readAddonFields(dlg) : { addons: undefined };
-      if (picked.error) throw new Error(picked.error);
-      const res = await fetch('/api/admin/advocates', {
-        method: 'POST',
-        headers: { authorization: `Bearer ${await user.getIdToken()}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'update', uid: p.uid, name: f.elements.namedItem('name').value, credentials: f.elements.namedItem('credentials').value, bio: f.elements.namedItem('bio').value, ...(picked.addons ? { addons: picked.addons } : {}) }),
-      });
-      const out = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(out.error || 'That did not save.');
-      close();
-      load();
-    } catch (x) { err.textContent = x.message; err.hidden = false; save.disabled = false; }
-  });
-  dlg.showModal();
+  // The same pages that added them, every one a tap away (2026-10-17).
+  return openAdvocateWizard(user, { mode: 'edit', uid: p.uid, say: teamSay, done: load });
 }
 
 // ---- the tabs --------------------------------------------------------------------

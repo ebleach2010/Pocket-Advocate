@@ -1899,6 +1899,7 @@ function renderAddons(el, c) {
       is charged until you choose it.</p>` : ''}
     <div data-telehealth></div>
     <div data-appeal></div>
+    <div data-customs></div>
     <div data-followup></div>
     <div data-upgrade></div>
     <div data-extend></div>
@@ -1922,6 +1923,16 @@ function renderAddons(el, c) {
       ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap);
     }).catch(() => {});
   }
+  // His own extras for this advocate (2026-10-17), one card each.
+  const cu = el.querySelector('[data-customs]');
+  const paintCustoms = () => {
+    if (!cu?.isConnected || busyInside(cu)) return;
+    cu.innerHTML = customIds(c).map((id) => `<div data-custom="${esc(id)}"></div>`).join('');
+    for (const host of cu.querySelectorAll('[data-custom]')) {
+      host.innerHTML = customCard(c, host.dataset.custom); wireCustomCard(host, c, host.dataset.custom); keepCard(host);
+    }
+  };
+  if (cu) { paintCustoms(); ratesReady.then(paintCustoms).catch(() => {}); }
   const ex = el.querySelector('[data-extend]');
   if (ex) { ex.innerHTML = extendOffer(c); wireExtendOffer(ex, c); addAbout(ex, 'extension'); }
   const offer = el.querySelector('[data-followup]');
@@ -1946,7 +1957,7 @@ function renderAddons(el, c) {
     }).catch(() => {});
   }
   const none = el.querySelector('[data-addons-closed]');
-  if (!SALES_OPEN && none && ![th, ap, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
+  if (!SALES_OPEN && none && ![th, ap, cu, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
     none.textContent = SALES_CLOSED_MESSAGE;
     none.hidden = false;
   }
@@ -2034,8 +2045,95 @@ function wireAppealCard(el, c) {
   el.querySelector('[data-appeal-again]')?.addEventListener('click', () => paint({ ...c, addonRequest: null }));
 }
 
+// HIS OWN EXTRAS FOR AN ADVOCATE (Eric, 2026-10-17: "any extra tiers or
+// add-ons and their pricing"), each asked for and answered the way an appeal
+// is. The ids offered now, and any this case has asked for or bought.
+function customIds(c) {
+  const ids = [];
+  const add = (id) => { if (/^x[a-z0-9]{8}$/.test(String(id || '')) && !ids.includes(id)) ids.push(id); };
+  if (c.fullAccess) for (const x of (caseAddonsNow?.custom || [])) if (x.on) add(x.id);
+  add(c.addonRequest?.kind);
+  for (const b of (Array.isArray(c.addonsBought) ? c.addonsBought : [])) add(b.kind);
+  return ids;
+}
+function customCard(c, id) {
+  if (!c.fullAccess) return '';
+  const offer = (caseAddonsNow?.custom || []).find((x) => x.id === id) || null;
+  const req = c.addonRequest?.kind === id ? c.addonRequest : null;
+  const bought = (Array.isArray(c.addonsBought) ? c.addonsBought : []).filter((b) => b.kind === id);
+  const name = offer?.label || req?.label || bought[0]?.label || 'An enhancement';
+  const pend = c.pendingAddon?.kind === id && c.pendingAddon.url && toDate(c.pendingAddon.expiresAt).getTime() > Date.now() ? c.pendingAddon : null;
+  const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' });
+  const done = bought.length ? `<p class="dim small" style="margin:.4rem 0 0;">On your case: ${bought.map((b) => esc(dateFmt.format(toDate(b.at)))).join('; ')}.</p>` : '';
+  const adv = advFirstHtml(c);
+  if (req?.state === 'approved' && pend) return `
+    <div class="followup-offer" data-custom-state="approved">
+      <h3><span class="fu-tick" aria-hidden="true">✓</span> ${adv} said yes to ${esc(name)}.</h3>
+      <div class="fu-buy">
+        <span class="price">$${Math.max(1, Math.round(Number(pend.cents) / 100)).toLocaleString()}</span>
+        <a class="btn glow" href="${esc(pend.url)}">Pay for it</a>
+      </div>${done}
+    </div>`;
+  if (req?.state === 'pending') return `
+    <div class="followup-offer" data-custom-state="pending">
+      <h3>Your request for ${esc(name)} is with ${adv}.</h3>
+      <p>Nothing is charged unless they say yes.</p>${done}
+      <p><button type="button" class="btn quiet tiny" data-custom-withdraw>Withdraw my request</button></p>
+      <p class="error" data-custom-error hidden></p>
+    </div>`;
+  if (c.status === 'closed' || !offer?.on) return done ? `<div class="followup-offer is-done" data-custom-state="done"><h3>${esc(name)}</h3>${done}</div>` : '';
+  if (req?.state === 'declined') return `
+    <div class="followup-offer" data-custom-state="declined">
+      <h3>${adv} could not take that one on</h3>
+      ${req.declineReason ? `<p>${esc(req.declineReason)}</p>` : ''}
+      <p class="fu-fine">Nothing was charged.</p>${done}
+      <div class="fu-buy"><button class="btn quiet" data-custom-again>Ask again</button></div>
+    </div>`;
+  const cents = Math.max(0, Number(offer.cents) || 0);
+  return `
+    <div class="followup-offer" data-custom-state="offer">
+      <h3>${esc(name)}</h3>
+      <label class="dim small" style="display:block; margin:.4rem 0 .5rem;">Anything ${adv} should know? (optional)
+        <input type="text" data-custom-note maxlength="600" style="display:block; width:100%; margin-top:.2rem;"></label>
+      <div class="fu-buy">
+        <span class="price">${cents ? `$${Math.round(cents / 100).toLocaleString()}` : 'No charge'}</span>
+        <button class="btn glow" data-request-custom>Ask for it</button>
+      </div>
+      <p class="fu-fine">Asking costs nothing and takes no card. Nothing is
+        charged unless ${adv} says yes.</p>${done}
+      <p class="error" data-custom-error hidden></p>
+    </div>`;
+}
+function wireCustomCard(el, c, id) {
+  const paint = (next) => { el.innerHTML = customCard(next, id); wireCustomCard(el, next, id); keepCard(el); };
+  const post = async (payload) => {
+    const res = await fetch('/api/addon-request', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${await user.getIdToken()}` },
+      body: JSON.stringify({ caseId: c.id, ...payload }),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `That did not go through (${res.status}).`);
+    return out;
+  };
+  const fail = (e) => { const err = el.querySelector('[data-custom-error]'); if (err) { err.textContent = e.message; err.hidden = false; } };
+  el.querySelector('[data-request-custom]')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try {
+      const out = await post({ kind: id, note: el.querySelector('[data-custom-note]')?.value || '' });
+      const offer = (caseAddonsNow?.custom || []).find((x) => x.id === id);
+      paint({ ...c, addonRequest: { kind: id, label: offer?.label || '', state: 'pending', at: out.at || new Date().toISOString(), cents: out.cents } });
+    } catch (x) { fail(x); e.currentTarget.disabled = false; }
+  });
+  el.querySelector('[data-custom-withdraw]')?.addEventListener('click', async (e) => {
+    e.currentTarget.disabled = true;
+    try { await post({ action: 'withdraw' }); paint({ ...c, addonRequest: null }); } catch (x) { fail(x); e.currentTarget.disabled = false; }
+  });
+  el.querySelector('[data-custom-again]')?.addEventListener('click', () => paint({ ...c, addonRequest: null }));
+}
+
 /** The buttons that start a new purchase. */
-const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again],[data-request-month],[data-request-appeal],[data-appeal-again]';
+const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-buy-upgrade],[data-ask-again],[data-request-month],[data-request-appeal],[data-appeal-again],[data-request-custom],[data-custom-again]';
 /**
  * While sales are closed, empties a card that is only an offer and takes the
  * "buy again" button off a finished one. True when something is left to show.

@@ -109,7 +109,9 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   check('T3 while sales are closed an offer card empties, a confirmed appointment and a request under way stay, a finished month loses its buy-again button, and an open shop changes nothing',
     // RE-PINNED 2026-10-17 (v7.65): an appeal asked for on Full-Service (and its Ask again) is an offer too.
     // NEGATIVE CONTROL (run 2026-10-17, v7.65): `[data-request-appeal]` taken out of SELLING made T3 read FAIL.
-    /^\[data-th-request\],\[data-buy-extend\],\[data-buy-followup\],\[data-buy-upgrade\],\[data-ask-again\],\[data-request-month\],\[data-request-appeal\],\[data-appeal-again\]$/.test(SELLING)
+    // RE-PINNED 2026-10-17 (v7.68): his own extras for an advocate (and their Ask again) are offers too.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.68): `[data-request-custom]` taken out of SELLING made T3 read FAIL.
+    /^\[data-th-request\],\[data-buy-extend\],\[data-buy-followup\],\[data-buy-upgrade\],\[data-ask-again\],\[data-request-month\],\[data-request-appeal\],\[data-appeal-again\],\[data-request-custom\],\[data-custom-again\]$/.test(SELLING)
     && r.join() === 'false,true,true,true,true' && monthKept === false && month.innerHTML === ''
     && offer.innerHTML === ''
     && /Appointment advocacy/.test(visit.innerHTML) && /Confirmed: Tue, Oct 20/.test(visit.innerHTML) && !/data-th-request/.test(visit.innerHTML)
@@ -126,7 +128,9 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
     && /\$\{SALES_OPEN \? `<p class="dim small" style="margin:\.2rem 0 \.8rem;">Extras you can put on/.test(addons)
     // RE-PINNED 2026-10-17 (v7.65): the appeal card (ap) counts among what is left.
     // NEGATIVE CONTROL (run 2026-10-17, v7.65): `ap` taken out of the list made T4 read FAIL.
-    && /if \(!SALES_OPEN && none && !\[th, ap, ex, offer, up\]\.some\(\(h\) => h && h\.innerHTML\.trim\(\)\)\) \{\s*none\.textContent = SALES_CLOSED_MESSAGE;/.test(addons)
+    // RE-PINNED 2026-10-17 (v7.68): his own extras' cards (cu) count too.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.68): `cu` taken out of the list made T4 read FAIL.
+    && /if \(!SALES_OPEN && none && !\[th, ap, cu, ex, offer, up\]\.some\(\(h\) => h && h\.innerHTML\.trim\(\)\)\) \{\s*none\.textContent = SALES_CLOSED_MESSAGE;/.test(addons)
     && /const addAbout = \(host, topic\) => \{ if \(keepCard\(host\)\) addAboutButton\(host, topic\); \};/.test(addons)
     && /\$\{chatLocked && SALES_OPEN \? `\s*<div class="panel" data-chat-unlock/.test(CASE));
 

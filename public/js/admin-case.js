@@ -2463,7 +2463,7 @@ function paintOverview(pane) {
     </div>` : ''}
     ${c.addonRequest?.state === 'pending' ? `
     <div class="panel" data-addon-request style="border-color:var(--cyan); box-shadow:var(--glow-c);">
-      <h3 style="margin:0 0 .3rem; color:var(--cyan);">${c.addonRequest.kind === 'appeal' ? 'An insurance appeal' : 'An enhancement'}: your call</h3>
+      <h3 style="margin:0 0 .3rem; color:var(--cyan);">${c.addonRequest.kind === 'appeal' ? 'An insurance appeal' : esc(c.addonRequest.label || 'An enhancement')}: your call</h3>
       <p class="small" style="margin:0 0 .2rem;">They are asking for it on top of their month, quoted
         <strong>$${((Number(c.addonRequest.cents) || 0) / 100).toLocaleString()}</strong>.</p>
       ${c.addonRequest.note ? `<p class="small" style="margin:0 0 .2rem;">Their note: ${esc(c.addonRequest.note)}</p>` : ''}

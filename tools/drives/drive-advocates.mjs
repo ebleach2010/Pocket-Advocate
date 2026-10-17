@@ -203,13 +203,19 @@ await tryStep(() => adm.click('[data-add-adv]', { timeout: 4000 }));
 await tryStep(() => adm.fill('#adv-add input[name="name"]', 'Marcus Lee', { timeout: 4000 }));
 await tryStep(() => adm.fill('#adv-add input[name="email"]', 'marcus@advocate.demo', { timeout: 4000 }));
 await tryStep(() => adm.fill('#adv-add input[name="password"]', 'first-pass-123', { timeout: 4000 }));
-await tryStep(() => adm.click('#adv-add button[type="submit"]', { timeout: 4000 }));
+// RE-PINNED 2026-10-17 (v7.68): adding is page by page (admin-wizard.js): Next through the pages, then Add on the last.
+for (let i = 0; i < 8; i++) {
+  if (await adm.$('#adv-add [data-finish]')) { await tryStep(() => adm.click('#adv-add [data-finish]', { timeout: 4000 })); break; }
+  await tryStep(() => adm.click('#adv-add [data-next]', { timeout: 4000 }));
+  await adm.waitForTimeout(250);
+}
 await adm.waitForTimeout(2500);
 const said = (await adm.textContent('#adv-said').catch(() => '')) || '';
 const after = await cards();
 const marcus = after.find((c) => c.name === 'Marcus Lee');
 // NEGATIVE CONTROL (run 2026-10-16, v7.55): the demo's create branch renamed away (an unknown action) made this read
 //   FAIL  he adds an advocate from Employer mode: the card appears, setting up, and the password never shows on the page
+// NEGATIVE CONTROL (run 2026-10-17, v7.68): the wizard's `action: 'create'` made `action: 'make'` made this read FAIL.
 ok('he adds an advocate from Employer mode: the card appears, setting up, and the password never shows on the page',
   before.some((c) => c.st === 'YOU') && marcus?.st === 'SETTING UP' && /^Done\./.test(said)
   && !(await adm.evaluate(() => document.body.innerText.includes('first-pass-123'))), JSON.stringify({ before, after, said }));

@@ -53,6 +53,14 @@ const settle = async (page, ms = 1500) => {
     if (!hit) break;
   }
 };
+// RE-PINNED 2026-10-17 (v7.68): adding a team member, and their photo, open the page by page wizard; its add-ons
+// page has the same rows. A dot names each page, so a change jumps straight to it.
+const toPage = async (page, title) => {
+  await tryStep(() => page.waitForSelector('dialog.tm-sheet[open] .wz-dot', { timeout: 8000 }));
+  await tryStep(() => page.click(`dialog.tm-sheet[open] .wz-dot[aria-label="${title}"]`, { timeout: 4000 }));
+  await page.waitForTimeout(300);
+};
+const closeSheet = async (page) => { await page.keyboard.press('Escape').catch(() => {}); await page.waitForTimeout(300); await page.evaluate(() => document.querySelectorAll('dialog').forEach((d) => d.remove())).catch(() => {}); };
 const sheetRows = (page) => page.evaluate(() => {
   const d = document.querySelector('dialog.tm-sheet[open], dialog[open] form#adv-add')?.closest('dialog') || document.querySelector('dialog[open]');
   return [...(d?.querySelectorAll('.addon-row') || [])].map((r) => ({
@@ -68,23 +76,27 @@ const ad = await side('admin');
 await ad.goto(`${P}/admin-employer.html?demo=admin`, { waitUntil: 'networkidle' });
 await settle(ad, 1800);
 await tryStep(() => ad.click('[data-add-adv]', { timeout: 5000 }));
+await tryStep(() => ad.fill('#adv-add input[name="name"]', 'Page Test', { timeout: 6000 }));
+await tryStep(() => ad.fill('#adv-add input[name="email"]', 'page.test@advocate.demo', { timeout: 3000 }));
+await tryStep(() => ad.fill('#adv-add input[name="password"]', 'first-pass-123', { timeout: 3000 }));
+for (let i = 0; i < 2; i++) { await tryStep(() => ad.click('#adv-add [data-next]', { timeout: 4000 })); await ad.waitForTimeout(300); }
 await tryStep(() => ad.waitForSelector('dialog[open] .addon-row', { timeout: 6000 }));
 const addRows = await sheetRows(ad);
 if (SHOTS) await ad.screenshot({ path: `${SHOTS}/steps-a-add.png` });
 // NEGATIVE CONTROL (run 2026-10-17): Add an advocate's `${addonFields({})}` taken out made this read
+// NEGATIVE CONTROL (run 2026-10-17, v7.68): the wizard's add-ons page `${addonFields(st.addons)}` taken out made this read FAIL.
 //   FAIL  adding a team member asks for their add-ons: a toggle and a price for each, the price waiting on its toggle
 ok('adding a team member asks for their add-ons: a toggle and a price for each, the price waiting on its toggle',
   addRows.map((r) => r.label).join('|') === 'Attending an appointment|Writing an insurance appeal' && addRows.every((r) => !r.on && r.priceOff),
   JSON.stringify(addRows));
-await ad.evaluate(() => document.querySelector('dialog[open]')?.close());
-await ad.evaluate(() => document.querySelectorAll('dialog').forEach((d) => d.remove())).catch(() => {});
+await closeSheet(ad);
 
 // His own card first: his prices, on his word.
 await tryStep(() => ad.click('.tm-card [data-face]', { timeout: 5000 }));
+await toPage(ad, 'Add-ons on Full-Service');
 await tryStep(() => ad.waitForSelector('dialog.tm-sheet[open] .addon-row', { timeout: 6000 }));
 const hisRows = await sheetRows(ad);
-await tryStep(() => ad.click('dialog.tm-sheet[open] [data-no]', { timeout: 3000 }));
-await ad.waitForTimeout(400);
+await closeSheet(ad);
 // NEGATIVE CONTROL (run 2026-10-17): the demo's own add-ons for him set attend to 45000 made this read
 //   FAIL  his photo opens his profile, with his add-ons: attending $525, an appeal $350
 ok('his photo opens his profile, with his add-ons: attending $525, an appeal $350',
@@ -93,12 +105,13 @@ ok('his photo opens his profile, with his add-ons: attending $525, an appeal $35
 
 // Theirs: off until he sets them; an appeal at $300, kept.
 await tryStep(() => ad.click('.tm-card[data-uid="demo-advocate"] [data-face]', { timeout: 5000 }));
+await toPage(ad, 'Add-ons on Full-Service');
 await tryStep(() => ad.waitForSelector('dialog.tm-sheet[open] .addon-row', { timeout: 6000 }));
 const anaBefore = await sheetRows(ad);
 await tryStep(() => ad.check('dialog.tm-sheet[open] [data-addon-on="appeal"]', { timeout: 3000 }));
 await tryStep(() => ad.fill('dialog.tm-sheet[open] [data-addon-price="appeal"]', '300', { timeout: 3000 }));
 if (SHOTS) await ad.screenshot({ path: `${SHOTS}/steps-b-profile.png` });
-await tryStep(() => ad.click('dialog.tm-sheet[open] button[value="ok"]', { timeout: 3000 }));
+await tryStep(() => ad.click('dialog.tm-sheet[open] [data-save]', { timeout: 3000 }));
 await tryStep(() => ad.waitForSelector('dialog.tm-sheet', { state: 'detached', timeout: 8000 }));
 await ad.waitForTimeout(800);
 const saved = await ad.evaluate(async () => {
@@ -106,10 +119,12 @@ const saved = await ad.evaluate(async () => {
   return (team.team || []).find((p) => p.uid === 'demo-advocate')?.addons || null;
 }).catch(() => null);
 await tryStep(() => ad.click('.tm-card[data-uid="demo-advocate"] [data-face]', { timeout: 5000 }));
+await toPage(ad, 'Add-ons on Full-Service');
 await tryStep(() => ad.waitForSelector('dialog.tm-sheet[open] .addon-row', { timeout: 6000 }));
 const anaAfter = await sheetRows(ad);
-await tryStep(() => ad.click('dialog.tm-sheet[open] [data-no]', { timeout: 3000 }));
+await closeSheet(ad);
 // NEGATIVE CONTROL (run 2026-10-17): the profile sheet's save leaving out its add-ons made this read
+// NEGATIVE CONTROL (run 2026-10-17, v7.68): the wizard's update leaving out `addons,` made this read FAIL.
 //   FAIL  a team member's add-ons are off until he sets them, and a toggle and price he sets from their photo are kept
 ok('a team member\'s add-ons are off until he sets them, and a toggle and price he sets from their photo are kept',
   anaBefore.length === 2 && anaBefore.every((r) => !r.on) && saved?.appeal?.on === true && saved.appeal.cents === 30000 && saved.attend?.on === false

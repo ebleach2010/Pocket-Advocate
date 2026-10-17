@@ -124,8 +124,9 @@ export function scheduledOpen(now = new Date()) {
  *
  * `manual` is 'in', 'out', or anything else for "follow the schedule".
  */
-export function officeStatus(manual, now = new Date()) {
-  const scheduled = scheduledOpen(now);
+export function officeStatus(manual, now = new Date(), own = null) {
+  // A contractor's own week, when they have one (2026-10-17); his hours otherwise.
+  const scheduled = own?.hours ? openByHours(own.hours, own.tz, now) : scheduledOpen(now);
   const override = manual === 'in' || manual === 'out' ? manual : null;
   const inOffice = override ? override === 'in' : scheduled;
   return {
@@ -137,6 +138,24 @@ export function officeStatus(manual, now = new Date()) {
     // about, and the advocate control paints from this.
     overriding: !!override && inOffice !== scheduled,
   };
+}
+
+/**
+ * Inside someone's own week: { mon: { from: '08:00', to: '17:00' } | null, ... }
+ * on their clock. A zone that cannot be read is read as his.
+ */
+export function openByHours(hours, tz, now = new Date()) {
+  const when = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(when.getTime()) || !hours) return false;
+  let zone = OFFICE_TZ;
+  try { if (tz) { new Intl.DateTimeFormat('en-US', { timeZone: tz }); zone = tz; } } catch { /* his */ }
+  const day = new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short' }).format(when).slice(0, 3).toLowerCase();
+  const span = hours[day];
+  if (!span || typeof span.from !== 'string' || typeof span.to !== 'string') return false;
+  const { hour, minute } = wallParts(when, zone);
+  const at = hour * 60 + minute;
+  const mins = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  return at >= mins(span.from) && at < mins(span.to);
 }
 
 function wallParts(date, zone) {

@@ -15,7 +15,7 @@
 // "Admin should not enable paid Advisor access unless the advocate opted in."
 
 import { ask } from './sheet.js';
-import { addonFields, wireAddonFields, readAddonFields } from './admin-addons.js';
+import { openAdvocateWizard } from './admin-wizard.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (ch) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -49,47 +49,12 @@ function sheet(html) {
   return { dlg, close };
 }
 
-/** Add an advocate: name, email, a first password he gives them himself. */
+/**
+ * Add an advocate, page by page (Eric, 2026-10-17: "it should go page by page
+ * through everything I asked I could toggle on or off"): admin-wizard.js.
+ */
 export function openAddAdvocate(user, { say, done }) {
-  const { dlg, close } = sheet(`
-    <form class="ask-form" id="adv-add" autocomplete="off">
-      <h2>Add an advocate</h2>
-      <label class="dim small">Their name<input class="ask-input" name="name" maxlength="80" required></label>
-      <label class="dim small">Their email<input class="ask-input" name="email" type="email" maxlength="200" required></label>
-      <label class="dim small">A first password, at least 10 characters<input class="ask-input" name="password" type="text" minlength="10" maxlength="200" required></label>
-      <p class="dim small" style="margin:0;">They get an email saying the account is ready. Give them this password yourself: it is never emailed, shown again or kept as you typed it. They choose their own the first time they sign in.</p>
-      ${addonFields({})}
-      <p class="dim small" style="margin:0;">What they told you they will do on top of a Full-Service month, at their price. Change it any time by tapping their photo on their card.</p>
-      <p class="error" data-err hidden></p>
-      <div class="cancel-acts">
-        <button type="submit" class="btn glow">Create the account</button>
-        <button type="button" class="btn quiet" data-no>Cancel</button>
-      </div>
-    </form>`);
-  const form = dlg.querySelector('form');
-  wireAddonFields(form);
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = form.querySelector('button[type="submit"]');
-    const err = form.querySelector('[data-err]');
-    const fd = new FormData(form);
-    btn.disabled = true;
-    err.hidden = true;
-    try {
-      const picked = readAddonFields(form);
-      if (picked.error) throw new Error(picked.error);
-      const out = await call(user, { action: 'create', name: fd.get('name'), email: fd.get('email'), password: fd.get('password'), addons: picked.addons });
-      close();
-      say(out.emailed
-        ? 'Done. They have an email saying the account is ready. Give them the password yourself.'
-        : 'Done. The email did not send, so tell them yourself: sign in at the site with their email and the password you gave them.');
-      done();
-    } catch (x) {
-      err.textContent = x.message;
-      err.hidden = false;
-      btn.disabled = false;
-    }
-  });
+  return openAdvocateWizard(user, { mode: 'add', say, done });
 }
 
 /** One advocate's account: their share, Advisor, a new password, turning them off. */

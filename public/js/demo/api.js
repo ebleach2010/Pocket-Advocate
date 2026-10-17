@@ -118,7 +118,10 @@ export function demoApi(role, store) {
     const owner = id === 'demo-admin' || rec?.owner === true;
     const set = rec?.addons || (owner ? { attend: { on: true, cents: 52500 }, appeal: { on: true, cents: 35000 } } : {});
     const one = (v) => ({ on: v?.on === true, cents: Number.isInteger(v?.cents) && v.cents >= 0 ? v.cents : 0 });
-    return { attend: one(set.attend), appeal: one(set.appeal) };
+    // His own extras for them (2026-10-17), as worker/addons.js keeps them.
+    const custom = (Array.isArray(set.custom) ? set.custom : []).filter((x) => /^x[a-z0-9]{8}$/.test(String(x?.id)) && String(x.label || '').trim().length >= 2)
+      .slice(0, 6).map((x) => ({ id: x.id, label: String(x.label).trim().slice(0, 60), on: x.on === true, cents: Number.isInteger(x.cents) && x.cents >= 0 ? x.cents : 0 }));
+    return { attend: one(set.attend), appeal: one(set.appeal), custom };
   };
   const cleanDemoAddons = (input) => {
     const out = {};
@@ -128,7 +131,60 @@ export function demoApi(role, store) {
       if (v.on === true && (!Number.isInteger(cents) || cents < 0 || cents > 2_000_000)) return { error: `${label}: a price from $0 to $20,000.` };
       out[id] = { on: v.on === true, cents: Number.isInteger(cents) && cents >= 0 ? cents : 0 };
     }
+    if (Array.isArray(input?.custom)) {
+      const rows = input.custom.filter((x) => x && (String(x.label || '').trim() || x.on === true));
+      if (rows.length > 6) return { error: 'Up to 6 of your own add-ons.' };
+      out.custom = [];
+      for (const x of rows) {
+        const name = String(x.label || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (name.length < 2) return { error: 'Each add-on of your own needs a name.' };
+        const cents = Number(x.cents);
+        if (x.on === true && (!Number.isInteger(cents) || cents < 0 || cents > 2_000_000)) return { error: `${name}: a price from $0 to $20,000.` };
+        out.custom.push({ id: /^x[a-z0-9]{8}$/.test(String(x.id)) ? x.id : `x${Math.random().toString(36).slice(2, 10).padEnd(8, '0')}`, label: name, on: x.on === true, cents: Number.isInteger(cents) && cents >= 0 ? cents : 0 });
+      }
+    }
     return { value: out };
+  };
+  // How a team member is paid, checked the way worker/payroll.js cleanPayout does; the demo keeps it unsealed.
+  const PAY_METHODS = { ach: 'Direct deposit (ACH)', check: 'Paper check', zelle: 'Zelle', paypal: 'PayPal', venmo: 'Venmo', other: 'Other' };
+  const demoPayout = (m, fl = {}) => {
+    if (!PAY_METHODS[m]) return { error: 'Choose how you want to be paid.' };
+    if (m === 'ach') {
+      const acct = String(fl.account || '').replace(/\D/g, '');
+      if (!fl.name || String(fl.routing || '').replace(/\D/g, '').length !== 9 || acct.length < 4 || acct.length > 17) return { error: 'The name on the account, a 9 digit routing number and the account number, please.' };
+      return { method: m, hint: `${fl.type === 'savings' ? 'Savings' : 'Checking'} ending ${acct.slice(-4)}`, details: fl };
+    }
+    if (m === 'check') {
+      if (!fl.name || String(fl.address || '').length < 8) return { error: 'The name for the check and the address to mail it to, please.' };
+      return { method: m, hint: `Mailed to ${String(fl.address).split(/[,\n]/)[0]}`, details: fl };
+    }
+    if (m === 'other') {
+      if (String(fl.text || '').length < 3) return { error: 'Say how you want to be paid.' };
+      return { method: m, hint: 'Other, as written', details: fl };
+    }
+    const h = String(fl.handle || '');
+    if (h.length < 3) return { error: `The ${PAY_METHODS[m]} email, phone or handle, please.` };
+    return { method: m, hint: `${PAY_METHODS[m]} to ${h.slice(0, 2)}…${h.slice(-2)}`, details: fl };
+  };
+  // What his pages set (worker/staffsettings.js cleanSettingsChange, admin), checked enough for the demo.
+  const demoSettings = (s, prev = {}) => {
+    if (!s || typeof s !== 'object') return { value: prev };
+    const next = { ...prev };
+    if (s.rates) {
+      next.rates = { ...(prev.rates || {}) };
+      for (const k of ['caseCents', 'addonCents', 'fullCents']) {
+        if (s.rates[k] === undefined) continue;
+        if (s.rates[k] === null) { delete next.rates[k]; continue; }
+        const v = Number(s.rates[k]);
+        if (!Number.isInteger(v) || v < 50 || v > 2_000_000) return { error: 'A price from $0.50 to $20,000.' };
+        next.rates[k] = v;
+      }
+    }
+    if (s.fullCap !== undefined) { if (s.fullCap !== null && !(Number.isInteger(s.fullCap) && s.fullCap >= 0 && s.fullCap <= 99)) return { error: 'A number from 0 (no limit) to 99.' }; next.fullCap = s.fullCap; }
+    if (s.offers) next.offers = { case: s.offers.case !== false, full: s.offers.full !== false };
+    if (s.hours !== undefined) next.hours = s.hours;
+    if (s.office) next.office = { ...(prev.office || {}), ...(s.office.responseTime !== undefined ? { responseTime: s.office.responseTime || null } : {}) };
+    return { value: next };
   };
   const demoContractor = (uid) => {
     if (!uid || !/^[\w-]{1,64}$/.test(uid) || uid === 'demo-admin') return null;
@@ -1441,11 +1497,14 @@ export function demoApi(role, store) {
       }
       if (!c.fullAccess) return fail(409, 'These are enhancements on Full-Service Case Management.');
       if (c.status === 'closed') return fail(409, 'This case is closed.');
-      if (body.kind !== 'appeal') return fail(400, 'Bad add-on');
+      if (body.kind !== 'appeal' && !/^x[a-z0-9]{8}$/.test(String(body.kind || ''))) return fail(400, 'Bad add-on');
       if (req?.state === 'pending') return fail(409, 'You already have a request waiting on your advocate.');
-      const offered = demoAddons(c.advocateId).appeal;
+      const all = demoAddons(c.advocateId);
+      const mine = body.kind === 'appeal' ? null : all.custom.find((x) => x.id === body.kind);
+      if (body.kind !== 'appeal' && !mine) return fail(400, 'Bad add-on');
+      const offered = mine || all.appeal;
       if (!offered.on) return fail(409, 'Your advocate does not offer this one. Ask in chat.');
-      const next = { kind: 'appeal', state: 'pending', at: new Date(), cents: offered.cents, note: String(body.note || '').trim().slice(0, 600), decidedAt: null, declineReason: '' };
+      const next = { kind: body.kind, label: mine ? mine.label : 'Writing an insurance appeal', state: 'pending', at: new Date(), cents: offered.cents, note: String(body.note || '').trim().slice(0, 600), decidedAt: null, declineReason: '' };
       store.docs.set(key, { ...c, addonRequest: next });
       store.persist?.(); store.fire?.(key);
       return ok({ ok: true, state: 'pending', at: next.at, cents: next.cents });
@@ -1471,8 +1530,8 @@ export function demoApi(role, store) {
       store.docs.set(key, {
         ...c,
         addonRequest: { ...req, state: 'started', decidedAt: now, startedAt: now },
-        addonsBought: [...(Array.isArray(c.addonsBought) ? c.addonsBought : []), { kind: req.kind, cents, at: now, sessionId: `cs_demo_addon_${now.getTime()}` }],
-        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), { kind: 'addon', addon: req.kind, amountCents: cents, sessionId: `cs_demo_addon_${now.getTime()}`, at: now }],
+        addonsBought: [...(Array.isArray(c.addonsBought) ? c.addonsBought : []), { kind: req.kind, label: req.label || '', cents, at: now, sessionId: `cs_demo_addon_${now.getTime()}` }],
+        extraPayments: [...(Array.isArray(c.extraPayments) ? c.extraPayments : []), { kind: 'addon', addon: req.kind, label: req.label || '', amountCents: cents, sessionId: `cs_demo_addon_${now.getTime()}`, at: now }],
       });
       store.persist?.(); store.fire?.(key);
       return ok({ ok: true, state: 'started', cents });
@@ -2995,7 +3054,7 @@ export function demoApi(role, store) {
       if (role !== 'advocate' || !staff) return fail(404, 'Not found');
       const key = `advocates/${me}`;
       const rec = store.docs.get(key) || {};
-      const set = { office: { ...(rec.settings?.office || {}) }, rates: { ...(rec.settings?.rates || {}) }, fullCap: rec.settings?.fullCap ?? null };
+      const set = { ...(rec.settings || {}), office: { ...(rec.settings?.office || {}) }, rates: { ...(rec.settings?.rates || {}) }, fullCap: rec.settings?.fullCap ?? null, hours: rec.settings?.hours || null };
       if ((init.method || 'GET') === 'POST') {
         if (body.office?.manual !== undefined) {
           if (![null, 'in', 'out'].includes(body.office.manual)) return fail(400, 'In office, out of office, or follow the office hours.');
@@ -3012,6 +3071,17 @@ export function demoApi(role, store) {
           if (body.fullCap !== null && !(Number.isInteger(body.fullCap) && body.fullCap >= 0 && body.fullCap <= 99)) return fail(400, 'A number from 0 (no limit) to 99.');
           set.fullCap = body.fullCap;
         }
+        // Their own week (2026-10-17); what they offer is his to set, never theirs.
+        if (body.offers !== undefined) return fail(400, 'What you offer is set by Eric.');
+        if (body.hours !== undefined) {
+          if (body.hours !== null) {
+            for (const [d, v] of Object.entries(body.hours)) {
+              if (v && (!/^\d\d:\d\d$/.test(String(v.from)) || !/^\d\d:\d\d$/.test(String(v.to)) || v.to <= v.from)) return fail(400, 'Each working day ends after it starts.');
+              if (!['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].includes(d)) return fail(400, 'Their hours, day by day.');
+            }
+          }
+          set.hours = body.hours;
+        }
         store.docs.set(key, { ...rec, settings: set });
         store.persist?.();
       }
@@ -3021,11 +3091,22 @@ export function demoApi(role, store) {
       const now = new Date();
       const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', weekday: 'short' }).format(now);
       const hr = Number(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Boise', hour: 'numeric', hour12: false }).format(now)) % 24;
-      const scheduled = !['Fri', 'Sat', 'Sun'].includes(wd) && hr >= 8 && hr < 19;
+      let scheduled = !['Fri', 'Sat', 'Sun'].includes(wd) && hr >= 8 && hr < 19;
+      // Their own week, on their clock, when they have one (worker/schedule.js openByHours).
+      if (set.hours) {
+        const tz = rec.tz || 'America/Boise';
+        const day = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'short' }).format(now).slice(0, 3).toLowerCase();
+        const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(now);
+        const hh = Number(parts.find((p) => p.type === 'hour').value) % 24; const mm = Number(parts.find((p) => p.type === 'minute').value);
+        const span = set.hours[day];
+        const at = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+        scheduled = !!span && at >= span.from && at < span.to;
+      }
       const rates = Object.fromEntries(Object.entries(set.rates).filter(([, v]) => Number(v) > 0));
       return ok({
         office: { inOffice: manual ? manual === 'in' : scheduled, scheduled, manual, responseTime: set.office.responseTime || null },
         rates, standard: { caseCents: std.caseCents, addonCents: std.addonCents, fullCents: std.fullCents }, fullCap: set.fullCap,
+        hours: set.hours || null, tz: rec.tz || 'America/Boise', offers: { case: set.offers?.case !== false, full: set.offers?.full !== false },
       });
     }
     if (path === '/api/staff/payout') {
@@ -3037,23 +3118,9 @@ export function demoApi(role, store) {
       }
       const m = String(body.method || '');
       const fl = body.fields || {};
-      if (!METHODS[m]) return fail(400, 'Choose how you want to be paid.');
-      let hint = '';
-      if (m === 'ach') {
-        const acct = String(fl.account || '').replace(/\D/g, '');
-        if (!fl.name || String(fl.routing || '').replace(/\D/g, '').length !== 9 || acct.length < 4) return fail(400, 'The name on the account, a 9 digit routing number and the account number, please.');
-        hint = `${fl.type === 'savings' ? 'Savings' : 'Checking'} ending ${acct.slice(-4)}`;
-      } else if (m === 'check') {
-        if (!fl.name || String(fl.address || '').length < 8) return fail(400, 'The name for the check and the address to mail it to, please.');
-        hint = `Mailed to ${String(fl.address).split(/[,\n]/)[0]}`;
-      } else if (m === 'other') {
-        if (String(fl.text || '').length < 3) return fail(400, 'Say how you want to be paid.');
-        hint = 'Other, as written';
-      } else {
-        const h = String(fl.handle || '');
-        if (h.length < 3) return fail(400, `The ${METHODS[m]} email, phone or handle, please.`);
-        hint = `${METHODS[m]} to ${h.slice(0, 2)}…${h.slice(-2)}`;
-      }
+      const got = demoPayout(m, fl);
+      if (got.error) return fail(400, got.error);
+      const hint = got.hint;
       store.docs.set(`payouts/${me}`, { method: m, hint, details: fl });
       store.persist?.();
       return ok({ ok: true, method: m, label: METHODS[m], hint });
@@ -3199,15 +3266,42 @@ export function demoApi(role, store) {
         if ([...store.docs.entries()].some(([k, v]) => /^advocates\//.test(k) && v.email === email)) return fail(409, 'That address already has an advocate account.');
         // A client's address stays a client's (2026-10-16), as the Worker refuses it.
         if ([...store.docs.entries()].some(([k, v]) => /^users\/[^/]+$/.test(k) && v?.email === email && (v.role || 'client') === 'client')) return fail(409, 'That address already belongs to a client here. Use another email for their advocate account.');
+        // Everything his pages set (2026-10-17), checked before anything is kept.
+        const ad = cleanDemoAddons(body.addons || {});
+        if (ad.error) return fail(400, ad.error);
+        const pct = body.commissionPct === undefined ? 60 : Number(body.commissionPct);
+        if (!Number.isInteger(pct) || pct < 0 || pct > 100) return fail(400, 'Their share is a whole percent, 0 to 100.');
+        const set = demoSettings(body.settings, {});
+        if (set.error) return fail(400, set.error);
+        const pay = body.payout?.method ? demoPayout(body.payout.method, body.payout.fields || {}) : null;
+        if (pay?.error) return fail(400, pay.error);
+        const pr = body.profile || {};
         const uid = `demo-adv-${Date.now().toString(36)}`;
-        store.docs.set(`advocates/${uid}`, { uid, name, email, active: true, owner: false, commissionPct: 60, payroll: true, primarySpecialty: '', specialties: [], credentials: '', bio: '', headshotPath: null, acceptingNew: true, addons: cleanDemoAddons(body.addons || {}).value, advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true });
+        store.docs.set(`advocates/${uid}`, {
+          uid, name, email, active: true, owner: false, commissionPct: pct, payroll: true,
+          primarySpecialty: String(pr.primarySpecialty || ''), specialties: pr.primarySpecialty ? [String(pr.primarySpecialty)] : [],
+          credentials: String(pr.credentials || '').trim().slice(0, 200), bio: String(pr.bio || '').trim().slice(0, 1500), headshotPath: null,
+          acceptingNew: true, tz: ZONES.includes(pr.tz) ? pr.tz : 'America/Boise', settings: set.value, addons: ad.value,
+          advisor: { optedIn: false, enabled: false }, createdAt: new Date().toISOString(), onboardedAt: null, demoMustChange: true,
+        });
         store.docs.set(`users/${uid}`, { email, name, role: 'advocate' });
+        if (pay) store.docs.set(`payouts/${uid}`, { method: pay.method, hint: pay.hint, details: pay.details, setBy: 'demo-admin' });
         store.persist?.();
-        return ok({ ok: true, uid, emailed: true });
+        return ok({ ok: true, uid, emailed: true, payout: pay ? { method: pay.method, hint: pay.hint } : null });
       }
       const uid = String(body.uid || '');
       const a = store.docs.get(`advocates/${uid}`);
       if (!a) return fail(404, 'Not found');
+      if (action === 'get') {
+        const p = store.docs.get(`payouts/${uid}`);
+        const s = a.settings || {};
+        return ok({
+          advocate: advView(uid, a), addons: demoAddons(uid),
+          settings: { rates: s.rates || {}, fullCap: s.fullCap ?? null, offers: { case: s.offers?.case !== false, full: s.offers?.full !== false }, hours: s.hours || null, office: { responseTime: s.office?.responseTime || null } },
+          payout: p?.method ? { method: p.method, label: PAY_METHODS[p.method] || '', hint: p.hint || '' } : null,
+          methods: PAY_METHODS, zones: ZONES, specialties: SPECIALTIES,
+        });
+      }
       if (action === 'deactivate' || action === 'activate') {
         if (a.owner) return fail(409, 'You are the owner; your account stays on.');
         store.docs.set(`advocates/${uid}`, { ...a, active: action === 'activate' });
@@ -3228,6 +3322,20 @@ export function demoApi(role, store) {
         if ('credentials' in body) next.credentials = String(body.credentials || '').trim().slice(0, 200);
         if ('bio' in body) next.bio = String(body.bio || '').trim().slice(0, 1500);
         if ('addons' in body) { const ad = cleanDemoAddons(body.addons); if (ad.error) return fail(400, ad.error); next.addons = ad.value; }
+        if ('primarySpecialty' in body) next.primarySpecialty = String(body.primarySpecialty || '');
+        if ('tz' in body && ZONES.includes(body.tz)) next.tz = body.tz;
+        if (body.settings && Object.keys(body.settings).length) {
+          if (a.owner) return fail(400, 'Your own prices and hours are in your settings.');
+          const set = demoSettings(body.settings, a.settings || {});
+          if (set.error) return fail(400, set.error);
+          next.settings = set.value;
+        }
+        if (body.payout?.method) {
+          if (a.owner) return fail(400, 'You are not on the payroll.');
+          const pay = demoPayout(body.payout.method, body.payout.fields || {});
+          if (pay.error) return fail(400, pay.error);
+          store.docs.set(`payouts/${uid}`, { method: pay.method, hint: pay.hint, details: pay.details, setBy: 'demo-admin' });
+        }
         if ('advisorEnabled' in body) {
           if (body.advisorEnabled === true && !a.owner && a.advisor?.optedIn !== true) return fail(409, 'They have not opted in. It can be switched on once they do.');
           next.advisor = { ...(a.advisor || {}), enabled: body.advisorEnabled === true };

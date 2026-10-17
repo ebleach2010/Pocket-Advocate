@@ -34,6 +34,8 @@ const W = f('worker/index.js');
 const SHOW = f('worker/showcase.js');
 const STAFF = await import(pathToFileURL(j(ROOT, 'worker/staff.js')).href);
 const ADDONS = await import(pathToFileURL(j(ROOT, 'worker/addons.js')).href);
+const SETTINGS = await import(pathToFileURL(j(ROOT, 'worker/staffsettings.js')).href);
+const PAYROLL = await import(pathToFileURL(j(ROOT, 'worker/payroll.js')).href);
 const ACTS = await import(pathToFileURL(j(ROOT, 'worker/advisor-acts.js')).href);
 const DASH = new RegExp('[\\u2013\\u2014]');
 
@@ -590,6 +592,9 @@ console.log('\n--- G. accounts ---');
       ...STAFF,
       // v7.65 (2026-10-17): a contractor's add-ons, checked by worker/addons.js.
       addonsOf: ADDONS.addonsOf, cleanAddons: ADDONS.cleanAddons,
+      // v7.68 (2026-10-17): his pages' settings and a sealed way to be paid (wizard.mjs runs them).
+      cleanSettingsChange: SETTINGS.cleanSettingsChange, settingsFrom: SETTINGS.settingsFrom, nest: SETTINGS.nest,
+      cleanPayout: PAYROLL.cleanPayout, sealPayout: PAYROLL.sealPayout, PAYOUT_METHODS: PAYROLL.PAYOUT_METHODS,
     };
     const body = SRC.replace(/^import [\s\S]*?from '[^']+';\n/gm, '').replace(/^export (const|async function|function) /gm, '$1 ');
     const api = new Function(...Object.keys(deps), `${body}\nreturn { handleAdvocates, isStaffLogin, advocateLogin, loginPath };`)(...Object.values(deps));

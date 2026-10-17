@@ -24,6 +24,10 @@ import { getDoc, patchDoc } from './firestore.js';
 import { advocateIdOf } from './staff.js';
 
 const UID_RE = /^[\w-]{1,64}$/;
+/** The week, Monday first, as their hours are kept. */
+export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const minutes = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
 // The same ceiling his own price editor has.
 export const STAFF_RATE_MAX_CENTS = 2_000_000;
 export const STAFF_RATE_KEYS = ['caseCents', 'addonCents', 'fullCents'];
@@ -46,7 +50,49 @@ export function settingsFrom(record) {
     rates,
     // A whole number from 0 (no limit) to 99, or null: not chosen, which is no limit too.
     fullCap: Number.isInteger(cap) && cap >= 0 && cap <= 99 ? cap : null,
+    hours: hoursFrom(s.hours),
+    offers: offersFrom(s.offers),
   };
+}
+
+/**
+ * THEIR WEEK (Eric, 2026-10-17: "their initial schedule"). { mon: { from,
+ * to } | null, ... } on their own clock (the record's tz), or null when none
+ * was set, which follows the office hours as before. Their in or out light
+ * follows it; a hand set in or out still beats it.
+ */
+export function hoursFrom(h) {
+  if (!h || typeof h !== 'object') return null;
+  const out = {};
+  let any = false;
+  for (const d of DAYS) {
+    const v = h[d];
+    if (v && HHMM.test(String(v.from)) && HHMM.test(String(v.to)) && minutes(v.to) > minutes(v.from)) { out[d] = { from: v.from, to: v.to }; any = true; } else out[d] = null;
+  }
+  return any ? out : null;
+}
+
+/** Their week as typed, checked: { value } (null clears it) or { error }. */
+export function cleanHours(input) {
+  if (input === null) return { value: null };
+  if (!input || typeof input !== 'object') return { error: 'Their hours, day by day.' };
+  const value = {};
+  for (const d of DAYS) {
+    const v = input[d];
+    if (!v) { value[d] = null; continue; }
+    if (!HHMM.test(String(v.from)) || !HHMM.test(String(v.to))) return { error: 'Each working day needs a start and an end time.' };
+    if (minutes(v.to) <= minutes(v.from)) return { error: 'Each working day ends after it starts.' };
+    value[d] = { from: v.from, to: v.to };
+  }
+  return { value };
+}
+
+/**
+ * What they offer (Eric, 2026-10-17: "everything I asked I could toggle on or
+ * off"). His to switch, never theirs. Not set is on, the way it always was.
+ */
+export function offersFrom(o) {
+  return { case: o?.case !== false, full: o?.full !== false };
 }
 
 /**
@@ -67,7 +113,7 @@ export async function contractorSettings(env, uid) {
   const rec = await getDoc(env, `advocates/${uid}`).catch(() => null);
   const d = rec?.data;
   if (!d || d.owner === true || d.active !== true) return null;
-  return settingsFrom(d);
+  return { ...settingsFrom(d), tz: d.tz || null };
 }
 
 /** His price list with a contractor's own prices laid over it, key by key. */
@@ -77,8 +123,12 @@ export function mergeRates(base, own) {
   return out;
 }
 
-/** What a change asks for, checked: { patch, mask } to write, or { error }. */
-export function cleanSettingsChange(body) {
+/**
+ * What a change asks for, checked: { patch, mask } to write, or { error }.
+ * `admin` is him setting someone's up (2026-10-17): only he may switch what
+ * they offer.
+ */
+export function cleanSettingsChange(body, { admin = false } = {}) {
   const patch = {};
   const mask = [];
   if (body?.office !== undefined) {
@@ -113,12 +163,26 @@ export function cleanSettingsChange(body) {
     patch['settings.fullCap'] = cap;
     mask.push('settings.fullCap');
   }
+  if (body?.hours !== undefined) {
+    const got = cleanHours(body.hours);
+    if (got.error) return { error: got.error };
+    patch['settings.hours'] = got.value;
+    mask.push('settings.hours');
+  }
+  if (body?.offers !== undefined) {
+    if (!admin) return { error: 'What you offer is set by Eric.' };
+    for (const k of ['case', 'full']) {
+      if (body.offers?.[k] === undefined) continue;
+      patch[`settings.offers.${k}`] = body.offers[k] === true;
+      mask.push(`settings.offers.${k}`);
+    }
+  }
   if (!mask.length) return { error: 'Nothing to change.' };
   return { patch, mask };
 }
 
 /** A nested patch, from the dotted one above (patchDoc takes nested data and dotted mask paths). */
-function nest(flat) {
+export function nest(flat) {
   const out = {};
   for (const [path, v] of Object.entries(flat)) {
     const keys = path.split('.');
@@ -149,12 +213,16 @@ export async function handleStaffSettings(request, env, h) {
   const rec = await getDoc(env, path).catch(() => null);
   const mine = settingsFrom(rec?.data);
   const base = await h.readRates(env).catch(() => ({}));
-  const office = h.officeStatus(mine.office.manual);
+  // Their light follows their own week once there is one (2026-10-17).
+  const office = h.officeStatus(mine.office.manual, new Date(), mine.hours ? { hours: mine.hours, tz: rec?.data?.tz } : null);
   return h.json({
     office: { ...office, manual: mine.office.manual, responseTime: mine.office.responseTime },
     rates: mine.rates,
     // His prices, shown beside theirs as the starting point, never as a rule.
     standard: { caseCents: base.caseCents, addonCents: base.addonCents, fullCents: base.fullCents },
     fullCap: mine.fullCap,
+    hours: mine.hours,
+    tz: rec?.data?.tz || 'America/Boise',
+    offers: mine.offers,
   });
 }
