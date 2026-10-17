@@ -15,7 +15,7 @@
 //   the tabs at the top of your case" is the other half, and it is the half
 //   that stops a change from feeling like something went missing.
 
-export const VERSION = '7.71';
+export const VERSION = '7.72';
 
 /**
  * Newest first.
@@ -51,6 +51,18 @@ export const VERSION = '7.71';
  * client sees only move when their app does.
  */
 export const CHANGELOG = [
+  {
+    // A SWITCH FOR EACH SERVICE (Eric, 2026-10-17: "My services are off. How
+    // do I toggle them back on in app?"). Admin only.
+    version: '7.72',
+    quiet: true,
+    client: [],
+    admin: [
+      'Settings has a switch for each service: 24/7 Priority Chat, Advocacy Case and Full-Service.',
+      'Off means clients see Not currently offering and the waitlist, and nobody can buy it, your team\'s clients included. Anyone who already has it keeps it.',
+      'Extras go with their service: follow-ups and opening chat early with the case, another month and appeals with Full-Service.',
+    ],
+  },
   {
     // EVERY SERVICE OPEN (Eric, 2026-10-17: "For now, open up all my tier
     // options."). Admin only.

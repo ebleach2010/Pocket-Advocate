@@ -280,7 +280,9 @@ console.log('\n--- D. the case it opens ---');
 console.log('\n--- E. the wiring ---');
 {
   const ADMIN_ASSET = new Function(`${(W.match(/const ADMIN_ASSET =\n\s+\/[^\n]+\/;/) || ['const ADMIN_ASSET = /$^/;'])[0]} return ADMIN_ASSET;`)();
-  const salesSet = (W.match(/const SALES_ROUTES = new Set\(\[([\s\S]*?)\]\);/) || [])[1] || '';
+  // RE-PINNED 2026-10-17 (v7.72): the purchase routes are a Map of route to the services it sells (one switch per service).
+  // NEGATIVE CONTROL (run 2026-10-17, v7.72): `['/api/invite/confirm', ['case']],` added to SALES_ROUTES made E1 read FAIL.
+  const salesSet = (W.match(/const SALES_ROUTES = new Map\(\[([\s\S]*?)\n\]\);/) || [])[1] || '';
   const routes = [['/api/admin/lead-invite', 'handleLeadInvite'], ['/api/admin/lead-invites', 'handleLeadInvites'],
     ['/api/admin/lead-invite/cancel', 'handleLeadInviteCancel'], ['/api/invite', 'handleInviteRead'], ['/api/invite/confirm', 'handleInviteConfirm']];
   // NEGATIVE CONTROL (run 2026-10-15): '/api/invite/confirm' added to SALES_ROUTES made this read

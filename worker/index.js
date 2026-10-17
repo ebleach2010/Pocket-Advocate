@@ -95,7 +95,7 @@ import { bookableTimes, bufferedSlotIds, slotInsideBuffer, holdMustYield, recent
 // The security rules, published by the Worker when what it carries changes.
 import { releaseRules, RULES_STATUS } from './rules-release.js';
 import { FUND_OPEN } from '../public/js/fund-rules.js';
-import { SALES_OPEN, CHAT_OPEN, SALES_CLOSED_MESSAGE } from '../public/js/sales.js';
+import { SALES_CLOSED_MESSAGE, SERVICES, switchesFrom } from '../public/js/sales.js';
 import {
   runAnalysis, runQuestion, runDraft, runAppeal, runCallNotes, runCallDoc, markPending, runQueuedAnalyses, requeueStranded, runStyleDistill, withCasePolicy, onOwnCase,
   pollCaseFlight, pollFlightsNow, pollAskFlight,
@@ -762,22 +762,64 @@ const FUND_PAGE = /^\/fund(\.html)?\/?$/;
 // and its booking route stay in git; the page sends people home and the
 // route answers 410. His Free calls list still reads leads/ for the record.
 const FIT_PAGE = /^\/fit(\.html)?\/?$/;
-// Every route that starts a purchase. While SALES_OPEN is false (Eric,
-// 2026-10-12: "Stop sales everywhere.") the router refuses them all before a
-// handler can reach Stripe. His own admin charges are not here: those are
-// his decisions, made by hand.
-const SALES_ROUTES = new Set([
-  '/api/checkout', '/api/chat-unlock', '/api/upgrade',
-  '/api/followup', '/api/extend', '/api/telehealth',
-  // Another month asked for after one ended (2026-10-17): off while sales are,
-  // on Eric's word ("No, keep it off").
-  '/api/extend-request',
-  // An appeal asked for on a Full-Service case (2026-10-17): a purchase like the rest.
-  '/api/addon-request',
+// Every route that starts a purchase, and the services it sells. While those
+// are off (Eric, 2026-10-12: "Stop sales everywhere."; one switch per service
+// since 2026-10-17: "My services are off. How do I toggle them back on in
+// app?") the router refuses it before a handler can reach Stripe. A route
+// naming two services is refused only when both are off. His own admin
+// charges are not here: those are his decisions, made by hand.
+const SALES_ROUTES = new Map([
+  // 24/7 Priority Chat on its own switch (2026-10-14: "Unlock priority chat").
+  ['/api/subscribe', ['chat']],
+  // Booking a case, and what an Advocacy Case adds on.
+  ['/api/checkout', ['case']], ['/api/chat-unlock', ['case']], ['/api/followup', ['case']],
+  // A clinic visit: paid on a case, part of a Full-Service month.
+  ['/api/telehealth', ['case', 'full']],
+  // Full-Service: the step up, another month (asked for after one ended,
+  // 2026-10-17: off while it is, on Eric's word, "No, keep it off"), and an
+  // appeal or a visit asked for on a Full-Service case.
+  ['/api/upgrade', ['full']], ['/api/extend', ['full']], ['/api/extend-request', ['full']], ['/api/addon-request', ['full']],
 ]);
-// 24/7 Priority Chat has its own switch (Eric, 2026-10-14: "Unlock priority
-// chat"), so it can be open while everything above stays shut.
-const CHAT_ROUTE = '/api/subscribe';
+/** True when every service a purchase route sells is off. Pure. */
+function salesShut(sw, path) {
+  const of = SALES_ROUTES.get(path);
+  return !!of && !of.some((k) => sw[k] === true);
+}
+
+// HIS SWITCHES (2026-10-17), kept in config/sales and set from his settings.
+// The gate reads them afresh on every purchase; a page's view of them may be a
+// few seconds old. An unreadable doc keeps this isolate's last answer, or the
+// defaults in public/js/sales.js.
+const SALES_PATH = 'config/sales';
+const SALES_TTL_MS = 15_000;
+let salesMemo = { at: 0, sw: null };
+async function readSwitches(env, { fresh = false } = {}) {
+  if (!fresh && salesMemo.sw && Date.now() - salesMemo.at < SALES_TTL_MS) return salesMemo.sw;
+  const doc = await getDoc(env, SALES_PATH).catch(() => undefined);
+  const sw = doc !== undefined ? switchesFrom(doc?.data) : (salesMemo.sw || switchesFrom(null));
+  salesMemo = { at: Date.now(), sw };
+  return sw;
+}
+
+/**
+ * GET/POST /api/admin/sales   his alone. { chat, case, full }, each true or false.
+ * A POST names the ones it changes; the answer is what is stored, read back.
+ */
+async function handleSalesSwitches(request, env) {
+  const admin = await requireAdmin(request, env);
+  if (!admin) return json({ error: 'Not found' }, 404);
+  if (request.method === 'POST') {
+    const body = await request.json().catch(() => ({}));
+    const keys = SERVICES.filter((k) => body?.[k] !== undefined);
+    if (!keys.length || keys.some((k) => typeof body[k] !== 'boolean')) return json({ error: 'On or off.' }, 400);
+    const patch = { setAt: new Date() };
+    for (const k of keys) patch[k] = body[k];
+    await patchDoc(env, SALES_PATH, patch, { mask: [...keys, 'setAt'] });
+  } else if (request.method !== 'GET') {
+    return json({ error: 'Not found' }, 404);
+  }
+  return json(await readSwitches(env, { fresh: true }));
+}
 
 /**
  * The path the ASSET SERVER will resolve, not the one in the request line.
@@ -1058,12 +1100,17 @@ export default {
       // checkout is refused; /api/subscribe answers at every hour.
       if (maintenanceUntil() && !DEMO_HOST.test(url.hostname) && url.pathname === '/api/checkout')
         return json({ error: maintenanceMessage(), maintenanceUntil: MAINTENANCE_UNTIL }, 503);
-      // Sales closed (Eric, 2026-10-12: "Stop sales everywhere."), the chat
-      // line on its own switch since 2026-10-14 ("Unlock priority chat").
+      // A service he has switched off (Eric, 2026-10-12: "Stop sales
+      // everywhere."; each service on its own switch since 2026-10-17).
       // Preview and local hosts are spared, as above.
-      if (((!SALES_OPEN && SALES_ROUTES.has(url.pathname)) || (!CHAT_OPEN && url.pathname === CHAT_ROUTE))
-        && !DEMO_HOST.test(url.hostname))
+      if (SALES_ROUTES.has(url.pathname) && !DEMO_HOST.test(url.hostname)
+        && salesShut(await readSwitches(env, { fresh: true }), url.pathname))
         return json({ error: SALES_CLOSED_MESSAGE, salesClosed: true }, 409);
+      // Which services are on, for the pages (2026-10-17).
+      if (url.pathname === '/api/sales' && request.method === 'GET')
+        return json(await readSwitches(env));
+      if (url.pathname === '/api/admin/sales')
+        return await handleSalesSwitches(request, env);
       if (url.pathname === '/api/checkout' && request.method === 'POST')
         return await handleCheckout(request, env);
       if (url.pathname === '/api/case-for-session' && request.method === 'GET')
@@ -1741,9 +1788,10 @@ export default {
     // The end of each Full-Service month: the heads-up three days out, and the
     // close (2026-10-17). Its own minute, like the others.
     if (minute % 15 === 3) {
-      ctx.waitUntil(sweepFullServiceMonths(env, {
-        windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: SALES_OPEN, baseUrl: env.PUBLIC_BASE_URL,
-      }).catch((err) => console.warn('month sweep:', err.message || err)));
+      // Another month is offered only while Full-Service is switched on.
+      ctx.waitUntil(readSwitches(env).then((sw) => sweepFullServiceMonths(env, {
+        windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: sw.full, baseUrl: env.PUBLIC_BASE_URL,
+      })).catch((err) => console.warn('month sweep:', err.message || err)));
     }
     if (minute % 15 === 13) ctx.waitUntil(retireSamples(env).catch((err) => console.warn('retire samples:', err.message || err)));
 
@@ -2493,7 +2541,7 @@ async function grandfatherFollowUps(env) {
 
 // Bumped on each meaningful deploy; served at GET /api/version so a human can
 // confirm which build is live without guessing about caches.
-const BUILD_TAG = 'v2026-10-17-open';
+const BUILD_TAG = 'v2026-10-17-switches';
 // Every merge to main is a version. The notes themselves live in
 // public/js/changelog.js, next to the code that draws the card; this constant
 // is here so /api/version can say which release is live without the caller
@@ -2501,7 +2549,7 @@ const BUILD_TAG = 'v2026-10-17-open';
 // every push to main bumps this and changelog.js's VERSION together, and the
 // newest changelog entry's client notes are replaced with that push's
 // client-visible changes and bug fixes.
-const VERSION = '7.71';
+const VERSION = '7.72';
 
 /**
  * The 48 hours the review card promises. "The chat closes 48hrs after you
@@ -3390,6 +3438,9 @@ async function handleCheckout(request, env) {
     }, 400);
   if (body?.tier === 'full' && typeof body?.acks?.[FULL_ACCESS_ACK] !== 'number')
     return json({ error: 'Read the scope note and acknowledge it first.' }, 400);
+  // The router let this through on the case's switch; a first Full-Service month answers to its own (2026-10-17).
+  if (body?.tier === 'full' && !DEMO_HOST.test(new URL(request.url).hostname) && !(await readSwitches(env, { fresh: true })).full)
+    return json({ error: SALES_CLOSED_MESSAGE, salesClosed: true }, 409);
 
   if (!METHODS.includes(method)) return json({ error: 'Choose a meeting method.' }, 400);
   // The number is asked for on every booking now, video included (Eric,
@@ -11699,7 +11750,9 @@ async function handleCaseUpdate(request, env) {
     // that tab they can purchase the full case management easily"). Only
     // while sales are open, and never on a free family case: otherwise there
     // is nothing on that tab to buy. enhancementAt lights the tab's dot.
-    const enhance = SALES_OPEN && !doc.data.family;
+    // RE-PINNED 2026-10-17 (v7.72): open means the Advocacy Case or Full-Service switch is on.
+    const sw = await readSwitches(env);
+    const enhance = (sw.case || sw.full) && !doc.data.family;
     await patchDoc(env, `cases/${caseId}`, {
       status: 'delivered', reportDeliveredAt: now, ...(enhance ? { enhancementAt: now } : {}),
     }, {

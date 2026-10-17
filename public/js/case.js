@@ -27,7 +27,15 @@ import { wireAboutButtons } from './service-about.js';
 import { handsOffReadiness, handsOffStartsLater } from './readiness.js';
 import { mountFolder, folderEnter } from './folder.js';
 import { ask } from './sheet.js';
-import { SALES_OPEN, SALES_CLOSED_MESSAGE } from './sales.js';
+import { live as sales, loadSales, SALES_CLOSED_MESSAGE } from './sales.js';
+
+// His switches (2026-10-17), asked for before anything is drawn: a service he
+// has turned off offers nothing new on a case. An add-on follows the service it
+// belongs to, the way the Worker's gate does.
+await loadSales();
+const caseOpen = () => sales.case === true;
+const fullOpen = () => sales.full === true;
+const anyOpen = () => caseOpen() || fullOpen();
 
 // MST = fixed UTC-7 year-round (IANA 'Etc/GMT+7'; the sign is inverted by design).
 const MOUNTAIN_TZ = 'Etc/GMT+7';
@@ -322,7 +330,7 @@ function isUnseen(key, stamp) {
   try { return stamp > (Number(JSON.parse(localStorage.getItem(ENHANCE_SEEN_KEY) || '{}')[key]) || 0); } catch { return true; }
 }
 function markEnhance(c) {
-  folder?.mark?.('addons', SALES_OPEN && !c.family && !c.fullAccess && isUnseen(enhanceKey(c), toDate(c.enhancementAt).getTime()));
+  folder?.mark?.('addons', anyOpen() && !c.family && !c.fullAccess && isUnseen(enhanceKey(c), toDate(c.enhancementAt).getTime()));
 }
 
 /**
@@ -939,7 +947,7 @@ function renderChat(el, c) {
     : ''}
     <p class="dim small" style="margin:.1rem 0 .5rem;">Chat keeps your case moving between calls: records, scheduling, and anything new or urgent with your health. The analysis itself happens on our calls, and everything else goes on the list for the next one.</p>
     <div class="panel" data-chat></div>
-    ${chatLocked && SALES_OPEN ? `
+    ${chatLocked && caseOpen() ? `
     <div class="panel" data-chat-unlock style="margin-top:.7rem;">
       <h3 style="margin:.1rem 0 .2rem;">Want a direct line before then?</h3>
       <p class="dim small" style="margin:0 0 .5rem;">Open chat now for a one-time <span data-unlock-price>$50</span> and it stays open for the life of your case. Otherwise it opens on its own, one week before we talk.</p>
@@ -1894,7 +1902,7 @@ function renderAddons(el, c) {
   // the payment after the client had filled the form in.
   el.innerHTML = `
     <h2 class="case-sec-h">Case Enhancements</h2>
-    ${SALES_OPEN ? `<p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
+    ${anyOpen() ? `<p class="dim small" style="margin:.2rem 0 .8rem;">Extras you can put on
       this case whenever you need them. Nothing here is required, and nothing
       is charged until you choose it.</p>` : ''}
     <div data-telehealth></div>
@@ -1904,7 +1912,9 @@ function renderAddons(el, c) {
     <div data-upgrade></div>
     <div data-extend></div>
     <p class="dim small" data-addons-closed hidden style="margin:.2rem 0 .8rem;"></p>`;
-  const addAbout = (host, topic) => { if (keepCard(host)) addAboutButton(host, topic); };
+  // Each offer follows the service it sells (2026-10-17), as the Worker's gate does.
+  const OPEN_FOR = { telehealth: anyOpen, extension: fullOpen, followup: caseOpen, handsOff: fullOpen };
+  const addAbout = (host, topic) => { if (keepCard(host, (OPEN_FOR[topic] || anyOpen)())) addAboutButton(host, topic); };
   const th = el.querySelector('[data-telehealth]');
   if (th) {
     th.innerHTML = telehealthCard(c); wireTelehealthCard(th, c); addAbout(th, 'telehealth');
@@ -1916,11 +1926,11 @@ function renderAddons(el, c) {
   }
   const ap = el.querySelector('[data-appeal]');
   if (ap) {
-    ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap);
+    ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap, fullOpen());
     // Shown once the advocate's own offer is known.
     ratesReady.then(() => {
       if (!ap.isConnected || busyInside(ap)) return;
-      ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap);
+      ap.innerHTML = appealCard(c); wireAppealCard(ap, c); keepCard(ap, fullOpen());
     }).catch(() => {});
   }
   // His own extras for this advocate (2026-10-17), one card each.
@@ -1929,7 +1939,7 @@ function renderAddons(el, c) {
     if (!cu?.isConnected || busyInside(cu)) return;
     cu.innerHTML = customIds(c).map((id) => `<div data-custom="${esc(id)}"></div>`).join('');
     for (const host of cu.querySelectorAll('[data-custom]')) {
-      host.innerHTML = customCard(c, host.dataset.custom); wireCustomCard(host, c, host.dataset.custom); keepCard(host);
+      host.innerHTML = customCard(c, host.dataset.custom); wireCustomCard(host, c, host.dataset.custom); keepCard(host, fullOpen());
     }
   };
   if (cu) { paintCustoms(); ratesReady.then(paintCustoms).catch(() => {}); }
@@ -1957,7 +1967,7 @@ function renderAddons(el, c) {
     }).catch(() => {});
   }
   const none = el.querySelector('[data-addons-closed]');
-  if (!SALES_OPEN && none && ![th, ap, cu, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
+  if (!(caseOpen() && fullOpen()) && none && ![th, ap, cu, ex, offer, up].some((h) => h && h.innerHTML.trim())) {
     none.textContent = SALES_CLOSED_MESSAGE;
     none.hidden = false;
   }
@@ -2019,7 +2029,7 @@ function appealCard(c) {
     </div>`;
 }
 function wireAppealCard(el, c) {
-  const paint = (next) => { el.innerHTML = appealCard(next); wireAppealCard(el, next); keepCard(el); };
+  const paint = (next) => { el.innerHTML = appealCard(next); wireAppealCard(el, next); keepCard(el, fullOpen()); };
   const post = async (payload) => {
     const res = await fetch('/api/addon-request', {
       method: 'POST',
@@ -2105,7 +2115,7 @@ function customCard(c, id) {
     </div>`;
 }
 function wireCustomCard(el, c, id) {
-  const paint = (next) => { el.innerHTML = customCard(next, id); wireCustomCard(el, next, id); keepCard(el); };
+  const paint = (next) => { el.innerHTML = customCard(next, id); wireCustomCard(el, next, id); keepCard(el, fullOpen()); };
   const post = async (payload) => {
     const res = await fetch('/api/addon-request', {
       method: 'POST',
@@ -2138,7 +2148,7 @@ const SELLING = '[data-th-request],[data-buy-extend],[data-buy-followup],[data-b
  * While sales are closed, empties a card that is only an offer and takes the
  * "buy again" button off a finished one. True when something is left to show.
  */
-function keepCard(host, open = SALES_OPEN) {
+function keepCard(host, open = anyOpen()) {
   if (!host) return false;
   if (!open) {
     if (host.querySelector(SELLING)) {

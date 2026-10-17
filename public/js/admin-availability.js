@@ -7,7 +7,7 @@
 // page now, and this module mounts them there (mountAvailability).
 import { db, collection, getDocs } from './firebase.js';
 import { mountOfficeControl } from './admin-hours.js';
-import { SALES_OPEN } from './sales.js';
+import { live as sales, loadSales } from './sales.js';
 
 const MOUNTAIN_TZ = 'Etc/GMT+7'; // MST = fixed UTC-7 (IANA sign is inverted)
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18]; // last 60-min slot ends 7pm (CLOSE_HOUR in worker/schedule.js)
@@ -38,8 +38,11 @@ function init() {
   // mounts only where a page still carries the slot for it.
   const office = document.getElementById('office');
   if (office) mountOfficeControl(office, { getToken: () => user.getIdToken() });
-  wireClosure();
-  for (const el of document.querySelectorAll('[data-when-sales-open]')) el.hidden = !SALES_OPEN;
+  // These slots are Advocacy Case times: they follow his case switch (2026-10-17).
+  loadSales().then(() => {
+    wireClosure();
+    for (const el of document.querySelectorAll('[data-when-sales-open]')) el.hidden = !sales.case;
+  });
   loadCalendar();
 }
 
@@ -60,7 +63,7 @@ function wireClosure() {
     // so the open line would be untrue. Same words as the public badge.
     stateEl.innerHTML = msg
       ? `🚫 <strong>${msg}</strong>`
-      : SALES_OPEN
+      : sales.case
         ? '✅ <strong>Open for new cases.</strong> Clients can book any slot below.'
         : '🚫 <strong>Not currently offering.</strong>';
   };

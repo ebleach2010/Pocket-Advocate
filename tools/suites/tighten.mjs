@@ -62,7 +62,10 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
     && run(true, false).r === false && run(true, false).head.length === 0
     && run(false, true).r === false && run(false, true).head.length === 0
     && run(false, false, true).r === false
-    && /import\('\.\/sales\.js'\)\.then\(\(m\) => hideBookWhenClosed\(m\.packageOpen\('case'\), inDemo\(\)\)\)/.test(NAV),
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" The case's switch is his
+    // to flip in settings now, so the menu asks the Worker for it before deciding.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): nav-menu's `m.packageOpen('case')` made `true` made T1 read FAIL.
+    && /import\('\.\/sales\.js'\)\.then\(\(m\) => m\.loadSales\(\)\.then\(\(\) => hideBookWhenClosed\(m\.packageOpen\('case'\), inDemo\(\)\)\)\)/.test(NAV),
     JSON.stringify(closed));
 
   // NEGATIVE CONTROL (run 2026-10-15): `<a href="/">Book</a>` put back in chat.html's menu made this read
@@ -76,7 +79,8 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
 
   // The Enhance tab's cards, lifted and run against a stand-in for each card's host.
   const SELLING = new Function(`${(CASE.match(/\nconst SELLING = [^\n]+/) || [''])[0]}; return SELLING;`)();
-  const keep = new Function(`const SALES_OPEN = false; const SELLING = ${JSON.stringify(SELLING)}; ${sfn(CASE, 'keepCard')}; return keepCard;`)();
+  // RE-PINNED 2026-10-17 (v7.72): keepCard's default is now "is any service a case sells switched on", anyOpen(); the lift shuts them all.
+  const keep = new Function(`const anyOpen = () => false; const SELLING = ${JSON.stringify(SELLING)}; ${sfn(CASE, 'keepCard')}; return keepCard;`)();
   const host = (html) => {
     const h = { innerHTML: html };
     h.querySelector = (sel) => {
@@ -124,15 +128,22 @@ console.log('\n--- T. nothing is sold that cannot be bought ---');
   // NEGATIVE CONTROL (run 2026-10-15): the chat unlock panel's `&& SALES_OPEN` taken off made this read
   //   FAIL  T4 the Enhance tab drops its sales line and says the approved closed sentence when nothing is left, and the Chat tab's paid unlock is gone while closed
   check('T4 the Enhance tab drops its sales line and says the approved closed sentence when nothing is left, and the Chat tab\'s paid unlock is gone while closed',
-    /import \{ SALES_OPEN, SALES_CLOSED_MESSAGE \} from '\.\/sales\.js';/.test(CASE)
-    && /\$\{SALES_OPEN \? `<p class="dim small" style="margin:\.2rem 0 \.8rem;">Extras you can put on/.test(addons)
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" One switch per service,
+    // asked for before the page draws: the sales line while any service a case sells is on, the closed sentence when one is
+    // off and nothing is left, each card by the service it sells (OPEN_FOR), and the paid chat unlock with the case's switch.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): OPEN_FOR's `followup: caseOpen` made `followup: fullOpen` made T4 read FAIL.
+    /import \{ live as sales, loadSales, SALES_CLOSED_MESSAGE \} from '\.\/sales\.js';/.test(CASE) && /\nawait loadSales\(\);\n/.test(CASE)
+    && /const caseOpen = \(\) => sales\.case === true;\nconst fullOpen = \(\) => sales\.full === true;\nconst anyOpen = \(\) => caseOpen\(\) \|\| fullOpen\(\);/.test(CASE)
+    && /\$\{anyOpen\(\) \? `<p class="dim small" style="margin:\.2rem 0 \.8rem;">Extras you can put on/.test(addons)
     // RE-PINNED 2026-10-17 (v7.65): the appeal card (ap) counts among what is left.
     // NEGATIVE CONTROL (run 2026-10-17, v7.65): `ap` taken out of the list made T4 read FAIL.
     // RE-PINNED 2026-10-17 (v7.68): his own extras' cards (cu) count too.
     // NEGATIVE CONTROL (run 2026-10-17, v7.68): `cu` taken out of the list made T4 read FAIL.
-    && /if \(!SALES_OPEN && none && !\[th, ap, cu, ex, offer, up\]\.some\(\(h\) => h && h\.innerHTML\.trim\(\)\)\) \{\s*none\.textContent = SALES_CLOSED_MESSAGE;/.test(addons)
-    && /const addAbout = \(host, topic\) => \{ if \(keepCard\(host\)\) addAboutButton\(host, topic\); \};/.test(addons)
-    && /\$\{chatLocked && SALES_OPEN \? `\s*<div class="panel" data-chat-unlock/.test(CASE));
+    && /if \(!\(caseOpen\(\) && fullOpen\(\)\) && none && !\[th, ap, cu, ex, offer, up\]\.some\(\(h\) => h && h\.innerHTML\.trim\(\)\)\) \{\s*none\.textContent = SALES_CLOSED_MESSAGE;/.test(addons)
+    && /const OPEN_FOR = \{ telehealth: anyOpen, extension: fullOpen, followup: caseOpen, handsOff: fullOpen \};/.test(addons)
+    && /const addAbout = \(host, topic\) => \{ if \(keepCard\(host, \(OPEN_FOR\[topic\] \|\| anyOpen\)\(\)\)\) addAboutButton\(host, topic\); \};/.test(addons)
+    && /keepCard\(ap, fullOpen\(\)\)/.test(addons) && /keepCard\(host, fullOpen\(\)\)/.test(addons)
+    && /\$\{chatLocked && caseOpen\(\) \? `\s*<div class="panel" data-chat-unlock/.test(CASE));
 
   // NEGATIVE CONTROL (run 2026-10-15): the telehealth seed set back to 45000 made this read
   //   FAIL  T5 the telehealth card quotes what Stripe charges: the live price, seeded with the Worker's own number
@@ -222,8 +233,11 @@ console.log('\n--- U. one thing in one place ---');
   //   FAIL  U7 the waitlist never offers a package that is open, and opens on the package the visitor came from
   const WL = f('public/js/waitlist.js');
   check('U7 the waitlist never offers a package that is open, and opens on the package the visitor came from',
-    /import \{ packageOpen \} from '\.\/sales\.js';/.test(WL)
-    && /for \(const o of \[\.\.\.pick\.options\]\) if \(o\.value && packageOpen\(o\.value\)\) o\.remove\(\);/.test(WL)
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" The picker waits for his
+    // switches, then takes out every package that is on.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): the `loadSales().then(() => {` around the loop made a plain block made U7 read FAIL.
+    /import \{ packageOpen, loadSales \} from '\.\/sales\.js';/.test(WL)
+    && /loadSales\(\)\.then\(\(\) => \{\s*for \(const o of \[\.\.\.pick\.options\]\) if \(o\.value && packageOpen\(o\.value\)\) o\.remove\(\);/.test(WL)
     && /const wl = new URLSearchParams\(location\.search\)\.get\('wl'\);\s*if \(wl && \[\.\.\.pick\.options\]\.some\(\(o\) => o\.value === wl\)\) pick\.value = wl;/.test(WL));
 }
 
@@ -249,9 +263,12 @@ console.log('\n--- V. the words ---');
   //   FAIL  V2 while sales are closed Eric's availability page says Not currently offering, and the line about clients booking is hidden
   const AV = f('public/js/admin-availability.js');
   check('V2 while sales are closed Eric\'s availability page says Not currently offering, and the line about clients booking is hidden',
-    /import \{ SALES_OPEN \} from '\.\/sales\.js';/.test(AV)
-    && /: SALES_OPEN\s*\? '✅ <strong>Open for new cases\.<\/strong> Clients can book any slot below\.'\s*: '🚫 <strong>Not currently offering\.<\/strong>';/.test(AV)
-    && /for \(const el of document\.querySelectorAll\('\[data-when-sales-open\]'\)\) el\.hidden = !SALES_OPEN;/.test(AV)
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" His calendar's slots are
+    // Advocacy Case times, so the page follows the case's switch, asked for before it paints.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): `el.hidden = !sales.case` made `el.hidden = !sales.full` made V2 read FAIL.
+    /import \{ live as sales, loadSales \} from '\.\/sales\.js';/.test(AV)
+    && /: sales\.case\s*\? '✅ <strong>Open for new cases\.<\/strong> Clients can book any slot below\.'\s*: '🚫 <strong>Not currently offering\.<\/strong>';/.test(AV)
+    && /loadSales\(\)\.then\(\(\) => \{\s*wireClosure\(\);\s*for \(const el of document\.querySelectorAll\('\[data-when-sales-open\]'\)\) el\.hidden = !sales\.case;/.test(AV)
     // RE-PINNED 2026-10-16 (v7.55): the line moved with the slot tools onto the Calendar page (one Calendar page).
     // NEGATIVE CONTROL (run 2026-10-16, v7.55): the line's data-when-sales-open taken off on the calendar page made V2 read FAIL.
     && /<span data-when-sales-open>Clients can only book slots you open here, 72\+ hours out\.<\/span>/.test(f('public/admin-calendar.html')));

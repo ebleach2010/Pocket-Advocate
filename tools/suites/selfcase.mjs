@@ -367,8 +367,10 @@ const guards = [
   ['the recording clock', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,6}\s+if \(doc\.data\.fullAccess\) \{[\s\S]{0,1500}?\n\s+const alreadyStarted = !!doc\.data\.reportDueAt;/],
   ['the document push', /if \(doc\.data\.clientUid && !doc\.data\.self\) \{/],
   // RE-PINNED 2026-10-17 (v7.65): the new-enhancement stamp sits between the last refusal and the write.
+  // RE-PINNED 2026-10-17 (v7.72): the stamp reads his switches first (one per service); the refusals above it are unchanged.
+  // NEGATIVE CONTROL (run 2026-10-17, v7.72): the delivered state's `if (doc.data.self) return json({ ok: true, self: true });` taken out made S17 read FAIL.
   // NEGATIVE CONTROL (run 2026-10-17, v7.65): report-uploaded's Full-Service refusal taken out made S17 read FAIL.
-  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,8}\s+if \(doc\.data\.fullAccess\) return json\([^\n]*\n\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n(?:\s+\/\/[^\n]*\n){0,6}\s+const enhance = SALES_OPEN && !doc\.data\.family;\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+status: 'delivered'/],
+  ['the delivered state', /if \(doc\.data\.self\) return json\(\{ ok: true, self: true \}\);\n(?:\s+\/\/[^\n]*\n){0,8}\s+if \(doc\.data\.fullAccess\) return json\([^\n]*\n\s+if \(!doc\.data\.reportDueAt\) return json\([^\n]*\n(?:\s+\/\/[^\n]*\n){0,6}\s+const sw = await readSwitches\(env\);\n\s+const enhance = \(sw\.case \|\| sw\.full\) && !doc\.data\.family;\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+status: 'delivered'/],
   ['the included hours', /if \(!c\?\.fullAccess \|\| c\.self \|\| c\.status === 'closed' \|\| c\.work\?\.includedDoneAt\) return;/],
   ['the delivered-case sweep', /if \(onHold\(row\.data\)\) continue;\n[^\n]*\n\s+if \(row\.data\.self \|\| row\.data\.showcase\) continue;/],
   ['the chat-open notice', /if \(c\.chatOpenNotified \|\| c\.chatUnlocked \|\| c\.self \|\| c\.showcase\) continue;/],

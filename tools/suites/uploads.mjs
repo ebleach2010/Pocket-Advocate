@@ -601,7 +601,8 @@ const liftTable = () => [...LIFTS].map(([k, v]) => `${k} ${v.size}`).join(', ');
       const firstName = (n) => String(n || '').split(' ')[0];
       // RE-PINNED 2026-10-17 (v7.65): the report's new-enhancement nudge reads the sales switch.
       // NEGATIVE CONTROL (run 2026-10-17, v7.65): status 'delivered' dropped from report-uploaded still made U16 read FAIL.
-      const SALES_OPEN = false;
+      // RE-PINNED 2026-10-17 (v7.72): his switches are read from the Worker's store now; all off here, as before.
+      const readSwitches = async () => ({ chat: false, case: false, full: false });
       ${fn}
       return handleCaseUpdate;
     `);

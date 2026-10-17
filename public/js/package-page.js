@@ -8,7 +8,7 @@
 // currently offering" and the waitlist while it is not. Nothing here reads
 // any other package's copy.
 import { SERVICE_ABOUT, priced } from './service-about.js';
-import { packageOpen } from './sales.js';
+import { packageOpen, loadSales } from './sales.js';
 
 /** The About entry each page shows. Full service's copy is filed as handsOff. */
 export const PAGE_COPY = { chat: 'chat', case: 'case', full: 'handsOff' };
@@ -50,7 +50,8 @@ function paint() {
   const a = SERVICE_ABOUT[PAGE_COPY[pkg]];
   if (!a) return;
   const status = document.querySelector('[data-pkg-status]');
-  if (status) status.innerHTML = statusHtml(pkg, packageOpen(pkg));
+  // The door waits for his switch (2026-10-17), so a closed package never flashes a way in.
+  if (status) loadSales().then(() => { status.innerHTML = statusHtml(pkg, packageOpen(pkg)); });
   const body = document.querySelector('[data-pkg-body]');
   if (body) body.innerHTML = bodyHtml(a);
   // The copy's prices are live spots; fill them from the same answer as the rest.

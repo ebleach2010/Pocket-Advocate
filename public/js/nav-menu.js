@@ -170,7 +170,7 @@ export function hideBookWhenClosed(open, demo) {
   document.head.appendChild(s);
   return true;
 }
-import('./sales.js').then((m) => hideBookWhenClosed(m.packageOpen('case'), inDemo())).catch(() => {});
+import('./sales.js').then((m) => m.loadSales().then(() => hideBookWhenClosed(m.packageOpen('case'), inDemo()))).catch(() => {});
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', mountNav);

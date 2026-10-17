@@ -71,6 +71,23 @@ export function adminSettingsHtml() {
       <button class="btn" data-paid-save style="flex:none; min-height:44px;" disabled>Record</button>
     </div>
     <p class="dim small" data-paid-said style="margin:.45rem 0 0;"></p>` : ''}
+    <h4 style="margin:1.2rem 0 .1rem;">Your services</h4>
+    <!-- Eric, 2026-10-17: "My services are off. How do I toggle them back on
+         in app?" One switch each, kept by the Worker (config/sales), which
+         refuses a purchase of anything switched off. Same discipline as the
+         rows below: disabled until the server says what is on. -->
+    <p class="dim small" style="margin:0 0 .5rem;">Off means clients see Not
+      currently offering and the waitlist, and nobody can buy it, your team's
+      clients included. Anyone who already has it keeps it. Live within a
+      minute.</p>
+    <div data-sales-rows>
+      ${[['chat', '24/7 Priority Chat'], ['case', 'Advocacy Case'], ['full', 'Full-Service Case Management']].map(([k, name]) => `
+      <div class="toggle-row" style="margin-top:.6rem;">
+        <span><strong>${name}</strong><br><span class="dim small" data-sale-said="${k}">Reading it…</span></span>
+        <button class="switch" data-sale="${k}" data-name="${name}" aria-pressed="false" aria-label="${name}" disabled></button>
+      </div>`).join('')}
+    </div>
+    <p class="dim small" data-sales-said role="status" style="margin:.45rem 0 0;"></p>
     <h4 style="margin:1.2rem 0 .1rem;">Prices</h4>
     <!-- Eric, 2026-10-15: "In the settings tab for admin let me adjust price
          for each effective immediately." The setter used to sit folded at the
@@ -159,6 +176,7 @@ export function adminSettingsHtml() {
  * that, and only then let him touch it.
  */
 export function wireAdminSettings(overlay, user) {
+  wireSales(overlay, user);
   wirePrices(overlay, user);
   wirePaid(overlay, user);
   wireCapacity(overlay, user);
@@ -171,6 +189,62 @@ export function wireAdminSettings(overlay, user) {
     btn.classList.toggle('on', on);
     btn.setAttribute('aria-pressed', String(on));
   });
+}
+
+/**
+ * His services, one switch each (2026-10-17): asked first, painted from the
+ * answer, then live. A tap sends that one service and paints what the Worker
+ * says is stored, so a switch never shows a state that did not take.
+ */
+function wireSales(overlay, user) {
+  const btns = [...overlay.querySelectorAll('[data-sale]')];
+  const said = overlay.querySelector('[data-sales-said]');
+  if (!btns.length) return;
+  const line = (k, on) => (on
+    ? (k === 'case' ? 'On. Clients can book it.' : 'On. Clients can buy it.')
+    : 'Off. Clients see Not currently offering.');
+  const paint = (sw) => {
+    for (const b of btns) {
+      const on = sw[b.dataset.sale] === true;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-pressed', String(on));
+      b.disabled = false;
+      const sub = overlay.querySelector(`[data-sale-said="${b.dataset.sale}"]`);
+      if (sub) sub.textContent = line(b.dataset.sale, on);
+    }
+  };
+  const call = async (body) => {
+    const res = await fetch('/api/admin/sales', {
+      method: body ? 'POST' : 'GET',
+      headers: { authorization: `Bearer ${await user.getIdToken()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(out.error || `That did not save (${res.status}).`);
+    return out;
+  };
+  call().then(paint).catch(() => {
+    said.textContent = 'Could not read your services, so they are not safe to change yet.';
+    said.style.color = 'var(--danger)';
+  });
+  for (const b of btns) {
+    b.addEventListener('click', async () => {
+      const k = b.dataset.sale;
+      const want = !b.classList.contains('on');
+      for (const x of btns) x.disabled = true;
+      said.textContent = 'Saving…';
+      said.style.color = '';
+      try {
+        const sw = await call({ [k]: want });
+        paint(sw);
+        said.textContent = `${b.dataset.name} is ${sw[k] ? 'on' : 'off'}.`;
+      } catch (err) {
+        for (const x of btns) x.disabled = false;
+        said.textContent = `Not changed: ${err.message}`;
+        said.style.color = 'var(--danger)';
+      }
+    });
+  }
 }
 
 /** The warm public pages switch: asked first, painted from the answer, then live. */

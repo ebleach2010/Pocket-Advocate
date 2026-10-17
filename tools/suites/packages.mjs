@@ -118,7 +118,10 @@ for (const p of PAGES) {
     // NEGATIVE CONTROL (run 2026-10-15, v7.38): the waitlist link put back to /#waitlist made this read
     //   FAIL  B3 the way in follows the switch: chat to its own checkout, the case to booking, full service through a case first, and a closed one says so and offers the waitlist
     && ['chat', 'case', 'full'].every((k) => /Not currently offering/.test(statusHtml(k, false)) && new RegExp(`href="/\\?wl=${k}#waitlist">Join the waitlist<`).test(statusHtml(k, false)) && !/subscribe|book/.test(statusHtml(k, false)))
-    && /import \{ packageOpen \} from '\.\/sales\.js';/.test(PKG) && /statusHtml\(pkg, packageOpen\(pkg\)\)/.test(PKG));
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" The door waits for his switch.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): package-page's `statusHtml(pkg, packageOpen(pkg))` made `statusHtml(pkg, true)` made B3 read FAIL.
+    && /import \{ packageOpen, loadSales \} from '\.\/sales\.js';/.test(PKG)
+    && /loadSales\(\)\.then\(\(\) => \{ status\.innerHTML = statusHtml\(pkg, packageOpen\(pkg\)\); \}\)/.test(PKG));
 }
 
 {

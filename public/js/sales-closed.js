@@ -1,15 +1,19 @@
 // The page half of the sales switches (sales.js). A courtesy, not the gate:
 // the Worker refuses every closed purchase route whatever a page says.
 //
-// Package by package (Eric, 2026-10-14: "Unlock priority chat"):
+// Package by package (Eric, 2026-10-14: "Unlock priority chat"), each on
+// the switch he flips in his settings (2026-10-17), asked for once a page:
 //   - a page whose <main> carries data-sales="case" (book) or "chat"
 //     (subscribe) hides its buying flow behind the notice while that
 //     package is closed, and is left alone while it is open;
 //   - services marks each closed package's card "Not currently offering",
 //     still opening that package's own page, and leads with the notice only
-//     when every package is closed.
+//     when every package is closed;
+//   - the home turns each closed package's card back into the grey card that
+//     is one door to its own page, and while the case is closed hides How it
+//     works and its menu link; About hides How a case runs.
 // Skipped in the demo, which drives the buying flows end to end.
-import { packageOpen } from './sales.js';
+import { packageOpen, loadSales } from './sales.js';
 
 function inDemo() {
   try {
@@ -48,13 +52,48 @@ function style() {
   document.head.appendChild(el);
 }
 
-export function closeSales() {
+// Each package's own page, and what shows only while that package is open.
+const OWN_PAGE = { chat: '/priority-chat.html', case: '/advocacy-case.html', full: '/full-service.html' };
+const ONLY_WHILE_OPEN = { case: ['#how', 'a[href="#how"]', '#case-runs'] };
+
+/**
+ * The home's card for a closed package, put back the way it was while closed
+ * (v7.37): grey, the badge, no buttons, the whole card one door to its own
+ * page. Its name, price and line are moved, not copied, so the prices the
+ * rates script fills stay filled.
+ */
+export function closeHomeCard(card, pkg) {
+  if (!card || card.tagName === 'A') return;
+  const a = document.createElement('a');
+  a.className = 'opt opt-off';
+  a.href = OWN_PAGE[pkg];
+  a.insertAdjacentHTML('afterbegin', '<span class="opt-badge">Not currently offering</span>');
+  for (const el of card.querySelectorAll(':scope > h3, :scope > .svc-price, :scope > .svc-line')) a.appendChild(el);
+  card.replaceWith(a);
+}
+
+/** The home and About: each closed package's card, and what shows only while it is open. */
+function closeHome(closed) {
+  for (const pkg of closed) {
+    const link = document.querySelector(`#options .opt a[href="${OWN_PAGE[pkg]}"]`);
+    closeHomeCard(link?.closest('.opt'), pkg);
+    // Taken out rather than hidden: the home shows a section by its #anchor, whatever it is marked.
+    for (const q of ONLY_WHILE_OPEN[pkg] || []) for (const el of document.querySelectorAll(q)) el.remove();
+  }
+}
+
+export async function closeSales() {
   if (inDemo()) return;
+  await loadSales();
   // An invitation he sent (2026-10-15) is not a sale anyone can start: the
   // booking page opened from one is his time at his price, open or closed.
   if (document.querySelector('main')?.dataset.sales === 'case' && new URLSearchParams(location.search).get('invite')) return;
   const main = document.querySelector('main');
   if (!main || main.querySelector('.pa-closed')) return;
+  if (document.getElementById('options') || document.getElementById('case-runs')) {
+    closeHome(['case', 'full', 'chat'].filter((p) => !packageOpen(p)));
+    return;
+  }
   const pkg = main.dataset.sales;
   if (pkg) {
     if (packageOpen(pkg)) return;

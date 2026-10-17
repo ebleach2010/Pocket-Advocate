@@ -12,7 +12,7 @@ import { officeCueHtml, officeLineHtml } from './office.js';
 import { startNightShift } from './night-shift.js';
 startNightShift();
 import { wireHelp } from './help.js';
-import { SALES_OPEN } from './sales.js';
+import { live as sales, loadSales } from './sales.js';
 
 hydrateNav();
 const user = await requireUser();
@@ -86,7 +86,7 @@ async function load() {
 
   watchPresence(page);
   wireHelp(page);
-  if (SALES_OPEN && renewing(sub) && !sub.stepUpCaseId) paintStepUp(page.querySelector('[data-step-up]')).catch(() => {});
+  if (renewing(sub) && !sub.stepUpCaseId) loadSales().then(() => (sales.case || sales.full) && paintStepUp(page.querySelector('[data-step-up]'))).catch(() => {});
   // The first-run guide (Home Screen, notifications), the same one a case
   // client gets, at the foot of the page. It asks about notifications itself,
   // so the push prompt here only refreshes the token quietly.
@@ -173,7 +173,7 @@ async function fetchSub() {
 // advocacy case or full case management and just pay the month's difference";
 // "Credit $50, end chat"). The figures are the Worker's, with the chat month
 // already off; booking is the ordinary booking, and their advocate accepts or
-// declines it. Off while sales are off.
+// declines it. Each way up only while his switch for it is on (2026-10-17).
 async function paintStepUp(host) {
   if (!host) return;
   const res = await fetch('/api/step-up', { headers: { authorization: `Bearer ${await user.getIdToken()}` } });
@@ -185,8 +185,8 @@ async function paintStepUp(host) {
     <h2 style="margin:0 0 .3rem; font-size:1.15rem;">Step up from chat</h2>
     <p class="dim small" style="margin:0 0 .7rem;">Your ${usd(d.creditCents)} chat month comes off either one. Once your case is taken on, your chat line stops renewing and the case chat takes over.</p>
     <div class="actions" style="display:flex; flex-wrap:wrap; gap:.5rem;">
-      <a class="btn glow" href="/book.html?step=case" data-step="case">Advocacy Case, ${usd(d.caseCents)}</a>
-      <a class="btn quiet" href="/book.html?step=full" data-step="full">Full-Service, ${usd(d.fullCents)} the first month</a>
+      ${sales.case ? `<a class="btn glow" href="/book.html?step=case" data-step="case">Advocacy Case, ${usd(d.caseCents)}</a>` : ''}
+      ${sales.full ? `<a class="btn ${sales.case ? 'quiet' : 'glow'}" href="/book.html?step=full" data-step="full">Full-Service, ${usd(d.fullCents)} the first month</a>` : ''}
     </div>`;
   host.hidden = false;
 }

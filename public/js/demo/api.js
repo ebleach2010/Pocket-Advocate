@@ -291,6 +291,22 @@ export function demoApi(role, store) {
       }
       return ok({ landingWarm: store.docs.get('config/look')?.landingWarm !== false });
     }
+    // His services, one switch each (2026-10-17), kept in the practice copy
+    // so the row in his settings works there too.
+    if (path === '/api/sales' || path === '/api/admin/sales') {
+      const KEYS = ['chat', 'case', 'full'];
+      const now = () => { const d = store.docs.get('config/sales') || {}; return Object.fromEntries(KEYS.map((k) => [k, d[k] !== false])); };
+      if (path === '/api/admin/sales') {
+        if (role !== 'admin') return fail(404, 'Not found');
+        if ((init.method || 'GET') === 'POST') {
+          const keys = KEYS.filter((k) => body[k] !== undefined);
+          if (!keys.length || keys.some((k) => typeof body[k] !== 'boolean')) return fail(400, 'On or off.');
+          store.docs.set('config/sales', { ...now(), ...Object.fromEntries(keys.map((k) => [k, body[k]])) });
+          store.persist?.();
+        }
+      }
+      return ok(now());
+    }
     // A contractor's open times, and his open slots inside his buffer (2026-10-17).
     if (path === '/api/advocate-times') {
       const got = demoTimes(q.get('advocate'));

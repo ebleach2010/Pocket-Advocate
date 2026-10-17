@@ -78,8 +78,9 @@
 
   <!-- How a case runs, back with the case (2026-10-17: "For now, open up all
        my tier options"): the v7.37 steps, with the report within 14 days and
-       the card held, not charged. -->
-  <section class="land-sec">
+       the card held, not charged. Taken out while the case is switched off
+       (sales-closed.js). -->
+  <section class="land-sec" id="case-runs">
     <h2>How a case runs</h2>
     <ol class="hiw">
       <li>
@@ -146,6 +147,7 @@
   <p class="fine"><strong>Pocket Advocate provides patient advocacy, not medical care.</strong> I do not diagnose, treat, or prescribe, and this service does not replace your care team. If you are having a medical emergency, call 911. Pocket Advocate currently serves clients in the United States and Canada.</p>
 </footer>
 
+<script type="module" src="/js/sales-closed.js"></script>
 <script type="module">
   // The case and follow-up prices move on their own, so nothing on this page
   // quotes a number that is only true at deploy time. Loaded soft: a failed

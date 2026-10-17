@@ -59,6 +59,18 @@ be restored by hand on `/open`, from the v7.37 file history: the home's
 steps), and About's "How a case runs" section (`about.html`). The home's
 "Straight answers" screen stays gone; the questions live on `faq.html`.
 
+Since v7.72 (2026-10-17, Eric: "My services are off. How do I toggle them
+back on in app?") each service has its own switch in his settings, "Your
+services": 24/7 Priority Chat, Advocacy Case, Full-Service. They are kept
+in `config/sales` and read by the Worker's gate on every purchase and by
+every page through `GET /api/sales`; `SALES_OPEN` and `CHAT_OPEN` are only
+what a service is before its switch has been touched. Every piece above
+(the home's cards, How it works and its menu link, About's How a case
+runs, the Book links, the case page's offers, the waitlist's choices)
+follows the switches on its own now, so nothing has to be restored by hand:
+`/open` means turning the three switches on (he can do it himself), and a
+push is only needed if the defaults should change.
+
 ## Deploy ritual
 
 Cloudflare Workers Builds deploys every push to main to production in about

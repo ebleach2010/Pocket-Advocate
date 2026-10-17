@@ -48,8 +48,8 @@ The live prices are stored in Firestore (`config/rates`) and served by `/api/rat
 
 ### What is open right now (v7.42, 2026-10-15)
 
-- `public/js/sales.js`: **`SALES_OPEN = false`** (Eric, 2026-10-12: "Stop sales everywhere."). The Worker refuses every route in `SALES_ROUTES`. The case and full-service cards are greyed out with "Not currently offering", and their pages offer the waitlist. Invitations he sends from the Clients + are not sales routes, so they work while sales are closed.
-- **`CHAT_OPEN = true`** (2026-10-14: "Unlock priority chat"). The chat is the ringed option at the top of the home page.
+- **His service switches** (v7.72, 2026-10-17: "My services are off. How do I toggle them back on in app?"): Settings, "Your services", one switch each for 24/7 Priority Chat, Advocacy Case and Full-Service, kept in `config/sales`. All three are on (v7.71: "For now, open up all my tier options."). The Worker refuses every route in `SALES_ROUTES` whose service is off; a service that is off shows "Not currently offering" and the waitlist on every page. Invitations he sends from the Clients + are not sales routes, so they work either way.
+- `public/js/sales.js`: `SALES_OPEN` and `CHAT_OPEN` (both true) are only the defaults before a switch has been touched.
 - His out-of-remission banner came down on 2026-10-14. The free 15-minute call was removed on 2026-10-12 and stays gone.
 - When Eric sends **`/open`**, follow CLAUDE.md exactly. The waitlist button stays.
 
@@ -118,8 +118,8 @@ The software is not built for that yet. It has one admin account (`ADMIN_UID`), 
 - **Where the truth is.** The comment at the top of the file lists routes but is incomplete. The `if` chain inside `fetch()` is the real list.
 - **Gates that run first:**
   - A maintenance gate on `/api/checkout`.
-  - `SALES_ROUTES` answer 409 while `SALES_OPEN` is false.
-  - `/api/subscribe` follows `CHAT_OPEN`. Today it is true.
+  - Each route in `SALES_ROUTES` answers 409 while every service it sells is switched off (`config/sales`, read afresh by the gate).
+  - `/api/subscribe` follows the Priority Chat switch. Today all three are on.
   - Both switches are in `public/js/sales.js`, and the Worker imports them from there. Preview and localhost hosts skip these gates.
   - `PAUSE_GATED` refuses client writes on a paused case.
 - **Admin routes answer 404 to non-admins.** An unknown `/api/` path also does a token check before its 404, so response timing cannot reveal which gated routes exist.

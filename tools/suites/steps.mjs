@@ -86,9 +86,12 @@ console.log('\n--- the step up from a case ---');
   // NEGATIVE CONTROL (run 2026-10-17): report-uploaded's `const enhance = SALES_OPEN && !doc.data.family;` made `const enhance = !doc.data.family;` made this read
   //   FAIL  N1 a delivered report tells the client of a new enhancement and lights Enhance, only while there is one to buy
   check('N1 a delivered report tells the client of a new enhancement and lights Enhance, only while there is one to buy',
-    /const enhance = SALES_OPEN && !doc\.data\.family;\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+status: 'delivered', reportDeliveredAt: now, \.\.\.\(enhance \? \{ enhancementAt: now \} : \{\}\),/.test(W)
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" There is one to buy while the
+    // Advocacy Case or Full-Service switch is on, read from his store; the client's page asks the same before it lights the tab.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): report-uploaded's `(sw.case || sw.full) && ` taken out made N1 read FAIL.
+    /const sw = await readSwitches\(env\);\n\s+const enhance = \(sw\.case \|\| sw\.full\) && !doc\.data\.family;\n\s+await patchDoc\(env, `cases\/\$\{caseId\}`, \{\n\s+status: 'delivered', reportDeliveredAt: now, \.\.\.\(enhance \? \{ enhancementAt: now \} : \{\}\),/.test(W)
     && /body: enhance \? 'Your report is ready\. You have a new enhancement on your case\.' : 'Your report is ready\.',\n\s+link: `\/case\.html\?id=\$\{caseId\}\$\{enhance \? '&page=addons' : ''\}`,/.test(W)
-    && /folder\?\.mark\?\.\('addons', SALES_OPEN && !c\.family && !c\.fullAccess && isUnseen\(enhanceKey\(c\), toDate\(c\.enhancementAt\)\.getTime\(\)\)\);/.test(CASE)
+    && /folder\?\.mark\?\.\('addons', anyOpen\(\) && !c\.family && !c\.fullAccess && isUnseen\(enhanceKey\(c\), toDate\(c\.enhancementAt\)\.getTime\(\)\)\);/.test(CASE)
     && /onShow: \(id\) => \{ if \(id === 'addons'\) \{ markSeen\(enhanceKey\(c\)\); folder\?\.mark\('addons', false\); \} \},/.test(CASE)
     // seen.js is his, and the Worker never serves it to a client: imported here it stopped the whole case page loading.
     && !/from '\.\/seen\.js'/.test(CASE)
@@ -168,7 +171,9 @@ const ADD = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
     /if \(c\.data\.fullAccess\) \{\n\s+const attend = \(await caseAddons\(env, c\.data, advocateIdOf\)\)\.attend;\n\s+if \(!attend\.on\) return json\(\{ error: 'Your advocate does not come to appointments on Full-Service\. Ask in chat\.' \}, 409\);\n\s+cents = attend\.cents;\n\s+\}/.test(W)
     && /line_items: telehealthLineItems\(cents\),/.test(W)
     && /else if \(obj\.metadata\?\.kind === 'addon'\) await confirmAddonPurchase\(env, obj, \{ pingCase \}\);/.test(W)
-    && /'\/api\/addon-request',\n\]\);/.test(W)
+    // RE-PINNED 2026-10-17 (v7.72): the purchase routes name their service; an add-on asked for is Full-Service's.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): `['/api/addon-request', ['full']]` taken out of SALES_ROUTES made A3 read FAIL.
+    && /\['\/api\/addon-request', \['full'\]\],?\n\]\);/.test(W)
     && /\.\.\.\(addons \? \{ addons \} : \{\}\),/.test(W));
 
   const EMP = f('public/js/admin-employer.js');
@@ -200,7 +205,9 @@ const ADD = await import(pathToFileURL(join(ROOT, 'worker/addons.js')).href);
     && /Asking costs nothing and takes no card\. Nothing is\s+charged unless \$\{adv\} says yes\./.test(card)
     // RE-PINNED 2026-10-17 (v7.68): SELLING goes on past the appeal's buttons, to his own extras'.
     // NEGATIVE CONTROL (run 2026-10-17, v7.68): `[data-appeal-again],` taken out of SELLING made A5 read FAIL.
-    && /\[data-request-appeal\],\[data-appeal-again\],/.test(CASE) && /ap\.innerHTML = appealCard\(c\); wireAppealCard\(ap, c\); keepCard\(ap\);/.test(CASE));
+    // RE-PINNED 2026-10-17 (v7.72): the appeal card goes with the Full-Service switch.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): `keepCard(ap, fullOpen())` made `keepCard(ap, caseOpen())` (both places) made A5 read FAIL.
+    && /\[data-request-appeal\],\[data-appeal-again\],/.test(CASE) && (CASE.match(/ap\.innerHTML = appealCard\(c\); wireAppealCard\(ap, c\); keepCard\(ap, fullOpen\(\)\);/g) || []).length === 2);
 }
 
 console.log('\n--- from chat ---');
@@ -246,8 +253,11 @@ console.log('\n--- from chat ---');
     && /quotedCents: shownCents\(\),/.test(BOOK) && /\.\.\.\(stepFull\(\) \? \{ tier: 'full' \} : \{\}\),/.test(BOOK)
     && /<input type="checkbox" data-step-ack disabled> I have read and acknowledge this/.test(BOOK)
     && /data-step-credit>Your \$\$\{money\(stepUp\.creditCents\)\} chat month comes off\./.test(BOOK)
-    && /if \(SALES_OPEN && renewing\(sub\) && !sub\.stepUpCaseId\) paintStepUp\(/.test(SUB)
-    && /href="\/book\.html\?step=case"/.test(SUB) && /href="\/book\.html\?step=full"/.test(SUB));
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" The chat page offers each
+    // way up only while his switch for it is on, and the panel only while one is.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): the step=full link's `${sales.full ? ` made `${true ? ` made B2 read FAIL.
+    && /if \(renewing\(sub\) && !sub\.stepUpCaseId\) loadSales\(\)\.then\(\(\) => \(sales\.case \|\| sales\.full\) && paintStepUp\(/.test(SUB)
+    && /\$\{sales\.case \? `<a class="btn glow" href="\/book\.html\?step=case"/.test(SUB) && /\$\{sales\.full \? `<a class="btn \$\{sales\.case \? 'quiet' : 'glow'\}" href="\/book\.html\?step=full"/.test(SUB));
 }
 
 console.log('\n--- another month, and the words ---');

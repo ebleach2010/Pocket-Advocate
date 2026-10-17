@@ -2350,3 +2350,41 @@ step up offered). Their closed forms are kept as never run records.
 drive-landing's contrast check measured the grey badge, which no longer
 exists, and crashed the drive; it now measures every open card's words and
 any badge that shows.
+
+### A switch for each service (2026-10-17, v7.72)
+
+Eric: "My services are off. How do I toggle them back on in app?" Each
+service now has its own switch in his settings, so turning one on or off
+needs no push.
+
+- public/js/sales.js: switchesFrom (the stored doc, each switch filled
+  from SALES_OPEN and CHAT_OPEN when unset), `live`, loadSales (GET
+  /api/sales once a page, three seconds at most) and packageOpen, which
+  reads `live`.
+- worker/index.js: config/sales; readSwitches (afresh for the gate, a 15
+  second memo for the pages, an unreadable doc keeps the last answer or the
+  defaults); SALES_ROUTES is a Map of route to the services it sells
+  (subscribe: chat; checkout, chat-unlock, followup: case; telehealth: case
+  or full; upgrade, extend, extend-request, addon-request: full) and
+  salesShut refuses a route only when all of them are off; GET /api/sales
+  (public) and GET/POST /api/admin/sales (his alone, writes only the switch
+  named, answers what is stored); a first Full-Service month from chat
+  answers to the Full-Service switch; the month sweep offers another month
+  only while Full-Service is on; the new-enhancement stamp while the case
+  or Full-Service is on.
+- Pages: sales-closed.js waits for the switches and now also runs on the
+  home (a closed package's card goes back to the grey door to its own page;
+  How it works and its menu link go while the case is off) and About (How
+  a case runs, #case-runs). The package pages, the waitlist's choices and
+  the Book links wait for the switches too. case.js asks before it draws:
+  each offer follows the service it sells (OPEN_FOR), the chat unlock the
+  case's. The chat page's step up offers each way up only while it is on.
+  His calendar follows the case's switch.
+- His settings: "Your services", three switches, disabled until the
+  Worker answers; a tap sends that one and paints the stored answer.
+- Demo mode keeps its own switches for the row.
+
+New: sales A3c, D1 to D5, B5; drive-switches (14). Re-pinned with
+controls: sales A1, A2, A3, A3b, A5, B2; tighten T1, T4, U7, V2 (and the
+T3 lift); packages B3; monthend C1; invites E1; steps N1, A3, A5, B2;
+selfcase S17 (and its control); uploads U16's harness; release R1.

@@ -196,10 +196,13 @@ console.log('\n--- C. the Worker ---');
   check('C1 asking is off while sales are off, both routes are wired, and the sweep has its own cron minute',
     // RE-PINNED 2026-10-17 (v7.65): an appeal asked for (/api/addon-request) is a sales route too, listed after it.
     // NEGATIVE CONTROL (run 2026-10-17, v7.65): '/api/extend-request' taken out of SALES_ROUTES made C1 read FAIL.
-    /const SALES_ROUTES = new Set\(\[[\s\S]*?'\/api\/extend-request',\n[\s\S]*?\]\);/.test(W)
+    // RE-PINNED 2026-10-17 (v7.72): Eric, "My services are off. How do I toggle them back on in app?" Each purchase route names
+    // the service it sells; asking for another month is Full-Service's, and the sweep offers it only while that switch is on.
+    // NEGATIVE CONTROL (run 2026-10-17, v7.72): `['/api/extend-request', ['full']]` made `['/api/extend-request', ['case']]` made C1 read FAIL.
+    /const SALES_ROUTES = new Map\(\[[\s\S]*?\['\/api\/extend-request', \['full'\]\][\s\S]*?\n\]\);/.test(W)
     && /url\.pathname === '\/api\/extend-request' && request\.method === 'POST'\)\n\s+return await handleExtendRequest\(/.test(W)
     && /url\.pathname === '\/api\/admin\/extend-request' && request\.method === 'POST'\)\n\s+return await handleExtendDecision\(/.test(W)
-    && /if \(minute % 15 === 3\) \{\n\s+ctx\.waitUntil\(sweepFullServiceMonths\(env, \{\n\s+windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: SALES_OPEN,/.test(W)
+    && /if \(minute % 15 === 3\) \{\n(?:\s+\/\/[^\n]*\n)?\s+ctx\.waitUntil\(readSwitches\(env\)\.then\(\(sw\) => sweepFullServiceMonths\(env, \{\n\s+windowEnd: fullAccessWindowEnd, notifyUser, sendEmail, pingCase, salesOpen: sw\.full,/.test(W)
     && /monthCentsFor: async \(data\) => \(await ratesForCase\(env, data\)\)\.fullCents/.test(W));
   // NEGATIVE CONTROL (run 2026-10-17): the reopen's `c.data.extendRequest?.state === 'approved'` condition taken out made this read
   //   FAIL  C2 paying reopens a closed case only for the month its advocate approved, as it was, and a month given free records nothing
